@@ -30,7 +30,7 @@ const GAMES_URL = 'https://gametok-games.pages.dev';
 
 // Score competition games
 const SCORE_COMPETITION_GAMES = [
-  'tetris', '2048', 'snake', 'flappy-bird', 'pacman', 'fruit-slicer',
+  'tetris', '2048', 'flappy-bird', 'pacman', 'fruit-slicer',
   'piano-tiles', 'doodle-jump', 'geometry-dash', 'endless-runner',
   'crossy-road', 'breakout', 'ball-bounce', 'whack-a-mole', 'aim-trainer',
   'reaction-time', 'color-match', 'memory-match', 'tap-tap-dash',

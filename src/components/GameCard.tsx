@@ -37,7 +37,7 @@ const MULTIPLAYER_GAMES = [
   // Real-time
   'pong',
   // Score competition (play same game, highest score wins)
-  'tetris', '2048', 'snake', 'flappy-bird', 'pacman', 'fruit-slicer',
+  'tetris', '2048', 'flappy-bird', 'pacman', 'fruit-slicer',
   'piano-tiles', 'doodle-jump', 'geometry-dash', 'endless-runner',
   'crossy-road', 'breakout', 'ball-bounce', 'whack-a-mole', 'aim-trainer',
   'reaction-time', 'color-match', 'memory-match', 'tap-tap-dash',
