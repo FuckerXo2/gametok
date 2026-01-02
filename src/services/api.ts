@@ -1,7 +1,7 @@
 // GameTok API Service
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://gametok-api-6rn7.onrender.com/api';
+export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
 
 // Token management
 let authToken: string | null = null;

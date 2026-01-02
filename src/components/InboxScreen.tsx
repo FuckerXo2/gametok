@@ -42,6 +42,12 @@ interface Message {
   senderId: string;
   isMe: boolean;
   createdAt: string;
+  gameShare?: {
+    id: string;
+    name: string;
+    icon: string;
+    color: string;
+  };
 }
 
 interface Story {
@@ -202,6 +208,42 @@ export const InboxScreen: React.FC = () => {
     if (hours < 24) return `${hours}h`;
     return `${days}d`;
   };
+
+  // Parse game share from message text
+  const parseGameShare = (text: string) => {
+    const gameMatch = text.match(/\[GAME:([^\]]+)\]/);
+    if (gameMatch) {
+      const gameId = gameMatch[1];
+      // Extract game info from the message
+      const nameMatch = text.match(/Check out ([^!]+)!/);
+      const iconMatch = text.match(/! ([^\n]+)\n/);
+      return {
+        id: gameId,
+        name: nameMatch ? nameMatch[1] : 'Game',
+        icon: iconMatch ? iconMatch[1].trim() : '🎮',
+        displayText: text.replace(/\[GAME:[^\]]+\]/, '').trim(),
+      };
+    }
+    return null;
+  };
+
+  // Render a game share card in chat
+  const renderGameShareCard = (gameInfo: { id: string; name: string; icon: string; displayText: string }, isMe: boolean) => (
+    <View style={[styles.gameShareCard, { backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : colors.surface }]}>
+      <View style={styles.gameShareHeader}>
+        <Text style={styles.gameShareIcon}>{gameInfo.icon}</Text>
+        <View style={styles.gameShareInfo}>
+          <Text style={[styles.gameShareName, { color: isMe ? '#fff' : colors.text }]}>{gameInfo.name}</Text>
+          <Text style={[styles.gameShareLabel, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>Tap to play</Text>
+        </View>
+      </View>
+      {gameInfo.displayText && !gameInfo.displayText.includes('Check out') && (
+        <Text style={[styles.gameShareMessage, { color: isMe ? 'rgba(255,255,255,0.9)' : colors.textSecondary }]}>
+          {gameInfo.displayText.replace(/🎮.*\n/, '').replace(/"([^"]+)"/, '$1').trim()}
+        </Text>
+      )}
+    </View>
+  );
 
   // Filter conversations based on search
   const filteredConversations = searchQuery.trim() 
@@ -483,16 +525,34 @@ export const InboxScreen: React.FC = () => {
                 style={styles.chatMessages}
                 contentContainerStyle={styles.chatMessagesContent}
                 inverted={false}
-                renderItem={({ item }) => (
-                  <View style={[
-                    item.isMe ? styles.sentBubble : styles.receivedBubble,
-                    { backgroundColor: item.isMe ? colors.primary : colors.surface }
-                  ]}>
-                    <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
-                      {item.text}
-                    </Text>
-                  </View>
-                )}
+                renderItem={({ item }) => {
+                  const gameShare = parseGameShare(item.text);
+                  
+                  if (gameShare) {
+                    return (
+                      <TouchableOpacity 
+                        style={[
+                          item.isMe ? styles.sentBubble : styles.receivedBubble,
+                          { backgroundColor: item.isMe ? colors.primary : colors.surface, padding: 0, overflow: 'hidden' }
+                        ]}
+                        activeOpacity={0.8}
+                      >
+                        {renderGameShareCard(gameShare, item.isMe)}
+                      </TouchableOpacity>
+                    );
+                  }
+                  
+                  return (
+                    <View style={[
+                      item.isMe ? styles.sentBubble : styles.receivedBubble,
+                      { backgroundColor: item.isMe ? colors.primary : colors.surface }
+                    ]}>
+                      <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
+                        {item.text}
+                      </Text>
+                    </View>
+                  );
+                }}
                 ListEmptyComponent={
                   <View style={styles.emptyChat}>
                     <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
@@ -1073,5 +1133,35 @@ const styles = StyleSheet.create({
   },
   emptyActivityText: {
     fontSize: 15,
+  },
+  // Game Share Card styles
+  gameShareCard: {
+    padding: 12,
+    borderRadius: 16,
+    minWidth: 180,
+  },
+  gameShareHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gameShareIcon: {
+    fontSize: 32,
+    marginRight: 10,
+  },
+  gameShareInfo: {
+    flex: 1,
+  },
+  gameShareName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  gameShareLabel: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  gameShareMessage: {
+    fontSize: 13,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 });
