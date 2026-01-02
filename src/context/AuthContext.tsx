@@ -41,6 +41,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(data.user);
       }
     } catch (e) {
+      // Token invalid or user doesn't exist - clear token
+      await auth.logout();
       setUser(null);
     }
   };
