@@ -1,20 +1,13 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { 
   View, 
   StyleSheet, 
   Dimensions, 
   Text, 
   TouchableOpacity, 
-  Share,
   Animated,
   ActivityIndicator,
-  Modal,
-  FlatList,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
   StatusBar,
-  Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
@@ -22,11 +15,10 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
-import { scores, comments as commentsApi, users, messages as messagesApi } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { scores, messages } from '../services/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Avatar } from './Avatar';
 import { MultiplayerModal } from './MultiplayerModal';
+import { ShareSheet } from './ShareSheet';
 
 const MULTIPLAYER_GAMES = [
   'tic-tac-toe', 'connect4', 'chess', 'rock-paper-scissors', 'pong',
@@ -36,7 +28,7 @@ const MULTIPLAYER_GAMES = [
   'reaction-time', 'color-match', 'memory-match', 'tap-tap-dash',
   'number-tap', 'bubble-pop', 'simon-says', 'basketball', 'golf-putt',
   'snake-io', 'asteroids', 'space-invaders', 'missile-game', 'hexgl',
-  'racer', 'run3', 'clumsy-bird', 'hextris', 'tower-game',
+  'racer', 'clumsy-bird', 'hextris', 'tower-game',
 ];
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -52,31 +44,29 @@ interface GameCardProps {
   };
   gameUrl: string;
   isActive: boolean;
+  onPlayingChange?: (isPlaying: boolean) => void;
 }
 
-export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive }) => {
+export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onPlayingChange }) => {
   const { colors } = useTheme();
-  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
-  const playingWebViewRef = useRef<WebView>(null);
   
   const [score, setScore] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [likeCount, setLikeCount] = useState(Math.floor(Math.random() * 500) + 50);
-  const [commentCount, setCommentCount] = useState(Math.floor(Math.random() * 200) + 20);
-  const [previewLoaded, setPreviewLoaded] = useState(false);
-  const [gameLoading, setGameLoading] = useState(true);
+  const [commentCount] = useState(Math.floor(Math.random() * 200) + 20);
+  const [gameLoaded, setGameLoaded] = useState(false);
   
   const [isPlaying, setIsPlaying] = useState(false);
-  const [showPauseMenu, setShowPauseMenu] = useState(false);
   const [showMultiplayer, setShowMultiplayer] = useState(false);
-  const [showComments, setShowComments] = useState(false);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
   
   const heartScale = useRef(new Animated.Value(1)).current;
   const isMultiplayerGame = MULTIPLAYER_GAMES.includes(game.id);
+  
+  void colors;
 
   const handleMessage = useCallback((event: any) => {
     try {
@@ -94,41 +84,23 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive }) =
   const handlePlay = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsPlaying(true);
-    setGameLoading(true);
-  }, []);
-
-  const handlePause = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowPauseMenu(true);
-    playingWebViewRef.current?.injectJavaScript(`
-      if (window.gamePause) window.gamePause();
-      if (window.pause) window.pause();
+    onPlayingChange?.(true);
+    // Tell the game to start
+    webViewRef.current?.injectJavaScript(`
+      if (window.startGame) window.startGame();
+      if (window.start) window.start();
+      if (window.gameStart) window.gameStart();
       true;
     `);
-  }, []);
-
-  const handleResume = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowPauseMenu(false);
-    playingWebViewRef.current?.injectJavaScript(`
-      if (window.gameResume) window.gameResume();
-      if (window.resume) window.resume();
-      true;
-    `);
-  }, []);
-
-  const handleRestart = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setShowPauseMenu(false);
-    setScore(0);
-    playingWebViewRef.current?.reload();
-  }, []);
+  }, [onPlayingChange]);
 
   const handleExit = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowPauseMenu(false);
     setIsPlaying(false);
-  }, []);
+    onPlayingChange?.(false);
+    // Reload the game to reset it
+    webViewRef.current?.reload();
+  }, [onPlayingChange]);
 
   const handleLike = useCallback(() => {
     const newLiked = !isLiked;
@@ -141,12 +113,26 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive }) =
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [isLiked, heartScale]);
 
-  const handleShare = useCallback(async () => {
+  const handleShare = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowShareSheet(true);
+  }, []);
+
+  const handleSendToFriend = useCallback(async (friendId: string, gameId: string) => {
     try {
-      await Share.share({ message: `Playing ${game.name} on GameTok! 🎮` });
-    } catch (e) {}
-  }, [game.name]);
+      await messages.send({
+        recipientId: friendId,
+        gameShare: { gameId },
+      });
+    } catch (e) {
+      console.error('Failed to send game to friend:', e);
+    }
+  }, []);
+
+  const handleSave = useCallback(() => {
+    setIsSaved(prev => !prev);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, []);
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -154,219 +140,182 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive }) =
     return num.toString();
   };
 
-  // PREVIEW - Live game running in background
-  const renderPreview = () => (
+  return (
     <View style={styles.container}>
-      {/* Live Game Preview - Full Screen */}
+      <StatusBar hidden={isPlaying} />
+      
+      {/* Single WebView - used for both preview and playing */}
       {isActive && (
         <WebView
           ref={webViewRef}
           source={{ uri: gameUrl }}
-          style={styles.previewWebView}
+          style={styles.webView}
           scrollEnabled={false}
           bounces={false}
-          onLoadEnd={() => setPreviewLoaded(true)}
+          onLoadEnd={() => setGameLoaded(true)}
+          onMessage={handleMessage}
           javaScriptEnabled
           domStorageEnabled
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
-          pointerEvents="none"
         />
       )}
       
-      {/* Dark overlay for readability */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
-        locations={[0, 0.5, 1]}
-        style={styles.overlay}
-        pointerEvents="none"
-      />
+      {/* Overlay - only show when NOT playing */}
+      {!isPlaying && (
+        <>
+          {/* Dark overlay for readability */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
+            locations={[0, 0.5, 1]}
+            style={styles.overlay}
+            pointerEvents="none"
+          />
 
-      {/* Loading state */}
-      {!previewLoaded && isActive && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#fff" />
-        </View>
-      )}
-
-      {/* Game Info - Bottom */}
-      <View style={[styles.gameInfo, { paddingBottom: insets.bottom + 90 }]}>
-        <View style={styles.gameHeader}>
-          <View style={styles.gameTitleRow}>
-            <Text style={styles.gameName}>{game.name}</Text>
-            {isMultiplayerGame && (
-              <View style={styles.multiplayerBadge}>
-                <Ionicons name="people" size={12} color="#fff" />
-              </View>
-            )}
-          </View>
-          <Text style={styles.gameDescription} numberOfLines={2}>{game.description}</Text>
-        </View>
-
-        {/* Play Button */}
-        <View style={styles.playSection}>
-          <TouchableOpacity style={styles.playButton} onPress={handlePlay} activeOpacity={0.9}>
-            <LinearGradient
-              colors={['#ff2d55', '#ff375f']}
-              style={styles.playButtonGradient}
-            >
-              <Ionicons name="play" size={28} color="#fff" />
-              <Text style={styles.playButtonText}>PLAY</Text>
-            </LinearGradient>
+          {/* Center Play Button */}
+          <TouchableOpacity 
+            style={styles.centerPlayOverlay} 
+            onPress={handlePlay}
+            activeOpacity={0.8}
+          >
+            <View style={styles.centerPlayButton}>
+              <Ionicons name="play" size={32} color="rgba(255,255,255,0.9)" style={{ marginLeft: 4 }} />
+            </View>
           </TouchableOpacity>
 
-          {isMultiplayerGame && (
-            <TouchableOpacity 
-              style={styles.multiplayerBtn} 
-              onPress={() => setShowMultiplayer(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="people" size={22} color="#fff" />
-              <Text style={styles.multiplayerBtnText}>1v1</Text>
+          {/* Loading state */}
+          {!gameLoaded && isActive && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#fff" />
+            </View>
+          )}
+
+          {/* Game Info - Bottom */}
+          <View style={[styles.gameInfo, { paddingBottom: insets.bottom + 90 }]}>
+            <View style={styles.gameHeader}>
+              <View style={styles.gameTitleRow}>
+                <Text style={styles.gameName}>{game.name}</Text>
+                {isMultiplayerGame && (
+                  <View style={styles.multiplayerBadge}>
+                    <Ionicons name="people" size={12} color="#fff" />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.gameDescription} numberOfLines={2}>{game.description}</Text>
+            </View>
+
+            {/* Multiplayer Button */}
+            {isMultiplayerGame && (
+              <TouchableOpacity 
+                style={styles.multiplayerBtn} 
+                onPress={() => setShowMultiplayer(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="people" size={22} color="#fff" />
+                <Text style={styles.multiplayerBtnText}>1v1</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Side Actions - TikTok style */}
+          <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
+            {/* Game icon as "profile" */}
+            <View style={styles.actionBtn}>
+              <View style={[styles.gameIconCircle, { backgroundColor: game.color }]}>
+                <Text style={styles.gameIconEmoji}>{game.icon}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
+              <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+                <Ionicons 
+                  name={isLiked ? "heart" : "heart"} 
+                  size={35} 
+                  color={isLiked ? '#fe2c55' : '#fff'} 
+                  style={styles.iconShadow}
+                />
+              </Animated.View>
+              <Text style={styles.actionCount}>{formatNumber(likeCount)}</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionBtn} onPress={() => {}} activeOpacity={0.7}>
+              <Ionicons 
+                name="chatbubble-ellipses" 
+                size={33} 
+                color="#fff" 
+                style={styles.iconShadow}
+              />
+              <Text style={styles.actionCount}>{formatNumber(commentCount)}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.7}>
+              <Ionicons 
+                name={isSaved ? "bookmark" : "bookmark-outline"} 
+                size={33} 
+                color={isSaved ? '#fce300' : '#fff'} 
+                style={styles.iconShadow}
+              />
+              <Text style={styles.actionCount}>{formatNumber(Math.floor(Math.random() * 50) + 10)}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
+              <Ionicons 
+                name="arrow-redo" 
+                size={33} 
+                color="#fff" 
+                style={styles.iconShadow}
+              />
+              <Text style={styles.actionCount}>Share</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Score badge if has score */}
+          {score > 0 && (
+            <View style={[styles.scoreBadge, { top: insets.top + 10 }]}>
+              <Ionicons name="trophy" size={14} color="#FFD700" />
+              <Text style={styles.scoreBadgeText}>{formatNumber(score)}</Text>
+            </View>
+          )}
+        </>
+      )}
+
+      {/* Playing UI - Close button ABOVE WebView */}
+      {isPlaying && (
+        <View style={styles.playingOverlay} pointerEvents="box-none">
+          <TouchableOpacity 
+            style={[styles.closeBtn, { top: insets.top + 10 }]} 
+            onPress={handleExit}
+          >
+            <BlurView intensity={50} tint="dark" style={styles.closeBtnBlur}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </BlurView>
+          </TouchableOpacity>
+
+          {score > 0 && (
+            <View style={[styles.liveScore, { top: insets.top + 10 }]}>
+              <Text style={styles.liveScoreText}>{formatNumber(score)}</Text>
+            </View>
           )}
         </View>
-      </View>
-
-      {/* Side Actions */}
-      <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => setShowLeaderboard(true)}>
-          <View style={styles.actionIcon}>
-            <Ionicons name="trophy" size={28} color="#FFD700" />
-          </View>
-          <Text style={styles.actionLabel}>Rank</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionBtn} onPress={handleLike}>
-          <Animated.View style={[styles.actionIcon, { transform: [{ scale: heartScale }] }]}>
-            <Ionicons name={isLiked ? "heart" : "heart-outline"} size={30} color={isLiked ? '#ff2d55' : '#fff'} />
-          </Animated.View>
-          <Text style={styles.actionLabel}>{formatNumber(likeCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionBtn} onPress={() => setShowComments(true)}>
-          <View style={styles.actionIcon}>
-            <Ionicons name="chatbubble-ellipses" size={26} color="#fff" />
-          </View>
-          <Text style={styles.actionLabel}>{formatNumber(commentCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionBtn} onPress={() => setShowShareModal(true)}>
-          <View style={styles.actionIcon}>
-            <Ionicons name="paper-plane" size={24} color="#fff" />
-          </View>
-          <Text style={styles.actionLabel}>Share</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Score badge if has score */}
-      {score > 0 && (
-        <View style={[styles.scoreBadge, { top: insets.top + 10 }]}>
-          <Ionicons name="trophy" size={14} color="#FFD700" />
-          <Text style={styles.scoreBadgeText}>{formatNumber(score)}</Text>
-        </View>
       )}
-    </View>
-  );
 
-  // FULLSCREEN GAME
-  const renderGame = () => (
-    <Modal visible={isPlaying} animationType="fade" statusBarTranslucent onRequestClose={handlePause}>
-      <View style={styles.gameContainer}>
-        <StatusBar hidden />
-        
-        {gameLoading && (
-          <View style={styles.gameLoadingOverlay}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.gameLoadingText}>Loading {game.name}...</Text>
-          </View>
-        )}
-        
-        <WebView
-          ref={playingWebViewRef}
-          source={{ uri: gameUrl }}
-          style={styles.gameWebView}
-          scrollEnabled={false}
-          bounces={false}
-          onMessage={handleMessage}
-          onLoadEnd={() => setGameLoading(false)}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-        />
-        
-        {/* Pause Button */}
-        <TouchableOpacity 
-          style={[styles.pauseBtn, { top: insets.top + 10 }]} 
-          onPress={handlePause}
-        >
-          <BlurView intensity={50} tint="dark" style={styles.pauseBtnBlur}>
-            <Ionicons name="pause" size={20} color="#fff" />
-          </BlurView>
-        </TouchableOpacity>
-
-        {/* Live Score */}
-        {score > 0 && (
-          <View style={[styles.liveScore, { top: insets.top + 10 }]}>
-            <Text style={styles.liveScoreText}>{formatNumber(score)}</Text>
-          </View>
-        )}
-
-        {/* Pause Menu */}
-        {showPauseMenu && (
-          <View style={styles.pauseOverlay}>
-            <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-            <View style={styles.pauseMenu}>
-              <Text style={styles.pauseTitle}>PAUSED</Text>
-              <Text style={styles.pauseGameName}>{game.name}</Text>
-              
-              {score > 0 && (
-                <View style={styles.pauseScoreBox}>
-                  <Text style={styles.pauseScoreLabel}>Score</Text>
-                  <Text style={styles.pauseScoreValue}>{formatNumber(score)}</Text>
-                </View>
-              )}
-
-              <TouchableOpacity style={styles.pauseMenuBtn} onPress={handleResume}>
-                <LinearGradient colors={['#22c55e', '#16a34a']} style={styles.pauseMenuBtnGradient}>
-                  <Ionicons name="play" size={22} color="#fff" />
-                  <Text style={styles.pauseMenuBtnText}>Resume</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.pauseMenuBtn} onPress={handleRestart}>
-                <View style={[styles.pauseMenuBtnGradient, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-                  <Ionicons name="refresh" size={22} color="#fff" />
-                  <Text style={styles.pauseMenuBtnText}>Restart</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.pauseMenuBtn} onPress={handleExit}>
-                <View style={[styles.pauseMenuBtnGradient, { backgroundColor: 'rgba(255,59,48,0.3)' }]}>
-                  <Ionicons name="exit-outline" size={22} color="#ff3b30" />
-                  <Text style={[styles.pauseMenuBtnText, { color: '#ff3b30' }]}>Exit</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-    </Modal>
-  );
-
-  return (
-    <>
-      {renderPreview()}
-      {renderGame()}
-      
       <MultiplayerModal
         visible={showMultiplayer}
         gameId={game.id}
         gameName={game.name}
         onClose={() => setShowMultiplayer(false)}
       />
-    </>
+
+      <ShareSheet
+        visible={showShareSheet}
+        onClose={() => setShowShareSheet(false)}
+        gameId={game.id}
+        gameName={game.name}
+        gameIcon={game.icon}
+        gameColor={game.color}
+        onSendToFriend={handleSendToFriend}
+      />
+    </View>
   );
 };
 
@@ -376,13 +325,30 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     backgroundColor: '#000',
   },
-  
-  // Preview
-  previewWebView: {
+  webView: {
     ...StyleSheet.absoluteFillObject,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
+  },
+  centerPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerPlayButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -390,8 +356,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#000',
   },
-  
-  // Game Info
   gameInfo: {
     position: 'absolute',
     bottom: 0,
@@ -429,30 +393,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  
-  // Play Section
-  playSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  playButton: {
-    flex: 1,
-  },
-  playButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  playButtonText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 1,
-  },
   multiplayerBtn: {
     backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 16,
@@ -467,16 +407,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  
-  // Side Actions
   sideActions: {
     position: 'absolute',
-    right: 8,
+    right: 12,
     alignItems: 'center',
-    gap: 20,
+    gap: 18,
   },
   actionBtn: {
     alignItems: 'center',
+  },
+  gameIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    marginBottom: 4,
+  },
+  gameIconEmoji: {
+    fontSize: 22,
+  },
+  iconShadow: {
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  actionCount: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   actionIcon: {
     width: 48,
@@ -493,8 +458,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  
-  // Score Badge
   scoreBadge: {
     position: 'absolute',
     right: 16,
@@ -511,35 +474,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  
-  // Game Container
-  gameContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  gameWebView: {
-    flex: 1,
-  },
-  gameLoadingOverlay: {
+  playingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-    zIndex: 10,
+    zIndex: 100,
   },
-  gameLoadingText: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 12,
-  },
-  
-  // Pause Button
-  pauseBtn: {
+  closeBtn: {
     position: 'absolute',
     left: 16,
-    zIndex: 20,
   },
-  pauseBtnBlur: {
+  closeBtnBlur: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -547,8 +490,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  
-  // Live Score
   liveScore: {
     position: 'absolute',
     right: 16,
@@ -561,61 +502,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '800',
-  },
-  
-  // Pause Menu
-  pauseOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 30,
-  },
-  pauseMenu: {
-    width: '80%',
-    maxWidth: 320,
-    alignItems: 'center',
-  },
-  pauseTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: 4,
-  },
-  pauseGameName: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 4,
-    marginBottom: 24,
-  },
-  pauseScoreBox: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  pauseScoreLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
-  },
-  pauseScoreValue: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: '#FFD700',
-  },
-  pauseMenuBtn: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  pauseMenuBtnGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 14,
-    gap: 10,
-  },
-  pauseMenuBtnText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
   },
 });
 

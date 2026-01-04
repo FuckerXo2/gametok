@@ -36,12 +36,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshUser = async () => {
     try {
       const token = await getToken();
+      console.log('[Auth] Checking stored token:', token ? 'exists' : 'none');
       if (token) {
         const data = await auth.me();
+        console.log('[Auth] Token valid, user:', data.user?.username);
         setUser(data.user);
+      } else {
+        console.log('[Auth] No token stored');
+        setUser(null);
       }
-    } catch (e) {
+    } catch (e: any) {
       // Token invalid or user doesn't exist - clear token
+      console.log('[Auth] Token invalid or expired:', e.message);
       await auth.logout();
       setUser(null);
     }
@@ -56,12 +62,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (username: string, password: string) => {
+    console.log('[Auth] Logging in:', username);
     const data = await auth.login(username, password);
+    console.log('[Auth] Login successful, token saved');
     setUser(data.user);
   };
 
   const signup = async (username: string, password: string, displayName?: string) => {
+    console.log('[Auth] Signing up:', username);
     const data = await auth.signup(username, password, displayName);
+    console.log('[Auth] Signup successful, token saved');
     setUser(data.user);
   };
 

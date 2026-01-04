@@ -13,9 +13,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { GameCard } from './GameCard';
+import { NativeAdCard } from './NativeAdCard';
 import { GameSearchModal } from './GameSearchModal';
 import { useTheme } from '../context/ThemeContext';
 import { games as gamesApi } from '../services/api';
+import { initializeAds, AD_FREQUENCY } from '../services/ads';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -40,18 +42,32 @@ interface FeedGame extends Game {
   gameUrl: string;
 }
 
+type FeedItem = FeedGame | { isAd: true; uniqueId: string };
+
 export const GameFeed: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [games, setGames] = useState<Game[]>(FALLBACK_GAMES);
-  const [feedData, setFeedData] = useState<FeedGame[]>([]);
+  const [feedData, setFeedData] = useState<FeedItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<'foryou' | 'explore'>('foryou');
   const [showSearch, setShowSearch] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isGamePlaying, setIsGamePlaying] = useState(false);
+  const [adsInitialized, setAdsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const horizontalScrollRef = useRef<ScrollView>(null);
   const feedIndexRef = useRef(0);
+  const adCounterRef = useRef(0);
+
+  // Initialize ads SDK
+  useEffect(() => {
+    const init = async () => {
+      const success = await initializeAds();
+      setAdsInitialized(success);
+    };
+    init();
+  }, []);
 
   // Fetch games from backend
   useEffect(() => {
@@ -83,8 +99,8 @@ export const GameFeed: React.FC = () => {
     }
   }, [games]);
 
-  const generateFeed = (count: number, startIndex: number): FeedGame[] => {
-    const feed: FeedGame[] = [];
+  const generateFeed = (count: number, startIndex: number): FeedItem[] => {
+    const feed: FeedItem[] = [];
     for (let i = 0; i < count; i++) {
       const game = games[(startIndex + i) % games.length];
       feed.push({
@@ -92,6 +108,15 @@ export const GameFeed: React.FC = () => {
         uniqueId: `${game.id}-${startIndex + i}-${Date.now()}`,
         gameUrl: `${GAMES_HOST}/${game.id}/`,
       });
+      
+      // Insert ad after every AD_FREQUENCY games (but not at the very start)
+      adCounterRef.current++;
+      if (adCounterRef.current % AD_FREQUENCY === 0 && adsInitialized) {
+        feed.push({
+          isAd: true,
+          uniqueId: `ad-${adCounterRef.current}-${Date.now()}`,
+        });
+      }
     }
     return feed;
   };
@@ -113,15 +138,25 @@ export const GameFeed: React.FC = () => {
     setFeedData(prev => [...prev, ...newGames]);
   }, [games]);
 
-  const renderItem = useCallback(({ item, index }: { item: FeedGame; index: number }) => (
-    <GameCard
-      game={item}
-      gameUrl={item.gameUrl}
-      isActive={index === activeIndex}
-    />
-  ), [activeIndex]);
+  const renderItem = useCallback(({ item, index }: { item: FeedItem; index: number }) => {
+    // Check if this is an ad
+    if ('isAd' in item && item.isAd) {
+      return <NativeAdCard isActive={index === activeIndex} />;
+    }
+    
+    // Regular game card - cast to FeedGame since we know it's not an ad
+    const gameItem = item as FeedGame;
+    return (
+      <GameCard
+        game={gameItem}
+        gameUrl={gameItem.gameUrl}
+        isActive={index === activeIndex}
+        onPlayingChange={setIsGamePlaying}
+      />
+    );
+  }, [activeIndex]);
 
-  const keyExtractor = useCallback((item: FeedGame) => item.uniqueId, []);
+  const keyExtractor = useCallback((item: FeedItem) => item.uniqueId, []);
 
   const getItemLayout = useCallback((_: any, index: number) => ({
     length: SCREEN_HEIGHT,
@@ -147,7 +182,10 @@ export const GameFeed: React.FC = () => {
   };
 
   const handleSelectGame = (gameId: string) => {
-    const gameIndex = feedData.findIndex(g => g.id === gameId);
+    const gameIndex = feedData.findIndex(item => {
+      if ('isAd' in item) return false;
+      return (item as FeedGame).id === gameId;
+    });
     if (gameIndex >= 0) {
       flatListRef.current?.scrollToIndex({ index: gameIndex, animated: true });
     }
@@ -183,6 +221,7 @@ export const GameFeed: React.FC = () => {
         maxToRenderPerBatch={2}
         windowSize={3}
         initialNumToRender={1}
+        scrollEnabled={!isGamePlaying}
       />
     );
   };
@@ -197,22 +236,24 @@ export const GameFeed: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerBtn} />
-        <View style={styles.headerTabs}>
-          <TouchableOpacity onPress={() => handleTabPress('explore')} style={styles.headerTab}>
-            <Text style={[styles.headerTabText, activeTab === 'explore' && styles.headerTabTextActive]}>Explore</Text>
-            {activeTab === 'explore' && <View style={styles.headerTabIndicator} />}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleTabPress('foryou')} style={styles.headerTab}>
-            <Text style={[styles.headerTabText, activeTab === 'foryou' && styles.headerTabTextActive]}>For You</Text>
-            {activeTab === 'foryou' && <View style={styles.headerTabIndicator} />}
+      {!isGamePlaying && (
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.headerBtn} />
+          <View style={styles.headerTabs}>
+            <TouchableOpacity onPress={() => handleTabPress('explore')} style={styles.headerTab}>
+              <Text style={[styles.headerTabText, activeTab === 'explore' && styles.headerTabTextActive]}>Explore</Text>
+              {activeTab === 'explore' && <View style={styles.headerTabIndicator} />}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleTabPress('foryou')} style={styles.headerTab}>
+              <Text style={[styles.headerTabText, activeTab === 'foryou' && styles.headerTabTextActive]}>For You</Text>
+              {activeTab === 'foryou' && <View style={styles.headerTabIndicator} />}
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => setShowSearch(true)}>
+            <Ionicons name="search" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => setShowSearch(true)}>
-          <Ionicons name="search" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      )}
 
       <ScrollView
         ref={horizontalScrollRef}
@@ -221,6 +262,7 @@ export const GameFeed: React.FC = () => {
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleHorizontalScroll}
         contentOffset={{ x: SCREEN_WIDTH, y: 0 }}
+        scrollEnabled={!isGamePlaying}
       >
         <View style={styles.page}>{renderComingSoon()}</View>
         <View style={styles.page}>{renderFeed()}</View>

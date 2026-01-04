@@ -3,23 +3,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
 
-// Token management
-let authToken: string | null = null;
-
+// Token management - always read from AsyncStorage to avoid stale cache
 export const setToken = async (token: string | null) => {
-  authToken = token;
   if (token) {
+    console.log('[API] Saving token to AsyncStorage');
     await AsyncStorage.setItem('authToken', token);
   } else {
+    console.log('[API] Clearing token from AsyncStorage');
     await AsyncStorage.removeItem('authToken');
   }
 };
 
 export const getToken = async () => {
-  if (!authToken) {
-    authToken = await AsyncStorage.getItem('authToken');
-  }
-  return authToken;
+  const token = await AsyncStorage.getItem('authToken');
+  console.log('[API] Got token from AsyncStorage:', token ? 'found' : 'not found');
+  return token;
 };
 
 const headers = async () => {
@@ -178,7 +176,7 @@ export const messages = {
     return request(`/conversations/${userId}`);
   },
   
-  send: async (data: { conversationId?: string; recipientId?: string; text: string }) => {
+  send: async (data: { conversationId?: string; recipientId?: string; text?: string; gameShare?: { gameId: string } }) => {
     return request('/messages', {
       method: 'POST',
       body: JSON.stringify(data),

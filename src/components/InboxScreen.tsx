@@ -47,7 +47,9 @@ interface Message {
     name: string;
     icon: string;
     color: string;
-  };
+    thumbnail?: string;
+    description?: string;
+  } | null;
 }
 
 interface Story {
@@ -209,39 +211,21 @@ export const InboxScreen: React.FC = () => {
     return `${days}d`;
   };
 
-  // Parse game share from message text
-  const parseGameShare = (text: string) => {
-    const gameMatch = text.match(/\[GAME:([^\]]+)\]/);
-    if (gameMatch) {
-      const gameId = gameMatch[1];
-      // Extract game info from the message
-      const nameMatch = text.match(/Check out ([^!]+)!/);
-      const iconMatch = text.match(/! ([^\n]+)\n/);
-      return {
-        id: gameId,
-        name: nameMatch ? nameMatch[1] : 'Game',
-        icon: iconMatch ? iconMatch[1].trim() : '🎮',
-        displayText: text.replace(/\[GAME:[^\]]+\]/, '').trim(),
-      };
-    }
-    return null;
-  };
-
   // Render a game share card in chat
-  const renderGameShareCard = (gameInfo: { id: string; name: string; icon: string; displayText: string }, isMe: boolean) => (
+  const renderGameShareCard = (gameShare: NonNullable<Message['gameShare']>, isMe: boolean) => (
     <View style={[styles.gameShareCard, { backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : colors.surface }]}>
       <View style={styles.gameShareHeader}>
-        <Text style={styles.gameShareIcon}>{gameInfo.icon}</Text>
+        <View style={[styles.gameShareIconBg, { backgroundColor: gameShare.color || '#6366f1' }]}>
+          <Text style={styles.gameShareIcon}>{gameShare.icon}</Text>
+        </View>
         <View style={styles.gameShareInfo}>
-          <Text style={[styles.gameShareName, { color: isMe ? '#fff' : colors.text }]}>{gameInfo.name}</Text>
+          <Text style={[styles.gameShareName, { color: isMe ? '#fff' : colors.text }]}>{gameShare.name}</Text>
           <Text style={[styles.gameShareLabel, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>Tap to play</Text>
         </View>
+        <View style={[styles.gameSharePlayBtn, { backgroundColor: isMe ? 'rgba(255,255,255,0.2)' : colors.primary }]}>
+          <Ionicons name="play" size={16} color="#fff" />
+        </View>
       </View>
-      {gameInfo.displayText && !gameInfo.displayText.includes('Check out') && (
-        <Text style={[styles.gameShareMessage, { color: isMe ? 'rgba(255,255,255,0.9)' : colors.textSecondary }]}>
-          {gameInfo.displayText.replace(/🎮.*\n/, '').replace(/"([^"]+)"/, '$1').trim()}
-        </Text>
-      )}
     </View>
   );
 
@@ -526,9 +510,8 @@ export const InboxScreen: React.FC = () => {
                 contentContainerStyle={styles.chatMessagesContent}
                 inverted={false}
                 renderItem={({ item }) => {
-                  const gameShare = parseGameShare(item.text);
-                  
-                  if (gameShare) {
+                  // Use gameShare data from backend
+                  if (item.gameShare) {
                     return (
                       <TouchableOpacity 
                         style={[
@@ -536,8 +519,12 @@ export const InboxScreen: React.FC = () => {
                           { backgroundColor: item.isMe ? colors.primary : colors.surface, padding: 0, overflow: 'hidden' }
                         ]}
                         activeOpacity={0.8}
+                        onPress={() => {
+                          // TODO: Navigate to game
+                          console.log('Open game:', item.gameShare?.id);
+                        }}
                       >
-                        {renderGameShareCard(gameShare, item.isMe)}
+                        {renderGameShareCard(item.gameShare, item.isMe)}
                       </TouchableOpacity>
                     );
                   }
@@ -1138,15 +1125,22 @@ const styles = StyleSheet.create({
   gameShareCard: {
     padding: 12,
     borderRadius: 16,
-    minWidth: 180,
+    minWidth: 200,
   },
   gameShareHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  gameShareIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   gameShareIcon: {
-    fontSize: 32,
-    marginRight: 10,
+    fontSize: 24,
   },
   gameShareInfo: {
     flex: 1,
@@ -1159,9 +1153,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  gameShareMessage: {
-    fontSize: 13,
-    marginTop: 8,
-    fontStyle: 'italic',
+  gameSharePlayBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
