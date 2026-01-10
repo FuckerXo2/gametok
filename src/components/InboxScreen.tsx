@@ -13,6 +13,7 @@ import {
   Alert,
   Dimensions,
   StatusBar,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +28,48 @@ import { UserProfileModal } from './UserProfileModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
+
+// Game thumbnails for rich previews
+const GAME_THUMBNAILS: Record<string, string> = {
+  '2048': `${GAMES_HOST}/thumbnails/2048.png`,
+  '2048-v2': `${GAMES_HOST}/thumbnails/2048-v2.png`,
+  'tetris': `${GAMES_HOST}/thumbnails/tetris.png`,
+  'hextris': `${GAMES_HOST}/thumbnails/hextris-v2.png`,
+  'hextris-v2': `${GAMES_HOST}/thumbnails/hextris-v2.png`,
+  'pacman': `${GAMES_HOST}/thumbnails/pacman.png`,
+  'snake-io': `${GAMES_HOST}/thumbnails/snake-io.png`,
+  'flappy-bird': `${GAMES_HOST}/thumbnails/flappy-bird.png`,
+  'doodle-jump': `${GAMES_HOST}/thumbnails/doodle-jump.png`,
+  'breakout': `${GAMES_HOST}/thumbnails/breakout.png`,
+  'pong': `${GAMES_HOST}/thumbnails/pong.png`,
+  'space-invaders': `${GAMES_HOST}/thumbnails/space-invaders.png`,
+  'fruit-slicer': `${GAMES_HOST}/thumbnails/fruit-slicer.png`,
+  'geometry-dash': `${GAMES_HOST}/thumbnails/geometry-dash.png`,
+  'crossy-road': `${GAMES_HOST}/thumbnails/crossy-road.png`,
+  'piano-tiles': `${GAMES_HOST}/thumbnails/piano-tiles.png`,
+  'memory-match': `${GAMES_HOST}/thumbnails/memory-match.png`,
+  'tic-tac-toe': `${GAMES_HOST}/thumbnails/tic-tac-toe.png`,
+  'connect4': `${GAMES_HOST}/thumbnails/connect4.png`,
+  'bubble-pop': `${GAMES_HOST}/thumbnails/bubble-pop.png`,
+  'ball-bounce': `${GAMES_HOST}/thumbnails/ball-bounce.png`,
+  'basketball-3d': `${GAMES_HOST}/thumbnails/basketball-3d.png`,
+  'block-blast': `${GAMES_HOST}/thumbnails/block-blast.png`,
+  'color-match': `${GAMES_HOST}/thumbnails/color-match.png`,
+  'simon-says': `${GAMES_HOST}/thumbnails/simon-says.png`,
+  'number-tap': `${GAMES_HOST}/thumbnails/number-tap.png`,
+  'tower-blocks-3d': `${GAMES_HOST}/thumbnails/tower-blocks-3d.png`,
+  'asteroids': `${GAMES_HOST}/thumbnails/asteroids.png`,
+  'whack-a-mole': `${GAMES_HOST}/thumbnails/whack-a-mole.png`,
+  'aim-trainer': `${GAMES_HOST}/thumbnails/aim-trainer.png`,
+  'racer': `${GAMES_HOST}/thumbnails/racer.png`,
+  'hyperspace': `${GAMES_HOST}/thumbnails/hyperspace.png`,
+  'towermaster': `${GAMES_HOST}/thumbnails/towermaster.png`,
+  'chess': `${GAMES_HOST}/thumbnails/chess.png`,
+  'rock-paper-scissors': `${GAMES_HOST}/thumbnails/rock-paper-scissors.png`,
+  'tap-tap-dash': `${GAMES_HOST}/thumbnails/tap-tap-dash.png`,
+  'basketball': `${GAMES_HOST}/thumbnails/basketball.png`,
+  'stack-ball': `${GAMES_HOST}/thumbnails/ball-bounce.png`,
+};
 
 interface Conversation {
   id: string;
@@ -231,23 +274,51 @@ export const InboxScreen: React.FC = () => {
     return `${days}d`;
   };
 
-  // Render a game share card in chat
-  const renderGameShareCard = (gameShare: NonNullable<Message['gameShare']>, isMe: boolean) => (
-    <View style={[styles.gameShareCard, { backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : colors.surface }]}>
-      <View style={styles.gameShareHeader}>
-        <View style={[styles.gameShareIconBg, { backgroundColor: gameShare.color || '#FF8E53' }]}>
-          <Text style={styles.gameShareIcon}>{gameShare.icon}</Text>
-        </View>
-        <View style={styles.gameShareInfo}>
-          <Text style={[styles.gameShareName, { color: isMe ? '#fff' : colors.text }]}>{gameShare.name}</Text>
-          <Text style={[styles.gameShareLabel, { color: isMe ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>Tap to play</Text>
-        </View>
-        <View style={[styles.gameSharePlayBtn, { backgroundColor: isMe ? 'rgba(255,255,255,0.2)' : colors.primary }]}>
-          <Ionicons name="play" size={16} color="#fff" />
+  // Render a game share card in chat - rich media preview like TikTok/iMessage
+  const renderGameShareCard = (gameShare: NonNullable<Message['gameShare']>, isMe: boolean) => {
+    const thumbnailUrl = GAME_THUMBNAILS[gameShare.id];
+    
+    return (
+      <View style={styles.gameShareCard}>
+        {/* Game Screenshot Background */}
+        <View style={styles.gameShareImageContainer}>
+          {thumbnailUrl ? (
+            <Image 
+              source={{ uri: thumbnailUrl }}
+              style={styles.gameShareImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.gameShareImage, { backgroundColor: gameShare.color || '#FF8E53' }]} />
+          )}
+          
+          {/* Gradient overlay for text readability */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.gameShareGradient}
+          />
+          
+          {/* Play button in center */}
+          <View style={styles.gameSharePlayOverlay}>
+            <View style={styles.gameSharePlayCircle}>
+              <Ionicons name="play" size={28} color="#fff" style={{ marginLeft: 3 }} />
+            </View>
+          </View>
+          
+          {/* Game info at bottom */}
+          <View style={styles.gameShareOverlay}>
+            <View style={styles.gameShareMeta}>
+              <Text style={styles.gameShareTitle}>{gameShare.name}</Text>
+              <Text style={styles.gameShareSubtitle}>Tap to play</Text>
+            </View>
+            <View style={[styles.gameShareBadge, { backgroundColor: gameShare.color || '#FF8E53' }]}>
+              <Text style={styles.gameShareBadgeText}>{gameShare.icon}</Text>
+            </View>
+          </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   // Filter conversations based on search
   const filteredConversations = searchQuery.trim() 
@@ -1254,44 +1325,80 @@ const styles = StyleSheet.create({
   emptyActivityText: {
     fontSize: 15,
   },
-  // Game Share Card styles
+  // Game Share Card styles - Rich media preview
   gameShareCard: {
-    padding: 12,
+    width: 220,
     borderRadius: 16,
-    minWidth: 200,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a2e',
   },
-  gameShareHeader: {
-    flexDirection: 'row',
+  gameShareImageContainer: {
+    width: '100%',
+    height: 280,
+    position: 'relative',
+  },
+  gameShareImage: {
+    width: '100%',
+    height: '100%',
+  },
+  gameShareGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+  },
+  gameSharePlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  gameShareIconBg: {
-    width: 44,
-    height: 44,
+  gameSharePlayCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  gameShareOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  gameShareMeta: {
+    flex: 1,
+  },
+  gameShareTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  gameShareSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  gameShareBadge: {
+    width: 36,
+    height: 36,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
-  gameShareIcon: {
-    fontSize: 24,
-  },
-  gameShareInfo: {
-    flex: 1,
-  },
-  gameShareName: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  gameShareLabel: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  gameSharePlayBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+  gameShareBadgeText: {
+    fontSize: 18,
   },
   // Game Player Modal styles
   gameModal: {
