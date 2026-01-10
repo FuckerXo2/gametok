@@ -1436,11 +1436,12 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
   },
   messageTimestamp: {
-    fontSize: 11,
+    fontSize: 13,
     textAlign: 'center',
-    marginVertical: 12,
+    marginVertical: 16,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    fontWeight: '500',
   },
   // Game Player Modal styles
   gameModal: {
