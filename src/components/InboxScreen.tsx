@@ -634,7 +634,7 @@ export const InboxScreen: React.FC = () => {
                       <TouchableOpacity 
                         style={[
                           item.isMe ? styles.sentBubble : styles.receivedBubble,
-                          { backgroundColor: item.isMe ? colors.primary : colors.surface, padding: 0, overflow: 'hidden' }
+                          { backgroundColor: 'transparent', padding: 0, overflow: 'hidden' }
                         ]}
                         activeOpacity={0.8}
                         onPress={() => {
@@ -1327,14 +1327,14 @@ const styles = StyleSheet.create({
   },
   // Game Share Card styles - Rich media preview
   gameShareCard: {
-    width: 180,
+    width: 160,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a2e',
   },
   gameShareImageContainer: {
     width: '100%',
-    height: 220,
+    height: 260,
     position: 'relative',
   },
   gameShareImage: {
