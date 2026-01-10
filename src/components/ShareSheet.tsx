@@ -35,7 +35,7 @@ interface ShareSheetProps {
   gameName: string;
   gameIcon?: string;
   gameColor?: string;
-  onSendToFriend?: (friendId: string, gameId: string) => Promise<void>;
+  onSendToFriend?: (friendId: string, gameId: string, isChallenge?: boolean) => Promise<void>;
 }
 
 const EXTERNAL_SHARE_OPTIONS = [
@@ -63,6 +63,8 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  const [showIntentModal, setShowIntentModal] = useState(false);
 
   // Load friends (following list)
   useEffect(() => {
@@ -86,26 +88,35 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const toggleFriendSelection = async (friendId: string) => {
+  const toggleFriendSelection = async (friend: Friend) => {
     // If already sent, do nothing
-    if (sentTo.has(friendId)) return;
+    if (sentTo.has(friend.id)) return;
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
-    // Send immediately on tap (like TikTok)
-    setSentTo(prev => new Set(prev).add(friendId));
+    // Show intent modal
+    setSelectedFriend(friend);
+    setShowIntentModal(true);
+  };
+  
+  const handleSendIntent = async (isChallenge: boolean) => {
+    if (!selectedFriend) return;
+    
+    setShowIntentModal(false);
+    setSentTo(prev => new Set(prev).add(selectedFriend.id));
     
     try {
-      await onSendToFriend?.(friendId, gameId);
+      await onSendToFriend?.(selectedFriend.id, gameId, isChallenge);
     } catch (e) {
       console.error('Failed to send:', e);
-      // Remove from sent if failed
       setSentTo(prev => {
         const newSet = new Set(prev);
-        newSet.delete(friendId);
+        newSet.delete(selectedFriend.id);
         return newSet;
       });
     }
+    
+    setSelectedFriend(null);
   };
 
   const getShareUrl = () => `https://gametok.app/game/${gameId}`;
@@ -147,7 +158,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       return (
         <TouchableOpacity
           style={styles.friendItem}
-          onPress={() => toggleFriendSelection(item.id)}
+          onPress={() => toggleFriendSelection(item)}
           activeOpacity={0.7}
           disabled={isSent}
         >
@@ -174,7 +185,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
         </TouchableOpacity>
       );
     },
-    [sentTo]
+    [sentTo, colors]
   );
 
   const renderExternalOption = ({ item }: { item: typeof EXTERNAL_SHARE_OPTIONS[0] }) => (
@@ -194,6 +205,8 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   useEffect(() => {
     if (!visible) {
       setSentTo(new Set());
+      setSelectedFriend(null);
+      setShowIntentModal(false);
     }
   }, [visible]);
 
@@ -252,6 +265,50 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           />
         </View>
       </View>
+      
+      {/* Intent Modal - Send or Challenge */}
+      <Modal visible={showIntentModal} transparent animationType="fade" onRequestClose={() => setShowIntentModal(false)}>
+        <TouchableOpacity 
+          style={styles.intentOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowIntentModal(false)}
+        >
+          <View style={[styles.intentSheet, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.intentTitle, { color: colors.text }]}>
+              Send to {selectedFriend?.displayName || selectedFriend?.username}
+            </Text>
+            
+            <TouchableOpacity 
+              style={[styles.intentOption, { backgroundColor: colors.primary }]}
+              onPress={() => handleSendIntent(false)}
+            >
+              <Ionicons name="paper-plane" size={24} color="#fff" />
+              <View style={styles.intentOptionText}>
+                <Text style={styles.intentOptionTitle}>Send Game</Text>
+                <Text style={styles.intentOptionDesc}>Share this game for them to try</Text>
+              </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.intentOption, { backgroundColor: '#FF3B30' }]}
+              onPress={() => handleSendIntent(true)}
+            >
+              <Ionicons name="trophy" size={24} color="#fff" />
+              <View style={styles.intentOptionText}>
+                <Text style={styles.intentOptionTitle}>Challenge</Text>
+                <Text style={styles.intentOptionDesc}>Compete for the highest score</Text>
+              </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.intentCancel, { backgroundColor: colors.border }]}
+              onPress={() => setShowIntentModal(false)}
+            >
+              <Text style={[styles.intentCancelText, { color: colors.text }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </Modal>
   );
 };
@@ -397,6 +454,56 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 6,
     textAlign: 'center',
+  },
+  // Intent Modal styles
+  intentOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  intentSheet: {
+    width: '100%',
+    borderRadius: 20,
+    padding: 20,
+  },
+  intentTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  intentOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+  },
+  intentOptionText: {
+    marginLeft: 14,
+    flex: 1,
+  },
+  intentOptionTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  intentOptionDesc: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 2,
+  },
+  intentCancel: {
+    padding: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  intentCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

@@ -133,11 +133,11 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
     setShowShareSheet(true);
   }, []);
 
-  const handleSendToFriend = useCallback(async (friendId: string, gameId: string) => {
+  const handleSendToFriend = useCallback(async (friendId: string, gameId: string, isChallenge?: boolean) => {
     try {
       await messages.send({
         recipientId: friendId,
-        gameShare: { gameId },
+        gameShare: { gameId, isChallenge: isChallenge || false },
       });
     } catch (e) {
       console.error('Failed to send game to friend:', e);
