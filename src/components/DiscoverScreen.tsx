@@ -30,13 +30,46 @@ import { ShareProfileCard } from './ShareProfileCard';
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
-// Game icon images - using actual game assets where available
-const GAME_ICONS: Record<string, any> = {
-  // Games with actual assets
-  'fruit-slicer': { uri: `${GAMES_HOST}/fruit-slicer/Watermelon.png` },
-  'basketball-3d': { uri: `${GAMES_HOST}/basketball-3d/assets/ball.png` },
-  'space-invaders': { uri: `${GAMES_HOST}/space-invaders/assets/img/invader.png` },
-  'racer': { uri: `${GAMES_HOST}/racer/images/sprites.png` },
+// Game thumbnails - actual game screenshots
+const GAME_THUMBNAILS: Record<string, string> = {
+  '2048': `${GAMES_HOST}/thumbnails/2048.png`,
+  '2048-v2': `${GAMES_HOST}/thumbnails/2048-v2.png`,
+  'tetris': `${GAMES_HOST}/thumbnails/tetris.png`,
+  'hextris': `${GAMES_HOST}/thumbnails/hextris-v2.png`,
+  'hextris-v2': `${GAMES_HOST}/thumbnails/hextris-v2.png`,
+  'pacman': `${GAMES_HOST}/thumbnails/pacman.png`,
+  'snake-io': `${GAMES_HOST}/thumbnails/snake-io.png`,
+  'flappy-bird': `${GAMES_HOST}/thumbnails/flappy-bird.png`,
+  'doodle-jump': `${GAMES_HOST}/thumbnails/doodle-jump.png`,
+  'breakout': `${GAMES_HOST}/thumbnails/breakout.png`,
+  'pong': `${GAMES_HOST}/thumbnails/pong.png`,
+  'space-invaders': `${GAMES_HOST}/thumbnails/space-invaders.png`,
+  'fruit-slicer': `${GAMES_HOST}/thumbnails/fruit-slicer.png`,
+  'geometry-dash': `${GAMES_HOST}/thumbnails/geometry-dash.png`,
+  'crossy-road': `${GAMES_HOST}/thumbnails/crossy-road.png`,
+  'piano-tiles': `${GAMES_HOST}/thumbnails/piano-tiles.png`,
+  'memory-match': `${GAMES_HOST}/thumbnails/memory-match.png`,
+  'tic-tac-toe': `${GAMES_HOST}/thumbnails/tic-tac-toe.png`,
+  'connect4': `${GAMES_HOST}/thumbnails/connect4.png`,
+  'bubble-pop': `${GAMES_HOST}/thumbnails/bubble-pop.png`,
+  'ball-bounce': `${GAMES_HOST}/thumbnails/ball-bounce.png`,
+  'basketball-3d': `${GAMES_HOST}/thumbnails/basketball-3d.png`,
+  'block-blast': `${GAMES_HOST}/thumbnails/block-blast.png`,
+  'color-match': `${GAMES_HOST}/thumbnails/color-match.png`,
+  'simon-says': `${GAMES_HOST}/thumbnails/simon-says.png`,
+  'number-tap': `${GAMES_HOST}/thumbnails/number-tap.png`,
+  'tower-blocks-3d': `${GAMES_HOST}/thumbnails/tower-blocks-3d.png`,
+  'asteroids': `${GAMES_HOST}/thumbnails/asteroids.png`,
+  'whack-a-mole': `${GAMES_HOST}/thumbnails/whack-a-mole.png`,
+  'aim-trainer': `${GAMES_HOST}/thumbnails/aim-trainer.png`,
+  'racer': `${GAMES_HOST}/thumbnails/racer.png`,
+  'hyperspace': `${GAMES_HOST}/thumbnails/hyperspace.png`,
+  'towermaster': `${GAMES_HOST}/thumbnails/towermaster.png`,
+  'chess': `${GAMES_HOST}/thumbnails/chess.png`,
+  'rock-paper-scissors': `${GAMES_HOST}/thumbnails/rock-paper-scissors.png`,
+  'tap-tap-dash': `${GAMES_HOST}/thumbnails/tap-tap-dash.png`,
+  'basketball': `${GAMES_HOST}/thumbnails/basketball.png`,
+  'stack-ball': `${GAMES_HOST}/thumbnails/ball-bounce.png`, // fallback
 };
 
 interface UserResult {
@@ -107,97 +140,41 @@ interface PlayingGame {
   color?: string;
 }
 
-// Game Icon component with fallback
-const GameIcon: React.FC<{ gameId: string; color?: string; icon?: string; size?: number }> = ({ 
-  gameId, color = '#FF8E53', icon = '🎮', size = 44 
+// Game Icon component - shows actual game screenshot
+const GameIcon: React.FC<{ gameId: string; color?: string; size?: number }> = ({ 
+  gameId, color = '#FF8E53', size = 44 
 }) => {
   const [imageError, setImageError] = useState(false);
-  const iconSource = GAME_ICONS[gameId];
+  const thumbnailUrl = GAME_THUMBNAILS[gameId];
   
-  if (iconSource && !imageError) {
+  if (thumbnailUrl && !imageError) {
     return (
       <Image 
-        source={iconSource}
-        style={{ width: size, height: size, borderRadius: size * 0.27 }}
+        source={{ uri: thumbnailUrl }}
+        style={{ 
+          width: size, 
+          height: size, 
+          borderRadius: size * 0.22,
+          backgroundColor: '#1a1a2e',
+        }}
         resizeMode="cover"
         onError={() => setImageError(true)}
       />
     );
   }
   
-  // Clean fallback with game initial
-  const getGameInitial = (id: string) => {
-    // Special cases for better display
-    const initials: Record<string, string> = {
-      '2048': '2K',
-      '2048-v2': '2K',
-      'tetris': 'T',
-      'hextris': 'H',
-      'hextris-v2': 'H',
-      'pacman': 'P',
-      'snake-io': 'S',
-      'flappy-bird': 'F',
-      'doodle-jump': 'D',
-      'crossy-road': 'C',
-      'stack-ball': 'SB',
-      'tic-tac-toe': 'X',
-      'connect4': 'C4',
-      'geometry-dash': 'G',
-      'piano-tiles': 'PT',
-      'tower-blocks-3d': 'TB',
-      'memory-match': 'M',
-      'block-blast': 'BB',
-      'color-match': 'CM',
-      'simon-says': 'SS',
-      'number-tap': '#',
-      'breakout': 'B',
-      'bubble-pop': 'BP',
-      'ball-bounce': 'BB',
-      'pong': 'P',
-      'asteroids': 'A',
-      'whack-a-mole': 'W',
-      'aim-trainer': 'AT',
-      'hyperspace': 'HS',
-      'towermaster': 'TM',
-      'chess': '♞',
-      'rock-paper-scissors': 'RPS',
-      'tap-tap-dash': 'TD',
-      'basketball': 'B',
-    };
-    return initials[id] || id.charAt(0).toUpperCase();
-  };
-  
-  const initial = getGameInitial(gameId);
-  const fontSize = initial.length > 2 ? size * 0.28 : initial.length > 1 ? size * 0.36 : size * 0.45;
-  
+  // Fallback - simple colored square with initial
+  const initial = gameId.split('-')[0].charAt(0).toUpperCase();
   return (
     <View style={{ 
       width: size, 
       height: size, 
-      borderRadius: size * 0.27, 
+      borderRadius: size * 0.22, 
       backgroundColor: color,
       justifyContent: 'center',
       alignItems: 'center',
-      overflow: 'hidden',
     }}>
-      {/* Subtle gradient overlay */}
-      <View style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        borderRadius: size * 0.27,
-      }} />
-      <Text style={{ 
-        fontSize, 
-        fontWeight: '800', 
-        color: '#fff',
-        textShadowColor: 'rgba(0,0,0,0.2)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 2,
-      }}>{initial}</Text>
+      <Text style={{ fontSize: size * 0.4, fontWeight: '700', color: '#fff' }}>{initial}</Text>
     </View>
   );
 };
