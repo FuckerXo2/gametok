@@ -12,11 +12,12 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { messages as messagesApi } from '../services/api';
+import { messages as messagesApi, users } from '../services/api';
 import { Avatar } from './Avatar';
 
 interface UserProfile {
@@ -34,6 +35,7 @@ interface UserProfileModalProps {
   visible: boolean;
   onClose: () => void;
   user: UserProfile | null;
+  onFriendStatusChange?: (userId: string, isFriend: boolean) => void;
 }
 
 interface ChatMessage {
@@ -50,20 +52,78 @@ const SUGGESTED_FRIENDS = [
   { id: '4', name: 'casual_gamer', avatar: null, status: 'RECENTLY JOINED', online: true },
 ];
 
-export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user }) => {
+export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user, onFriendStatusChange }) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [isAdded, setIsAdded] = useState(false);
+  const [isAdded, setIsAdded] = useState(user?.isFriend ?? false);
+  const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  
+  // Update isAdded when user changes or modal opens
+  React.useEffect(() => {
+    if (user) {
+      setIsAdded(user.isFriend);
+      setIsMutual(false); // Reset mutual status when user changes
+    }
+  }, [user?.id, user?.isFriend, visible]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [isToggling, setIsToggling] = useState(false);
+
+  const handleReport = () => {
+    Alert.alert(
+      'Report User',
+      'Why are you reporting this user?',
+      [
+        { text: 'Spam', onPress: () => Alert.alert('Reported', 'Thank you for your report. We will review this user.') },
+        { text: 'Inappropriate Content', onPress: () => Alert.alert('Reported', 'Thank you for your report. We will review this user.') },
+        { text: 'Harassment', onPress: () => Alert.alert('Reported', 'Thank you for your report. We will review this user.') },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const handleBlock = () => {
+    Alert.alert(
+      'Block User',
+      `Are you sure you want to block ${user?.username}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: () => Alert.alert('Blocked', 'This user has been blocked.') },
+      ]
+    );
+  };
+
+  const showOptions = () => {
+    Alert.alert(
+      'Options',
+      '',
+      [
+        { text: 'Report User', onPress: handleReport },
+        { text: 'Block User', style: 'destructive', onPress: handleBlock },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   if (!user) return null;
 
-  const handleAdd = () => {
-    setIsAdded(!isAdded);
+  const handleAdd = async () => {
+    if (isToggling) return;
+    setIsToggling(true);
+    try {
+      const result = await users.follow(user.id);
+      setIsAdded(result.following);
+      setIsMutual(result.isMutual || false);
+      // Notify parent component of the change
+      onFriendStatusChange?.(user.id, result.following);
+    } catch (error) {
+      console.log('Follow/unfollow error:', error);
+    } finally {
+      setIsToggling(false);
+    }
   };
 
   const openChat = async () => {
@@ -205,7 +265,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 <TouchableOpacity style={styles.topBtn}>
                   <Ionicons name="share-outline" size={24} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.topBtn}>
+                <TouchableOpacity style={styles.topBtn} onPress={showOptions}>
                   <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -228,11 +288,23 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 <TouchableOpacity 
                   style={[styles.addButtonSmall, isAdded && styles.addedButton]} 
                   onPress={handleAdd}
+                  disabled={isToggling}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name={isAdded ? "checkmark" : "person-add"} size={18} color="#fff" />
-                  <Text style={styles.addButtonText}>{isAdded ? 'Added' : 'Add'}</Text>
+                  {isToggling ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name={isAdded ? "checkmark" : "person-add"} size={18} color="#fff" />
+                      <Text style={styles.addButtonText}>{isAdded ? (isMutual ? 'Friends' : 'Requested') : 'Add'}</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.chatBtn} onPress={openChat}>
+                <TouchableOpacity 
+                  style={styles.chatBtn} 
+                  onPress={openChat}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                   <Ionicons name="chatbubble" size={16} color="#fff" />
                   <Text style={styles.chatBtnText}>Chat</Text>
                 </TouchableOpacity>
@@ -288,7 +360,7 @@ const styles = StyleSheet.create({
   statusText: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2, textTransform: 'uppercase' },
   bio: { color: 'rgba(255,255,255,0.9)', fontSize: 14, marginBottom: 12, lineHeight: 20 },
   actionButtons: { flexDirection: 'row', gap: 8 },
-  addButtonSmall: { flex: 1, height: 40, borderRadius: 20, backgroundColor: '#3B82F6', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  addButtonSmall: { flex: 1, height: 40, borderRadius: 20, backgroundColor: '#FF8E53', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
   addedButton: { backgroundColor: 'rgba(255,255,255,0.2)' },
   addButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   chatBtn: { flex: 1, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },

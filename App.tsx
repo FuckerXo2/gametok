@@ -9,8 +9,7 @@ import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { DiscoverScreen } from './src/components/DiscoverScreen';
-import { AuthScreen } from './src/components/AuthScreen';
-import { OnboardingScreen } from './src/components/OnboardingScreen';
+import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 
@@ -58,9 +57,8 @@ const AppContent = () => {
 
   const checkOnboarding = async () => {
     try {
-      // Only skip onboarding if user is already authenticated
-      // New users always see onboarding until they sign up
       const seen = await AsyncStorage.getItem('hasSeenOnboarding');
+      // Only skip onboarding if already seen AND authenticated
       setShowOnboarding(seen !== 'true');
     } catch {
       setShowOnboarding(true);
@@ -69,17 +67,8 @@ const AppContent = () => {
     }
   };
 
-  // Mark onboarding complete only when user successfully authenticates
-  useEffect(() => {
-    if (isAuthenticated) {
-      AsyncStorage.setItem('hasSeenOnboarding', 'true');
-      setShowOnboarding(false);
-    }
-  }, [isAuthenticated]);
-
   const handleOnboardingComplete = () => {
-    // Just hide onboarding to show auth, but don't persist yet
-    // It will only persist once they actually sign up/login
+    AsyncStorage.setItem('hasSeenOnboarding', 'true');
     setShowOnboarding(false);
   };
 
@@ -91,14 +80,14 @@ const AppContent = () => {
     );
   }
 
-  // Show onboarding for users who haven't signed up yet
-  if (showOnboarding && !isAuthenticated) {
-    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+  // Show onboarding until explicitly completed
+  if (showOnboarding) {
+    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
   }
 
-  // Require login
+  // Require auth after onboarding
   if (!isAuthenticated) {
-    return <AuthScreen />;
+    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
   }
 
   return <MainApp />;

@@ -17,7 +17,7 @@ const lightColors: ThemeColors = {
   text: '#000',
   textSecondary: '#666',
   border: '#e0e0e0',
-  primary: '#FE2C55',
+  primary: '#FF8E53',
   accent: '#25F4EE',
 };
 
@@ -27,7 +27,7 @@ const darkColors: ThemeColors = {
   text: '#fff',
   textSecondary: '#888',
   border: '#333',
-  primary: '#FE2C55',
+  primary: '#FF8E53',
   accent: '#25F4EE',
 };
 

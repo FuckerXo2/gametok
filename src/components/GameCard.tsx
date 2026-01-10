@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { 
   View, 
   StyleSheet, 
@@ -33,6 +33,20 @@ const MULTIPLAYER_GAMES = [
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Get dynamic dimensions for iPad support
+const useScreenDimensions = () => {
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+  
+  return dimensions;
+};
+
 interface GameCardProps {
   game: {
     id: string;
@@ -51,6 +65,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
+  const { width: screenWidth, height: screenHeight } = useScreenDimensions();
   
   const [score, setScore] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
@@ -141,24 +156,26 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width: screenWidth, height: screenHeight }]}>
       <StatusBar hidden={isPlaying} />
       
       {/* Single WebView - used for both preview and playing */}
       {isActive && (
-        <WebView
-          ref={webViewRef}
-          source={{ uri: gameUrl }}
-          style={styles.webView}
-          scrollEnabled={false}
-          bounces={false}
-          onLoadEnd={() => setGameLoaded(true)}
-          onMessage={handleMessage}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-        />
+        <View style={styles.webViewContainer} pointerEvents={isPlaying ? 'auto' : 'none'}>
+          <WebView
+            ref={webViewRef}
+            source={{ uri: gameUrl }}
+            style={styles.webView}
+            scrollEnabled={false}
+            bounces={false}
+            onLoadEnd={() => setGameLoaded(true)}
+            onMessage={handleMessage}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+          />
+        </View>
       )}
       
       {/* Overlay - only show when NOT playing */}
@@ -177,6 +194,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
             style={styles.centerPlayOverlay} 
             onPress={handlePlay}
             activeOpacity={0.8}
+            hitSlop={{ top: 50, bottom: 50, left: 50, right: 50 }}
           >
             <View style={styles.centerPlayButton}>
               <Ionicons name="play" size={32} color="rgba(255,255,255,0.9)" style={{ marginLeft: 4 }} />
@@ -219,19 +237,22 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
 
           {/* Side Actions - TikTok style */}
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-            {/* Game icon as "profile" */}
-            <View style={styles.actionBtn}>
-              <View style={[styles.gameIconCircle, { backgroundColor: game.color }]}>
-                <Text style={styles.gameIconEmoji}>{game.icon}</Text>
-              </View>
-            </View>
+            {/* Trophy/Leaderboard icon */}
+            <TouchableOpacity style={styles.actionBtn} onPress={() => {}} activeOpacity={0.7}>
+              <Ionicons 
+                name="trophy" 
+                size={33} 
+                color="#FFD700" 
+                style={styles.iconShadow}
+              />
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
               <Animated.View style={{ transform: [{ scale: heartScale }] }}>
                 <Ionicons 
                   name={isLiked ? "heart" : "heart"} 
                   size={35} 
-                  color={isLiked ? '#fe2c55' : '#fff'} 
+                  color={isLiked ? '#FF8E53' : '#fff'} 
                   style={styles.iconShadow}
                 />
               </Animated.View>
@@ -248,16 +269,6 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
               <Text style={styles.actionCount}>{formatNumber(commentCount)}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.7}>
-              <Ionicons 
-                name={isSaved ? "bookmark" : "bookmark-outline"} 
-                size={33} 
-                color={isSaved ? '#fce300' : '#fff'} 
-                style={styles.iconShadow}
-              />
-              <Text style={styles.actionCount}>{formatNumber(Math.floor(Math.random() * 50) + 10)}</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
               <Ionicons 
                 name="arrow-redo" 
@@ -266,6 +277,15 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
                 style={styles.iconShadow}
               />
               <Text style={styles.actionCount}>Share</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.7}>
+              <Ionicons 
+                name={isSaved ? "bookmark" : "bookmark-outline"} 
+                size={33} 
+                color={isSaved ? '#fce300' : '#fff'} 
+                style={styles.iconShadow}
+              />
             </TouchableOpacity>
           </View>
 
@@ -324,6 +344,9 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
     backgroundColor: '#000',
+  },
+  webViewContainer: {
+    ...StyleSheet.absoluteFillObject,
   },
   webView: {
     ...StyleSheet.absoluteFillObject,

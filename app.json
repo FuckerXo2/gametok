@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "GameTok",
+    "name": "GameTOK",
     "slug": "gametok",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,15 +15,19 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "com.swipeplay.app"
+      "supportsTablet": true,
+      "bundleIdentifier": "com.olasubomi.gametok",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.swipeplay.app"
+      "package": "com.olasubomi.gametok"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -36,7 +40,12 @@
         }
       ],
       "expo-web-browser",
-      "@react-native-google-signin/google-signin",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."
+        }
+      ],
       [
         "expo-tracking-transparency",
         {

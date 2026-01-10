@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -8,13 +8,36 @@ import {
   TextInput,
   FlatList,
   ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
+  Modal,
+  StatusBar,
+  Dimensions,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
-import { users } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { users, messages as messagesApi, feed } from '../services/api';
 import { UserProfileModal } from './UserProfileModal';
 import { Avatar } from './Avatar';
+import { GameSearchModal } from './GameSearchModal';
+import { FriendRequestsScreen } from './FriendRequestsScreen';
+import { ShareProfileCard } from './ShareProfileCard';
+
+const GAMES_HOST = 'https://gametok-games.pages.dev';
+
+// Game icon images - using actual game assets where available
+const GAME_ICONS: Record<string, any> = {
+  // Games with actual assets
+  'fruit-slicer': { uri: `${GAMES_HOST}/fruit-slicer/Watermelon.png` },
+  'basketball-3d': { uri: `${GAMES_HOST}/basketball-3d/assets/ball.png` },
+  'space-invaders': { uri: `${GAMES_HOST}/space-invaders/assets/img/invader.png` },
+  'racer': { uri: `${GAMES_HOST}/racer/images/sprites.png` },
+};
 
 interface UserResult {
   id: string;
@@ -34,6 +57,151 @@ interface SelectedUser {
   isFriend: boolean;
 }
 
+interface Follower {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+}
+
+interface Message {
+  id: string;
+  text: string;
+  senderId: string;
+  isMe: boolean;
+  createdAt: string;
+}
+
+interface ChatUser {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+}
+
+interface FriendActivity {
+  id: string;
+  type: string;
+  user: {
+    id: string;
+    username: string;
+    displayName?: string;
+    avatar?: string;
+  };
+  game: {
+    id: string;
+    name: string;
+    icon: string;
+    thumbnail?: string;
+    color?: string;
+  };
+  score: number;
+  createdAt: string;
+}
+
+interface PlayingGame {
+  id: string;
+  name: string;
+  icon: string;
+  thumbnail?: string;
+  color?: string;
+}
+
+// Game Icon component with fallback
+const GameIcon: React.FC<{ gameId: string; color?: string; icon?: string; size?: number }> = ({ 
+  gameId, color = '#FF8E53', icon = '🎮', size = 44 
+}) => {
+  const [imageError, setImageError] = useState(false);
+  const iconSource = GAME_ICONS[gameId];
+  
+  if (iconSource && !imageError) {
+    return (
+      <Image 
+        source={iconSource}
+        style={{ width: size, height: size, borderRadius: size * 0.27 }}
+        resizeMode="cover"
+        onError={() => setImageError(true)}
+      />
+    );
+  }
+  
+  // Clean fallback with game initial
+  const getGameInitial = (id: string) => {
+    // Special cases for better display
+    const initials: Record<string, string> = {
+      '2048': '2K',
+      '2048-v2': '2K',
+      'tetris': 'T',
+      'hextris': 'H',
+      'hextris-v2': 'H',
+      'pacman': 'P',
+      'snake-io': 'S',
+      'flappy-bird': 'F',
+      'doodle-jump': 'D',
+      'crossy-road': 'C',
+      'stack-ball': 'SB',
+      'tic-tac-toe': 'X',
+      'connect4': 'C4',
+      'geometry-dash': 'G',
+      'piano-tiles': 'PT',
+      'tower-blocks-3d': 'TB',
+      'memory-match': 'M',
+      'block-blast': 'BB',
+      'color-match': 'CM',
+      'simon-says': 'SS',
+      'number-tap': '#',
+      'breakout': 'B',
+      'bubble-pop': 'BP',
+      'ball-bounce': 'BB',
+      'pong': 'P',
+      'asteroids': 'A',
+      'whack-a-mole': 'W',
+      'aim-trainer': 'AT',
+      'hyperspace': 'HS',
+      'towermaster': 'TM',
+      'chess': '♞',
+      'rock-paper-scissors': 'RPS',
+      'tap-tap-dash': 'TD',
+      'basketball': 'B',
+    };
+    return initials[id] || id.charAt(0).toUpperCase();
+  };
+  
+  const initial = getGameInitial(gameId);
+  const fontSize = initial.length > 2 ? size * 0.28 : initial.length > 1 ? size * 0.36 : size * 0.45;
+  
+  return (
+    <View style={{ 
+      width: size, 
+      height: size, 
+      borderRadius: size * 0.27, 
+      backgroundColor: color,
+      justifyContent: 'center',
+      alignItems: 'center',
+      overflow: 'hidden',
+    }}>
+      {/* Subtle gradient overlay */}
+      <View style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: size * 0.27,
+      }} />
+      <Text style={{ 
+        fontSize, 
+        fontWeight: '800', 
+        color: '#fff',
+        textShadowColor: 'rgba(0,0,0,0.2)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+      }}>{initial}</Text>
+    </View>
+  );
+};
+
 const SUGGESTED_FRIENDS = [
   { id: '1', name: 'gamer_pro', avatar: null, reason: '5 mutual friends', reasonType: 'mutual', online: true },
   { id: '2', name: 'ninja_master', avatar: null, reason: 'Playing Stack Ball 🎱', reasonType: 'playing', online: true },
@@ -41,14 +209,11 @@ const SUGGESTED_FRIENDS = [
   { id: '4', name: 'casual_gamer', avatar: null, reason: 'Plays similar games', reasonType: 'similar', online: true },
 ];
 
-const PLAYING_NOW = [
-  { id: '1', user: 'gamer_pro', avatar: null, game: 'Stack Ball', gameIcon: '🎱', score: 2450 },
-  { id: '2', user: 'speedrunner', avatar: null, game: 'Fruit Slicer', gameIcon: '🍉', score: 1890 },
-];
-
 export const DiscoverScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { isAuthenticated, user } = useAuth();
+  const gameWebViewRef = useRef<WebView>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
@@ -56,6 +221,177 @@ export const DiscoverScreen: React.FC = () => {
   const [addedUsers, setAddedUsers] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<SelectedUser | null>(null);
   const [showUserProfile, setShowUserProfile] = useState(false);
+  const [showGameSearch, setShowGameSearch] = useState(false);
+  const [showRequests, setShowRequests] = useState(false);
+  const [showAddOptions, setShowAddOptions] = useState(false);
+  const [followers, setFollowers] = useState<Follower[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [followedBack, setFollowedBack] = useState<Set<string>>(new Set());
+  
+  // Friends activity state
+  const [friendsActivity, setFriendsActivity] = useState<FriendActivity[]>([]);
+  const [loadingActivity, setLoadingActivity] = useState(true);
+  const [isGlobalActivity, setIsGlobalActivity] = useState(false);
+  
+  // Chat modal state
+  const [chatUser, setChatUser] = useState<ChatUser | null>(null);
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [loadingChat, setLoadingChat] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  
+  // Game modal state
+  const [playingGame, setPlayingGame] = useState<PlayingGame | null>(null);
+  const [gameLoaded, setGameLoaded] = useState(false);
+
+  // Mock activity data for preview
+  const MOCK_ACTIVITY: FriendActivity[] = [
+    { id: 'm1', type: 'score', user: { id: '1', username: 'alex_gamer', displayName: 'Alex', avatar: undefined }, game: { id: '2048', name: '2048', icon: '🔢', thumbnail: `${GAMES_HOST}/icons/2048.svg`, color: '#edc22e' }, score: 2048, createdAt: new Date(Date.now() - 60000).toISOString() },
+    { id: 'm2', type: 'score', user: { id: '2', username: 'sarah_plays', displayName: 'Sarah', avatar: undefined }, game: { id: 'stack-ball', name: 'Stack Ball', icon: '🎱', thumbnail: `${GAMES_HOST}/icons/stack-ball.svg`, color: '#FF6B6B' }, score: 1500, createdAt: new Date(Date.now() - 180000).toISOString() },
+    { id: 'm3', type: 'score', user: { id: '3', username: 'mike_score', displayName: 'Mike', avatar: undefined }, game: { id: 'fruit-slicer', name: 'Fruit Slicer', icon: '🍉', thumbnail: `${GAMES_HOST}/icons/fruit-slicer.svg`, color: '#4CAF50' }, score: 3200, createdAt: new Date(Date.now() - 7200000).toISOString() },
+  ];
+
+  // Fetch friends activity (recent scores) - falls back to global if no friends activity
+  const fetchFriendsActivity = useCallback(async () => {
+    if (!isAuthenticated) {
+      // Not logged in - show mock data
+      setFriendsActivity(MOCK_ACTIVITY);
+      setIsGlobalActivity(true);
+      setLoadingActivity(false);
+      return;
+    }
+    try {
+      const data = await feed.activity(10);
+      if (data.activity && data.activity.length > 0) {
+        setFriendsActivity(data.activity);
+        setIsGlobalActivity(false);
+      } else {
+        // No friends activity, fetch global
+        const globalData = await feed.global(10);
+        if (globalData.activity && globalData.activity.length > 0) {
+          setFriendsActivity(globalData.activity);
+        } else {
+          // No global activity either, show mock
+          setFriendsActivity(MOCK_ACTIVITY);
+        }
+        setIsGlobalActivity(true);
+      }
+    } catch (error) {
+      console.log('Failed to fetch friends activity:', error);
+      // Try global as fallback
+      try {
+        const globalData = await feed.global(10);
+        if (globalData.activity && globalData.activity.length > 0) {
+          setFriendsActivity(globalData.activity);
+        } else {
+          setFriendsActivity(MOCK_ACTIVITY);
+        }
+        setIsGlobalActivity(true);
+      } catch (e) {
+        console.log('Failed to fetch global activity:', e);
+        setFriendsActivity(MOCK_ACTIVITY);
+        setIsGlobalActivity(true);
+      }
+    } finally {
+      setLoadingActivity(false);
+    }
+  }, [isAuthenticated]);
+
+  // Fetch pending requests (people who added you but you haven't added back)
+  const fetchFollowers = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) return;
+    try {
+      const [requestsData, countData] = await Promise.all([
+        users.pendingRequests(user.id),
+        users.pendingCount(user.id)
+      ]);
+      setFollowers(Array.isArray(requestsData) ? requestsData : []);
+      setPendingCount(countData.count || 0);
+    } catch (error) {
+      console.log('Failed to fetch pending requests:', error);
+    }
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    fetchFollowers();
+    fetchFriendsActivity();
+  }, [fetchFollowers, fetchFriendsActivity]);
+
+  // Format time ago
+  const formatTimeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days === 1) return 'yesterday';
+    return `${days}d ago`;
+  };
+
+  // Open chat with a user
+  const openChat = async (chatUserData: ChatUser) => {
+    setChatUser(chatUserData);
+    setLoadingChat(true);
+    setChatMessages([]);
+    setShowRequests(false); // Close friend requests screen
+    
+    try {
+      const data = await messagesApi.getConversation(chatUserData.id);
+      setChatMessages(data.messages || []);
+    } catch (error) {
+      console.log('Failed to load chat:', error);
+    } finally {
+      setLoadingChat(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!messageText.trim() || !chatUser || sendingMessage) return;
+    
+    setSendingMessage(true);
+    const text = messageText.trim();
+    setMessageText('');
+    
+    try {
+      const data = await messagesApi.send({
+        recipientId: chatUser.id,
+        text,
+      });
+      
+      setChatMessages(prev => [...prev, data.message]);
+    } catch (error) {
+      console.log('Failed to send message:', error);
+      setMessageText(text);
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  const handleFollowBack = async (userId: string) => {
+    try {
+      await users.follow(userId);
+      setFollowedBack(prev => new Set([...prev, userId]));
+    } catch (error) {
+      console.log('Follow back error:', error);
+    }
+  };
+
+  const handleFriendStatusChange = (userId: string, isFriend: boolean) => {
+    if (isFriend) {
+      setAddedUsers(prev => new Set([...prev, userId]));
+    } else {
+      setAddedUsers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(userId);
+        return newSet;
+      });
+    }
+  };
 
   const openUserProfile = (user: { id: string; name: string; avatar: string | null; reason?: string; online: boolean }) => {
     setSelectedUser({
@@ -103,39 +439,40 @@ export const DiscoverScreen: React.FC = () => {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Find Friends</Text>
-        <TouchableOpacity>
-          <Ionicons name="qr-code-outline" size={24} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search by username"
-          placeholderTextColor={colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Find Friends</Text>
+          <TouchableOpacity onPress={() => setShowAddOptions(true)}>
+            <Ionicons name="person-add-outline" size={24} color={colors.text} />
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
 
-      {/* Search Results */}
-      {searchQuery.length >= 2 ? (
-        <View style={styles.searchResults}>
-          {isSearching ? (
-            <ActivityIndicator style={styles.loader} color={colors.primary} />
+        {/* Search Bar */}
+        <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
+          <Ionicons name="search" size={20} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search by username"
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}>
+              <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Search Results */}
+        {searchQuery.length >= 2 ? (
+          <View style={styles.searchResults}>
+            {isSearching ? (
+              <ActivityIndicator style={styles.loader} color={colors.primary} />
           ) : searchResults.length === 0 ? (
             <Text style={[styles.noResults, { color: colors.textSecondary }]}>
               No users found for "{searchQuery}"
@@ -180,6 +517,7 @@ export const DiscoverScreen: React.FC = () => {
                       e.stopPropagation();
                       if (!addedUsers.has(item.id)) handleAdd(item.id);
                     }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     {addedUsers.has(item.id) ? (
                       <Ionicons name="checkmark" size={18} color={colors.textSecondary} />
@@ -194,59 +532,84 @@ export const DiscoverScreen: React.FC = () => {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Quick Actions */}
-          <View style={styles.quickActions}>
-            <TouchableOpacity style={[styles.quickAction, { backgroundColor: colors.surface }]}>
-              <View style={[styles.quickIcon, { backgroundColor: '#5856D6' }]}>
-                <Ionicons name="people" size={22} color="#fff" />
+          {/* Friend Requests Row - same style as Inbox activity */}
+          <TouchableOpacity 
+            style={[styles.activityRow, { borderBottomColor: colors.border }]}
+            onPress={() => setShowRequests(true)}
+          >
+            <View style={[styles.activityIcon, { backgroundColor: colors.primary }]}>
+              <Ionicons name="people" size={20} color="#fff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: colors.text }]}>Friend Requests</Text>
+              {pendingCount > 0 && (
+                <Text style={[styles.activityPreview, { color: colors.textSecondary }]} numberOfLines={1}>
+                  You have new requests
+                </Text>
+              )}
+            </View>
+            {pendingCount > 0 && (
+              <View style={[styles.activityBadge, { backgroundColor: '#FF3B30' }]}>
+                <Text style={styles.activityBadgeText}>{pendingCount}</Text>
               </View>
-              <Text style={[styles.quickLabel, { color: colors.text }]}>Contacts</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={[styles.quickAction, { backgroundColor: colors.surface }]}>
-              <View style={[styles.quickIcon, { backgroundColor: '#FF9500' }]}>
-                <Ionicons name="link" size={22} color="#fff" />
-              </View>
-              <Text style={[styles.quickLabel, { color: colors.text }]}>Invite</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={[styles.quickAction, { backgroundColor: colors.surface }]}>
-              <View style={[styles.quickIcon, { backgroundColor: '#34C759' }]}>
-                <Ionicons name="share-outline" size={22} color="#fff" />
-              </View>
-              <Text style={[styles.quickLabel, { color: colors.text }]}>Share</Text>
-            </TouchableOpacity>
-          </View>
+            )}
+          </TouchableOpacity>
 
-          {/* Playing Now */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>🎮 Playing Now</Text>
-            {PLAYING_NOW.map((item) => (
-              <TouchableOpacity 
-                key={item.id} 
-                style={[styles.playingCard, { backgroundColor: colors.surface }]}
-              >
-                <Avatar uri={item.avatar} size={48} style={styles.playingAvatar} />
-                <View style={styles.playingInfo}>
-                  <Text style={[styles.playingUser, { color: colors.text }]}>{item.user}</Text>
-                  <View style={styles.playingGame}>
-                    <Text style={styles.playingGameIcon}>{item.gameIcon}</Text>
-                    <Text style={[styles.playingGameName, { color: colors.textSecondary }]}>
-                      {item.game}
+          {/* Activity Feed - Clean rows */}
+          {loadingActivity ? (
+            <ActivityIndicator style={{ marginVertical: 30 }} color={colors.primary} />
+          ) : friendsActivity.length > 0 ? (
+            friendsActivity.slice(0, 6).map((item) => {
+              const isRecent = (new Date().getTime() - new Date(item.createdAt).getTime()) < 300000; // 5 mins
+              return (
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={[styles.activityRow, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    openChat({
+                      id: item.user.id,
+                      username: item.user.username,
+                      displayName: item.user.displayName,
+                      avatar: item.user.avatar,
+                    });
+                  }}
+                >
+                  <Avatar uri={item.user.avatar} size={48} />
+                  <View style={styles.activityRowContent}>
+                    <Text style={[styles.activityRowName, { color: colors.text }]}>
+                      {item.user.displayName || item.user.username}
+                    </Text>
+                    <Text style={[styles.activityRowStatus, { color: colors.textSecondary }]}>
+                      {isRecent ? 'playing' : `played ${formatTimeAgo(item.createdAt)}`} · {item.game.name}
                     </Text>
                   </View>
-                </View>
-                <View style={styles.playingScore}>
-                  <Text style={[styles.scoreValue, { color: colors.primary }]}>
-                    {item.score.toLocaleString()}
-                  </Text>
-                  <TouchableOpacity style={[styles.challengeBtn, { borderColor: colors.primary }]}>
-                    <Text style={[styles.challengeText, { color: colors.primary }]}>Challenge</Text>
+                  <TouchableOpacity 
+                    style={styles.activityRowGame}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setPlayingGame({
+                        id: item.game.id,
+                        name: item.game.name,
+                        icon: item.game.icon,
+                        thumbnail: item.game.thumbnail,
+                        color: item.game.color,
+                      });
+                    }}
+                  >
+                    <View style={styles.gameThumbWrapper}>
+                      <GameIcon 
+                        gameId={item.game.id} 
+                        color={item.game.color} 
+                        icon={item.game.icon}
+                        size={44}
+                      />
+                      {isRecent && <View style={styles.liveIndicator} />}
+                    </View>
                   </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
+                </TouchableOpacity>
+              );
+            })
+          ) : null}
 
           {/* Suggested Friends */}
           <View style={styles.section}>
@@ -285,8 +648,174 @@ export const DiscoverScreen: React.FC = () => {
         visible={showUserProfile}
         onClose={() => setShowUserProfile(false)}
         user={selectedUser}
+        onFriendStatusChange={handleFriendStatusChange}
       />
-    </View>
+
+      {/* Game Search Modal */}
+      <GameSearchModal
+        visible={showGameSearch}
+        onClose={() => setShowGameSearch(false)}
+        onSelectGame={() => setShowGameSearch(false)}
+      />
+
+      {/* Friend Requests Screen */}
+      {showRequests && (
+        <View style={StyleSheet.absoluteFill}>
+          <FriendRequestsScreen
+            visible={showRequests}
+            onClose={() => {
+              setShowRequests(false);
+              fetchFollowers(); // Refresh count when closing
+            }}
+            onOpenChat={openChat}
+          />
+        </View>
+      )}
+
+      {/* Chat Modal */}
+      <Modal
+        visible={chatUser !== null}
+        animationType="slide"
+        onRequestClose={() => setChatUser(null)}
+      >
+        {chatUser && (
+          <View style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+            {/* Chat Header */}
+            <View style={[styles.chatModalHeader, { borderBottomColor: colors.border }]}>
+              <TouchableOpacity onPress={() => setChatUser(null)}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </TouchableOpacity>
+              <View style={styles.chatModalUser}>
+                <Avatar uri={chatUser.avatar} size={40} />
+                <Text style={[styles.chatModalUsername, { color: colors.text }]}>
+                  {chatUser.displayName || chatUser.username}
+                </Text>
+              </View>
+              <View style={{ width: 28 }} />
+            </View>
+
+            {/* Chat Messages */}
+            {loadingChat ? (
+              <View style={styles.chatLoading}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={chatMessages}
+                keyExtractor={(item) => item.id}
+                style={styles.chatMessages}
+                contentContainerStyle={styles.chatMessagesContent}
+                renderItem={({ item }) => (
+                  <View style={[
+                    item.isMe ? styles.sentBubble : styles.receivedBubble,
+                    { backgroundColor: item.isMe ? colors.primary : colors.surface }
+                  ]}>
+                    <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
+                      {item.text}
+                    </Text>
+                  </View>
+                )}
+                ListEmptyComponent={
+                  <View style={styles.emptyChat}>
+                    <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
+                      Say hi! 👋
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+
+            {/* Chat Input */}
+            <View style={[styles.chatInputArea, { paddingBottom: insets.bottom || 16, borderTopColor: colors.border }]}>
+              <View style={[styles.chatInputBox, { backgroundColor: colors.surface }]}>
+                <TextInput
+                  style={[styles.chatInput, { color: colors.text }]}
+                  placeholder="Send a message"
+                  placeholderTextColor={colors.textSecondary}
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  onSubmitEditing={sendMessage}
+                  returnKeyType="send"
+                />
+              </View>
+              <TouchableOpacity 
+                style={styles.chatSendBtn} 
+                onPress={sendMessage}
+                disabled={!messageText.trim() || sendingMessage}
+              >
+                <Ionicons 
+                  name="send" 
+                  size={24} 
+                  color={messageText.trim() ? colors.primary : colors.textSecondary} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </Modal>
+
+      {/* Game Player Modal */}
+      <Modal
+        visible={playingGame !== null}
+        animationType="slide"
+        onRequestClose={() => setPlayingGame(null)}
+      >
+        {playingGame && (
+          <View style={styles.gameModal}>
+            <StatusBar hidden />
+            
+            {/* Game WebView */}
+            <WebView
+              ref={gameWebViewRef}
+              source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }}
+              style={styles.gameWebView}
+              scrollEnabled={false}
+              bounces={false}
+              onLoadEnd={() => {
+                setGameLoaded(true);
+                gameWebViewRef.current?.injectJavaScript(`
+                  if (window.startGame) window.startGame();
+                  if (window.start) window.start();
+                  true;
+                `);
+              }}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+            />
+
+            {/* Loading overlay */}
+            {!gameLoaded && (
+              <View style={styles.gameLoadingOverlay}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={styles.gameLoadingText}>Loading {playingGame.name}...</Text>
+              </View>
+            )}
+
+            {/* Close button */}
+            <TouchableOpacity 
+              style={[styles.gameCloseBtn, { top: insets.top + 10 }]}
+              onPress={() => {
+                setPlayingGame(null);
+                setGameLoaded(false);
+              }}
+            >
+              <BlurView intensity={50} tint="dark" style={styles.gameCloseBtnBlur}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </BlurView>
+            </TouchableOpacity>
+          </View>
+        )}
+      </Modal>
+
+      {/* Share Profile Card */}
+      <ShareProfileCard
+        visible={showAddOptions}
+        onClose={() => setShowAddOptions(false)}
+      />
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -319,6 +848,72 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+  },
+  activityIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  activityContent: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  activityPreview: {
+    fontSize: 13,
+  },
+  activityBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  activityBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  browseGamesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 14,
+    borderRadius: 14,
+  },
+  browseGamesIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  browseGamesText: {
+    flex: 1,
+  },
+  browseGamesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  browseGamesSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
   },
   searchResults: {
     flex: 1,
@@ -403,60 +998,49 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 12,
   },
-  playingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 10,
-  },
-  playingAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  playingEmoji: {
-    fontSize: 24,
-  },
-  playingInfo: {
+  // Activity Row Styles (clean, minimal)
+  activityRowContent: {
     flex: 1,
+    marginLeft: 12,
   },
-  playingUser: {
+  activityRowName: {
     fontSize: 15,
     fontWeight: '600',
   },
-  playingGame: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  activityRowStatus: {
+    fontSize: 13,
     marginTop: 2,
   },
-  playingGameIcon: {
-    fontSize: 14,
-    marginRight: 4,
+  activityRowGame: {
+    position: 'relative',
   },
-  playingGameName: {
-    fontSize: 13,
-  },
-  playingScore: {
-    alignItems: 'flex-end',
-  },
-  scoreValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  challengeBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+  gameThumbWrapper: {
+    position: 'relative',
+    width: 44,
+    height: 44,
     borderRadius: 12,
-    borderWidth: 1,
+    overflow: 'hidden',
   },
-  challengeText: {
-    fontSize: 11,
-    fontWeight: '600',
+  gameThumbCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gameIconEmoji: {
+    fontSize: 20,
+  },
+  liveIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#34C759',
+    borderWidth: 2,
+    borderColor: '#000',
   },
   friendRow: {
     flexDirection: 'row',
@@ -505,5 +1089,193 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  addBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+  },
+  addedBackBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  addBackBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Add Options Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  optionsSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 12,
+    paddingBottom: 34,
+    paddingHorizontal: 16,
+  },
+  optionsHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: 'rgba(128,128,128,0.3)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  optionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  optionContent: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  optionSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  cancelBtn: {
+    marginTop: 12,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Chat Modal Styles
+  chatModal: {
+    flex: 1,
+  },
+  chatModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+  },
+  chatModalUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  chatModalUsername: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  chatLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatMessages: {
+    flex: 1,
+  },
+  chatMessagesContent: {
+    padding: 16,
+    gap: 8,
+  },
+  sentBubble: {
+    alignSelf: 'flex-end',
+    maxWidth: '75%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomRightRadius: 4,
+  },
+  receivedBubble: {
+    alignSelf: 'flex-start',
+    maxWidth: '75%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+  },
+  bubbleText: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  emptyChat: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyChatText: {
+    fontSize: 16,
+  },
+  chatInputArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 0.5,
+    gap: 10,
+  },
+  chatInputBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  chatInput: {
+    flex: 1,
+    fontSize: 16,
+  },
+  chatSendBtn: {
+    padding: 4,
+  },
+  // Game Modal Styles
+  gameModal: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  gameWebView: {
+    flex: 1,
+  },
+  gameLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gameLoadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 12,
+  },
+  gameCloseBtn: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 100,
+  },
+  gameCloseBtnBlur: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
   },
 });

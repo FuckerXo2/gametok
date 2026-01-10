@@ -35,7 +35,16 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
     headers: await headers(),
   });
   
-  const data = await response.json();
+  // Get response text first to handle non-JSON responses
+  const text = await response.text();
+  
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error('[API] Invalid JSON response:', text.substring(0, 200));
+    throw new Error('Server returned invalid response');
+  }
   
   if (!response.ok) {
     throw new Error(data.error || 'Request failed');
@@ -103,6 +112,14 @@ export const users = {
     return request(`/users/${userId}/followers`);
   },
   
+  pendingRequests: async (userId: string) => {
+    return request(`/users/${userId}/pending-requests`);
+  },
+  
+  pendingCount: async (userId: string) => {
+    return request(`/users/${userId}/pending-count`);
+  },
+  
   following: async (userId: string) => {
     return request(`/users/${userId}/following`);
   },
@@ -163,6 +180,9 @@ export const likes = {
 export const feed = {
   activity: async (limit = 20) => {
     return request(`/feed/activity?limit=${limit}`);
+  },
+  global: async (limit = 20) => {
+    return request(`/feed/global?limit=${limit}`);
   },
 };
 

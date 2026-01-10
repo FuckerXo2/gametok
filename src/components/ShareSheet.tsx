@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { users } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 const AVATAR_SIZE = 60;
 
@@ -57,6 +58,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { colors } = useTheme();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -74,9 +76,11 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     setLoading(true);
     try {
       const following = await users.following(user.id);
-      setFriends(following);
+      // Ensure we got an array
+      setFriends(Array.isArray(following) ? following : []);
     } catch (e) {
       console.error('Failed to load friends:', e);
+      setFriends([]);
     } finally {
       setLoading(false);
     }
@@ -151,19 +155,19 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             {item.avatar ? (
               <Image source={{ uri: item.avatar }} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Text style={styles.avatarText}>
+              <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
+                <Text style={[styles.avatarText, { color: colors.text }]}>
                   {(item.displayName || item.username).charAt(0).toUpperCase()}
                 </Text>
               </View>
             )}
             {isSent && (
-              <View style={styles.sentBadge}>
+              <View style={[styles.sentBadge, { borderColor: colors.surface }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />
               </View>
             )}
           </View>
-          <Text style={[styles.friendName, isSent && styles.friendNameSent]} numberOfLines={1}>
+          <Text style={[styles.friendName, { color: colors.text }, isSent && styles.friendNameSent]} numberOfLines={1}>
             {item.displayName || item.username}
           </Text>
           {isSent && <Text style={styles.sentLabel}>Sent</Text>}
@@ -182,7 +186,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       <View style={[styles.externalIcon, { backgroundColor: item.color }]}>
         <Ionicons name={item.icon as any} size={24} color={(item as any).iconColor || '#fff'} />
       </View>
-      <Text style={styles.externalLabel}>{item.id === 'copy' && copiedLink ? 'Copied!' : item.label}</Text>
+      <Text style={[styles.externalLabel, { color: colors.text }]}>{item.id === 'copy' && copiedLink ? 'Copied!' : item.label}</Text>
     </TouchableOpacity>
   );
 
@@ -198,15 +202,15 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
         
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16, backgroundColor: colors.surface }]}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity style={styles.searchIcon}>
-              <Ionicons name="search" size={22} color="#8E8E93" />
+              <Ionicons name="search" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
-            <Text style={styles.title}>Send to</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Send to</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color="#fff" />
+              <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -218,7 +222,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
               </View>
             ) : friends.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   Follow people to share games with them
                 </Text>
               </View>
@@ -235,7 +239,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           </View>
 
           {/* Divider */}
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           {/* External Share Options */}
           <FlatList

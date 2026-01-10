@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Platform, Alert } from 'react-native';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import { auth, getToken } from '../services/api';
 
 interface User {
@@ -23,8 +21,6 @@ interface AuthContextType {
   signup: (username: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
-  loginWithApple: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -80,57 +76,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const loginWithGoogle = async () => {
-    // For now, show coming soon - full implementation needs Google Cloud Console setup
-    Alert.alert(
-      'Coming Soon',
-      'Google Sign-In requires additional setup. Use username/password for now.',
-      [{ text: 'OK' }]
-    );
-    // TODO: Implement with @react-native-google-signin/google-signin
-    // 1. Configure in Google Cloud Console
-    // 2. Add iOS/Android client IDs to app.json
-    // 3. Call GoogleSignin.signIn() and send token to backend
-  };
-
-  const loginWithApple = async () => {
-    if (Platform.OS !== 'ios') {
-      Alert.alert('Error', 'Apple Sign-In is only available on iOS');
-      return;
-    }
-
-    try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-
-      // Create user from Apple credential
-      const appleUsername = `apple_${credential.user.substring(0, 8)}`;
-      const displayName = credential.fullName?.givenName 
-        ? `${credential.fullName.givenName} ${credential.fullName.familyName || ''}`.trim()
-        : 'Apple User';
-
-      // Try to login, if fails create account
-      try {
-        const data = await auth.login(appleUsername, credential.user);
-        setUser(data.user);
-      } catch {
-        // User doesn't exist, create account
-        const data = await auth.signup(appleUsername, credential.user, displayName);
-        setUser(data.user);
-      }
-    } catch (e: any) {
-      if (e.code === 'ERR_REQUEST_CANCELED') {
-        // User cancelled, don't show error
-        return;
-      }
-      throw e;
-    }
-  };
-
   return (
     <AuthContext.Provider value={{
       user,
@@ -140,8 +85,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signup,
       logout,
       refreshUser,
-      loginWithGoogle,
-      loginWithApple,
     }}>
       {children}
     </AuthContext.Provider>

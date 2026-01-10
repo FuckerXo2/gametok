@@ -79,7 +79,7 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
           <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
             <View style={styles.adHeader}>
               <View style={styles.adIconPlaceholder}>
-                <Ionicons name="megaphone" size={24} color="#6366f1" />
+                <Ionicons name="megaphone" size={24} color="#FF8E53" />
               </View>
               <View style={styles.adTitleContainer}>
                 <Text style={styles.adHeadline}>Advertisement</Text>
@@ -138,7 +138,7 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
         <View style={styles.adContent}>
           {!adLoaded && (
             <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#6366f1" />
+              <ActivityIndicator size="large" color="#FF8E53" />
             </View>
           )}
           
@@ -160,7 +160,7 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
         <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
           <View style={styles.adHeader}>
             <View style={styles.adIconPlaceholder}>
-              <Ionicons name="megaphone" size={24} color="#6366f1" />
+              <Ionicons name="megaphone" size={24} color="#FF8E53" />
             </View>
             <View style={styles.adTitleContainer}>
               <Text style={styles.adHeadline}>Advertisement</Text>
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   mockAdButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#FF8E53',
     paddingHorizontal: 48,
     paddingVertical: 14,
     borderRadius: 12,

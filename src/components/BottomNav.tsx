@@ -17,7 +17,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
 
   const tabs: { name: TabName; icon: string; iconActive: string; label: string }[] = [
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
-    { name: 'discover', icon: 'search-outline', iconActive: 'search', label: 'Discover' },
+    { name: 'discover', icon: 'people-outline', iconActive: 'people', label: 'Connect' },
     { name: 'inbox', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', label: 'Inbox' },
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
   ];

@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   unreadBadge: {
-    backgroundColor: '#FE2C55',
+    backgroundColor: '#FF8E53',
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#FE2C55',
+    backgroundColor: '#FF8E53',
     borderWidth: 2,
     borderColor: '#000',
   },
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     color: '#999',
   },
   notificationScore: {
-    color: '#FE2C55',
+    color: '#FF8E53',
     fontSize: 13,
     marginTop: 2,
   },
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   acceptButton: {
-    backgroundColor: '#FE2C55',
+    backgroundColor: '#FF8E53',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 4,

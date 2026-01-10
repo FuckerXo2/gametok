@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 26,
-    backgroundColor: '#FE2C55',
+    backgroundColor: '#FF8E53',
     borderRadius: 8,
   },
   createButtonCenter: {

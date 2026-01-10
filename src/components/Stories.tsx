@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   avatarRingActive: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: '#FE2C55',
+    borderColor: '#FF8E53',
   },
   avatarRingAdd: {
     backgroundColor: '#1a1a1a',
@@ -290,12 +290,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   storyScoreValue: {
-    color: '#FE2C55',
+    color: '#FF8E53',
     fontSize: 48,
     fontWeight: '800',
   },
   storyPlayBtn: {
-    backgroundColor: '#FE2C55',
+    backgroundColor: '#FF8E53',
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 8,

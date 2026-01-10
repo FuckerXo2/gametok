@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -10,15 +10,23 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Alert,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { WebView } from 'react-native-webview';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { messages as messagesApi, users } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const GAMES_HOST = 'https://gametok-games.pages.dev';
 
 interface Conversation {
   id: string;
@@ -80,6 +88,7 @@ export const InboxScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
+  const gameWebViewRef = useRef<WebView>(null);
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,6 +113,16 @@ export const InboxScreen: React.FC = () => {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [newFollowers, setNewFollowers] = useState<Follower[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
+  
+  // Game modal state
+  const [playingGame, setPlayingGame] = useState<{
+    id: string;
+    name: string;
+    icon: string;
+    color: string;
+  } | null>(null);
+  const [gameLoaded, setGameLoaded] = useState(false);
+  const [gameScore, setGameScore] = useState(0);
 
   const fetchConversations = useCallback(async () => {
     if (!isAuthenticated) {
@@ -126,10 +145,11 @@ export const InboxScreen: React.FC = () => {
     if (!isAuthenticated || !user?.id) return;
     
     try {
-      const data = await users.followers(user.id);
-      setNewFollowers(data.followers || []);
+      const data = await users.pendingRequests(user.id);
+      // API returns array directly
+      setNewFollowers(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.log('Failed to fetch followers:', error);
+      console.log('Failed to fetch pending requests:', error);
     }
   }, [isAuthenticated, user?.id]);
 
@@ -215,7 +235,7 @@ export const InboxScreen: React.FC = () => {
   const renderGameShareCard = (gameShare: NonNullable<Message['gameShare']>, isMe: boolean) => (
     <View style={[styles.gameShareCard, { backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : colors.surface }]}>
       <View style={styles.gameShareHeader}>
-        <View style={[styles.gameShareIconBg, { backgroundColor: gameShare.color || '#6366f1' }]}>
+        <View style={[styles.gameShareIconBg, { backgroundColor: gameShare.color || '#FF8E53' }]}>
           <Text style={styles.gameShareIcon}>{gameShare.icon}</Text>
         </View>
         <View style={styles.gameShareInfo}>
@@ -296,7 +316,7 @@ export const InboxScreen: React.FC = () => {
             >
               {story.hasNew ? (
                 <LinearGradient
-                  colors={['#6366f1', '#a855f7', '#ec4899']}
+                  colors={['#FF6B6B', '#FF8E53', '#FFC107']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.storyGradientRing}
@@ -479,7 +499,20 @@ export const InboxScreen: React.FC = () => {
               <TouchableOpacity onPress={() => setSelectedChat(null)}>
                 <Ionicons name="chevron-back" size={28} color={colors.text} />
               </TouchableOpacity>
-              <View style={styles.chatModalUser}>
+              <TouchableOpacity 
+                style={styles.chatModalUser}
+                onPress={() => {
+                  setSelectedStoryUser({
+                    id: selectedChat.user.id,
+                    username: selectedChat.user.username,
+                    avatar: selectedChat.user.avatar || null,
+                    status: 'GAMETOK USER',
+                    isOnline: false,
+                    isFriend: false,
+                  });
+                  setShowUserProfile(true);
+                }}
+              >
                 <Avatar uri={selectedChat.user.avatar} size={40} style={styles.chatModalAvatar} />
                 <View>
                   <Text style={[styles.chatModalUsername, { color: colors.text }]}>
@@ -491,9 +524,23 @@ export const InboxScreen: React.FC = () => {
                     </Text>
                   )}
                 </View>
-              </View>
-              <TouchableOpacity>
-                <Ionicons name="call-outline" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => {
+                Alert.alert('Options', '', [
+                  { text: 'Report User', onPress: () => Alert.alert('Report User', 'Why are you reporting this user?', [
+                    { text: 'Spam', onPress: () => Alert.alert('Reported', 'Thank you for your report.') },
+                    { text: 'Inappropriate', onPress: () => Alert.alert('Reported', 'Thank you for your report.') },
+                    { text: 'Harassment', onPress: () => Alert.alert('Reported', 'Thank you for your report.') },
+                    { text: 'Cancel', style: 'cancel' },
+                  ])},
+                  { text: 'Block User', style: 'destructive', onPress: () => Alert.alert('Block', `Block ${selectedChat.user.username}?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Block', style: 'destructive', onPress: () => Alert.alert('Blocked', 'User has been blocked.') },
+                  ])},
+                  { text: 'Cancel', style: 'cancel' },
+                ]);
+              }}>
+                <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 
@@ -520,8 +567,15 @@ export const InboxScreen: React.FC = () => {
                         ]}
                         activeOpacity={0.8}
                         onPress={() => {
-                          // TODO: Navigate to game
-                          console.log('Open game:', item.gameShare?.id);
+                          // Open game in modal
+                          setPlayingGame({
+                            id: item.gameShare!.id,
+                            name: item.gameShare!.name,
+                            icon: item.gameShare!.icon,
+                            color: item.gameShare!.color,
+                          });
+                          setGameLoaded(false);
+                          setGameScore(0);
                         }}
                       >
                         {renderGameShareCard(item.gameShare, item.isMe)}
@@ -573,6 +627,7 @@ export const InboxScreen: React.FC = () => {
                 style={styles.chatInputIcon} 
                 onPress={sendMessage}
                 disabled={!messageText.trim() || sendingMessage}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons 
                   name={messageText.trim() ? "send" : "mic-outline"} 
@@ -660,6 +715,84 @@ export const InboxScreen: React.FC = () => {
             }
           />
         </View>
+      </Modal>
+
+      {/* Game Player Modal */}
+      <Modal
+        visible={playingGame !== null}
+        animationType="slide"
+        onRequestClose={() => setPlayingGame(null)}
+      >
+        {playingGame && (
+          <View style={styles.gameModal}>
+            <StatusBar hidden />
+            
+            {/* Game WebView */}
+            <WebView
+              ref={gameWebViewRef}
+              source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }}
+              style={styles.gameWebView}
+              scrollEnabled={false}
+              bounces={false}
+              onLoadEnd={() => {
+                setGameLoaded(true);
+                // Auto-start the game
+                gameWebViewRef.current?.injectJavaScript(`
+                  if (window.startGame) window.startGame();
+                  if (window.start) window.start();
+                  true;
+                `);
+              }}
+              onMessage={(event) => {
+                try {
+                  const data = JSON.parse(event.nativeEvent.data);
+                  if (data.type === 'gameOver') {
+                    setGameScore(data.score);
+                  } else if (data.type === 'score') {
+                    setGameScore(data.score);
+                  }
+                } catch (e) {}
+              }}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+            />
+
+            {/* Loading overlay */}
+            {!gameLoaded && (
+              <View style={styles.gameLoadingOverlay}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={styles.gameLoadingText}>Loading {playingGame.name}...</Text>
+              </View>
+            )}
+
+            {/* Close button */}
+            <TouchableOpacity 
+              style={[styles.gameCloseBtn, { top: insets.top + 10 }]}
+              onPress={() => setPlayingGame(null)}
+            >
+              <BlurView intensity={50} tint="dark" style={styles.gameCloseBtnBlur}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </BlurView>
+            </TouchableOpacity>
+
+            {/* Score display */}
+            {gameScore > 0 && (
+              <View style={[styles.gameScoreBadge, { top: insets.top + 10 }]}>
+                <Text style={styles.gameScoreText}>{gameScore}</Text>
+              </View>
+            )}
+
+            {/* Game info bar at bottom */}
+            <View style={[styles.gameInfoBar, { paddingBottom: insets.bottom + 10 }]}>
+              <View style={[styles.gameInfoIcon, { backgroundColor: playingGame.color }]}>
+                <Text style={styles.gameInfoEmoji}>{playingGame.icon}</Text>
+              </View>
+              <Text style={styles.gameInfoName}>{playingGame.name}</Text>
+            </View>
+          </View>
+        )}
       </Modal>
     </View>
   );
@@ -1159,5 +1292,78 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Game Player Modal styles
+  gameModal: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  gameWebView: {
+    flex: 1,
+  },
+  gameLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gameLoadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 12,
+  },
+  gameCloseBtn: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 100,
+  },
+  gameCloseBtnBlur: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  gameScoreBadge: {
+    position: 'absolute',
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    zIndex: 100,
+  },
+  gameScoreText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  gameInfoBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  gameInfoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  gameInfoEmoji: {
+    fontSize: 18,
+  },
+  gameInfoName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
