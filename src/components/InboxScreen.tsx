@@ -301,7 +301,7 @@ export const InboxScreen: React.FC = () => {
           {/* Play button in center */}
           <View style={styles.gameSharePlayOverlay}>
             <View style={styles.gameSharePlayCircle}>
-              <Ionicons name="play" size={28} color="#fff" style={{ marginLeft: 3 }} />
+              <Ionicons name="play" size={24} color="#fff" style={{ marginLeft: 2 }} />
             </View>
           </View>
           
@@ -311,13 +311,44 @@ export const InboxScreen: React.FC = () => {
               <Text style={styles.gameShareTitle}>{gameShare.name}</Text>
               <Text style={styles.gameShareSubtitle}>Tap to play</Text>
             </View>
-            <View style={[styles.gameShareBadge, { backgroundColor: gameShare.color || '#FF8E53' }]}>
-              <Text style={styles.gameShareBadgeText}>{gameShare.icon}</Text>
-            </View>
           </View>
         </View>
       </View>
     );
+  };
+  
+  // Format message timestamp like Instagram DMs
+  const formatMessageTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 86400000);
+    const messageDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    
+    const hours = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    const time = `${hours}:${mins}`;
+    
+    if (messageDay.getTime() === today.getTime()) {
+      return time;
+    } else if (messageDay.getTime() === yesterday.getTime()) {
+      return `YESTERDAY ${time}`;
+    } else if (now.getTime() - date.getTime() < 7 * 86400000) {
+      const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+      return `${days[date.getDay()]} ${time}`;
+    } else {
+      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      return `${date.getDate()} ${months[date.getMonth()]} ${time}`;
+    }
+  };
+  
+  // Check if we should show timestamp (first message or different time block)
+  const shouldShowTimestamp = (messages: Message[], index: number) => {
+    if (index === 0) return true;
+    const current = new Date(messages[index].createdAt);
+    const prev = new Date(messages[index - 1].createdAt);
+    // Show timestamp if more than 5 minutes apart
+    return current.getTime() - prev.getTime() > 5 * 60 * 1000;
   };
 
   // Filter conversations based on search
@@ -627,41 +658,57 @@ export const InboxScreen: React.FC = () => {
                 style={styles.chatMessages}
                 contentContainerStyle={styles.chatMessagesContent}
                 inverted={false}
-                renderItem={({ item }) => {
+                renderItem={({ item, index }) => {
+                  const showTime = shouldShowTimestamp(chatMessages, index);
+                  
                   // Use gameShare data from backend
                   if (item.gameShare) {
                     return (
-                      <TouchableOpacity 
-                        style={[
-                          item.isMe ? styles.sentBubble : styles.receivedBubble,
-                          { backgroundColor: 'transparent', padding: 0, overflow: 'hidden' }
-                        ]}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          // Open game in modal
-                          setPlayingGame({
-                            id: item.gameShare!.id,
-                            name: item.gameShare!.name,
-                            icon: item.gameShare!.icon,
-                            color: item.gameShare!.color,
-                          });
-                          setGameLoaded(false);
-                          setGameScore(0);
-                        }}
-                      >
-                        {renderGameShareCard(item.gameShare, item.isMe)}
-                      </TouchableOpacity>
+                      <View>
+                        {showTime && (
+                          <Text style={[styles.messageTimestamp, { color: colors.textSecondary }]}>
+                            {formatMessageTime(item.createdAt)}
+                          </Text>
+                        )}
+                        <TouchableOpacity 
+                          style={[
+                            item.isMe ? styles.sentBubble : styles.receivedBubble,
+                            { backgroundColor: 'transparent', padding: 0, overflow: 'hidden' }
+                          ]}
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            // Open game in modal
+                            setPlayingGame({
+                              id: item.gameShare!.id,
+                              name: item.gameShare!.name,
+                              icon: item.gameShare!.icon,
+                              color: item.gameShare!.color,
+                            });
+                            setGameLoaded(false);
+                            setGameScore(0);
+                          }}
+                        >
+                          {renderGameShareCard(item.gameShare, item.isMe)}
+                        </TouchableOpacity>
+                      </View>
                     );
                   }
                   
                   return (
-                    <View style={[
-                      item.isMe ? styles.sentBubble : styles.receivedBubble,
-                      { backgroundColor: item.isMe ? colors.primary : colors.surface }
-                    ]}>
-                      <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
-                        {item.text}
-                      </Text>
+                    <View>
+                      {showTime && (
+                        <Text style={[styles.messageTimestamp, { color: colors.textSecondary }]}>
+                          {formatMessageTime(item.createdAt)}
+                        </Text>
+                      )}
+                      <View style={[
+                        item.isMe ? styles.sentBubble : styles.receivedBubble,
+                        { backgroundColor: item.isMe ? colors.primary : colors.surface }
+                      ]}>
+                        <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
+                          {item.text}
+                        </Text>
+                      </View>
                     </View>
                   );
                 }}
@@ -1388,15 +1435,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
   },
-  gameShareBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gameShareBadgeText: {
-    fontSize: 18,
+  messageTimestamp: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginVertical: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   // Game Player Modal styles
   gameModal: {
