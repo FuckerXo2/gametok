@@ -62,9 +62,9 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
-  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
-  const [showIntentModal, setShowIntentModal] = useState(false);
 
   // Load friends (following list)
   useEffect(() => {
@@ -78,7 +78,6 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     setLoading(true);
     try {
       const following = await users.following(user.id);
-      // Ensure we got an array
       setFriends(Array.isArray(following) ? following : []);
     } catch (e) {
       console.error('Failed to load friends:', e);
@@ -88,35 +87,44 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const toggleFriendSelection = async (friend: Friend) => {
-    // If already sent, do nothing
-    if (sentTo.has(friend.id)) return;
+  const toggleFriendSelection = (friendId: string) => {
+    if (sentTo.has(friendId)) return;
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    setSelectedFriends(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(friendId)) {
+        newSet.delete(friendId);
+      } else {
+        newSet.add(friendId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSend = async () => {
+    if (selectedFriends.size === 0 || sending) return;
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    // Show intent modal
-    setSelectedFriend(friend);
-    setShowIntentModal(true);
-  };
-  
-  const handleSendIntent = async (isChallenge: boolean) => {
-    if (!selectedFriend) return;
-    
-    setShowIntentModal(false);
-    setSentTo(prev => new Set(prev).add(selectedFriend.id));
+    setSending(true);
     
     try {
-      await onSendToFriend?.(selectedFriend.id, gameId, isChallenge);
+      // Send to all selected friends
+      await Promise.all(
+        Array.from(selectedFriends).map(friendId => 
+          onSendToFriend?.(friendId, gameId, false)
+        )
+      );
+      
+      // Mark as sent
+      setSentTo(prev => new Set([...prev, ...selectedFriends]));
+      setSelectedFriends(new Set());
     } catch (e) {
       console.error('Failed to send:', e);
-      setSentTo(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(selectedFriend.id);
-        return newSet;
-      });
+    } finally {
+      setSending(false);
     }
-    
-    setSelectedFriend(null);
   };
 
   const getShareUrl = () => `https://gametok.app/game/${gameId}`;
@@ -143,7 +151,6 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
         Linking.openURL(`sms:&body=${encodeURIComponent(shareMessage)}`);
         break;
       case 'instagram':
-        // Instagram doesn't support direct text sharing, open app
         Linking.openURL('instagram://app');
         break;
       case 'more':
@@ -154,11 +161,13 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
 
   const renderFriend = useCallback(
     ({ item }: { item: Friend }) => {
+      const isSelected = selectedFriends.has(item.id);
       const isSent = sentTo.has(item.id);
+      
       return (
         <TouchableOpacity
           style={styles.friendItem}
-          onPress={() => toggleFriendSelection(item)}
+          onPress={() => toggleFriendSelection(item.id)}
           activeOpacity={0.7}
           disabled={isSent}
         >
@@ -172,20 +181,35 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
                 </Text>
               </View>
             )}
+            {/* Selection indicator */}
+            {isSelected && !isSent && (
+              <View style={[styles.selectedBadge, { borderColor: colors.surface }]}>
+                <Ionicons name="checkmark" size={12} color="#fff" />
+              </View>
+            )}
+            {/* Sent indicator */}
             {isSent && (
               <View style={[styles.sentBadge, { borderColor: colors.surface }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />
               </View>
             )}
           </View>
-          <Text style={[styles.friendName, { color: colors.text }, isSent && styles.friendNameSent]} numberOfLines={1}>
+          <Text 
+            style={[
+              styles.friendName, 
+              { color: colors.text }, 
+              isSent && styles.friendNameSent,
+              isSelected && !isSent && styles.friendNameSelected
+            ]} 
+            numberOfLines={1}
+          >
             {item.displayName || item.username}
           </Text>
           {isSent && <Text style={styles.sentLabel}>Sent</Text>}
         </TouchableOpacity>
       );
     },
-    [sentTo, colors]
+    [selectedFriends, sentTo, colors]
   );
 
   const renderExternalOption = ({ item }: { item: typeof EXTERNAL_SHARE_OPTIONS[0] }) => (
@@ -197,18 +221,22 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       <View style={[styles.externalIcon, { backgroundColor: item.color }]}>
         <Ionicons name={item.icon as any} size={24} color={(item as any).iconColor || '#fff'} />
       </View>
-      <Text style={[styles.externalLabel, { color: colors.text }]}>{item.id === 'copy' && copiedLink ? 'Copied!' : item.label}</Text>
+      <Text style={[styles.externalLabel, { color: colors.text }]}>
+        {item.id === 'copy' && copiedLink ? 'Copied!' : item.label}
+      </Text>
     </TouchableOpacity>
   );
 
-  // Reset sent state when modal closes
+  // Reset state when modal closes
   useEffect(() => {
     if (!visible) {
+      setSelectedFriends(new Set());
       setSentTo(new Set());
-      setSelectedFriend(null);
-      setShowIntentModal(false);
+      setSending(false);
     }
   }, [visible]);
+
+  const hasSelection = selectedFriends.size > 0;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -231,7 +259,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           <View style={styles.friendsSection}>
             {loading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.primary} />
               </View>
             ) : friends.length === 0 ? (
               <View style={styles.emptyContainer}>
@@ -251,6 +279,24 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             )}
           </View>
 
+          {/* Send Button - shows when friends are selected */}
+          {hasSelection && (
+            <TouchableOpacity 
+              style={[styles.sendButton, { backgroundColor: colors.primary }]}
+              onPress={handleSend}
+              disabled={sending}
+              activeOpacity={0.8}
+            >
+              {sending ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.sendButtonText}>
+                  Send{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+
           {/* Divider */}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -265,50 +311,6 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           />
         </View>
       </View>
-      
-      {/* Intent Modal - Send or Challenge */}
-      <Modal visible={showIntentModal} transparent animationType="fade" onRequestClose={() => setShowIntentModal(false)}>
-        <TouchableOpacity 
-          style={styles.intentOverlay} 
-          activeOpacity={1} 
-          onPress={() => setShowIntentModal(false)}
-        >
-          <View style={[styles.intentSheet, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.intentTitle, { color: colors.text }]}>
-              Send to {selectedFriend?.displayName || selectedFriend?.username}
-            </Text>
-            
-            <TouchableOpacity 
-              style={[styles.intentOption, { backgroundColor: colors.primary }]}
-              onPress={() => handleSendIntent(false)}
-            >
-              <Ionicons name="paper-plane" size={24} color="#fff" />
-              <View style={styles.intentOptionText}>
-                <Text style={styles.intentOptionTitle}>Send Game</Text>
-                <Text style={styles.intentOptionDesc}>Share this game for them to try</Text>
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.intentOption, { backgroundColor: '#FF3B30' }]}
-              onPress={() => handleSendIntent(true)}
-            >
-              <Ionicons name="trophy" size={24} color="#fff" />
-              <View style={styles.intentOptionText}>
-                <Text style={styles.intentOptionTitle}>Challenge</Text>
-                <Text style={styles.intentOptionDesc}>Compete for the highest score</Text>
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.intentCancel, { backgroundColor: colors.border }]}
-              onPress={() => setShowIntentModal(false)}
-            >
-              <Text style={[styles.intentCancelText, { color: colors.text }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </Modal>
   );
 };
@@ -400,14 +402,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  selectedBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#FF8E53',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1C1C1E',
+  },
   sentBadge: {
     position: 'absolute',
     bottom: 0,
     right: 0,
     backgroundColor: '#34C759',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -419,6 +434,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
+  friendNameSelected: {
+    fontWeight: '600',
+  },
   friendNameSent: {
     color: '#8E8E93',
   },
@@ -426,6 +444,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#34C759',
     marginTop: 2,
+  },
+  sendButton: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   divider: {
     height: 0.5,
@@ -454,56 +485,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 6,
     textAlign: 'center',
-  },
-  // Intent Modal styles
-  intentOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  intentSheet: {
-    width: '100%',
-    borderRadius: 20,
-    padding: 20,
-  },
-  intentTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  intentOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 12,
-  },
-  intentOptionText: {
-    marginLeft: 14,
-    flex: 1,
-  },
-  intentOptionTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  intentOptionDesc: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 2,
-  },
-  intentCancel: {
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  intentCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 
