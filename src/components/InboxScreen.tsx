@@ -1327,14 +1327,14 @@ const styles = StyleSheet.create({
   },
   // Game Share Card styles - Rich media preview
   gameShareCard: {
-    width: 220,
-    borderRadius: 16,
+    width: 180,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a2e',
   },
   gameShareImageContainer: {
     width: '100%',
-    height: 280,
+    height: 220,
     position: 'relative',
   },
   gameShareImage: {
@@ -1358,14 +1358,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gameSharePlayCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
   },
   gameShareOverlay: {
     position: 'absolute',
