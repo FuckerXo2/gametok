@@ -142,7 +142,7 @@ interface PlayingGame {
 
 // Game Icon component - shows actual game screenshot
 const GameIcon: React.FC<{ gameId: string; color?: string; size?: number }> = ({ 
-  gameId, color = '#FF8E53', size = 44 
+  gameId, color = '#FF8E53', size = 52 
 }) => {
   const [imageError, setImageError] = useState(false);
   const thumbnailUrl = GAME_THUMBNAILS[gameId];
@@ -154,7 +154,7 @@ const GameIcon: React.FC<{ gameId: string; color?: string; size?: number }> = ({
         style={{ 
           width: size, 
           height: size, 
-          borderRadius: size * 0.22,
+          borderRadius: size / 2,
           backgroundColor: '#1a1a2e',
         }}
         resizeMode="cover"
@@ -163,13 +163,13 @@ const GameIcon: React.FC<{ gameId: string; color?: string; size?: number }> = ({
     );
   }
   
-  // Fallback - simple colored square with initial
+  // Fallback - simple colored circle with initial
   const initial = gameId.split('-')[0].charAt(0).toUpperCase();
   return (
     <View style={{ 
       width: size, 
       height: size, 
-      borderRadius: size * 0.22, 
+      borderRadius: size / 2, 
       backgroundColor: color,
       justifyContent: 'center',
       alignItems: 'center',
@@ -577,8 +577,7 @@ export const DiscoverScreen: React.FC = () => {
                       <GameIcon 
                         gameId={item.game.id} 
                         color={item.game.color} 
-                        icon={item.game.icon}
-                        size={44}
+                        size={52}
                       />
                       {isRecent && <View style={styles.liveIndicator} />}
                     </View>
@@ -993,15 +992,15 @@ const styles = StyleSheet.create({
   },
   gameThumbWrapper: {
     position: 'relative',
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    overflow: 'hidden',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    overflow: 'visible',
   },
   gameThumbCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1010,7 +1009,7 @@ const styles = StyleSheet.create({
   },
   liveIndicator: {
     position: 'absolute',
-    bottom: -2,
+    top: -2,
     right: -2,
     width: 14,
     height: 14,
