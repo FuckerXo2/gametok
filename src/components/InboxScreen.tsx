@@ -100,6 +100,11 @@ interface Message {
     color: string;
     thumbnail?: string;
     description?: string;
+    isChallenge?: boolean;
+    challengerId?: string;
+    challengerName?: string;
+    challengerScore?: number | null;
+    challengeStatus?: 'pending' | 'accepted' | 'completed';
   } | null;
 }
 
@@ -277,9 +282,20 @@ export const InboxScreen: React.FC = () => {
   // Render a game share card in chat - rich media preview like TikTok/iMessage
   const renderGameShareCard = (gameShare: NonNullable<Message['gameShare']>, isMe: boolean) => {
     const thumbnailUrl = GAME_THUMBNAILS[gameShare.id];
+    const isChallenge = gameShare.isChallenge;
     
     return (
-      <View style={styles.gameShareCard}>
+      <View style={[styles.gameShareCard, isChallenge && styles.challengeCard]}>
+        {/* Challenge banner */}
+        {isChallenge && (
+          <View style={styles.challengeBanner}>
+            <Ionicons name="trophy" size={14} color="#fff" />
+            <Text style={styles.challengeBannerText}>
+              {isMe ? 'Challenge Sent' : 'Challenge'}
+            </Text>
+          </View>
+        )}
+        
         {/* Game Screenshot Background */}
         <View style={styles.gameShareImageContainer}>
           {thumbnailUrl ? (
@@ -300,8 +316,8 @@ export const InboxScreen: React.FC = () => {
           
           {/* Play button in center */}
           <View style={styles.gameSharePlayOverlay}>
-            <View style={styles.gameSharePlayCircle}>
-              <Ionicons name="play" size={24} color="#fff" style={{ marginLeft: 2 }} />
+            <View style={[styles.gameSharePlayCircle, isChallenge && { backgroundColor: 'rgba(255,59,48,0.8)' }]}>
+              <Ionicons name={isChallenge ? "trophy" : "play"} size={24} color="#fff" style={!isChallenge && { marginLeft: 2 }} />
             </View>
           </View>
           
@@ -309,7 +325,12 @@ export const InboxScreen: React.FC = () => {
           <View style={styles.gameShareOverlay}>
             <View style={styles.gameShareMeta}>
               <Text style={styles.gameShareTitle}>{gameShare.name}</Text>
-              <Text style={styles.gameShareSubtitle}>Tap to play</Text>
+              <Text style={styles.gameShareSubtitle}>
+                {isChallenge 
+                  ? (isMe ? 'Waiting for response...' : 'Tap to accept challenge')
+                  : 'Tap to play'
+                }
+              </Text>
             </View>
           </View>
         </View>
@@ -1378,6 +1399,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a2e',
+  },
+  challengeCard: {
+    borderWidth: 2,
+    borderColor: '#FF3B30',
+  },
+  challengeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF3B30',
+    paddingVertical: 6,
+    gap: 6,
+  },
+  challengeBannerText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   gameShareImageContainer: {
     width: '100%',
