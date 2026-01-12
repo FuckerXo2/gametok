@@ -24,6 +24,7 @@ import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, 
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
@@ -131,13 +132,18 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  // Check Apple Sign-In availability
+  // Check Apple Sign-In availability and configure Google
   useEffect(() => {
     const checkApple = async () => {
       const available = await AppleAuthentication.isAvailableAsync();
       setIsAppleAvailable(available);
     };
     checkApple();
+    
+    // Configure Google Sign-In
+    GoogleSignin.configure({
+      iosClientId: '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com',
+    });
   }, []);
 
   // Handle Apple Sign-In
@@ -168,6 +174,43 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       } else {
         setError('Apple Sign-In failed. Please try again.');
         console.error('Apple Sign-In error:', e);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Google Sign-In
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      
+      if (response.type === 'success' && response.data) {
+        const { idToken, user: googleUser } = response.data;
+        
+        await loginWithOAuth('google', {
+          idToken,
+          email: googleUser.email,
+          name: googleUser.name,
+          photo: googleUser.photo,
+          id: googleUser.id,
+        });
+        
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onComplete();
+      }
+    } catch (e: any) {
+      if (e.code === statusCodes.SIGN_IN_CANCELLED) {
+        // User cancelled
+      } else if (e.code === statusCodes.IN_PROGRESS) {
+        setError('Sign-in already in progress');
+      } else {
+        setError('Google Sign-In failed. Please try again.');
+        console.error('Google Sign-In error:', e);
       }
     } finally {
       setLoading(false);
@@ -337,6 +380,16 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
             <Text style={styles.authOptionText}>Continue with Apple</Text>
           </TouchableOpacity>
         )}
+
+        {/* Google Sign-In */}
+        <TouchableOpacity 
+          style={[styles.authOption, styles.googleButton]}
+          onPress={handleGoogleSignIn}
+          disabled={loading}
+        >
+          <Ionicons name="logo-google" size={20} color="#fff" />
+          <Text style={styles.authOptionText}>Continue with Google</Text>
+        </TouchableOpacity>
 
         {/* Email/Phone option */}
         <TouchableOpacity 

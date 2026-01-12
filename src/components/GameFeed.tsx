@@ -236,10 +236,10 @@ export const GameFeed: React.FC = () => {
         onEndReached={loadMore}
         onEndReachedThreshold={3}
         getItemLayout={getItemLayout}
-        removeClippedSubviews
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        initialNumToRender={1}
+        removeClippedSubviews={false}
+        maxToRenderPerBatch={3}
+        windowSize={7}
+        initialNumToRender={3}
         scrollEnabled={!isGamePlaying}
       />
     );

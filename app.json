@@ -42,6 +42,12 @@
       "expo-web-browser",
       "expo-apple-authentication",
       [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc"
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."
