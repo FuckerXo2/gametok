@@ -73,6 +73,15 @@ export const auth = {
     return data;
   },
   
+  oauth: async (provider: 'apple' | 'google', oauthData: any) => {
+    const data = await request('/auth/oauth', {
+      method: 'POST',
+      body: JSON.stringify({ provider, ...oauthData }),
+    });
+    await setToken(data.token);
+    return data;
+  },
+  
   logout: async () => {
     try {
       await request('/auth/logout', { method: 'POST' });

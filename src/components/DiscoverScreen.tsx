@@ -743,7 +743,10 @@ export const DiscoverScreen: React.FC = () => {
             {/* Game WebView */}
             <WebView
               ref={gameWebViewRef}
-              source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }}
+              source={{ uri: playingGame.embedUrl 
+                ? `${playingGame.embedUrl}?gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`
+                : `${GAMES_HOST}/${playingGame.id}/` 
+              }}
               style={styles.gameWebView}
               scrollEnabled={false}
               bounces={false}

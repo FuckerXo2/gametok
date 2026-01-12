@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
   Share,
   Linking,
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +23,9 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
 const AVATAR_SIZE = 60;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const PILL_WIDTH = SCREEN_WIDTH - 32 - 8; // minus padding and inner padding
+const INDICATOR_WIDTH = PILL_WIDTH / 2;
 
 interface Friend {
   id: string;
@@ -52,8 +58,6 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   onClose,
   gameId,
   gameName,
-  gameIcon,
-  gameColor,
   onSendToFriend,
 }) => {
   const insets = useSafeAreaInsets();
@@ -65,6 +69,64 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+  const [isChallenge, setIsChallenge] = useState(false);
+  
+  // Animation for sliding indicator
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const isChallengeRef = useRef(false);
+
+  const animateToPosition = (toChallenge: boolean) => {
+    isChallengeRef.current = toChallenge;
+    setIsChallenge(toChallenge);
+    Animated.spring(slideAnim, {
+      toValue: toChallenge ? 1 : 0,
+      useNativeDriver: true,
+      tension: 300,
+      friction: 25,
+    }).start();
+  };
+
+  // Pan responder for swipe gesture on the whole pill
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 10,
+      onPanResponderMove: (_, gs) => {
+        const startVal = isChallengeRef.current ? 1 : 0;
+        const delta = gs.dx / INDICATOR_WIDTH;
+        const newVal = Math.max(0, Math.min(1, startVal + delta));
+        slideAnim.setValue(newVal);
+      },
+      onPanResponderRelease: (_, gs) => {
+        const velocity = gs.vx;
+        let shouldChallenge: boolean;
+        
+        if (Math.abs(velocity) > 0.5) {
+          shouldChallenge = velocity > 0;
+        } else {
+          // Get current animated value position
+          const startVal = isChallengeRef.current ? 1 : 0;
+          const delta = gs.dx / INDICATOR_WIDTH;
+          const currentVal = startVal + delta;
+          shouldChallenge = currentVal > 0.5;
+        }
+        
+        if (shouldChallenge !== isChallengeRef.current) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        
+        isChallengeRef.current = shouldChallenge;
+        setIsChallenge(shouldChallenge);
+        
+        Animated.spring(slideAnim, {
+          toValue: shouldChallenge ? 1 : 0,
+          useNativeDriver: true,
+          tension: 300,
+          friction: 25,
+        }).start();
+      },
+    })
+  ).current;
 
   // Load friends (following list)
   useEffect(() => {
@@ -89,9 +151,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
 
   const toggleFriendSelection = (friendId: string) => {
     if (sentTo.has(friendId)) return;
-    
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
     setSelectedFriends(prev => {
       const newSet = new Set(prev);
       if (newSet.has(friendId)) {
@@ -105,19 +165,14 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
 
   const handleSend = async () => {
     if (selectedFriends.size === 0 || sending) return;
-    
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSending(true);
-    
     try {
-      // Send to all selected friends
       await Promise.all(
         Array.from(selectedFriends).map(friendId => 
-          onSendToFriend?.(friendId, gameId, false)
+          onSendToFriend?.(friendId, gameId, isChallenge)
         )
       );
-      
-      // Mark as sent
       setSentTo(prev => new Set([...prev, ...selectedFriends]));
       setSelectedFriends(new Set());
     } catch (e) {
@@ -181,13 +236,11 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
                 </Text>
               </View>
             )}
-            {/* Selection indicator */}
             {isSelected && !isSent && (
               <View style={[styles.selectedBadge, { borderColor: colors.surface }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />
               </View>
             )}
-            {/* Sent indicator */}
             {isSent && (
               <View style={[styles.sentBadge, { borderColor: colors.surface }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />
@@ -233,6 +286,9 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       setSelectedFriends(new Set());
       setSentTo(new Set());
       setSending(false);
+      setIsChallenge(false);
+      isChallengeRef.current = false;
+      slideAnim.setValue(0);
     }
   }, [visible]);
 
@@ -279,22 +335,100 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             )}
           </View>
 
-          {/* Send Button - shows when friends are selected */}
+          {/* Dynamic Island Style Toggle */}
           {hasSelection && (
-            <TouchableOpacity 
-              style={[styles.sendButton, { backgroundColor: colors.primary }]}
-              onPress={handleSend}
-              disabled={sending}
-              activeOpacity={0.8}
-            >
-              {sending ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.sendButtonText}>
-                  Send{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
-                </Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.sendSection}>
+              <View style={[styles.islandPill, { backgroundColor: colors.background }]} {...panResponder.panHandlers}>
+                {/* Animated Sliding Indicator */}
+                <Animated.View 
+                  style={[
+                    styles.slideIndicator,
+                    {
+                      transform: [{
+                        translateX: slideAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, INDICATOR_WIDTH],
+                        }),
+                      }],
+                      backgroundColor: slideAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['rgba(255,142,83,0.2)', 'rgba(255,59,48,0.2)'],
+                      }),
+                    },
+                  ]} 
+                />
+                
+                {/* Send Option */}
+                <TouchableOpacity 
+                  style={styles.islandOption}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    animateToPosition(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons 
+                    name="paper-plane" 
+                    size={16} 
+                    color={!isChallenge ? '#FF8E53' : colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.islandText, 
+                    { color: colors.textSecondary },
+                    !isChallenge && { color: '#FF8E53' }
+                  ]}>
+                    Send
+                  </Text>
+                </TouchableOpacity>
+                
+                {/* Challenge Option */}
+                <TouchableOpacity 
+                  style={styles.islandOption}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    animateToPosition(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons 
+                    name="trophy" 
+                    size={16} 
+                    color={isChallenge ? '#FF3B30' : colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.islandText, 
+                    { color: colors.textSecondary },
+                    isChallenge && { color: '#FF3B30' }
+                  ]}>
+                    Challenge
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              
+              {/* Send Button */}
+              <TouchableOpacity 
+                style={[styles.sendButton, { backgroundColor: isChallenge ? '#FF3B30' : colors.primary }]}
+                onPress={handleSend}
+                disabled={sending}
+                activeOpacity={0.8}
+              >
+                {sending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons 
+                      name={isChallenge ? "trophy" : "paper-plane"} 
+                      size={18} 
+                      color="#fff" 
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={styles.sendButtonText}>
+                      {isChallenge ? 'Challenge' : 'Send'}{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Divider */}
@@ -445,11 +579,43 @@ const styles = StyleSheet.create({
     color: '#34C759',
     marginTop: 2,
   },
+  sendSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  islandPill: {
+    flexDirection: 'row',
+    borderRadius: 20,
+    padding: 4,
+    marginBottom: 14,
+    position: 'relative',
+  },
+  slideIndicator: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    bottom: 4,
+    width: INDICATOR_WIDTH,
+    borderRadius: 16,
+  },
+  islandOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 16,
+    gap: 6,
+    zIndex: 1,
+  },
+  islandText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   sendButton: {
-    marginHorizontal: 16,
-    marginTop: 12,
+    flexDirection: 'row',
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },

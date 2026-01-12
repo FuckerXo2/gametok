@@ -16,7 +16,7 @@ const isDev = __DEV__;
 export const NATIVE_AD_UNIT_ID = isDev ? AD_UNIT_IDS.NATIVE_TEST : AD_UNIT_IDS.NATIVE;
 
 // Ad frequency - show ad every N items
-export const AD_FREQUENCY = 3; // Show ad after every 3 games
+export const AD_FREQUENCY = 5; // Show ad after every 5 games
 
 // Check if we're in Expo Go (native modules not available)
 // Expo Go has appOwnership === 'expo', dev builds have undefined

@@ -71,7 +71,6 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [likeCount, setLikeCount] = useState(Math.floor(Math.random() * 500) + 50);
-  const [commentCount] = useState(Math.floor(Math.random() * 200) + 20);
   const [gameLoaded, setGameLoaded] = useState(false);
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -174,6 +173,110 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
             domStorageEnabled
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
+            scalesPageToFit={true}
+            contentMode="mobile"
+            injectedJavaScript={`
+              // Force viewport for external games
+              var meta = document.querySelector('meta[name="viewport"]');
+              if (!meta) {
+                meta = document.createElement('meta');
+                meta.name = 'viewport';
+                document.head.appendChild(meta);
+              }
+              meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+              
+              // Try to make game fill screen
+              document.body.style.margin = '0';
+              document.body.style.padding = '0';
+              document.body.style.overflow = 'hidden';
+              document.body.style.width = '100vw';
+              document.body.style.height = '100vh';
+              
+              // Find canvas and make it fill
+              var canvas = document.querySelector('canvas');
+              if (canvas) {
+                canvas.style.width = '100vw';
+                canvas.style.height = '100vh';
+                canvas.style.objectFit = 'contain';
+              }
+              
+              // Stub out GameMonetize SDK ad functions
+              (function() {
+                // Fake SDK that does nothing
+                var fakeSDK = {
+                  showBanner: function() { return Promise.resolve(); },
+                  hideBanner: function() { return Promise.resolve(); },
+                  showAd: function() { 
+                    if (window.sdk && window.sdk.onResumeGame) window.sdk.onResumeGame();
+                    return Promise.resolve(); 
+                  },
+                  preloadAd: function() { return Promise.resolve(); },
+                  addEventListener: function() {},
+                  removeEventListener: function() {},
+                  onPauseGame: function() {},
+                  onResumeGame: function() {}
+                };
+                window.sdk = window.sdk || fakeSDK;
+                Object.keys(fakeSDK).forEach(function(k) {
+                  if (!window.sdk[k]) window.sdk[k] = fakeSDK[k];
+                });
+                
+                // Block ad-related selectors
+                var adSelectors = [
+                  'iframe[src*="ads"]', 'iframe[src*="doubleclick"]',
+                  'iframe[src*="googlesyndication"]', 'iframe[src*="adservice"]',
+                  'iframe[src*="imasdk"]', 'iframe[src*="googleads"]',
+                  '[class*="preroll"]', '[id*="preroll"]',
+                  '[class*="interstitial"]', '[id*="interstitial"]',
+                  '.gdsdk', '#gdsdk', '[class*="gdsdk"]',
+                  '[class*="ad_container"]', '[id*="ad_container"]',
+                  '[class*="video-ad"]', '[id*="video-ad"]',
+                  '#sdk__advertisement', '[id*="sdk__"]',
+                  '#imaContainer', '#imaContainer_new',
+                  '[class*="GUIAd"]', '[class*="Advertisement"]',
+                  '[id*="advertisement"]', '[class*="advertisement"]',
+                ];
+                
+                function hideAds() {
+                  adSelectors.forEach(function(sel) {
+                    try {
+                      document.querySelectorAll(sel).forEach(function(el) {
+                        el.style.display = 'none';
+                        el.style.visibility = 'hidden';
+                        el.style.height = '0';
+                        el.style.width = '0';
+                        el.style.position = 'absolute';
+                        el.style.left = '-9999px';
+                        // Mute any audio/video inside
+                        el.querySelectorAll('video, audio').forEach(function(m) {
+                          m.muted = true;
+                          m.pause();
+                          m.volume = 0;
+                        });
+                      });
+                    } catch(e) {}
+                  });
+                  
+                  // Mute videos in ad containers
+                  try {
+                    document.querySelectorAll('#imaContainer video, #imaContainer_new video, [id*="sdk__"] video, [class*="advertisement"] video').forEach(function(v) {
+                      v.muted = true;
+                      v.pause();
+                      v.volume = 0;
+                    });
+                  } catch(e) {}
+                }
+                
+                hideAds();
+                setInterval(hideAds, 300);
+                if (document.body) {
+                  var observer = new MutationObserver(hideAds);
+                  observer.observe(document.body, { childList: true, subtree: true });
+                }
+              })();
+              
+              true;
+            `}
           />
         </View>
       )}
@@ -221,24 +324,19 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
               </View>
               <Text style={styles.gameDescription} numberOfLines={2}>{game.description}</Text>
             </View>
-
-            {/* Multiplayer Button */}
-            {isMultiplayerGame && (
-              <TouchableOpacity 
-                style={styles.multiplayerBtn} 
-                onPress={() => setShowMultiplayer(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="people" size={22} color="#fff" />
-                <Text style={styles.multiplayerBtnText}>1v1</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* Side Actions - TikTok style */}
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
             {/* Trophy/Leaderboard icon */}
-            <TouchableOpacity style={styles.actionBtn} onPress={() => {}} activeOpacity={0.7}>
+            <TouchableOpacity 
+              style={styles.actionBtn} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                // TODO: Show leaderboard modal
+              }} 
+              activeOpacity={0.7}
+            >
               <Ionicons 
                 name="trophy" 
                 size={33} 
@@ -257,16 +355,6 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
                 />
               </Animated.View>
               <Text style={styles.actionCount}>{formatNumber(likeCount)}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionBtn} onPress={() => {}} activeOpacity={0.7}>
-              <Ionicons 
-                name="chatbubble-ellipses" 
-                size={33} 
-                color="#fff" 
-                style={styles.iconShadow}
-              />
-              <Text style={styles.actionCount}>{formatNumber(commentCount)}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>

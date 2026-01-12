@@ -108,29 +108,12 @@ interface Message {
   } | null;
 }
 
-interface Story {
-  id: string;
-  user: string;
-  avatar: string | null;
-  hasNew: boolean;
-  game: string;
-  score: number;
-}
-
 interface Follower {
   id: string;
   username: string;
   displayName?: string;
   avatar?: string;
 }
-
-const STORIES: Story[] = [
-  { id: '1', user: 'gamer_pro', avatar: null, hasNew: true, game: 'Stack Ball', score: 2450 },
-  { id: '2', user: 'ninja_master', avatar: null, hasNew: true, game: 'Fruit Slicer', score: 1890 },
-  { id: '3', user: 'speedrunner', avatar: null, hasNew: true, game: 'Stack Ball', score: 3200 },
-  { id: '4', user: 'casual_gamer', avatar: null, hasNew: false, game: 'Fruit Slicer', score: 980 },
-  { id: '5', user: 'champion99', avatar: null, hasNew: true, game: 'Stack Ball', score: 4100 },
-];
 
 export const InboxScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -141,8 +124,6 @@ export const InboxScreen: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [viewingStory, setViewingStory] = useState<Story | null>(null);
-  const [progress, setProgress] = useState(0);
   const [selectedChat, setSelectedChat] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -161,6 +142,11 @@ export const InboxScreen: React.FC = () => {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [newFollowers, setNewFollowers] = useState<Follower[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showAddFriends, setShowAddFriends] = useState(false);
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [newChatSearchQuery, setNewChatSearchQuery] = useState('');
+  const [newChatResults, setNewChatResults] = useState<Follower[]>([]);
+  const [newChatLoading, setNewChatLoading] = useState(false);
   
   // Game modal state
   const [playingGame, setPlayingGame] = useState<{
@@ -210,22 +196,6 @@ export const InboxScreen: React.FC = () => {
     setRefreshing(true);
     fetchConversations();
     fetchFollowers();
-  };
-
-  const handleStoryPress = (story: Story) => {
-    setViewingStory(story);
-    setProgress(0);
-    
-    const interval = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) {
-          clearInterval(interval);
-          setViewingStory(null);
-          return 0;
-        }
-        return p + 2;
-      });
-    }, 100);
   };
 
   const openChat = async (conversation: Conversation) => {
@@ -384,11 +354,11 @@ export const InboxScreen: React.FC = () => {
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowAddFriends(true)}>
           <Ionicons name="person-add-outline" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowNewChat(true)}>
           <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -425,61 +395,6 @@ export const InboxScreen: React.FC = () => {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
         }
       >
-        {/* Stories Section */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.storiesContent}
-        >
-          {STORIES.map((story) => (
-            <TouchableOpacity 
-              key={story.id} 
-              style={styles.storyItem}
-              onPress={() => handleStoryPress(story)}
-            >
-              {story.hasNew ? (
-                <LinearGradient
-                  colors={['#FF6B6B', '#FF8E53', '#FFC107']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.storyGradientRing}
-                >
-                  <View style={[styles.storyAvatarInner, { backgroundColor: colors.background }]}>
-                    <Avatar uri={story.avatar} size={52} />
-                  </View>
-                </LinearGradient>
-              ) : (
-                <View style={[styles.storyAvatarRing, { backgroundColor: colors.surface }]}>
-                  <Avatar uri={story.avatar} size={52} />
-                </View>
-              )}
-              <Text style={[styles.storyUsername, { color: colors.text }]} numberOfLines={1}>
-                {story.user}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Activity Row - New Followers */}
-        {newFollowers.length > 0 && (
-          <TouchableOpacity 
-            style={[styles.activityRow, { borderBottomColor: colors.border }]}
-            onPress={() => setShowActivityModal(true)}
-          >
-            <View style={[styles.activityIcon, { backgroundColor: '#00AAFF' }]}>
-              <Ionicons name="people" size={20} color="#fff" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={[styles.activityTitle, { color: colors.text }]}>New followers</Text>
-              <Text style={[styles.activityPreview, { color: colors.textSecondary }]} numberOfLines={1}>
-                {newFollowers[0]?.displayName || newFollowers[0]?.username} started following you
-                {newFollowers.length > 1 ? ` +${newFollowers.length - 1} more` : ''}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
-
         {/* Chats List */}
         <View style={styles.chatsSection}>
           {loading ? (
@@ -543,71 +458,6 @@ export const InboxScreen: React.FC = () => {
           )}
         </View>
       </ScrollView>
-
-      {/* Story Viewer Modal */}
-      <Modal
-        visible={viewingStory !== null}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setViewingStory(null)}
-      >
-        {viewingStory && (
-          <View style={[styles.storyViewer, { paddingTop: insets.top, backgroundColor: '#000' }]}>
-            <View style={styles.progressContainer}>
-              <View style={[styles.progressBar, { width: `${progress}%` }]} />
-            </View>
-
-            <View style={styles.storyHeader}>
-              <TouchableOpacity style={styles.storyHeaderLeft} onPress={() => {
-                setViewingStory(null);
-                setSelectedStoryUser({
-                  id: viewingStory.id,
-                  username: viewingStory.user,
-                  avatar: viewingStory.avatar,
-                  status: 'GAMETOK USER',
-                  isOnline: true,
-                  isFriend: false,
-                });
-                setShowUserProfile(true);
-              }}>
-                <Avatar uri={viewingStory.avatar} size={36} style={styles.storyHeaderAvatar} />
-                <Text style={styles.storyHeaderUser}>{viewingStory.user}</Text>
-                <Text style={styles.storyHeaderTime}>2h</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setViewingStory(null)}>
-                <Ionicons name="close" size={28} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.storyContentView}>
-              <View style={styles.storyGameCard}>
-                <Text style={styles.storyGameIcon}>
-                  {viewingStory.game === 'Stack Ball' ? '🎱' : '🍉'}
-                </Text>
-                <Text style={styles.storyGameName}>{viewingStory.game}</Text>
-                <View style={styles.storyScoreBox}>
-                  <Text style={styles.storyScoreLabel}>NEW HIGH SCORE</Text>
-                  <Text style={[styles.storyScoreValue, { color: colors.accent }]}>
-                    {viewingStory.score?.toLocaleString()}
-                  </Text>
-                </View>
-                <TouchableOpacity style={[styles.storyPlayBtn, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.storyPlayText}>Play Now</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={[styles.storyFooter, { paddingBottom: insets.bottom || 20 }]}>
-              <TouchableOpacity style={styles.storyReplyBtn}>
-                <Text style={styles.storyReplyText}>Send message</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.storyShareBtn}>
-                <Ionicons name="paper-plane-outline" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </Modal>
 
       {/* Chat Modal */}
       <Modal
@@ -932,6 +782,198 @@ export const InboxScreen: React.FC = () => {
             </View>
           </View>
         )}
+      </Modal>
+
+      {/* Add Friends Modal */}
+      <Modal
+        visible={showAddFriends}
+        animationType="slide"
+        onRequestClose={() => setShowAddFriends(false)}
+      >
+        <View style={[styles.modalContainer, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowAddFriends(false)}>
+              <Ionicons name="close" size={28} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Friends</Text>
+            <View style={{ width: 28 }} />
+          </View>
+          
+          <View style={[styles.searchBar, { backgroundColor: colors.surface, marginTop: 8 }]}>
+            <Ionicons name="search" size={18} color={colors.textSecondary} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search by username"
+              placeholderTextColor={colors.textSecondary}
+              value={newChatSearchQuery}
+              onChangeText={async (text) => {
+                setNewChatSearchQuery(text);
+                if (text.trim().length >= 2) {
+                  setNewChatLoading(true);
+                  try {
+                    const data = await users.search(text.trim());
+                    setNewChatResults(data.users || []);
+                  } catch (e) {
+                    console.log('Search error:', e);
+                  } finally {
+                    setNewChatLoading(false);
+                  }
+                } else {
+                  setNewChatResults([]);
+                }
+              }}
+              autoCapitalize="none"
+            />
+          </View>
+
+          {newChatLoading ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+          ) : newChatSearchQuery.length < 2 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>🔍</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                Search for friends by username
+              </Text>
+            </View>
+          ) : newChatResults.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>😕</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No users found
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={newChatResults}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.chatItem}
+                  onPress={async () => {
+                    try {
+                      await users.follow(item.id);
+                      Alert.alert('Added!', `You're now following ${item.displayName || item.username}`);
+                    } catch (e) {
+                      console.log('Follow error:', e);
+                    }
+                  }}
+                >
+                  <Avatar uri={item.avatar} size={52} style={styles.chatAvatar} />
+                  <View style={styles.chatContent}>
+                    <Text style={[styles.chatUser, { color: colors.text }]}>
+                      {item.displayName || item.username}
+                    </Text>
+                    <Text style={[styles.chatMessage, { color: colors.textSecondary }]}>
+                      @{item.username}
+                    </Text>
+                  </View>
+                  <View style={[styles.addFriendBtn, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.addFriendBtnText}>Add</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </Modal>
+
+      {/* New Chat Modal */}
+      <Modal
+        visible={showNewChat}
+        animationType="slide"
+        onRequestClose={() => setShowNewChat(false)}
+      >
+        <View style={[styles.modalContainer, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowNewChat(false)}>
+              <Ionicons name="close" size={28} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>New Chat</Text>
+            <View style={{ width: 28 }} />
+          </View>
+          
+          <View style={[styles.searchBar, { backgroundColor: colors.surface, marginTop: 8 }]}>
+            <Ionicons name="search" size={18} color={colors.textSecondary} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search users to chat with"
+              placeholderTextColor={colors.textSecondary}
+              value={newChatSearchQuery}
+              onChangeText={async (text) => {
+                setNewChatSearchQuery(text);
+                if (text.trim().length >= 2) {
+                  setNewChatLoading(true);
+                  try {
+                    const data = await users.search(text.trim());
+                    setNewChatResults(data.users || []);
+                  } catch (e) {
+                    console.log('Search error:', e);
+                  } finally {
+                    setNewChatLoading(false);
+                  }
+                } else {
+                  setNewChatResults([]);
+                }
+              }}
+              autoCapitalize="none"
+            />
+          </View>
+
+          {newChatLoading ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+          ) : newChatSearchQuery.length < 2 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>💬</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                Search for someone to chat with
+              </Text>
+            </View>
+          ) : newChatResults.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>😕</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No users found
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={newChatResults}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.chatItem}
+                  onPress={() => {
+                    setShowNewChat(false);
+                    setNewChatSearchQuery('');
+                    setNewChatResults([]);
+                    // Open chat with this user
+                    openChat({
+                      id: `new-${item.id}`,
+                      user: {
+                        id: item.id,
+                        username: item.username,
+                        displayName: item.displayName,
+                        avatar: item.avatar,
+                      },
+                      streak: 0,
+                    });
+                  }}
+                >
+                  <Avatar uri={item.avatar} size={52} style={styles.chatAvatar} />
+                  <View style={styles.chatContent}>
+                    <Text style={[styles.chatUser, { color: colors.text }]}>
+                      {item.displayName || item.username}
+                    </Text>
+                    <Text style={[styles.chatMessage, { color: colors.textSecondary }]}>
+                      @{item.username}
+                    </Text>
+                  </View>
+                  <Ionicons name="chatbubble-outline" size={22} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
       </Modal>
     </View>
   );
@@ -1554,6 +1596,30 @@ const styles = StyleSheet.create({
   gameInfoName: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  addFriendBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addFriendBtnText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

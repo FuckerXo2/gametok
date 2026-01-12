@@ -17,6 +17,7 @@ import { GameCard } from './GameCard';
 import { NativeAdCard } from './NativeAdCard';
 import { useTheme } from '../context/ThemeContext';
 import { games as gamesApi } from '../services/api';
+import { initializeAds, AD_FREQUENCY } from '../services/ads';
 
 const ALL_GAMES = [
   { id: 'pacman', name: 'Pac-Man', icon: '🟡', color: '#FFFF00', plays: '2.5M' },
@@ -31,7 +32,6 @@ const CATEGORIES = [
   { id: 'sports', name: 'Sports', icon: '⚽', count: 6 },
   { id: 'racing', name: 'Racing', icon: '🏎️', count: 4 },
 ];
-import { initializeAds, AD_FREQUENCY } from '../services/ads';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -49,6 +49,7 @@ interface Game {
   description: string;
   icon: string;
   color: string;
+  embedUrl?: string; // For external embeds like GameDistribution
 }
 
 interface FeedGame extends Game {
@@ -74,7 +75,7 @@ export const GameFeed: React.FC = () => {
   const feedIndexRef = useRef(0);
   const adCounterRef = useRef(0);
 
-  // Initialize ads SDK
+  // Initialize ads
   useEffect(() => {
     const init = async () => {
       const success = await initializeAds();
@@ -104,9 +105,9 @@ export const GameFeed: React.FC = () => {
     fetchGames();
   }, []);
 
-  // Generate feed when games are loaded AND ads are initialized
+  // Generate feed when games are loaded
   useEffect(() => {
-    if (games.length > 0) {
+    if (games.length > 0 && adsInitialized) {
       const initialFeed = generateFeed(10, 0);
       setFeedData(initialFeed);
       feedIndexRef.current = 10;
@@ -117,13 +118,20 @@ export const GameFeed: React.FC = () => {
     const feed: FeedItem[] = [];
     for (let i = 0; i < count; i++) {
       const game = games[(startIndex + i) % games.length];
+      
+      // Use embedUrl if available (for GameDistribution), otherwise use self-hosted URL
+      // Add gd_sdk_referrer_url for GameDistribution games
+      let gameUrl = game.embedUrl 
+        ? `${game.embedUrl}?gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`
+        : `${GAMES_HOST}/${game.id}/`;
+      
       feed.push({
         ...game,
         uniqueId: `${game.id}-${startIndex + i}-${Date.now()}`,
-        gameUrl: `${GAMES_HOST}/${game.id}/`,
+        gameUrl,
       });
       
-      // Insert ad after every AD_FREQUENCY games (but not at the very start)
+      // Insert ad after every AD_FREQUENCY games
       adCounterRef.current++;
       if (adCounterRef.current % AD_FREQUENCY === 0 && adsInitialized) {
         feed.push({
@@ -137,9 +145,16 @@ export const GameFeed: React.FC = () => {
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-      setActiveIndex(viewableItems[0].index);
+      const newIndex = viewableItems[0].index;
+      
+      // If we scrolled away from the current game, re-enable scrolling
+      if (newIndex !== activeIndex) {
+        setIsGamePlaying(false);
+      }
+      
+      setActiveIndex(newIndex);
     }
-  }, []);
+  }, [activeIndex]);
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
@@ -158,7 +173,7 @@ export const GameFeed: React.FC = () => {
       return <NativeAdCard isActive={index === activeIndex} />;
     }
     
-    // Regular game card - cast to FeedGame since we know it's not an ad
+    // Regular game card
     const gameItem = item as FeedGame;
     return (
       <GameCard

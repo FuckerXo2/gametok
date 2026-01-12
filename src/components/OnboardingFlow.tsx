@@ -23,9 +23,10 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { users } from '../services/api';
+import { users, auth as authApi } from '../services/api';
 import { uploadImage } from '../services/cloudinary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -99,13 +100,14 @@ interface OnboardingFlowProps {
 
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   const insets = useSafeAreaInsets();
-  const { signup, login, user, refreshUser } = useAuth();
+  const { signup, login, loginWithOAuth, user, refreshUser } = useAuth();
   const { colors } = useTheme();
   
   const [step, setStep] = useState<OnboardingStep>('welcome');
   const [isLogin, setIsLogin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
   
   // Birthday
   const [birthMonth, setBirthMonth] = useState('');
@@ -128,6 +130,49 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Check Apple Sign-In availability
+  useEffect(() => {
+    const checkApple = async () => {
+      const available = await AppleAuthentication.isAvailableAsync();
+      setIsAppleAvailable(available);
+    };
+    checkApple();
+  }, []);
+
+  // Handle Apple Sign-In
+  const handleAppleSignIn = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      
+      // Send to backend
+      await loginWithOAuth('apple', {
+        identityToken: credential.identityToken,
+        email: credential.email,
+        fullName: credential.fullName,
+        user: credential.user,
+      });
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onComplete();
+    } catch (e: any) {
+      if (e.code === 'ERR_REQUEST_CANCELED') {
+        // User cancelled
+      } else {
+        setError('Apple Sign-In failed. Please try again.');
+        console.error('Apple Sign-In error:', e);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const animateTransition = (nextStep: OnboardingStep) => {
     Animated.sequence([
@@ -279,16 +324,33 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       </View>
 
       <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + 20 }]}>
-        <Text style={styles.signupTitle}>Sign up for GameTok</Text>
+        <Text style={styles.signupTitle}>Sign up for GameTOK</Text>
         
-        {/* Sign up options - TikTok style list */}
+        {/* Apple Sign-In - Required for iOS */}
+        {isAppleAvailable && (
+          <TouchableOpacity 
+            style={[styles.authOption, styles.appleButton]}
+            onPress={handleAppleSignIn}
+            disabled={loading}
+          >
+            <Ionicons name="logo-apple" size={22} color="#fff" />
+            <Text style={styles.authOptionText}>Continue with Apple</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Email/Phone option */}
         <TouchableOpacity 
           style={styles.authOption}
           onPress={() => { setIsLogin(false); animateTransition('birthday'); }}
+          disabled={loading}
         >
           <Ionicons name="mail-outline" size={22} color="#fff" />
           <Text style={styles.authOptionText}>Use phone or email</Text>
         </TouchableOpacity>
+
+        {loading && (
+          <ActivityIndicator size="small" color="#FF8E53" style={{ marginTop: 12 }} />
+        )}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -702,6 +764,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+  },
+  appleButton: {
+    backgroundColor: '#000',
+    borderColor: '#333',
+  },
+  googleButton: {
+    backgroundColor: '#4285F4',
+    borderColor: '#4285F4',
   },
   authOptionText: {
     color: '#fff',

@@ -19,6 +19,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   signup: (username: string, password: string, displayName?: string) => Promise<void>;
+  loginWithOAuth: (provider: 'apple' | 'google', data: any) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -71,6 +72,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(data.user);
   };
 
+  const loginWithOAuth = async (provider: 'apple' | 'google', oauthData: any) => {
+    console.log('[Auth] OAuth login with:', provider);
+    const data = await auth.oauth(provider, oauthData);
+    console.log('[Auth] OAuth successful, token saved');
+    setUser(data.user);
+  };
+
   const logout = async () => {
     await auth.logout();
     setUser(null);
@@ -83,6 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: !!user,
       login,
       signup,
+      loginWithOAuth,
       logout,
       refreshUser,
     }}>

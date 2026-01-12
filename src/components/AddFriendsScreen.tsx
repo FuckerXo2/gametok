@@ -8,6 +8,7 @@ import {
   FlatList,
   ActivityIndicator,
   Modal,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -169,7 +170,10 @@ export const AddFriendsScreen: React.FC<AddFriendsScreenProps> = ({ visible, onC
         <View style={[styles.quickAddSection, { borderTopColor: colors.border }]}>
           <Text style={[styles.quickAddTitle, { color: colors.text }]}>Quick Add</Text>
           
-          <TouchableOpacity style={[styles.quickAddOption, { backgroundColor: colors.surface }]}>
+          <TouchableOpacity 
+            style={[styles.quickAddOption, { backgroundColor: colors.surface }]}
+            onPress={() => Alert.alert('Coming Soon', 'QR code scanning will be available in a future update!')}
+          >
             <View style={[styles.quickAddIcon, { backgroundColor: colors.primary }]}>
               <Ionicons name="qr-code" size={24} color="#fff" />
             </View>
@@ -182,7 +186,10 @@ export const AddFriendsScreen: React.FC<AddFriendsScreenProps> = ({ visible, onC
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.quickAddOption, { backgroundColor: colors.surface }]}>
+          <TouchableOpacity 
+            style={[styles.quickAddOption, { backgroundColor: colors.surface }]}
+            onPress={() => Alert.alert('Coming Soon', 'Contact sync will be available in a future update!')}
+          >
             <View style={[styles.quickAddIcon, { backgroundColor: '#4CD964' }]}>
               <Ionicons name="people" size={24} color="#fff" />
             </View>
@@ -195,7 +202,10 @@ export const AddFriendsScreen: React.FC<AddFriendsScreenProps> = ({ visible, onC
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.quickAddOption, { backgroundColor: colors.surface }]}>
+          <TouchableOpacity 
+            style={[styles.quickAddOption, { backgroundColor: colors.surface }]}
+            onPress={() => Alert.alert('Coming Soon', 'Username sharing will be available in a future update!')}
+          >
             <View style={[styles.quickAddIcon, { backgroundColor: '#5856D6' }]}>
               <Ionicons name="share-outline" size={24} color="#fff" />
             </View>
