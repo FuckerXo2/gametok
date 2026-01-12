@@ -194,10 +194,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         
         await loginWithOAuth('google', {
           idToken,
-          email: googleUser.email,
-          name: googleUser.name,
-          photo: googleUser.photo,
-          id: googleUser.id,
+          user: {
+            id: googleUser.id,
+            email: googleUser.email,
+            name: googleUser.name,
+            photo: googleUser.photo,
+          },
         });
         
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

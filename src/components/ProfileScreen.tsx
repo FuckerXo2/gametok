@@ -20,12 +20,7 @@ import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
 
-const SUGGESTED_FRIENDS = [
-  { id: '1', name: 'gamer_pro', avatar: null, status: 'RECENTLY JOINED', online: true },
-  { id: '2', name: 'ninja_master', avatar: null, status: 'RECENTLY JOINED', online: true },
-  { id: '3', name: 'speedrunner', avatar: null, status: 'IN MY CONTACTS', online: false },
-  { id: '4', name: 'casual_gamer', avatar: null, status: 'RECENTLY JOINED', online: true },
-];
+const SUGGESTED_FRIENDS: any[] = [];
 
 export const ProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();

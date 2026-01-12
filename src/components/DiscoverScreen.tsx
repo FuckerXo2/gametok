@@ -179,12 +179,7 @@ const GameIcon: React.FC<{ gameId: string; color?: string; size?: number }> = ({
   );
 };
 
-const SUGGESTED_FRIENDS = [
-  { id: '1', name: 'gamer_pro', avatar: null, reason: '5 mutual friends', reasonType: 'mutual', online: true },
-  { id: '2', name: 'ninja_master', avatar: null, reason: 'Playing Stack Ball 🎱', reasonType: 'playing', online: true },
-  { id: '3', name: 'speedrunner', avatar: null, reason: 'From your contacts', reasonType: 'contacts', online: false },
-  { id: '4', name: 'casual_gamer', avatar: null, reason: 'Plays similar games', reasonType: 'similar', online: true },
-];
+const SUGGESTED_FRIENDS: any[] = [];
 
 export const DiscoverScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -221,18 +216,11 @@ export const DiscoverScreen: React.FC = () => {
   const [playingGame, setPlayingGame] = useState<PlayingGame | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
 
-  // Mock activity data for preview
-  const MOCK_ACTIVITY: FriendActivity[] = [
-    { id: 'm1', type: 'score', user: { id: '1', username: 'alex_gamer', displayName: 'Alex', avatar: undefined }, game: { id: '2048', name: '2048', icon: '🔢', thumbnail: `${GAMES_HOST}/icons/2048.svg`, color: '#edc22e' }, score: 2048, createdAt: new Date(Date.now() - 60000).toISOString() },
-    { id: 'm2', type: 'score', user: { id: '2', username: 'sarah_plays', displayName: 'Sarah', avatar: undefined }, game: { id: 'stack-ball', name: 'Stack Ball', icon: '🎱', thumbnail: `${GAMES_HOST}/icons/stack-ball.svg`, color: '#FF6B6B' }, score: 1500, createdAt: new Date(Date.now() - 180000).toISOString() },
-    { id: 'm3', type: 'score', user: { id: '3', username: 'mike_score', displayName: 'Mike', avatar: undefined }, game: { id: 'fruit-slicer', name: 'Fruit Slicer', icon: '🍉', thumbnail: `${GAMES_HOST}/icons/fruit-slicer.svg`, color: '#4CAF50' }, score: 3200, createdAt: new Date(Date.now() - 7200000).toISOString() },
-  ];
-
   // Fetch friends activity (recent scores) - falls back to global if no friends activity
   const fetchFriendsActivity = useCallback(async () => {
     if (!isAuthenticated) {
-      // Not logged in - show mock data
-      setFriendsActivity(MOCK_ACTIVITY);
+      // Not logged in - show empty
+      setFriendsActivity([]);
       setIsGlobalActivity(true);
       setLoadingActivity(false);
       return;
@@ -248,8 +236,8 @@ export const DiscoverScreen: React.FC = () => {
         if (globalData.activity && globalData.activity.length > 0) {
           setFriendsActivity(globalData.activity);
         } else {
-          // No global activity either, show mock
-          setFriendsActivity(MOCK_ACTIVITY);
+          // No global activity either, show empty
+          setFriendsActivity([]);
         }
         setIsGlobalActivity(true);
       }
@@ -261,12 +249,12 @@ export const DiscoverScreen: React.FC = () => {
         if (globalData.activity && globalData.activity.length > 0) {
           setFriendsActivity(globalData.activity);
         } else {
-          setFriendsActivity(MOCK_ACTIVITY);
+          setFriendsActivity([]);
         }
         setIsGlobalActivity(true);
       } catch (e) {
         console.log('Failed to fetch global activity:', e);
-        setFriendsActivity(MOCK_ACTIVITY);
+        setFriendsActivity([]);
         setIsGlobalActivity(true);
       }
     } finally {

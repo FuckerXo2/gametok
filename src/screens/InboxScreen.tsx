@@ -10,48 +10,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-const NOTIFICATIONS = [
-  {
-    id: 1,
-    type: 'like',
-    user: 'gamer_pro',
-    avatar: '👤',
-    message: 'liked your high score',
-    time: '2h',
-    game: 'Stack Ball',
-  },
-  {
-    id: 2,
-    type: 'follow',
-    user: 'ninja_master',
-    avatar: '🥷',
-    message: 'started following you',
-    time: '5h',
-  },
-  {
-    id: 3,
-    type: 'challenge',
-    user: 'speedrunner99',
-    avatar: '⚡',
-    message: 'challenged you to beat their score',
-    time: '1d',
-    game: 'Fruit Slicer',
-    score: 2450,
-  },
-  {
-    id: 4,
-    type: 'achievement',
-    user: 'system',
-    avatar: '🏆',
-    message: 'You unlocked "First Blood" achievement!',
-    time: '2d',
-  },
-];
+const NOTIFICATIONS: any[] = [];
 
-const MESSAGES = [
-  { id: 1, user: 'gamer_pro', avatar: '👤', lastMessage: 'GG! That was insane 🔥', time: '2h', unread: 2 },
-  { id: 2, user: 'ninja_master', avatar: '🥷', lastMessage: 'Wanna play together?', time: '1d', unread: 0 },
-];
+const MESSAGES: any[] = [];
 
 export const InboxScreen: React.FC = () => {
   const insets = useSafeAreaInsets();

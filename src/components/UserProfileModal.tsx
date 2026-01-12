@@ -45,12 +45,7 @@ interface ChatMessage {
   createdAt: string;
 }
 
-const SUGGESTED_FRIENDS = [
-  { id: '1', name: 'gamer_pro', avatar: null, status: 'RECENTLY JOINED', online: true },
-  { id: '2', name: 'ninja_master', avatar: null, status: 'RECENTLY JOINED', online: true },
-  { id: '3', name: 'speedrunner', avatar: null, status: 'IN MY CONTACTS', online: false },
-  { id: '4', name: 'casual_gamer', avatar: null, status: 'RECENTLY JOINED', online: true },
-];
+const SUGGESTED_FRIENDS: any[] = [];
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user, onFriendStatusChange }) => {
   const insets = useSafeAreaInsets();

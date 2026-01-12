@@ -16,12 +16,6 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const STORIES = [
   { id: 'add', user: 'Your story', avatar: '➕', isAdd: true, hasStory: false },
-  { id: '1', user: 'gamer_pro', avatar: '😎', hasStory: true, game: 'Stack Ball', score: 2450 },
-  { id: '2', user: 'ninja_master', avatar: '🥷', hasStory: true, game: 'Fruit Slicer', score: 1890 },
-  { id: '3', user: 'speedrunner', avatar: '⚡', hasStory: true, game: 'Stack Ball', score: 3200 },
-  { id: '4', user: 'casual_gamer', avatar: '🎮', hasStory: true, game: 'Fruit Slicer', score: 980 },
-  { id: '5', user: 'champion99', avatar: '👑', hasStory: true, game: 'Stack Ball', score: 4100 },
-  { id: '6', user: 'newbie_2024', avatar: '🐣', hasStory: true, game: 'Fruit Slicer', score: 450 },
 ];
 
 interface StoriesProps {

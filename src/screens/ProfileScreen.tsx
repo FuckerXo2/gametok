@@ -33,7 +33,7 @@ export const ProfileScreen: React.FC = () => {
         <TouchableOpacity>
           <Ionicons name="person-add-outline" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.username}>@gamer_2024</Text>
+        <Text style={styles.username}>@username</Text>
         <TouchableOpacity>
           <Ionicons name="menu-outline" size={28} color="#fff" />
         </TouchableOpacity>
