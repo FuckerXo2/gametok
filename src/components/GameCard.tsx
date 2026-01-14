@@ -175,6 +175,27 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
             mediaPlaybackRequiresUserAction={false}
             scalesPageToFit={true}
             contentMode="mobile"
+            onShouldStartLoadWithRequest={(request) => {
+              const url = request.url.toLowerCase();
+              // Block ad-related URLs
+              if (
+                url.includes('googlesyndication') ||
+                url.includes('doubleclick') ||
+                url.includes('googleads') ||
+                url.includes('adservice') ||
+                url.includes('pagead') ||
+                url.includes('adsense') ||
+                url.includes('adnxs') ||
+                url.includes('advertising') ||
+                url.includes('banner') ||
+                url.includes('/ads/') ||
+                url.includes('/ad/') ||
+                url.includes('imasdk.googleapis')
+              ) {
+                return false;
+              }
+              return true;
+            }}
             injectedJavaScript={`
               // Force viewport for external games
               var meta = document.querySelector('meta[name="viewport"]');
@@ -226,15 +247,28 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, onP
                   'iframe[src*="ads"]', 'iframe[src*="doubleclick"]',
                   'iframe[src*="googlesyndication"]', 'iframe[src*="adservice"]',
                   'iframe[src*="imasdk"]', 'iframe[src*="googleads"]',
+                  'iframe[src*="google"]', 'iframe[src*="banner"]',
                   '[class*="preroll"]', '[id*="preroll"]',
                   '[class*="interstitial"]', '[id*="interstitial"]',
                   '.gdsdk', '#gdsdk', '[class*="gdsdk"]',
                   '[class*="ad_container"]', '[id*="ad_container"]',
+                  '[class*="ad-container"]', '[id*="ad-container"]',
+                  '[class*="adContainer"]', '[id*="adContainer"]',
                   '[class*="video-ad"]', '[id*="video-ad"]',
                   '#sdk__advertisement', '[id*="sdk__"]',
                   '#imaContainer', '#imaContainer_new',
                   '[class*="GUIAd"]', '[class*="Advertisement"]',
                   '[id*="advertisement"]', '[class*="advertisement"]',
+                  '[class*="banner"]', '[id*="banner"]',
+                  '[class*="Banner"]', '[id*="Banner"]',
+                  '[class*="adsbox"]', '[id*="adsbox"]',
+                  '[class*="ad-slot"]', '[id*="ad-slot"]',
+                  '[class*="adslot"]', '[id*="adslot"]',
+                  'ins.adsbygoogle', '.adsbygoogle',
+                  '[data-ad]', '[data-ad-slot]',
+                  '[class*="google-ad"]', '[id*="google-ad"]',
+                  '[class*="GoogleAd"]', '[id*="GoogleAd"]',
+                  'div[id^="google_ads"]', 'div[id^="div-gpt-ad"]',
                 ];
                 
                 function hideAds() {

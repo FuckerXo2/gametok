@@ -20,7 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle, Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -167,7 +167,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       });
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onComplete();
+      animateTransition('profile');
     } catch (e: any) {
       if (e.code === 'ERR_REQUEST_CANCELED') {
         // User cancelled
@@ -203,7 +203,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         });
         
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        onComplete();
+        animateTransition('profile');
       }
     } catch (e: any) {
       if (e.code === statusCodes.SIGN_IN_CANCELLED) {
@@ -309,7 +309,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -385,12 +385,17 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
 
         {/* Google Sign-In */}
         <TouchableOpacity 
-          style={[styles.authOption, styles.googleButton]}
+          style={styles.googleButtonModern}
           onPress={handleGoogleSignIn}
           disabled={loading}
         >
-          <Ionicons name="logo-google" size={20} color="#fff" />
-          <Text style={styles.authOptionText}>Continue with Google</Text>
+          <Svg width={18} height={18} viewBox="0 0 24 24" style={{ marginRight: 10 }}>
+            <Path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <Path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <Path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <Path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </Svg>
+          <Text style={styles.googleButtonText}>Continue with Google</Text>
         </TouchableOpacity>
 
         {/* Email/Phone option */}
@@ -544,6 +549,37 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
           <TouchableOpacity style={styles.forgotPassword}>
             <Text style={[styles.forgotPasswordText, { color: colors.textSecondary }]}>Forgot password?</Text>
           </TouchableOpacity>
+        )}
+
+        {/* OAuth options for login */}
+        {isLogin && (
+          <View style={styles.oauthSection}>
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            </View>
+
+            <View style={styles.oauthIconsRow}>
+              {isAppleAvailable && (
+                <TouchableOpacity 
+                  style={[styles.oauthIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  onPress={handleAppleSignIn}
+                  disabled={loading}
+                >
+                  <Ionicons name="logo-apple" size={24} color={colors.text} />
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity 
+                style={[styles.oauthIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={handleGoogleSignIn}
+                disabled={loading}
+              >
+                <Ionicons name="logo-google" size={22} color="#EA4335" />
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
       </ScrollView>
 
@@ -1094,6 +1130,58 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // OAuth section for login
+  oauthSection: {
+    marginTop: 24,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+  },
+  oauthIconsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  oauthIconButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  // Modern Google button for welcome screen
+  googleButtonModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    height: 48,
+    marginBottom: 12,
+  },
+  googleIconWrapper: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  googleButtonText: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 
