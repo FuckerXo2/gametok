@@ -15,8 +15,30 @@ export const AD_UNIT_IDS = {
 const isDev = __DEV__;
 export const NATIVE_AD_UNIT_ID = isDev ? AD_UNIT_IDS.NATIVE_TEST : AD_UNIT_IDS.NATIVE;
 
-// Ad frequency - show ad every N items
-export const AD_FREQUENCY = 5; // Show ad after every 5 games
+// Default ad frequency - will be overridden by remote config
+export let AD_FREQUENCY = 3; // Show ad after every 3 games (default)
+
+// Remote config cache
+let remoteConfig: { adFrequency: number; maintenanceMode: boolean } | null = null;
+
+// Fetch remote config from backend
+export const fetchRemoteConfig = async () => {
+  try {
+    const API_URL = 'https://gametok-backend-production.up.railway.app';
+    const response = await fetch(`${API_URL}/api/config`);
+    if (response.ok) {
+      remoteConfig = await response.json();
+      if (remoteConfig?.adFrequency) {
+        AD_FREQUENCY = remoteConfig.adFrequency;
+        console.log('[Ads] Remote config loaded, ad frequency:', AD_FREQUENCY);
+      }
+      return remoteConfig;
+    }
+  } catch (error) {
+    console.log('[Ads] Failed to fetch remote config, using defaults');
+  }
+  return null;
+};
 
 // Check if we're in Expo Go (native modules not available)
 // Expo Go has appOwnership === 'expo', dev builds have undefined
@@ -24,6 +46,9 @@ export const isExpoGo = Constants.appOwnership === 'expo';
 
 // Initialize Mobile Ads SDK
 export const initializeAds = async () => {
+  // Fetch remote config first
+  await fetchRemoteConfig();
+  
   // Skip initialization in Expo Go - native modules not available
   if (isExpoGo) {
     console.log('[Ads] Running in Expo Go - ads disabled, showing placeholders');
