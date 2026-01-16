@@ -234,3 +234,29 @@ export const comments = {
     return request(`/comments/${commentId}`, { method: 'DELETE' });
   },
 };
+
+// Moderation API (User-Generated Content compliance)
+export const moderation = {
+  report: async (userId: string, reason: string, details?: string, contentType?: string, contentId?: string) => {
+    return request(`/users/${userId}/report`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, details, contentType, contentId }),
+    });
+  },
+  
+  block: async (userId: string) => {
+    return request(`/users/${userId}/block`, { method: 'POST' });
+  },
+  
+  unblock: async (userId: string) => {
+    return request(`/users/${userId}/block`, { method: 'DELETE' });
+  },
+  
+  getBlockedUsers: async () => {
+    return request('/users/blocked');
+  },
+  
+  isBlocked: async (userId: string) => {
+    return request(`/users/${userId}/blocked`);
+  },
+};

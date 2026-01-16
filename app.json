@@ -2,7 +2,8 @@
   "expo": {
     "name": "GameTOK",
     "slug": "gametok",
-    "version": "1.0.4",
+    "scheme": "gametok",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -17,7 +18,8 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.olasubomi.gametok",
-      "buildNumber": "6",
+      "buildNumber": "16",
+      "newArchEnabled": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."

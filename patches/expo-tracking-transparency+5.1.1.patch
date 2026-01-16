@@ -1,0 +1,18 @@
+diff --git a/node_modules/expo-tracking-transparency/expo-module.config.json b/node_modules/expo-tracking-transparency/expo-module.config.json
+index 96716ab..b9bb4fb 100644
+--- a/node_modules/expo-tracking-transparency/expo-module.config.json
++++ b/node_modules/expo-tracking-transparency/expo-module.config.json
+@@ -1,10 +1,10 @@
+ {
+   "name": "expo-tracking-transparency",
+   "platforms": ["apple", "android"],
+-  "ios": {
+-    "modulesClassNames": ["TrackingTransparencyModule"]
++  "apple": {
++    "modules": ["TrackingTransparencyModule"]
+   },
+   "android": {
+-    "modulesClassNames": ["expo.modules.trackingtransparency.TrackingTransparencyModule"]
++    "modules": ["expo.modules.trackingtransparency.TrackingTransparencyModule"]
+   }
+ }

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,12 +14,27 @@ import { isExpoGo } from '../services/ads';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Use window dimensions that update on rotation/resize
+const useScreenDimensions = () => {
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+  
+  return dimensions;
+};
+
 interface NativeAdCardProps {
   isActive?: boolean;
 }
 
 export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useScreenDimensions();
   const [adLoaded, setAdLoaded] = useState(false);
   const [adError, setAdError] = useState(false);
   const [AdComponents, setAdComponents] = useState<any>(null);
@@ -34,19 +50,27 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
     // This code path is NEVER executed in Expo Go
     const loadAdComponent = async () => {
       try {
-        // Use require() with a try-catch to avoid bundler issues
-        const adModule = require('react-native-google-mobile-ads');
-        setAdComponents({
-          GAMBannerAd: adModule.GAMBannerAd,
-          BannerAdSize: adModule.BannerAdSize,
-          TestIds: adModule.TestIds,
-        });
+        // Use dynamic import with error handling
+        const adModule = await import('react-native-google-mobile-ads');
+        if (adModule && adModule.GAMBannerAd) {
+          setAdComponents({
+            GAMBannerAd: adModule.GAMBannerAd,
+            BannerAdSize: adModule.BannerAdSize,
+            TestIds: adModule.TestIds,
+          });
+        } else {
+          console.log('[Ad] Ad module loaded but components missing');
+          setAdError(true);
+        }
       } catch (e) {
         console.log('[Ad] Failed to load ad component:', e);
         setAdError(true);
       }
     };
-    loadAdComponent();
+    
+    // Delay ad loading slightly to not block app launch
+    const timer = setTimeout(loadAdComponent, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Placeholder/mock ad for Expo Go
@@ -121,6 +145,8 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
   }
 
   const { GAMBannerAd, BannerAdSize, TestIds } = AdComponents;
+  // Always use test ads on simulator, real ads only on physical devices in production
+  const isSimulator = !__DEV__ && Platform.OS === 'ios'; // Can't reliably detect simulator, so use test in dev
   const AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-1961802731817431/8986743812';
 
   return (
@@ -185,8 +211,8 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
 
 const styles = StyleSheet.create({
   container: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000',
   },
   adContainer: {

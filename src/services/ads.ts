@@ -16,10 +16,17 @@ const isDev = __DEV__;
 export const NATIVE_AD_UNIT_ID = isDev ? AD_UNIT_IDS.NATIVE_TEST : AD_UNIT_IDS.NATIVE;
 
 // Default ad frequency - will be overridden by remote config
-export let AD_FREQUENCY = 3; // Show ad after every 3 games (default)
+let AD_FREQUENCY = 3; // Show ad after every 3 games (default)
+
+// Getter function to always get current value
+export const getAdFrequency = () => AD_FREQUENCY;
+export { AD_FREQUENCY }; // For backward compatibility
 
 // Remote config cache
 let remoteConfig: { adFrequency: number; maintenanceMode: boolean } | null = null;
+
+// Detect iOS simulator (ads SDK crashes on iOS 26.x simulator due to WebKit bug)
+const isIOSSimulator = Platform.OS === 'ios' && !Constants.isDevice;
 
 // Fetch remote config from backend
 export const fetchRemoteConfig = async () => {
@@ -44,10 +51,68 @@ export const fetchRemoteConfig = async () => {
 // Expo Go has appOwnership === 'expo', dev builds have undefined
 export const isExpoGo = Constants.appOwnership === 'expo';
 
+// Check if ads should be disabled (Expo Go or iOS simulator)
+export const shouldDisableAds = isExpoGo || isIOSSimulator;
+
+// Track if ATT has been requested
+let attRequested = false;
+
+// Request App Tracking Transparency permission
+// This should be called early in app lifecycle, before any tracking occurs
+export const requestTrackingPermission = async (): Promise<string> => {
+  if (attRequested) {
+    console.log('[ATT] Already requested');
+    return 'already-requested';
+  }
+  
+  if (Platform.OS !== 'ios') {
+    console.log('[ATT] Not iOS, skipping');
+    return 'not-ios';
+  }
+  
+  if (isExpoGo) {
+    console.log('[ATT] Running in Expo Go, skipping');
+    return 'expo-go';
+  }
+  
+  try {
+    const { requestTrackingPermissionsAsync, getTrackingPermissionsAsync } = await import('expo-tracking-transparency');
+    
+    // Check current status first
+    const { status: currentStatus } = await getTrackingPermissionsAsync();
+    console.log('[ATT] Current status:', currentStatus);
+    
+    // Only request if not determined yet
+    if (currentStatus === 'undetermined') {
+      // Small delay to ensure app is fully loaded (helps on iPad)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const { status } = await requestTrackingPermissionsAsync();
+      console.log('[ATT] Permission requested, status:', status);
+      attRequested = true;
+      return status;
+    }
+    
+    attRequested = true;
+    return currentStatus;
+  } catch (error: any) {
+    console.log('[ATT] Error requesting permission:', error?.message || error);
+    attRequested = true;
+    return 'error';
+  }
+};
+
 // Initialize Mobile Ads SDK
 export const initializeAds = async () => {
-  // Fetch remote config first
-  await fetchRemoteConfig();
+  // Fetch remote config first (non-blocking, with timeout)
+  try {
+    await Promise.race([
+      fetchRemoteConfig(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+    ]);
+  } catch (e) {
+    console.log('[Ads] Remote config fetch timed out or failed, using defaults');
+  }
   
   // Skip initialization in Expo Go - native modules not available
   if (isExpoGo) {
@@ -55,31 +120,46 @@ export const initializeAds = async () => {
     return true; // Return true so ad slots still show (as placeholders)
   }
 
-  try {
-    // Dynamic import to avoid crash in Expo Go
-    const { default: mobileAds, MaxAdContentRating } = await import('react-native-google-mobile-ads');
-    const { requestTrackingPermissionsAsync } = await import('expo-tracking-transparency');
+  // Skip initialization on iOS simulator - WebKit crashes on iOS 26.x
+  if (isIOSSimulator) {
+    console.log('[Ads] Running on iOS simulator - ads disabled to prevent WebKit crash');
+    return true;
+  }
 
-    // Request tracking permission on iOS (required for personalized ads)
+  try {
+    // Request tracking permission on iOS first (required for personalized ads)
     if (Platform.OS === 'ios') {
-      const { status } = await requestTrackingPermissionsAsync();
-      console.log('[Ads] Tracking permission status:', status);
+      await requestTrackingPermission();
     }
 
-    // Configure ads
-    await mobileAds().setRequestConfiguration({
-      maxAdContentRating: MaxAdContentRating.PG,
-      tagForChildDirectedTreatment: false,
-      tagForUnderAgeOfConsent: false,
-    });
+    // Dynamic import to avoid crash in Expo Go
+    const { default: mobileAds, MaxAdContentRating } = await import('react-native-google-mobile-ads');
+    
+    // Configure and initialize ads with timeout to prevent blocking
+    const initPromise = (async () => {
+      try {
+        await mobileAds().setRequestConfiguration({
+          maxAdContentRating: MaxAdContentRating.PG,
+          tagForChildDirectedTreatment: false,
+          tagForUnderAgeOfConsent: false,
+        });
+        await mobileAds().initialize();
+      } catch (innerError) {
+        console.log('[Ads] Inner init error (non-fatal):', innerError);
+      }
+    })();
 
-    // Initialize the SDK
-    await mobileAds().initialize();
+    await Promise.race([
+      initPromise,
+      new Promise((resolve) => setTimeout(resolve, 10000)) // Don't reject, just resolve after timeout
+    ]);
+
     console.log('[Ads] Mobile Ads SDK initialized');
     return true;
   } catch (error) {
-    console.error('[Ads] Failed to initialize:', error);
-    return false;
+    console.log('[Ads] Failed to initialize (non-fatal):', error);
+    // Return true anyway - app should work without ads
+    return true;
   }
 };
 

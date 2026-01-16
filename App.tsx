@@ -10,8 +10,10 @@ import { InboxScreen } from './src/components/InboxScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { DiscoverScreen } from './src/components/DiscoverScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { requestTrackingPermission } from './src/services/ads';
 
 type TabName = 'home' | 'discover' | 'inbox' | 'profile';
 
@@ -53,6 +55,8 @@ const AppContent = () => {
 
   useEffect(() => {
     checkOnboarding();
+    // Request ATT permission early, before any tracking
+    requestTrackingPermission();
   }, []);
 
   const checkOnboarding = async () => {
@@ -95,15 +99,17 @@ const AppContent = () => {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <GestureHandlerRootView style={styles.container}>
-        <ThemeProvider>
-          <AuthProvider>
-            <AppContent />
-          </AuthProvider>
-        </ThemeProvider>
-      </GestureHandlerRootView>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <GestureHandlerRootView style={styles.container}>
+          <ThemeProvider>
+            <AuthProvider>
+              <AppContent />
+            </AuthProvider>
+          </ThemeProvider>
+        </GestureHandlerRootView>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 

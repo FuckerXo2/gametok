@@ -12,9 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './GameCard';
 import { NativeAdCard } from './NativeAdCard';
 import { games as gamesApi } from '../services/api';
-import { initializeAds, AD_FREQUENCY } from '../services/ads';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { initializeAds, getAdFrequency } from '../services/ads';
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
@@ -42,6 +40,7 @@ type FeedItem = FeedGame | { isAd: true; uniqueId: string };
 
 export const GameFeed: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const [screenHeight, setScreenHeight] = useState(Dimensions.get('window').height);
   const [games, setGames] = useState<Game[]>(FALLBACK_GAMES);
   const [feedData, setFeedData] = useState<FeedItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -51,6 +50,14 @@ export const GameFeed: React.FC = () => {
   const flatListRef = useRef<FlatList>(null);
   const feedIndexRef = useRef(0);
   const adCounterRef = useRef(0);
+
+  // Handle screen dimension changes (iPad rotation, etc)
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenHeight(window.height);
+    });
+    return () => subscription?.remove();
+  }, []);
 
   // Initialize ads
   useEffect(() => {
@@ -83,14 +90,17 @@ export const GameFeed: React.FC = () => {
 
   // Generate feed when games are loaded
   useEffect(() => {
-    if (games.length > 0 && adsInitialized) {
-      const initialFeed = generateFeed(10, 0);
+    if (games.length > 0) {
+      const initialFeed = generateFeed(10, 0, true); // true = initial load, no ads
       setFeedData(initialFeed);
       feedIndexRef.current = 10;
     }
   }, [games, adsInitialized]);
 
-  const generateFeed = (count: number, startIndex: number): FeedItem[] => {
+  // Track total games shown to user (not just generated)
+  const gamesViewedRef = useRef(0);
+
+  const generateFeed = (count: number, startIndex: number, isInitialLoad: boolean = false): FeedItem[] => {
     const feed: FeedItem[] = [];
     for (let i = 0; i < count; i++) {
       const game = games[(startIndex + i) % games.length];
@@ -105,12 +115,16 @@ export const GameFeed: React.FC = () => {
         gameUrl,
       });
       
-      adCounterRef.current++;
-      if (adCounterRef.current % AD_FREQUENCY === 0 && adsInitialized) {
-        feed.push({
-          isAd: true,
-          uniqueId: `ad-${adCounterRef.current}-${Date.now()}`,
-        });
+      // Don't insert any ads in the initial load - let user enjoy first few games
+      if (!isInitialLoad) {
+        adCounterRef.current++;
+        const adFreq = getAdFrequency();
+        if (adCounterRef.current % adFreq === 0 && adsInitialized) {
+          feed.push({
+            isAd: true,
+            uniqueId: `ad-${adCounterRef.current}-${Date.now()}`,
+          });
+        }
       }
     }
     return feed;
@@ -132,34 +146,44 @@ export const GameFeed: React.FC = () => {
 
   const loadMore = useCallback(() => {
     if (games.length === 0) return;
-    const newGames = generateFeed(5, feedIndexRef.current);
+    const newGames = generateFeed(5, feedIndexRef.current, false); // false = not initial, can have ads
     feedIndexRef.current += 5;
     setFeedData(prev => [...prev, ...newGames]);
-  }, [games]);
+  }, [games, adsInitialized]);
 
   const renderItem = useCallback(({ item, index }: { item: FeedItem; index: number }) => {
     if ('isAd' in item && item.isAd) {
-      return <NativeAdCard isActive={index === activeIndex} />;
+      return (
+        <View style={{ height: screenHeight, width: '100%' }}>
+          <NativeAdCard isActive={index === activeIndex} />
+        </View>
+      );
     }
     
     const gameItem = item as FeedGame;
+    // Preload games within 3 positions of current
+    const shouldPreload = Math.abs(index - activeIndex) <= 3;
+    
     return (
-      <GameCard
-        game={gameItem}
-        gameUrl={gameItem.gameUrl}
-        isActive={index === activeIndex}
-        onPlayingChange={setIsGamePlaying}
-      />
+      <View style={{ height: screenHeight, width: '100%' }}>
+        <GameCard
+          game={gameItem}
+          gameUrl={gameItem.gameUrl}
+          isActive={index === activeIndex}
+          isPreloading={shouldPreload && index !== activeIndex}
+          onPlayingChange={setIsGamePlaying}
+        />
+      </View>
     );
-  }, [activeIndex]);
+  }, [activeIndex, screenHeight]);
 
   const keyExtractor = useCallback((item: FeedItem) => item.uniqueId, []);
 
   const getItemLayout = useCallback((_: any, index: number) => ({
-    length: SCREEN_HEIGHT,
-    offset: SCREEN_HEIGHT * index,
+    length: screenHeight,
+    offset: screenHeight * index,
     index,
-  }), []);
+  }), [screenHeight]);
 
   if (loading) {
     return (
@@ -185,7 +209,7 @@ export const GameFeed: React.FC = () => {
         keyExtractor={keyExtractor}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        snapToInterval={SCREEN_HEIGHT}
+        snapToInterval={screenHeight}
         snapToAlignment="start"
         decelerationRate="fast"
         onViewableItemsChanged={onViewableItemsChanged}
@@ -197,7 +221,7 @@ export const GameFeed: React.FC = () => {
         maxToRenderPerBatch={3}
         windowSize={7}
         initialNumToRender={3}
-        scrollEnabled={!isGamePlaying}
+        scrollEnabled={true}
       />
     </View>
   );

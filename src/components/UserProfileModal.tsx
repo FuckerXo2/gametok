@@ -17,8 +17,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { messages as messagesApi, users } from '../services/api';
+import { messages as messagesApi, users, moderation } from '../services/api';
 import { Avatar } from './Avatar';
+import { ReportModal } from './ReportModal';
 
 interface UserProfile {
   id: string;
@@ -53,6 +54,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [isAdded, setIsAdded] = useState(user?.isFriend ?? false);
   const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   
   // Update isAdded when user changes or modal opens
   React.useEffect(() => {
@@ -68,25 +70,28 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [isToggling, setIsToggling] = useState(false);
 
   const handleReport = () => {
-    Alert.alert(
-      'Report User',
-      'Why are you reporting this user?',
-      [
-        { text: 'Spam', onPress: () => Alert.alert('Reported', 'Thank you for your report. We will review this user.') },
-        { text: 'Inappropriate Content', onPress: () => Alert.alert('Reported', 'Thank you for your report. We will review this user.') },
-        { text: 'Harassment', onPress: () => Alert.alert('Reported', 'Thank you for your report. We will review this user.') },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    setShowReportModal(true);
   };
 
   const handleBlock = () => {
     Alert.alert(
       'Block User',
-      `Are you sure you want to block ${user?.username}?`,
+      `Are you sure you want to block @${user?.username}? They won't be able to message you or see your profile.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Block', style: 'destructive', onPress: () => Alert.alert('Blocked', 'This user has been blocked.') },
+        { 
+          text: 'Block', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              await moderation.block(user!.id);
+              Alert.alert('Blocked', `You've blocked @${user?.username}.`);
+              onClose();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to block user');
+            }
+          }
+        },
       ]
     );
   };
@@ -333,6 +338,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           <View style={{ height: 100 }} />
         </ScrollView>
       </View>
+      
+      {/* Report Modal */}
+      <ReportModal
+        visible={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        userId={user.id}
+        username={user.username}
+        contentType="profile"
+      />
     </Modal>
   );
 };
