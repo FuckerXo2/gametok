@@ -5,14 +5,12 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
-  Platform,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isExpoGo } from '../services/ads';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Use window dimensions that update on rotation/resize
 const useScreenDimensions = () => {
@@ -32,48 +30,76 @@ interface NativeAdCardProps {
   isActive?: boolean;
 }
 
-export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
+export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useScreenDimensions();
-  const [adLoaded, setAdLoaded] = useState(false);
+  const [nativeAd, setNativeAd] = useState<any>(null);
   const [adFailed, setAdFailed] = useState(false);
   const [AdComponents, setAdComponents] = useState<any>(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Load ad components dynamically (for native builds only)
   useEffect(() => {
-    // In Expo Go, just show placeholder - don't even try to load ad modules
     if (isExpoGo) {
-      setAdLoaded(true);
+      setIsLoading(false);
       return;
     }
 
-    // Dynamic import for native builds only
-    // This code path is NEVER executed in Expo Go
-    const loadAdComponent = async () => {
+    const loadAdModule = async () => {
       try {
-        // Use dynamic import with error handling
         const adModule = await import('react-native-google-mobile-ads');
-        if (adModule && adModule.useNativeAd) {
-          setAdComponents({
-            useNativeAd: adModule.useNativeAd,
-            NativeAdView: adModule.NativeAdView,
-            NativeMediaView: adModule.NativeMediaView,
-            TestIds: adModule.TestIds,
-          });
-        } else {
-          console.log('[Ad] Ad module loaded but components missing');
-          setAdFailed(true);
-        }
+        setAdComponents({
+          NativeAd: adModule.NativeAd,
+          NativeAdView: adModule.NativeAdView,
+          NativeMediaView: adModule.NativeMediaView,
+          NativeAsset: adModule.NativeAsset,
+          NativeAssetType: adModule.NativeAssetType,
+          TestIds: adModule.TestIds,
+        });
       } catch (e) {
-        console.log('[Ad] Failed to load ad component:', e);
+        console.log('[Ad] Failed to load ad module:', e);
         setAdFailed(true);
+        setIsLoading(false);
       }
     };
     
-    // Delay ad loading slightly to not block app launch
-    const timer = setTimeout(loadAdComponent, 100);
-    return () => clearTimeout(timer);
+    loadAdModule();
   }, []);
+
+  // Load the actual ad once components are ready
+  useEffect(() => {
+    if (!AdComponents || isExpoGo) return;
+
+    const { NativeAd, TestIds } = AdComponents;
+    const AD_UNIT_ID = __DEV__ ? TestIds.NATIVE : 'ca-app-pub-1961802731817431/8986743812';
+
+    console.log('[Ad] Loading native ad with unit ID:', AD_UNIT_ID);
+
+    NativeAd.createForAdRequest(AD_UNIT_ID, {
+      requestNonPersonalizedAdsOnly: false,
+    })
+      .then((ad: any) => {
+        console.log('[Ad] Native ad loaded successfully');
+        console.log('[Ad] Headline:', ad.headline);
+        console.log('[Ad] Body:', ad.body);
+        setNativeAd(ad);
+        setIsLoading(false);
+      })
+      .catch((error: any) => {
+        console.log('[Ad] Failed to load native ad:', error);
+        console.log('[Ad] Error code:', error?.code);
+        console.log('[Ad] Error message:', error?.message);
+        setAdFailed(true);
+        setIsLoading(false);
+      });
+
+    // Cleanup
+    return () => {
+      if (nativeAd) {
+        nativeAd.destroy?.();
+      }
+    };
+  }, [AdComponents]);
 
   // Placeholder/mock ad for Expo Go
   if (isExpoGo) {
@@ -83,25 +109,20 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
           colors={['#1a1a2e', '#16213e', '#0f0f23']}
           style={styles.adContainer}
         >
-          {/* Sponsored badge */}
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
             <Text style={styles.sponsoredText}>Sponsored</Text>
           </View>
-
-          {/* Mock ad content */}
           <View style={styles.mockAdContent}>
             <View style={styles.mockAdImage}>
               <Ionicons name="game-controller" size={80} color="rgba(99, 102, 241, 0.5)" />
             </View>
             <Text style={styles.mockAdTitle}>Download Now!</Text>
-            <Text style={styles.mockAdSubtitle}>The #1 Game of 2025</Text>
+            <Text style={styles.mockAdSubtitle}>The #1 Game of 2026</Text>
             <View style={styles.mockAdButton}>
               <Text style={styles.mockAdButtonText}>Install</Text>
             </View>
             <Text style={styles.mockAdNote}>[ Test Ad - Real ads in production build ]</Text>
           </View>
-
-          {/* Bottom info */}
           <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
             <View style={styles.adHeader}>
               <View style={styles.adIconPlaceholder}>
@@ -113,86 +134,37 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
               </View>
             </View>
           </View>
-
-          {/* Side actions */}
-          <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-            <View style={styles.actionBtn}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
-              </View>
-              <Text style={styles.actionLabel}>Ad Info</Text>
-            </View>
-          </View>
         </LinearGradient>
       </View>
     );
   }
 
-  // If ad components not loaded yet, show loading
-  if (!AdComponents) {
+  // Loading state
+  if (isLoading) {
     return (
       <View style={styles.container}>
         <LinearGradient
           colors={['#1a1a2e', '#16213e', '#0f0f23']}
-          style={styles.errorContainer}
+          style={styles.loadingContainer}
         >
-          <View style={styles.errorContent}>
-            <ActivityIndicator size="large" color="#FF8E53" />
-            <Text style={styles.errorText}>Loading ad...</Text>
-          </View>
+          <ActivityIndicator size="large" color="#FF8E53" />
+          <Text style={styles.loadingText}>Loading ad...</Text>
         </LinearGradient>
       </View>
     );
   }
 
-  const { useNativeAd, NativeAdView, NativeMediaView, TestIds } = AdComponents;
-  // Use test ads in development, real ads in production
-  const AD_UNIT_ID = __DEV__ ? TestIds.NATIVE_ADVANCED : 'ca-app-pub-1961802731817431/8986743812';
-  
-  // Use the native ad hook
-  const { nativeAd, isLoaded, error } = useNativeAd(AD_UNIT_ID, {
-    requestNonPersonalizedAdsOnly: false,
-  });
-  
-  // Handle ad loaded
-  useEffect(() => {
-    if (isLoaded) {
-      console.log('[Ad] Native ad loaded successfully');
-      setAdLoaded(true);
-      setAdFailed(false);
-    }
-  }, [isLoaded]);
-  
-  // Handle ad error
-  useEffect(() => {
-    if (error) {
-      console.log('[Ad] Failed to load - Error code:', error?.code);
-      console.log('[Ad] Error message:', error?.message);
-      console.log('[Ad] Full error:', JSON.stringify(error));
-      // After 2 retries, show fallback
-      if (retryCount >= 2) {
-        setAdFailed(true);
-      } else {
-        // Retry after delay
-        setTimeout(() => setRetryCount(prev => prev + 1), 2000);
-      }
-    }
-  }, [error, retryCount]);
-
-  // If ad failed after retries, show a nice fallback
-  if (adFailed) {
+  // Failed state - show fallback
+  if (adFailed || !nativeAd) {
     return (
       <View style={styles.container}>
         <LinearGradient
           colors={['#1a1a2e', '#16213e', '#0f0f23']}
           style={styles.adContainer}
         >
-          {/* Sponsored badge */}
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
             <Text style={styles.sponsoredText}>Sponsored</Text>
           </View>
-
-          {/* Fallback ad content */}
           <View style={styles.mockAdContent}>
             <View style={styles.mockAdImage}>
               <Ionicons name="game-controller" size={80} color="rgba(99, 102, 241, 0.5)" />
@@ -203,8 +175,6 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
               <Text style={styles.mockAdButtonText}>Keep Playing</Text>
             </View>
           </View>
-
-          {/* Bottom info */}
           <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
             <View style={styles.adHeader}>
               <View style={styles.adIconPlaceholder}>
@@ -216,20 +186,13 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
               </View>
             </View>
           </View>
-
-          {/* Side actions */}
-          <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-            <View style={styles.actionBtn}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
-              </View>
-              <Text style={styles.actionLabel}>Ad Info</Text>
-            </View>
-          </View>
         </LinearGradient>
       </View>
     );
   }
+
+  // Real native ad
+  const { NativeAdView, NativeMediaView, NativeAsset, NativeAssetType } = AdComponents;
 
   return (
     <View style={styles.container}>
@@ -237,48 +200,56 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
         colors={['#1a1a2e', '#16213e', '#0f0f23']}
         style={styles.adContainer}
       >
-        {/* Sponsored badge */}
         <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
           <Text style={styles.sponsoredText}>Sponsored</Text>
         </View>
 
-        {/* Ad content area */}
-        <View style={styles.adContent}>
-          {!adLoaded && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#FF8E53" />
-            </View>
-          )}
-          
-          {nativeAd && (
-            <NativeAdView style={styles.nativeAdView} nativeAd={nativeAd}>
-              <NativeMediaView style={styles.nativeMediaView} />
-            </NativeAdView>
-          )}
-        </View>
-
-        {/* Bottom info */}
-        <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
-          <View style={styles.adHeader}>
-            <View style={styles.adIconPlaceholder}>
-              <Ionicons name="megaphone" size={24} color="#FF8E53" />
-            </View>
-            <View style={styles.adTitleContainer}>
-              <Text style={styles.adHeadline}>Advertisement</Text>
-              <Text style={styles.adSubtitle}>Tap to learn more</Text>
-            </View>
+        <NativeAdView nativeAd={nativeAd} style={styles.nativeAdView}>
+          {/* Media content */}
+          <View style={styles.mediaContainer}>
+            <NativeMediaView style={styles.nativeMediaView} resizeMode="contain" />
           </View>
-        </View>
 
-        {/* Side actions */}
-        <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-          <View style={styles.actionBtn}>
-            <View style={styles.actionIcon}>
-              <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+          {/* Ad info at bottom */}
+          <View style={[styles.nativeAdInfo, { paddingBottom: insets.bottom + 90 }]}>
+            <View style={styles.adHeader}>
+              {nativeAd.icon && (
+                <NativeAsset assetType={NativeAssetType.ICON}>
+                  <Image 
+                    source={{ uri: nativeAd.icon.url }} 
+                    style={styles.adIcon}
+                  />
+                </NativeAsset>
+              )}
+              {!nativeAd.icon && (
+                <View style={styles.adIconPlaceholder}>
+                  <Ionicons name="megaphone" size={24} color="#FF8E53" />
+                </View>
+              )}
+              <View style={styles.adTitleContainer}>
+                <NativeAsset assetType={NativeAssetType.HEADLINE}>
+                  <Text style={styles.adHeadline} numberOfLines={1}>
+                    {nativeAd.headline || 'Advertisement'}
+                  </Text>
+                </NativeAsset>
+                {nativeAd.body && (
+                  <NativeAsset assetType={NativeAssetType.BODY}>
+                    <Text style={styles.adSubtitle} numberOfLines={1}>
+                      {nativeAd.body}
+                    </Text>
+                  </NativeAsset>
+                )}
+              </View>
             </View>
-            <Text style={styles.actionLabel}>Ad Info</Text>
+            {nativeAd.callToAction && (
+              <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+                <View style={styles.ctaButton}>
+                  <Text style={styles.ctaText}>{nativeAd.callToAction}</Text>
+                </View>
+              </NativeAsset>
+            )}
           </View>
-        </View>
+        </NativeAdView>
       </LinearGradient>
     </View>
   );
@@ -293,23 +264,14 @@ const styles = StyleSheet.create({
   adContainer: {
     flex: 1,
   },
-  errorContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  errorContent: {
-    alignItems: 'center',
-  },
-  errorTitle: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-  },
-  errorText: {
-    color: 'rgba(255,255,255,0.3)',
-    marginTop: 8,
+  loadingText: {
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 12,
     fontSize: 14,
   },
   sponsoredBadge: {
@@ -326,25 +288,81 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  adContent: {
+  nativeAdView: {
+    flex: 1,
+  },
+  mediaContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  nativeAdView: {
-    width: '100%',
-    height: '100%',
+    paddingTop: 60,
   },
   nativeMediaView: {
     width: '100%',
     height: '100%',
   },
-  loadingOverlay: {
+  nativeAdInfo: {
     position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  adHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  adIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    marginRight: 12,
+  },
+  adIconPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
-  // Mock ad styles for Expo Go
+  adTitleContainer: {
+    flex: 1,
+  },
+  adHeadline: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  adSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
+  },
+  ctaButton: {
+    backgroundColor: '#FF8E53',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ctaText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  adInfo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 70,
+    paddingHorizontal: 16,
+  },
   mockAdContent: {
     flex: 1,
     justifyContent: 'center',
@@ -387,59 +405,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255,255,255,0.3)',
     textAlign: 'center',
-  },
-  adInfo: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 70,
-    paddingHorizontal: 16,
-  },
-  adHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  adIconPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  adTitleContainer: {
-    flex: 1,
-  },
-  adHeadline: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  adSubtitle: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 2,
-  },
-  sideActions: {
-    position: 'absolute',
-    right: 8,
-    alignItems: 'center',
-  },
-  actionBtn: {
-    alignItems: 'center',
-  },
-  actionIcon: {
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionLabel: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
   },
 });
 
