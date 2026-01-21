@@ -91,16 +91,13 @@ export const GameFeed: React.FC = () => {
   // Generate feed when games are loaded
   useEffect(() => {
     if (games.length > 0) {
-      const initialFeed = generateFeed(10, 0, true); // true = initial load, no ads
+      const initialFeed = generateFeed(10, 0);
       setFeedData(initialFeed);
       feedIndexRef.current = 10;
     }
   }, [games, adsInitialized]);
 
-  // Track total games shown to user (not just generated)
-  const gamesViewedRef = useRef(0);
-
-  const generateFeed = (count: number, startIndex: number, isInitialLoad: boolean = false): FeedItem[] => {
+  const generateFeed = (count: number, startIndex: number): FeedItem[] => {
     const feed: FeedItem[] = [];
     for (let i = 0; i < count; i++) {
       const game = games[(startIndex + i) % games.length];
@@ -115,16 +112,14 @@ export const GameFeed: React.FC = () => {
         gameUrl,
       });
       
-      // Don't insert any ads in the initial load - let user enjoy first few games
-      if (!isInitialLoad) {
-        adCounterRef.current++;
-        const adFreq = getAdFrequency();
-        if (adCounterRef.current % adFreq === 0 && adsInitialized) {
-          feed.push({
-            isAd: true,
-            uniqueId: `ad-${adCounterRef.current}-${Date.now()}`,
-          });
-        }
+      // Insert ad every 3 games
+      adCounterRef.current++;
+      const adFreq = getAdFrequency();
+      if (adCounterRef.current % adFreq === 0 && adsInitialized) {
+        feed.push({
+          isAd: true,
+          uniqueId: `ad-${adCounterRef.current}-${Date.now()}`,
+        });
       }
     }
     return feed;
@@ -146,7 +141,7 @@ export const GameFeed: React.FC = () => {
 
   const loadMore = useCallback(() => {
     if (games.length === 0) return;
-    const newGames = generateFeed(5, feedIndexRef.current, false); // false = not initial, can have ads
+    const newGames = generateFeed(5, feedIndexRef.current);
     feedIndexRef.current += 5;
     setFeedData(prev => [...prev, ...newGames]);
   }, [games, adsInitialized]);
