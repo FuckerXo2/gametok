@@ -53,9 +53,9 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
       try {
         // Use dynamic import with error handling
         const adModule = await import('react-native-google-mobile-ads');
-        if (adModule && adModule.NativeAd) {
+        if (adModule && adModule.useNativeAd) {
           setAdComponents({
-            NativeAd: adModule.NativeAd,
+            useNativeAd: adModule.useNativeAd,
             NativeAdView: adModule.NativeAdView,
             NativeMediaView: adModule.NativeMediaView,
             TestIds: adModule.TestIds,
@@ -145,9 +145,39 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
     );
   }
 
-  const { NativeAd, NativeAdView, NativeMediaView, TestIds } = AdComponents;
+  const { useNativeAd, NativeAdView, NativeMediaView, TestIds } = AdComponents;
   // Use test ads in development, real ads in production
   const AD_UNIT_ID = __DEV__ ? TestIds.NATIVE_ADVANCED : 'ca-app-pub-1961802731817431/8986743812';
+  
+  // Use the native ad hook
+  const { nativeAd, isLoaded, error } = useNativeAd(AD_UNIT_ID, {
+    requestNonPersonalizedAdsOnly: false,
+  });
+  
+  // Handle ad loaded
+  useEffect(() => {
+    if (isLoaded) {
+      console.log('[Ad] Native ad loaded successfully');
+      setAdLoaded(true);
+      setAdFailed(false);
+    }
+  }, [isLoaded]);
+  
+  // Handle ad error
+  useEffect(() => {
+    if (error) {
+      console.log('[Ad] Failed to load - Error code:', error?.code);
+      console.log('[Ad] Error message:', error?.message);
+      console.log('[Ad] Full error:', JSON.stringify(error));
+      // After 2 retries, show fallback
+      if (retryCount >= 2) {
+        setAdFailed(true);
+      } else {
+        // Retry after delay
+        setTimeout(() => setRetryCount(prev => prev + 1), 2000);
+      }
+    }
+  }, [error, retryCount]);
 
   // If ad failed after retries, show a nice fallback
   if (adFailed) {
@@ -220,33 +250,11 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
             </View>
           )}
           
-          <NativeAd
-            unitId={AD_UNIT_ID}
-            requestOptions={{
-              requestNonPersonalizedAdsOnly: false,
-            }}
-            onAdLoaded={() => {
-              console.log('[Ad] Native ad loaded successfully');
-              setAdLoaded(true);
-              setAdFailed(false);
-            }}
-            onAdFailedToLoad={(error: any) => {
-              console.log('[Ad] Failed to load - Error code:', error?.code);
-              console.log('[Ad] Error message:', error?.message);
-              console.log('[Ad] Full error:', JSON.stringify(error));
-              // After 2 retries, show fallback
-              if (retryCount >= 2) {
-                setAdFailed(true);
-              } else {
-                // Retry after delay
-                setTimeout(() => setRetryCount(prev => prev + 1), 2000);
-              }
-            }}
-          >
-            <NativeAdView style={styles.nativeAdView}>
+          {nativeAd && (
+            <NativeAdView style={styles.nativeAdView} nativeAd={nativeAd}>
               <NativeMediaView style={styles.nativeMediaView} />
             </NativeAdView>
-          </NativeAd>
+          )}
         </View>
 
         {/* Bottom info */}
