@@ -77,6 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.oauth(provider, oauthData);
     console.log('[Auth] OAuth successful, token saved');
     setUser(data.user);
+    return data;
   };
 
   const logout = async () => {

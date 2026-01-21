@@ -159,7 +159,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       });
       
       // Send to backend
-      await loginWithOAuth('apple', {
+      const result = await loginWithOAuth('apple', {
         identityToken: credential.identityToken,
         email: credential.email,
         fullName: credential.fullName,
@@ -167,7 +167,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       });
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      animateTransition('profile');
+      
+      // Check if user already has a username (returning user)
+      // If they do, complete onboarding. If not, go to username step
+      if (result?.user?.username) {
+        onComplete();
+      } else {
+        animateTransition('username');
+      }
     } catch (e: any) {
       if (e.code === 'ERR_REQUEST_CANCELED') {
         // User cancelled
@@ -192,7 +199,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       if (response.type === 'success' && response.data) {
         const { idToken, user: googleUser } = response.data;
         
-        await loginWithOAuth('google', {
+        const result = await loginWithOAuth('google', {
           idToken,
           user: {
             id: googleUser.id,
@@ -203,7 +210,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         });
         
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        animateTransition('profile');
+        
+        // Check if user already has a username (returning user)
+        // If they do, complete onboarding. If not, go to username step
+        if (result?.user?.username) {
+          onComplete();
+        } else {
+          animateTransition('username');
+        }
       }
     } catch (e: any) {
       if (e.code === statusCodes.SIGN_IN_CANCELLED) {
