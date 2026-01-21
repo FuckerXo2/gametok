@@ -36,8 +36,9 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useScreenDimensions();
   const [adLoaded, setAdLoaded] = useState(false);
-  const [adError, setAdError] = useState(false);
+  const [adFailed, setAdFailed] = useState(false);
   const [AdComponents, setAdComponents] = useState<any>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     // In Expo Go, just show placeholder - don't even try to load ad modules
@@ -52,19 +53,19 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
       try {
         // Use dynamic import with error handling
         const adModule = await import('react-native-google-mobile-ads');
-        if (adModule && adModule.GAMBannerAd) {
+        if (adModule && adModule.BannerAd) {
           setAdComponents({
-            GAMBannerAd: adModule.GAMBannerAd,
+            BannerAd: adModule.BannerAd,
             BannerAdSize: adModule.BannerAdSize,
             TestIds: adModule.TestIds,
           });
         } else {
           console.log('[Ad] Ad module loaded but components missing');
-          setAdError(true);
+          setAdFailed(true);
         }
       } catch (e) {
         console.log('[Ad] Failed to load ad component:', e);
-        setAdError(true);
+        setAdFailed(true);
       }
     };
     
@@ -126,8 +127,8 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
     );
   }
 
-  // Error state
-  if (adError || !AdComponents) {
+  // If ad components not loaded yet, show loading
+  if (!AdComponents) {
     return (
       <View style={styles.container}>
         <LinearGradient
@@ -135,19 +136,69 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
           style={styles.errorContainer}
         >
           <View style={styles.errorContent}>
-            <Ionicons name="megaphone-outline" size={64} color="rgba(255,255,255,0.2)" />
-            <Text style={styles.errorTitle}>Ad Space</Text>
-            <Text style={styles.errorText}>Content coming soon</Text>
+            <ActivityIndicator size="large" color="#FF8E53" />
+            <Text style={styles.errorText}>Loading ad...</Text>
           </View>
         </LinearGradient>
       </View>
     );
   }
 
-  const { GAMBannerAd, BannerAdSize, TestIds } = AdComponents;
-  // Always use test ads on simulator, real ads only on physical devices in production
-  const isSimulator = !__DEV__ && Platform.OS === 'ios'; // Can't reliably detect simulator, so use test in dev
+  const { BannerAd, BannerAdSize, TestIds} = AdComponents;
+  // Use test ads in development, real ads in production
   const AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-1961802731817431/8986743812';
+
+  // If ad failed after retries, show a nice fallback
+  if (adFailed) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#1a1a2e', '#16213e', '#0f0f23']}
+          style={styles.adContainer}
+        >
+          {/* Sponsored badge */}
+          <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
+            <Text style={styles.sponsoredText}>Sponsored</Text>
+          </View>
+
+          {/* Fallback ad content */}
+          <View style={styles.mockAdContent}>
+            <View style={styles.mockAdImage}>
+              <Ionicons name="game-controller" size={80} color="rgba(99, 102, 241, 0.5)" />
+            </View>
+            <Text style={styles.mockAdTitle}>GameTOK</Text>
+            <Text style={styles.mockAdSubtitle}>Play unlimited games</Text>
+            <View style={styles.mockAdButton}>
+              <Text style={styles.mockAdButtonText}>Keep Playing</Text>
+            </View>
+          </View>
+
+          {/* Bottom info */}
+          <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
+            <View style={styles.adHeader}>
+              <View style={styles.adIconPlaceholder}>
+                <Ionicons name="megaphone" size={24} color="#FF8E53" />
+              </View>
+              <View style={styles.adTitleContainer}>
+                <Text style={styles.adHeadline}>Advertisement</Text>
+                <Text style={styles.adSubtitle}>Swipe to continue</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Side actions */}
+          <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
+            <View style={styles.actionBtn}>
+              <View style={styles.actionIcon}>
+                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+              </View>
+              <Text style={styles.actionLabel}>Ad Info</Text>
+            </View>
+          </View>
+        </LinearGradient>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -168,16 +219,28 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
             </View>
           )}
           
-          <GAMBannerAd
+          <BannerAd
             unitId={AD_UNIT_ID}
-            sizes={[BannerAdSize.MEDIUM_RECTANGLE, BannerAdSize.LARGE_BANNER]}
+            size={BannerAdSize.MEDIUM_RECTANGLE}
             requestOptions={{
               requestNonPersonalizedAdsOnly: false,
             }}
-            onAdLoaded={() => setAdLoaded(true)}
+            onAdLoaded={() => {
+              console.log('[Ad] Ad loaded successfully');
+              setAdLoaded(true);
+              setAdFailed(false);
+            }}
             onAdFailedToLoad={(error: any) => {
-              console.log('[Ad] Failed to load:', error);
-              setAdError(true);
+              console.log('[Ad] Failed to load - Error code:', error?.code);
+              console.log('[Ad] Error message:', error?.message);
+              console.log('[Ad] Full error:', JSON.stringify(error));
+              // After 2 retries, show fallback
+              if (retryCount >= 2) {
+                setAdFailed(true);
+              } else {
+                // Retry after delay
+                setTimeout(() => setRetryCount(prev => prev + 1), 2000);
+              }
             }}
           />
         </View>

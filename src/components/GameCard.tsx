@@ -141,6 +141,52 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
   const tabBarHeight = 80;
   const gameAreaHeight = screenHeight - BOTTOM_BAR_HEIGHT - insets.bottom - tabBarHeight;
 
+  // Pause game and mute audio when not active
+  useEffect(() => {
+    if (!isActive) {
+      webViewRef.current?.injectJavaScript(`
+        // Pause game
+        if (window.pauseGame) window.pauseGame();
+        if (window.pause) window.pause();
+        if (window.gamePause) window.gamePause();
+        
+        // Mute all audio
+        document.querySelectorAll('audio, video').forEach(function(el) {
+          el.pause();
+          el.muted = true;
+          el.volume = 0;
+        });
+        
+        // Stop Web Audio API
+        if (window.AudioContext || window.webkitAudioContext) {
+          try {
+            if (window.audioContext) {
+              window.audioContext.suspend();
+            }
+          } catch(e) {}
+        }
+        
+        true;
+      `);
+    } else {
+      // Unmute when active
+      webViewRef.current?.injectJavaScript(`
+        document.querySelectorAll('audio, video').forEach(function(el) {
+          el.muted = false;
+          el.volume = 1;
+        });
+        
+        if (window.audioContext) {
+          try {
+            window.audioContext.resume();
+          } catch(e) {}
+        }
+        
+        true;
+      `);
+    }
+  }, [isActive]);
+
   const handleMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
@@ -213,7 +259,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
       <View style={[styles.gameArea, { height: gameAreaHeight, marginTop: insets.top }]}>
         {/* Game WebView with rounded corners */}
         <View style={styles.gameFrame}>
-          {/* Load WebView if active OR preloading */}
+          {/* Load WebView if active OR preloading next 3 games */}
           {(isActive || isPreloading) && (
             <SafeWebView
               ref={webViewRef}
@@ -257,16 +303,31 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
                   document.head.appendChild(meta);
                 }
                 meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                
+                // Disable all scrolling
                 document.body.style.margin = '0';
                 document.body.style.padding = '0';
                 document.body.style.overflow = 'hidden';
                 document.body.style.width = '100vw';
                 document.body.style.height = '100vh';
+                document.body.style.position = 'fixed';
+                document.body.style.touchAction = 'none';
+                document.documentElement.style.overflow = 'hidden';
+                document.documentElement.style.touchAction = 'none';
+                
+                // Prevent scroll on touch
+                document.addEventListener('touchmove', function(e) {
+                  if (e.cancelable) {
+                    e.preventDefault();
+                  }
+                }, { passive: false });
+                
                 var canvas = document.querySelector('canvas');
                 if (canvas) {
                   canvas.style.width = '100vw';
                   canvas.style.height = '100vh';
                   canvas.style.objectFit = 'contain';
+                  canvas.style.touchAction = 'auto';
                 }
                 (function() {
                   var fakeSDK = {
@@ -471,6 +532,7 @@ const styles = StyleSheet.create({
   },
   preloadingWebView: {
     opacity: 0,
+    pointerEvents: 'none',
   },
   playOverlay: {
     ...StyleSheet.absoluteFillObject,
