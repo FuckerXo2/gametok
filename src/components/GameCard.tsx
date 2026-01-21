@@ -141,16 +141,16 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
   const tabBarHeight = 80;
   const gameAreaHeight = screenHeight - BOTTOM_BAR_HEIGHT - insets.bottom - tabBarHeight;
 
-  // Pause game and mute audio when not active
+  // Pause game and mute audio when not active OR when preloading
   useEffect(() => {
-    if (!isActive) {
+    if (!isActive || isPreloading) {
       webViewRef.current?.injectJavaScript(`
         // Pause game
         if (window.pauseGame) window.pauseGame();
         if (window.pause) window.pause();
         if (window.gamePause) window.gamePause();
         
-        // Mute all audio
+        // Mute all audio immediately
         document.querySelectorAll('audio, video').forEach(function(el) {
           el.pause();
           el.muted = true;
@@ -169,7 +169,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
         true;
       `);
     } else {
-      // Unmute when active
+      // Unmute when active and not preloading
       webViewRef.current?.injectJavaScript(`
         document.querySelectorAll('audio, video').forEach(function(el) {
           el.muted = false;
@@ -185,7 +185,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
         true;
       `);
     }
-  }, [isActive]);
+  }, [isActive, isPreloading]);
 
   const handleMessage = useCallback((event: any) => {
     try {
@@ -303,6 +303,12 @@ export const GameCard: React.FC<GameCardProps> = ({ game, gameUrl, isActive, isP
                   document.head.appendChild(meta);
                 }
                 meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                
+                // MUTE ALL AUDIO IMMEDIATELY ON LOAD (for preloaded games)
+                document.querySelectorAll('audio, video').forEach(function(el) {
+                  el.muted = true;
+                  el.volume = 0;
+                });
                 
                 // Disable all scrolling
                 document.body.style.margin = '0';
