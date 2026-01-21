@@ -195,60 +195,50 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
   const { NativeAdView, NativeMediaView, NativeAsset, NativeAssetType } = AdComponents;
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#1a1a2e', '#16213e', '#0f0f23']}
-        style={styles.adContainer}
-      >
-        {/* Sponsored badge OUTSIDE NativeAdView - this is custom UI, not an ad asset */}
-        <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
-          <Text style={styles.sponsoredText}>Sponsored</Text>
-        </View>
+    <NativeAdView nativeAd={nativeAd} style={styles.nativeAdViewRoot}>
+      {/* Sponsored badge at top */}
+      <View style={[styles.sponsoredBadgeTop, { marginTop: insets.top + 10 }]}>
+        <Text style={styles.sponsoredText}>Sponsored</Text>
+      </View>
 
-        {/* NativeAdView contains ONLY registered ad assets */}
-        <NativeAdView nativeAd={nativeAd} style={styles.nativeAdView}>
-          {/* Media content */}
-          <View style={styles.mediaContainer}>
-            <NativeMediaView style={styles.nativeMediaView} resizeMode="contain" />
-          </View>
+      {/* Media content - takes up available space */}
+      <View style={styles.mediaContainerFlex}>
+        <NativeMediaView style={styles.nativeMediaViewFlex} resizeMode="contain" />
+      </View>
 
-          {/* Ad info at bottom */}
-          <View style={[styles.nativeAdInfo, { paddingBottom: insets.bottom + 90 }]}>
-            <View style={styles.adHeader}>
-              {nativeAd.icon ? (
-                <NativeAsset assetType={NativeAssetType.ICON}>
-                  <Image 
-                    source={{ uri: nativeAd.icon.url }} 
-                    style={styles.adIcon}
-                  />
-                </NativeAsset>
-              ) : null}
-              <View style={[styles.adTitleContainer, !nativeAd.icon && { marginLeft: 0 }]}>
-                <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                  <Text style={styles.adHeadline} numberOfLines={1}>
-                    {nativeAd.headline || 'Advertisement'}
-                  </Text>
-                </NativeAsset>
-                {nativeAd.body && (
-                  <NativeAsset assetType={NativeAssetType.BODY}>
-                    <Text style={styles.adSubtitle} numberOfLines={1}>
-                      {nativeAd.body}
-                    </Text>
-                  </NativeAsset>
-                )}
-              </View>
-            </View>
-            {nativeAd.callToAction && (
-              <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-                <View style={styles.ctaButton}>
-                  <Text style={styles.ctaText}>{nativeAd.callToAction}</Text>
-                </View>
+      {/* Ad info at bottom - using flex, not absolute */}
+      <View style={[styles.adInfoBottom, { paddingBottom: insets.bottom + 100 }]}>
+        <View style={styles.adHeader}>
+          {nativeAd.icon ? (
+            <NativeAsset assetType={NativeAssetType.ICON}>
+              <Image 
+                source={{ uri: nativeAd.icon.url }} 
+                style={styles.adIcon}
+              />
+            </NativeAsset>
+          ) : null}
+          <View style={[styles.adTitleContainer, !nativeAd.icon && { marginLeft: 0 }]}>
+            <NativeAsset assetType={NativeAssetType.HEADLINE}>
+              <Text style={styles.adHeadline} numberOfLines={1}>
+                {nativeAd.headline || 'Advertisement'}
+              </Text>
+            </NativeAsset>
+            {nativeAd.body && (
+              <NativeAsset assetType={NativeAssetType.BODY}>
+                <Text style={styles.adSubtitle} numberOfLines={1}>
+                  {nativeAd.body}
+                </Text>
               </NativeAsset>
             )}
           </View>
-        </NativeAdView>
-      </LinearGradient>
-    </View>
+        </View>
+        {nativeAd.callToAction && (
+          <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+            <Text style={styles.ctaButtonText}>{nativeAd.callToAction}</Text>
+          </NativeAsset>
+        )}
+      </View>
+    </NativeAdView>
   );
 };
 
@@ -271,6 +261,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
+  // Old absolute positioned badge (for mock ads)
   sponsoredBadge: {
     position: 'absolute',
     left: 16,
@@ -280,13 +271,31 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     zIndex: 10,
   },
+  // New flex-based badge for real ads
+  sponsoredBadgeTop: {
+    alignSelf: 'flex-start',
+    marginLeft: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
   sponsoredText: {
     color: '#fff',
     fontSize: 11,
     fontWeight: '600',
   },
+  // Root NativeAdView - full screen, flex column
+  nativeAdViewRoot: {
+    flex: 1,
+    backgroundColor: '#0f0f23',
+  },
   nativeAdView: {
     flex: 1,
+  },
+  nativeAdViewFull: {
+    flex: 1,
+    backgroundColor: '#0f0f23',
   },
   mediaContainer: {
     flex: 1,
@@ -294,15 +303,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 60,
   },
+  mediaContainerFull: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Flex-based media container
+  mediaContainerFlex: {
+    flex: 1,
+  },
   nativeMediaView: {
     width: '100%',
     height: '100%',
+  },
+  nativeMediaViewFull: {
+    width: '100%',
+    height: '100%',
+  },
+  nativeMediaViewFlex: {
+    flex: 1,
   },
   nativeAdInfo: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  // Flex-based bottom info (not absolute)
+  adInfoBottom: {
     paddingHorizontal: 16,
     paddingTop: 12,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -352,6 +383,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  // CTA as direct Text child of NativeAsset (per docs)
+  ctaButtonText: {
+    backgroundColor: '#FF8E53',
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    overflow: 'hidden',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   adInfo: {
     position: 'absolute',
