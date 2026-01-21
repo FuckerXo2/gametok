@@ -53,10 +53,11 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
       try {
         // Use dynamic import with error handling
         const adModule = await import('react-native-google-mobile-ads');
-        if (adModule && adModule.BannerAd) {
+        if (adModule && adModule.NativeAd) {
           setAdComponents({
-            BannerAd: adModule.BannerAd,
-            BannerAdSize: adModule.BannerAdSize,
+            NativeAd: adModule.NativeAd,
+            NativeAdView: adModule.NativeAdView,
+            NativeMediaView: adModule.NativeMediaView,
             TestIds: adModule.TestIds,
           });
         } else {
@@ -144,9 +145,9 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
     );
   }
 
-  const { BannerAd, BannerAdSize, TestIds} = AdComponents;
+  const { NativeAd, NativeAdView, NativeMediaView, TestIds } = AdComponents;
   // Use test ads in development, real ads in production
-  const AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-1961802731817431/8986743812';
+  const AD_UNIT_ID = __DEV__ ? TestIds.NATIVE_ADVANCED : 'ca-app-pub-1961802731817431/8986743812';
 
   // If ad failed after retries, show a nice fallback
   if (adFailed) {
@@ -219,14 +220,13 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
             </View>
           )}
           
-          <BannerAd
+          <NativeAd
             unitId={AD_UNIT_ID}
-            size={BannerAdSize.MEDIUM_RECTANGLE}
             requestOptions={{
               requestNonPersonalizedAdsOnly: false,
             }}
             onAdLoaded={() => {
-              console.log('[Ad] Ad loaded successfully');
+              console.log('[Ad] Native ad loaded successfully');
               setAdLoaded(true);
               setAdFailed(false);
             }}
@@ -242,7 +242,11 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = () => {
                 setTimeout(() => setRetryCount(prev => prev + 1), 2000);
               }
             }}
-          />
+          >
+            <NativeAdView style={styles.nativeAdView}>
+              <NativeMediaView style={styles.nativeMediaView} />
+            </NativeAdView>
+          </NativeAd>
         </View>
 
         {/* Bottom info */}
@@ -318,6 +322,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  nativeAdView: {
+    width: '100%',
+    height: '100%',
+  },
+  nativeMediaView: {
+    width: '100%',
+    height: '100%',
   },
   loadingOverlay: {
     position: 'absolute',
