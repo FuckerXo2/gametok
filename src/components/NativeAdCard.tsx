@@ -200,10 +200,12 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
         colors={['#1a1a2e', '#16213e', '#0f0f23']}
         style={styles.adContainer}
       >
+        {/* Sponsored badge OUTSIDE NativeAdView - this is custom UI, not an ad asset */}
         <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
           <Text style={styles.sponsoredText}>Sponsored</Text>
         </View>
 
+        {/* NativeAdView contains ONLY registered ad assets */}
         <NativeAdView nativeAd={nativeAd} style={styles.nativeAdView}>
           {/* Media content */}
           <View style={styles.mediaContainer}>
@@ -213,20 +215,15 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
           {/* Ad info at bottom */}
           <View style={[styles.nativeAdInfo, { paddingBottom: insets.bottom + 90 }]}>
             <View style={styles.adHeader}>
-              {nativeAd.icon && (
+              {nativeAd.icon ? (
                 <NativeAsset assetType={NativeAssetType.ICON}>
                   <Image 
                     source={{ uri: nativeAd.icon.url }} 
                     style={styles.adIcon}
                   />
                 </NativeAsset>
-              )}
-              {!nativeAd.icon && (
-                <View style={styles.adIconPlaceholder}>
-                  <Ionicons name="megaphone" size={24} color="#FF8E53" />
-                </View>
-              )}
-              <View style={styles.adTitleContainer}>
+              ) : null}
+              <View style={[styles.adTitleContainer, !nativeAd.icon && { marginLeft: 0 }]}>
                 <NativeAsset assetType={NativeAssetType.HEADLINE}>
                   <Text style={styles.adHeadline} numberOfLines={1}>
                     {nativeAd.headline || 'Advertisement'}
