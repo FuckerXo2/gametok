@@ -7,19 +7,22 @@ import {
   ViewToken,
   Text,
   ActivityIndicator,
+  PanResponder,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './GameCard';
-import { NativeAdCard } from './NativeAdCard';
+import { WebViewPool, WebViewPoolHandle } from './WebViewPool';
 import { games as gamesApi } from '../services/api';
-import { initializeAds, getAdFrequency } from '../services/ads';
+import { initializeAds, getAdFrequency, showInterstitial, loadInterstitial } from '../services/ads';
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
+const SCROLL_ZONE_HEIGHT = 0.25; // Bottom 25% of screen
+const SWIPE_THRESHOLD = 50;
 
-// Fallback games if API fails
 const FALLBACK_GAMES = [
-  { id: 'pacman', name: 'Pac-Man', description: 'Eat dots, avoid ghosts! Classic arcade action 👻', icon: '🟡', color: '#FFFF00' },
-  { id: 'fruit-slicer', name: 'Fruit Slicer', description: 'Swipe to slice fruits! Avoid bombs 💣', icon: '🍉', color: '#ff6b6b' },
+  { id: 'pacman', name: 'Pac-Man', description: 'Eat dots!', icon: '🟡', color: '#FFFF00' },
+  { id: 'fruit-slicer', name: 'Fruit Slicer', description: 'Slice fruits!', icon: '🍉', color: '#ff6b6b' },
 ];
 
 interface Game {
@@ -36,51 +39,101 @@ interface FeedGame extends Game {
   gameUrl: string;
 }
 
-type FeedItem = FeedGame | { isAd: true; uniqueId: string };
+// Feed is now just games - ads shown via interstitial
+type FeedItem = FeedGame;
 
 export const GameFeed: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const [screenHeight, setScreenHeight] = useState(Dimensions.get('window').height);
+  const screenHeight = Dimensions.get('window').height;
+  const scrollZoneHeight = screenHeight * SCROLL_ZONE_HEIGHT;
+  
   const [games, setGames] = useState<Game[]>(FALLBACK_GAMES);
   const [feedData, setFeedData] = useState<FeedItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isGamePlaying, setIsGamePlaying] = useState(false);
   const [adsInitialized, setAdsInitialized] = useState(false);
+
   const flatListRef = useRef<FlatList>(null);
   const feedIndexRef = useRef(0);
-  const adCounterRef = useRef(0);
+  const gamesPlayedRef = useRef(0);
+  const activeIndexRef = useRef(0);
+  const webViewPoolRef = useRef<WebViewPoolHandle>(null);
 
-  // Handle screen dimension changes (iPad rotation, etc)
-  useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      setScreenHeight(window.height);
-    });
-    return () => subscription?.remove();
+  // Scroll to next/prev game
+  const goToNext = useCallback(async () => {
+    const nextIndex = activeIndexRef.current + 1;
+    if (nextIndex < feedData.length) {
+      // Track games and show interstitial every N games
+      gamesPlayedRef.current += 1;
+      if (gamesPlayedRef.current % getAdFrequency() === 0) {
+        await showInterstitial();
+      }
+      
+      flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [feedData.length]);
+
+  const goToPrev = useCallback(() => {
+    const prevIndex = activeIndexRef.current - 1;
+    if (prevIndex >= 0) {
+      flatListRef.current?.scrollToIndex({ index: prevIndex, animated: true });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   }, []);
 
-  // Initialize ads
+  // Bottom scroll zone pan responder
+  const scrollPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy < -SWIPE_THRESHOLD) {
+          goToNext();
+        } else if (gestureState.dy > SWIPE_THRESHOLD) {
+          goToPrev();
+        }
+      },
+    })
+  ).current;
+
   useEffect(() => {
-    const init = async () => {
-      const success = await initializeAds();
+    activeIndexRef.current = activeIndex;
+    
+    if (webViewPoolRef.current && feedData.length > 0) {
+      // Preload current + 3 ahead
+      for (let i = 0; i <= 3; i++) {
+        const idx = activeIndex + i;
+        if (idx < feedData.length) {
+          const item = feedData[idx];
+          webViewPoolRef.current.preloadGame(item.uniqueId, item.gameUrl);
+        }
+      }
+      
+      const currentItem = feedData[activeIndex];
+      if (currentItem) {
+        webViewPoolRef.current.setActiveGame(currentItem.uniqueId);
+      }
+    }
+  }, [activeIndex, feedData]);
+
+  useEffect(() => {
+    initializeAds().then((success) => {
       setAdsInitialized(success);
-    };
-    init();
+      if (success) loadInterstitial(); // Preload first interstitial
+    });
   }, []);
 
-  // Fetch games from backend
   useEffect(() => {
     const fetchGames = async () => {
       try {
         const data = await gamesApi.list(50);
-        if (data.games && data.games.length > 0) {
+        if (data.games?.length > 0) {
           const validGames = data.games.filter((g: any) => g.id && g.name);
-          if (validGames.length > 0) {
-            setGames(validGames);
-          }
+          if (validGames.length > 0) setGames(validGames);
         }
       } catch (e) {
-        console.log('Failed to fetch games, using fallback');
+        console.log('Using fallback games');
       } finally {
         setLoading(false);
       }
@@ -88,39 +141,21 @@ export const GameFeed: React.FC = () => {
     fetchGames();
   }, []);
 
-  // Generate feed when games are loaded
   useEffect(() => {
     if (games.length > 0) {
-      const initialFeed = generateFeed(10, 0);
-      setFeedData(initialFeed);
+      setFeedData(generateFeed(10, 0));
       feedIndexRef.current = 10;
     }
-  }, [games, adsInitialized]);
+  }, [games]);
 
   const generateFeed = (count: number, startIndex: number): FeedItem[] => {
     const feed: FeedItem[] = [];
     for (let i = 0; i < count; i++) {
       const game = games[(startIndex + i) % games.length];
-      
-      let gameUrl = game.embedUrl 
+      const gameUrl = game.embedUrl 
         ? `${game.embedUrl}?gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`
         : `${GAMES_HOST}/${game.id}/`;
-      
-      feed.push({
-        ...game,
-        uniqueId: `${game.id}-${startIndex + i}-${Date.now()}`,
-        gameUrl,
-      });
-      
-      // Insert ad every 3 games
-      adCounterRef.current++;
-      const adFreq = getAdFrequency();
-      if (adCounterRef.current % adFreq === 0 && adsInitialized) {
-        feed.push({
-          isAd: true,
-          uniqueId: `ad-${adCounterRef.current}-${Date.now()}`,
-        });
-      }
+      feed.push({ ...game, uniqueId: `${game.id}-${startIndex + i}-${Date.now()}`, gameUrl });
     }
     return feed;
   };
@@ -128,56 +163,36 @@ export const GameFeed: React.FC = () => {
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0].index !== null) {
       const newIndex = viewableItems[0].index;
-      if (newIndex !== activeIndex) {
-        setIsGamePlaying(false);
-      }
-      setActiveIndex(newIndex);
+      if (newIndex !== activeIndexRef.current) setActiveIndex(newIndex);
     }
-  }, [activeIndex]);
+  }, []);
 
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
-  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
   const loadMore = useCallback(() => {
     if (games.length === 0) return;
     const newGames = generateFeed(5, feedIndexRef.current);
     feedIndexRef.current += 5;
     setFeedData(prev => [...prev, ...newGames]);
-  }, [games, adsInitialized]);
+  }, [games]);
 
   const renderItem = useCallback(({ item, index }: { item: FeedItem; index: number }) => {
-    if ('isAd' in item && item.isAd) {
-      return (
-        <View style={{ height: screenHeight, width: '100%' }}>
-          <NativeAdCard isActive={index === activeIndex} />
-        </View>
-      );
-    }
-    
-    const gameItem = item as FeedGame;
-    // Preload games within 3 positions of current
-    const shouldPreload = Math.abs(index - activeIndex) <= 3;
-    
     return (
       <View style={{ height: screenHeight, width: '100%' }}>
         <GameCard
-          game={gameItem}
-          gameUrl={gameItem.gameUrl}
+          game={item}
+          gameUrl={item.gameUrl}
           isActive={index === activeIndex}
-          isPreloading={shouldPreload && index !== activeIndex}
-          onPlayingChange={setIsGamePlaying}
+          isPreloading={false}
+          useExternalWebView={true}
         />
       </View>
     );
   }, [activeIndex, screenHeight]);
 
   const keyExtractor = useCallback((item: FeedItem) => item.uniqueId, []);
-
   const getItemLayout = useCallback((_: any, index: number) => ({
-    length: screenHeight,
-    offset: screenHeight * index,
-    index,
+    length: screenHeight, offset: screenHeight * index, index,
   }), [screenHeight]);
 
   if (loading) {
@@ -191,12 +206,15 @@ export const GameFeed: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {!isGamePlaying && (
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Text style={styles.headerTitle}>For You</Text>
-        </View>
-      )}
+      {/* WebView Pool - games render here */}
+      <WebViewPool ref={webViewPoolRef} isScrollMode={false} />
+      
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Text style={styles.headerTitle}>For You</Text>
+      </View>
 
+      {/* FlatList just for positioning/tracking, scroll disabled */}
       <FlatList
         ref={flatListRef}
         data={feedData}
@@ -212,44 +230,39 @@ export const GameFeed: React.FC = () => {
         onEndReached={loadMore}
         onEndReachedThreshold={3}
         getItemLayout={getItemLayout}
+        scrollEnabled={false}
         removeClippedSubviews={false}
         maxToRenderPerBatch={3}
         windowSize={7}
         initialNumToRender={3}
-        scrollEnabled={true}
+      />
+
+      {/* Bottom 25% scroll zone - swipe here to navigate */}
+      <View 
+        style={[styles.scrollZone, { height: scrollZoneHeight }]} 
+        {...scrollPanResponder.panHandlers}
       />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
+  container: { flex: 1, backgroundColor: '#000' },
   header: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 0, left: 0, right: 0,
     zIndex: 100,
     alignItems: 'center',
     paddingBottom: 8,
   },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 12,
-    fontSize: 16,
+  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
+  loadingText: { color: '#fff', marginTop: 12, fontSize: 16 },
+  scrollZone: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
 });

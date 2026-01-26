@@ -44,3 +44,7 @@ yarn-error.*
 build/
 build-ipad/
 *.xcarchive
+
+
+# Ad credentials - keep private
+AD_CREDENTIALS.md

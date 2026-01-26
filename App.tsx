@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GameFeed } from './src/components/GameFeed';
+import * as SplashScreen from 'expo-splash-screen';
+import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { DiscoverScreen } from './src/components/DiscoverScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
+import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { requestTrackingPermission } from './src/services/ads';
+
+// Prevent native splash from auto-hiding
+SplashScreen.preventAutoHideAsync();
 
 type TabName = 'home' | 'discover' | 'inbox' | 'profile';
 
@@ -24,7 +29,7 @@ const MainApp = () => {
   const renderScreen = () => {
     switch (activeTab) {
       case 'home':
-        return <GameFeed />;
+        return <HomeScreen />;
       case 'discover':
         return <DiscoverScreen />;
       case 'inbox':
@@ -32,7 +37,7 @@ const MainApp = () => {
       case 'profile':
         return <ProfileScreen />;
       default:
-        return <GameFeed />;
+        return <HomeScreen />;
     }
   };
 
@@ -48,26 +53,20 @@ const MainApp = () => {
 };
 
 const AppContent = () => {
-  const { isLoading, isAuthenticated } = useAuth();
-  const { colors } = useTheme();
-  const [showOnboarding, setShowOnboarding] = useState(true);
-  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
     checkOnboarding();
-    // Request ATT permission early, before any tracking
     requestTrackingPermission();
   }, []);
 
   const checkOnboarding = async () => {
     try {
       const seen = await AsyncStorage.getItem('hasSeenOnboarding');
-      // Only skip onboarding if already seen AND authenticated
       setShowOnboarding(seen !== 'true');
     } catch {
       setShowOnboarding(true);
-    } finally {
-      setCheckingOnboarding(false);
     }
   };
 
@@ -76,28 +75,44 @@ const AppContent = () => {
     setShowOnboarding(false);
   };
 
-  if (isLoading || checkingOnboarding) {
+  // Still loading auth or onboarding check
+  if (showOnboarding === null || authLoading) {
+    return <View style={{ flex: 1, backgroundColor: '#000' }} />;
+  }
+
+  // User hasn't seen onboarding yet
+  if (showOnboarding) {
     return (
-      <View style={[styles.loading, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={{ flex: 1 }}>
+        <OnboardingFlow onComplete={handleOnboardingComplete} isAuthLoading={false} />
       </View>
     );
   }
 
-  // Show onboarding until explicitly completed
-  if (showOnboarding) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
-  }
-
-  // Require auth after onboarding
+  // Onboarding done, not logged in - show login
   if (!isAuthenticated) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+    return (
+      <View style={{ flex: 1 }}>
+        <OnboardingFlow onComplete={handleOnboardingComplete} isAuthLoading={false} />
+      </View>
+    );
   }
 
-  return <MainApp />;
+  return (
+    <View style={{ flex: 1 }}>
+      <MainApp />
+    </View>
+  );
 };
 
 export default function App() {
+  const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+
+  // AnimatedSplash renders FIRST, before any providers
+  if (showAnimatedSplash) {
+    return <AnimatedSplash onAnimationComplete={() => setShowAnimatedSplash(false)} />;
+  }
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>

@@ -97,9 +97,10 @@ const GameTokLogo = () => {
 
 interface OnboardingFlowProps {
   onComplete: () => void;
+  isAuthLoading?: boolean;
 }
 
-export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
+export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAuthLoading = false }) => {
   const insets = useSafeAreaInsets();
   const { signup, login, loginWithOAuth, user, refreshUser } = useAuth();
   const { colors } = useTheme();
@@ -367,7 +368,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   const renderWelcome = () => (
     <View style={styles.stepContainer}>
       <ImageBackground
-        source={require('../../assets/gametok_bg.png')}
+        source={require('../../assets/splash.png')}
         style={styles.background}
         resizeMode="cover"
       >
@@ -390,7 +391,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
           <TouchableOpacity 
             style={[styles.authOption, styles.appleButton]}
             onPress={handleAppleSignIn}
-            disabled={loading}
+            disabled={loading || isAuthLoading}
           >
             <Ionicons name="logo-apple" size={22} color="#fff" />
             <Text style={styles.authOptionText}>Continue with Apple</Text>
@@ -401,7 +402,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         <TouchableOpacity 
           style={styles.googleButtonModern}
           onPress={handleGoogleSignIn}
-          disabled={loading}
+          disabled={loading || isAuthLoading}
         >
           <Svg width={18} height={18} viewBox="0 0 24 24" style={{ marginRight: 10 }}>
             <Path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -416,14 +417,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         <TouchableOpacity 
           style={styles.authOption}
           onPress={() => { setIsLogin(false); animateTransition('birthday'); }}
-          disabled={loading}
+          disabled={loading || isAuthLoading}
         >
           <Ionicons name="mail-outline" size={22} color="#fff" />
           <Text style={styles.authOptionText}>Use phone or email</Text>
         </TouchableOpacity>
 
-        {loading && (
-          <ActivityIndicator size="small" color="#FF8E53" style={{ marginTop: 12 }} />
+        {(loading || isAuthLoading) && (
+          <View style={{ marginTop: 12, height: 20 }} />
         )}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
