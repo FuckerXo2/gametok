@@ -180,8 +180,36 @@ export const likes = {
     });
   },
   
+  check: async (gameIds: string[]) => {
+    return request('/likes/check', {
+      method: 'POST',
+      body: JSON.stringify({ gameIds }),
+    });
+  },
+  
   userLikes: async (userId: string) => {
     return request(`/likes/user/${userId}`);
+  },
+};
+
+// Saved Games API (Bookmarks)
+export const savedGames = {
+  toggle: async (gameId: string) => {
+    return request('/saved-games', {
+      method: 'POST',
+      body: JSON.stringify({ gameId }),
+    });
+  },
+  
+  check: async (gameIds: string[]) => {
+    return request('/saved-games/check', {
+      method: 'POST',
+      body: JSON.stringify({ gameIds }),
+    });
+  },
+  
+  userSaved: async (userId: string) => {
+    return request(`/saved-games/user/${userId}`);
   },
 };
 

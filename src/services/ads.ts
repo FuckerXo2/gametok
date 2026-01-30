@@ -1,32 +1,41 @@
-// Ad Service for GameTok - Unity Ads Only
-import { Platform } from 'react-native';
+// Ad Service for GameTok - Google AdMob Native Ads
 import Constants from 'expo-constants';
-
-// ============================================
-// UNITY ADS CONFIGURATION
-// ============================================
-
-export const UNITY_ADS_CONFIG = {
-  GAME_ID: '6032839',
-  INTERSTITIAL_PLACEMENT: 'Interstitial_iOS', // Default Unity placement
-  REWARDED_PLACEMENT: 'Rewarded_iOS',
-  BANNER_PLACEMENT: 'Banner_iOS',
-  TEST_MODE: __DEV__,
-};
+import MobileAds, { 
+  MaxAdContentRating,
+  TestIds,
+  NativeAd,
+  NativeAdEventType
+} from 'react-native-google-mobile-ads';
+import { Platform } from 'react-native';
 
 // Default ad frequency - will be overridden by remote config
 let AD_FREQUENCY = 3;
 export const getAdFrequency = () => AD_FREQUENCY;
 export { AD_FREQUENCY };
 
-// Detect iOS simulator
-const isIOSSimulator = Platform.OS === 'ios' && !Constants.isDevice;
-export const isExpoGo = Constants.appOwnership === 'expo';
-export const shouldDisableAds = isExpoGo || isIOSSimulator;
+// AdMob Configuration
+const ADMOB_APP_ID_IOS = 'ca-app-pub-1961802731817431~8301521567';
+const ADMOB_APP_ID_ANDROID = 'ca-app-pub-1961802731817431~XXXXXXXX'; // Android not set up yet
 
-// Track initialization state
-let unityAdsInitialized = false;
-let attRequested = false;
+// Native Ad Unit IDs
+const NATIVE_AD_UNIT_ID_IOS = 'ca-app-pub-1961802731817431/8986743812';
+const NATIVE_AD_UNIT_ID_ANDROID = 'ca-app-pub-1961802731817431/XXXXXXXX'; // Android not set up yet
+
+// Use REAL ads
+const USE_TEST_ADS = false;
+
+export const NATIVE_AD_UNIT_ID = USE_TEST_ADS 
+  ? TestIds.NATIVE 
+  : (Platform.OS === 'ios' ? NATIVE_AD_UNIT_ID_IOS : NATIVE_AD_UNIT_ID_ANDROID);
+
+// Detect environment
+const executionEnvironment = Constants.executionEnvironment;
+export const isExpoGo = Constants.appOwnership === 'expo' || executionEnvironment === 'expoGo';
+export const shouldDisableAds = isExpoGo;
+
+let isInitialized = false;
+
+console.log('[Ads] AdMob Native Ads service initialized');
 
 // ============================================
 // REMOTE CONFIG
@@ -51,68 +60,21 @@ export const fetchRemoteConfig = async () => {
 };
 
 // ============================================
-// APP TRACKING TRANSPARENCY (iOS)
-// ============================================
-
-export const requestTrackingPermission = async (): Promise<string> => {
-  if (attRequested) return 'already-requested';
-  if (Platform.OS !== 'ios') return 'not-ios';
-  if (isExpoGo) return 'expo-go';
-  
-  try {
-    const { requestTrackingPermissionsAsync, getTrackingPermissionsAsync } = 
-      await import('expo-tracking-transparency');
-    
-    const { status: currentStatus } = await getTrackingPermissionsAsync();
-    console.log('[ATT] Current status:', currentStatus);
-    
-    if (currentStatus === 'undetermined') {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const { status } = await requestTrackingPermissionsAsync();
-      console.log('[ATT] Permission requested, status:', status);
-      attRequested = true;
-      return status;
-    }
-    
-    attRequested = true;
-    return currentStatus;
-  } catch (error: any) {
-    console.log('[ATT] Error:', error?.message || error);
-    attRequested = true;
-    return 'error';
-  }
-};
-
-// ============================================
-// UNITY ADS INITIALIZATION
-// ============================================
-
-const initializeUnityAds = async (): Promise<boolean> => {
-  if (unityAdsInitialized) return true;
-  
-  try {
-    const UnityAds = await import('react-native-unity-ads');
-    
-    await UnityAds.default.initialize(
-      UNITY_ADS_CONFIG.GAME_ID,
-      UNITY_ADS_CONFIG.TEST_MODE
-    );
-    
-    unityAdsInitialized = true;
-    console.log('[Ads] Unity Ads initialized');
-    return true;
-  } catch (error) {
-    console.log('[Ads] Unity Ads init failed:', error);
-    return false;
-  }
-};
-
-// ============================================
 // MAIN INITIALIZATION
 // ============================================
 
 export const initializeAds = async () => {
-  // Fetch remote config first
+  if (shouldDisableAds) {
+    console.log('[Ads] Running in Expo Go, ads disabled');
+    return false;
+  }
+
+  if (isInitialized) {
+    console.log('[Ads] Already initialized');
+    return true;
+  }
+
+  // Fetch remote config
   try {
     await Promise.race([
       fetchRemoteConfig(),
@@ -121,112 +83,66 @@ export const initializeAds = async () => {
   } catch (e) {
     console.log('[Ads] Remote config fetch timed out');
   }
-  
-  if (shouldDisableAds) {
-    console.log('[Ads] Ads disabled (Expo Go or Simulator)');
+
+  try {
+    console.log('[Ads] Initializing AdMob...');
+    
+    await MobileAds().initialize();
+    
+    // Set ad content rating
+    await MobileAds().setRequestConfiguration({
+      maxAdContentRating: MaxAdContentRating.T,
+      tagForChildDirectedTreatment: false,
+      tagForUnderAgeOfConsent: false,
+    });
+    
+    isInitialized = true;
+    console.log('[Ads] AdMob initialized successfully');
+    
     return true;
+  } catch (error) {
+    console.error('[Ads] AdMob initialization failed:', error);
+    return false;
   }
-
-  // Request tracking permission on iOS
-  if (Platform.OS === 'ios') {
-    await requestTrackingPermission();
-  }
-
-  // Initialize Unity Ads
-  const success = await initializeUnityAds();
-  console.log(`[Ads] Init complete - Unity Ads: ${success}`);
-  return success;
 };
 
 // ============================================
-// INTERSTITIAL ADS
+// NATIVE ADS
+// ============================================
+
+export const getNativeAdUnitId = (): string => {
+  return NATIVE_AD_UNIT_ID;
+};
+
+// ============================================
+// STUB FUNCTIONS (for compatibility)
 // ============================================
 
 export const loadInterstitial = async (): Promise<boolean> => {
-  if (shouldDisableAds || !unityAdsInitialized) return false;
-  
-  try {
-    const UnityAds = await import('react-native-unity-ads');
-    await UnityAds.default.load(UNITY_ADS_CONFIG.INTERSTITIAL_PLACEMENT);
-    console.log('[Ads] Interstitial loaded');
-    return true;
-  } catch (error) {
-    console.log('[Ads] Failed to load interstitial:', error);
-    return false;
-  }
+  return isInitialized;
 };
 
 export const showInterstitial = async (): Promise<boolean> => {
-  if (shouldDisableAds || !unityAdsInitialized) return false;
-  
-  try {
-    const UnityAds = await import('react-native-unity-ads');
-    await UnityAds.default.show(UNITY_ADS_CONFIG.INTERSTITIAL_PLACEMENT);
-    console.log('[Ads] Interstitial shown');
-    // Preload next
-    loadInterstitial();
-    return true;
-  } catch (error) {
-    console.log('[Ads] Failed to show interstitial:', error);
-    return false;
-  }
+  return false;
 };
 
-// ============================================
-// REWARDED ADS
-// ============================================
-
 export const loadRewardedAd = async (): Promise<boolean> => {
-  if (shouldDisableAds || !unityAdsInitialized) return false;
-  
-  try {
-    const UnityAds = await import('react-native-unity-ads');
-    await UnityAds.default.load(UNITY_ADS_CONFIG.REWARDED_PLACEMENT);
-    console.log('[Ads] Rewarded ad loaded');
-    return true;
-  } catch (error) {
-    console.log('[Ads] Failed to load rewarded ad:', error);
-    return false;
-  }
+  return false;
 };
 
 export const showRewardedAd = async (): Promise<{ rewarded: boolean }> => {
-  if (shouldDisableAds || !unityAdsInitialized) return { rewarded: false };
-  
-  try {
-    const UnityAds = await import('react-native-unity-ads');
-    await UnityAds.default.show(UNITY_ADS_CONFIG.REWARDED_PLACEMENT);
-    console.log('[Ads] Rewarded ad shown');
-    // Preload next
-    loadRewardedAd();
-    return { rewarded: true };
-  } catch (error) {
-    console.log('[Ads] Failed to show rewarded ad:', error);
-    return { rewarded: false };
-  }
+  return { rewarded: false };
 };
-
-// ============================================
-// HELPERS
-// ============================================
 
 export const preloadInterstitials = async () => {
-  await loadInterstitial();
-};
-
-export const insertAdsIntoFeed = <T>(items: T[], adFrequency: number = AD_FREQUENCY): (T | { isAd: true })[] => {
-  const result: (T | { isAd: true })[] = [];
-  
-  items.forEach((item, index) => {
-    result.push(item);
-    if ((index + 1) % adFrequency === 0 && index > 0) {
-      result.push({ isAd: true });
-    }
-  });
-  
-  return result;
+  // Native ads are loaded on-demand
 };
 
 export const isAdNetworkReady = (): boolean => {
-  return unityAdsInitialized;
+  return isInitialized;
+};
+
+export const requestTrackingPermission = async (): Promise<boolean> => {
+  // AdMob handles ATT internally
+  return true;
 };

@@ -1,12 +1,19 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Share } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { games as gamesApi } from '../services/api';
-import { getAdFrequency, initializeAds, showInterstitial, loadInterstitial } from '../services/ads';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path, G } from 'react-native-svg';
+import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages } from '../services/api';
+import { getAdFrequency, initializeAds } from '../services/ads';
+import { ShareSheet } from '../components/ShareSheet';
+import NativeAdView from '../components/NativeAdView';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
@@ -18,12 +25,14 @@ interface Game {
   id: string;
   name: string;
   embedUrl?: string;
+  likes?: number;
 }
 
-// Feed is now just games - no ad placeholders
+// Feed contains games and native ad placeholders every AD_FREQUENCY games
 interface FeedItem {
-  game: Game;
+  game?: Game;
   id: string;
+  isAd?: boolean;
 }
 
 const getGameUrl = (game: Game) => {
@@ -39,7 +48,7 @@ const isExternalGame = (game: Game) => !!game.embedUrl;
 // Domains to block at request level
 const AD_DOMAINS = [
   'imasdk.googleapis.com',
-  'pagead2.googlesyndication.com', 
+  'pagead2.googlesyndication.com',
   'doubleclick.net',
   'googlesyndication.com',
   'googleadservices.com',
@@ -62,25 +71,53 @@ const shouldBlockRequest = (url: string): boolean => {
 // Script to pause/freeze a game
 const PAUSE_SCRIPT = `
 (function() {
-  // Pause HTML5 audio/video
-  document.querySelectorAll('audio, video').forEach(el => { try { el.pause(); } catch(e){} });
+  // Pause ALL HTML5 audio/video elements
+  document.querySelectorAll('audio, video').forEach(el => { 
+    try { 
+      el.pause(); 
+      el.muted = true;
+    } catch(e){} 
+  });
   
-  // Suspend Web Audio API (used by Unity)
+  // Mute ALL audio contexts (not just tracked ones)
   if (window.AudioContext || window.webkitAudioContext) {
-    // Find and suspend all audio contexts
+    // Suspend tracked contexts
     if (window._audioContexts) {
-      window._audioContexts.forEach(ctx => { try { ctx.suspend(); } catch(e){} });
+      window._audioContexts.forEach(ctx => { 
+        try { 
+          ctx.suspend(); 
+        } catch(e){} 
+      });
+    }
+    
+    // Save and mute any gain nodes
+    if (window._allGainNodes) {
+      window._allGainNodes.forEach(gain => {
+        try { 
+          gain._savedValue = gain.gain.value;
+          gain.gain.value = 0; 
+        } catch(e) {}
+      });
     }
   }
   
   // Mute Unity specifically
   if (window.unityInstance) {
     try { window.unityInstance.SendMessage('AudioManager', 'Mute'); } catch(e) {}
+    try { window.unityInstance.SendMessage('SoundManager', 'Mute'); } catch(e) {}
   }
   
-  // Global mute fallback - set all gain nodes to 0
+  // Global mute fallback
   if (window._masterGain) {
-    try { window._masterGain.gain.value = 0; } catch(e) {}
+    try { 
+      window._originalGainValue = window._masterGain.gain.value;
+      window._masterGain.gain.value = 0; 
+    } catch(e) {}
+  }
+  
+  // Howler.js (common audio library)
+  if (window.Howler) {
+    try { window.Howler.mute(true); } catch(e) {}
   }
   
   // Stop requestAnimationFrame
@@ -95,10 +132,16 @@ const PAUSE_SCRIPT = `
   
   // Pause common game engines
   if (window.Phaser && window.Phaser.GAMES) {
-    window.Phaser.GAMES.forEach(g => g.scene && g.scene.pause && g.scene.pause());
+    window.Phaser.GAMES.forEach(g => {
+      try { g.sound && g.sound.mute && (g.sound.mute = true); } catch(e) {}
+      try { g.scene && g.scene.pause && g.scene.pause(); } catch(e) {}
+    });
   }
   if (window.createjs && window.createjs.Ticker) {
     window.createjs.Ticker.paused = true;
+  }
+  if (window.createjs && window.createjs.Sound) {
+    try { window.createjs.Sound.muted = true; } catch(e) {}
   }
   
   window._gamePaused = true;
@@ -109,22 +152,45 @@ true;
 // Script to resume/unfreeze a game
 const RESUME_SCRIPT = `
 (function() {
-  // Resume HTML5 audio/video
-  document.querySelectorAll('audio, video').forEach(el => { try { if(el.dataset.wasPlaying) el.play(); } catch(e){} });
-  
-  // Resume Web Audio API
+  // Resume Web Audio API contexts first
   if (window._audioContexts) {
-    window._audioContexts.forEach(ctx => { try { ctx.resume(); } catch(e){} });
+    window._audioContexts.forEach(ctx => { 
+      try { ctx.resume(); } catch(e){} 
+    });
   }
+  
+  // Restore gain nodes
+  if (window._allGainNodes) {
+    window._allGainNodes.forEach(gain => {
+      try { 
+        if (gain._savedValue !== undefined) {
+          gain.gain.value = gain._savedValue;
+        } else {
+          gain.gain.value = 1;
+        }
+      } catch(e) {}
+    });
+  }
+  
+  // Restore master gain
+  if (window._masterGain && window._originalGainValue !== undefined) {
+    try { window._masterGain.gain.value = window._originalGainValue; } catch(e) {}
+  }
+  
+  // Unmute HTML5 audio/video
+  document.querySelectorAll('audio, video').forEach(el => { 
+    try { el.muted = false; } catch(e){} 
+  });
   
   // Unmute Unity
   if (window.unityInstance) {
     try { window.unityInstance.SendMessage('AudioManager', 'Unmute'); } catch(e) {}
+    try { window.unityInstance.SendMessage('SoundManager', 'Unmute'); } catch(e) {}
   }
   
-  // Restore master gain
-  if (window._masterGain && window._originalGain !== undefined) {
-    try { window._masterGain.gain.value = window._originalGain; } catch(e) {}
+  // Unmute Howler.js
+  if (window.Howler) {
+    try { window.Howler.mute(false); } catch(e) {}
   }
   
   // Restore requestAnimationFrame
@@ -137,10 +203,16 @@ const RESUME_SCRIPT = `
   
   // Resume common game engines
   if (window.Phaser && window.Phaser.GAMES) {
-    window.Phaser.GAMES.forEach(g => g.scene && g.scene.resume && g.scene.resume());
+    window.Phaser.GAMES.forEach(g => {
+      try { g.sound && g.sound.mute !== undefined && (g.sound.mute = false); } catch(e) {}
+      try { g.scene && g.scene.resume && g.scene.resume(); } catch(e) {}
+    });
   }
   if (window.createjs && window.createjs.Ticker) {
     window.createjs.Ticker.paused = false;
+  }
+  if (window.createjs && window.createjs.Sound) {
+    try { window.createjs.Sound.muted = false; } catch(e) {}
   }
   
   window._gamePaused = false;
@@ -156,13 +228,23 @@ const AD_BLOCKER_SCRIPT = `
   window.confirm = function() { return true; };
   window.prompt = function() { return ''; };
   
-  // Track audio contexts for pause/resume
+  // Track audio contexts and gain nodes for pause/resume
   window._audioContexts = [];
+  window._allGainNodes = [];
   const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
   if (OrigAudioContext) {
     window.AudioContext = window.webkitAudioContext = function() {
       const ctx = new OrigAudioContext();
       window._audioContexts.push(ctx);
+      
+      // Also intercept createGain to track all gain nodes
+      const origCreateGain = ctx.createGain.bind(ctx);
+      ctx.createGain = function() {
+        const gain = origCreateGain();
+        window._allGainNodes.push(gain);
+        return gain;
+      };
+      
       return ctx;
     };
   }
@@ -593,6 +675,31 @@ const AD_BLOCKER_SCRIPT = `
 true;
 `;
 
+// Random taglines for games
+const GAME_TAGLINES = [
+  "So addicting 🔥",
+  "Can you beat this?",
+  "Try not to rage quit 😤",
+  "One more game...",
+  "Warning: highly addictive",
+  "Brain melting fun",
+  "Simple but deadly",
+  "You won't put it down",
+  "Challenge accepted? 💪",
+  "Pure chaos",
+  "Satisfying af",
+  "Quick dopamine hit",
+  "Lowkey fire 🔥",
+  "Trust me on this one",
+  "Your new obsession",
+];
+
+const getRandomTagline = (gameId: string) => {
+  // Use gameId to get consistent tagline per game
+  const hash = gameId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+  return GAME_TAGLINES[hash % GAME_TAGLINES.length];
+};
+
 // Shuffle array randomly (Fisher-Yates)
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
@@ -603,95 +710,483 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
-// Create feed with just games (no ad placeholders)
-const createFeed = (games: Game[]): FeedItem[] => {
+// Create feed with native ads inserted every AD_FREQUENCY games
+const createFeed = (games: Game[], cycle: number = 0): FeedItem[] => {
   // Shuffle games for variety
   const shuffledGames = shuffleArray(games);
-  
-  return shuffledGames.map((game, index) => ({
-    game,
-    id: `${game.id}-${index}`,
-  }));
+  const adFrequency = getAdFrequency();
+  const result: FeedItem[] = [];
+
+  shuffledGames.forEach((game, index) => {
+    // Insert an ad before every N games (after the first batch)
+    if (index > 0 && index % adFrequency === 0) {
+      result.push({
+        id: `ad-${cycle}-${index}`,
+        isAd: true,
+      });
+    }
+    result.push({
+      game,
+      id: `${game.id}-cycle${cycle}-${index}`,
+      isAd: false,
+    });
+  });
+
+  return result;
 };
+
+// Swipe Up Hand Icon Component
+const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, color = '#ffffff' }) => (
+  <Svg width={size} height={size} viewBox="0 0 116.91 122.88" fill="none">
+    <G fill={color}>
+      <Path d="M40.75,67.62c-0.15-0.07-0.33-0.18-0.48-0.29c-1.95-1.55-4.09-3.28-5.93-4.79c-2.69-2.21-5.78-4.75-7.95-6.55 c-1.47-1.21-3.17-2.06-4.75-2.39c-1.03-0.18-1.95-0.18-2.69,0.11c-0.59,0.26-1.1,0.74-1.44,1.47c-0.44,0.99-0.66,2.39-0.55,4.31 c0.11,1.69,0.7,3.53,1.47,5.34c1.14,2.61,2.72,5.04,3.9,6.59c0.07,0.11,0.15,0.18,0.18,0.29l23.3,33.28 c0.29,0.44,0.48,0.92,0.52,1.4c0.48,3.83,1.29,6.74,2.47,8.54c0.88,1.33,1.99,1.99,3.42,1.95H88.9c2.28-0.04,4.34-0.7,6.26-2.02 c2.1-1.44,3.98-3.68,5.71-6.7c0.04-0.04,0.07-0.11,0.11-0.15c0.66-1.14,1.55-2.61,2.39-4.01c3.72-6.11,6.96-11.45,7.33-19.03 l-0.22-10.45c-0.04-0.15-0.04-0.29-0.04-0.44c0-0.15,0-1.14,0.04-2.47c0.07-6.92,0.18-15.46-6.15-16.53h-4.09 c-0.04,1.95-0.15,3.94-0.26,5.85c-0.11,1.73-0.22,3.35-0.22,4.93c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06 c0-1.58,0.11-3.42,0.22-5.34c0.41-6.52,0.88-13.99-4.31-14.91h-4.05c-0.22,0-0.44-0.04-0.66-0.07c0.04,2.36-0.11,4.79-0.26,7.14 c-0.11,1.73-0.22,3.35-0.22,4.93c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06c0-1.58,0.11-3.42,0.22-5.34 c0.4-6.52,0.88-13.99-4.31-14.91h-4.05c-0.29,0-0.55-0.04-0.81-0.11v11.89c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06V17.23 c0-5.34-2.17-8.72-4.97-10.12c-1.03-0.52-2.14-0.77-3.2-0.77c-1.07,0-2.17,0.26-3.2,0.77c-2.76,1.4-4.9,4.79-4.9,10.27v55.92 c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06v-5.67H40.75L40.75,67.62z M0.81,12.28c-1.04,0.99-1.08,2.64-0.09,3.68 C1.71,17,3.35,17.04,4.4,16.05l7.69-7.35v22.08c0,1.44,1.17,2.61,2.61,2.61s2.61-1.17,2.61-2.61V8.68l7.73,7.37 c1.04,0.99,2.69,0.95,3.68-0.09c0.99-1.04,0.95-2.69-0.09-3.68L16.49,0.72c-1-0.95-2.58-0.96-3.59,0L0.81,12.28L0.81,12.28z M69.32,31.33c0.26-0.07,0.52-0.11,0.81-0.11h4.23c0.22,0,0.48,0.04,0.7,0.07c5.63,0.88,8.17,4.16,9.2,8.43 c0.4-0.18,0.85-0.29,1.29-0.29h4.23c0.22,0,0.48,0.04,0.7,0.07c6.07,0.96,8.5,4.67,9.39,9.39c0.15-0.04,0.29-0.04,0.48-0.04h4.23 c0.22,0,0.48,0.04,0.7,0.07c11.63,1.8,11.49,13.36,11.37,22.68v2.43l0.26,10.75v0.33c-0.44,9.17-4.05,15.09-8.21,21.94 c-0.7,1.14-1.4,2.32-2.36,3.94c-0.04,0.04-0.04,0.07-0.07,0.11c-2.17,3.79-4.67,6.7-7.55,8.69c-2.91,2.02-6.15,3.06-9.68,3.09 H52.42c-3.64,0.07-6.48-1.51-8.58-4.64c-1.69-2.5-2.8-6.04-3.39-10.45L17.63,75.17l-0.11-0.11c-1.36-1.8-3.2-4.64-4.6-7.77 c-1.03-2.36-1.8-4.9-1.99-7.4c-0.18-2.98,0.22-5.34,1.07-7.22c1.03-2.32,2.72-3.83,4.75-4.64c1.88-0.77,4.01-0.88,6.15-0.44 c2.58,0.52,5.23,1.8,7.47,3.68c1.84,1.55,4.93,4.05,7.95,6.52l2.5,2.06V17.41c0-8.14,3.61-13.36,8.28-15.72 c1.88-0.96,3.9-1.44,5.96-1.44c2.06,0,4.09,0.48,5.96,1.44c4.68,2.36,8.36,7.62,8.36,15.61v14.06L69.32,31.33L69.32,31.33z" />
+    </G>
+  </Svg>
+);
+
+// Animated Welcome Screen Component
+const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) => {
+  // Animation values
+  const glowPulse = useRef(new Animated.Value(0.4)).current;
+  const chevron1Y = useRef(new Animated.Value(0)).current;
+  const chevron2Y = useRef(new Animated.Value(0)).current;
+  const chevron3Y = useRef(new Animated.Value(0)).current;
+  const chevronOpacity = useRef(new Animated.Value(0.5)).current;
+  const barWidth = useRef(new Animated.Value(0.6)).current;
+  const handY = useRef(new Animated.Value(0)).current; // New animation for hand
+
+  useEffect(() => {
+    // Neon glow pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowPulse, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowPulse, {
+          toValue: 0.4,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Hand swipe animation - travels from bottom to near tagline
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(handY, {
+          toValue: -80, // Travel up 80px
+          duration: 1000,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(handY, {
+          toValue: 0,
+          duration: 800,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.delay(300), // Pause at bottom before repeating
+      ])
+    ).start();
+
+    // Chevron bounce animations (staggered wave)
+    const bounceChevron = (anim: Animated.Value, delay: number) => {
+      setTimeout(() => {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(anim, {
+              toValue: -8,
+              duration: 600,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(anim, {
+              toValue: 0,
+              duration: 600,
+              easing: Easing.in(Easing.cubic),
+              useNativeDriver: true,
+            }),
+          ])
+        ).start();
+      }, delay);
+    };
+
+    bounceChevron(chevron1Y, 0);
+    bounceChevron(chevron2Y, 200);
+    bounceChevron(chevron3Y, 400);
+
+    // Chevron opacity pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(chevronOpacity, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(chevronOpacity, {
+          toValue: 0.5,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Bar width pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(barWidth, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(barWidth, {
+          toValue: 0.6,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <View style={welcomeStyles.container}>
+      <Image
+        source={require('../../assets/gametok_bg.png')}
+        style={[welcomeStyles.backgroundImage, { height: contentHeight }]}
+        resizeMode="cover"
+      />
+
+      {/* Logo and title in center */}
+      <View style={welcomeStyles.brandingContainer}>
+        <Image
+          source={require('../../assets/icon.png')}
+          style={welcomeStyles.logo}
+          resizeMode="contain"
+        />
+        <Text style={welcomeStyles.title}>GameTOK</Text>
+      </View>
+
+      {/* Tagline above bottom zone */}
+      <Text style={welcomeStyles.tagline}>Swipe. Play. Repeat.</Text>
+
+      {/* Bottom swipe zone with neon glow */}
+      <View style={welcomeStyles.bottomZone}>
+        {/* Neon glow bar */}
+        <Animated.View style={[
+          welcomeStyles.glowBarContainer,
+          {
+            opacity: glowPulse,
+            transform: [{ scaleX: barWidth }],
+          }
+        ]}>
+          <LinearGradient
+            colors={['#00f5ff', '#a855f7', '#ff00aa']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={welcomeStyles.glowBar}
+          />
+          {/* Glow effect layer */}
+          <LinearGradient
+            colors={['#00f5ff', '#a855f7', '#ff00aa']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={welcomeStyles.glowBarBlur}
+          />
+        </Animated.View>
+      </View>
+
+      {/* Animated swipe hand - positioned absolutely from screen bottom */}
+      <Animated.View style={[
+        welcomeStyles.swipeHandContainer,
+        {
+          transform: [{ translateY: handY }],
+        }
+      ]}>
+        <SwipeUpHand size={32} color="#ffffff" />
+      </Animated.View>
+    </View>
+  );
+};
+
+const welcomeStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0a1a',
+  },
+  backgroundImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+  },
+  brandingContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 100,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    borderRadius: 28,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 1,
+    textShadowColor: '#00f5ff',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  },
+  tagline: {
+    position: 'absolute',
+    bottom: BOTTOM_ZONE_HEIGHT + 40,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '500',
+    letterSpacing: 2,
+  },
+  bottomZone: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_ZONE_HEIGHT + 80,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 25,
+  },
+  glowBarContainer: {
+    width: 200,
+    height: 4,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  glowBar: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+  },
+  glowBarBlur: {
+    position: 'absolute',
+    width: '100%',
+    height: 12,
+    borderRadius: 6,
+    opacity: 0.5,
+    top: -4,
+  },
+  chevronsContainer: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  swipeHandContainer: {
+    position: 'absolute',
+    bottom: 15,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  swipeText: {
+    fontSize: 15,
+    color: '#a855f7',
+    fontWeight: '600',
+    textShadowColor: '#a855f7',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+    letterSpacing: 1,
+  },
+});
 
 export const HomeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
   const [loading, setLoading] = useState(true);
   const [scrollEnabled, setScrollEnabled] = useState(false);
-  const [showHint, setShowHint] = useState(true);
-  const hintOpacity = useRef(new Animated.Value(1)).current;
-  
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const swipeHintOpacity = useRef(new Animated.Value(0)).current;
+
   // Store original games for infinite loop
   const allGamesRef = useRef<Game[]>([]);
   const feedCycleRef = useRef(0);
-  
-  // Track games played for ad frequency
-  const gamesPlayedRef = useRef(0);
-  
-  // Track liked games
+
+  // Track liked games and like counts
   const [likedGames, setLikedGames] = useState<Set<string>>(new Set());
+  const [likeCounts, setLikeCounts] = useState<{ [gameId: string]: number }>({});
   
+  // Track saved games (bookmarks)
+  const [savedGames, setSavedGames] = useState<Set<string>>(new Set());
+
+  // Share sheet state
+  const [showShare, setShowShare] = useState(false);
+  const [shareGameId, setShareGameId] = useState<string>('');
+  const [shareGameName, setShareGameName] = useState<string>('');
+
   // Calculate actual content height (screen minus tab bar)
   const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
-  
-  // Handle like
-  const handleLike = (gameId: string) => {
+
+  // Handle like - calls API and updates count
+  const handleLike = async (gameId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Optimistic update
+    const wasLiked = likedGames.has(gameId);
     setLikedGames(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(gameId)) {
+      if (wasLiked) {
         newSet.delete(gameId);
       } else {
         newSet.add(gameId);
       }
       return newSet;
     });
-  };
-  
-  // Handle share
-  const handleShare = async (game: Game) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLikeCounts(prev => ({
+      ...prev,
+      [gameId]: (prev[gameId] || 0) + (wasLiked ? -1 : 1)
+    }));
+
+    // Call API
     try {
-      await Share.share({
-        message: `Check out ${game.name} on GameTOK! 🎮`,
-        url: `https://gametok.app/game/${game.id}`,
+      const result = await likesApi.toggle(gameId);
+      // Update with server's count
+      setLikeCounts(prev => ({
+        ...prev,
+        [gameId]: result.likeCount
+      }));
+      // Sync liked state with server
+      setLikedGames(prev => {
+        const newSet = new Set(prev);
+        if (result.liked) {
+          newSet.add(gameId);
+        } else {
+          newSet.delete(gameId);
+        }
+        return newSet;
       });
-    } catch (e) {}
+    } catch (e) {
+      // Revert on error
+      setLikedGames(prev => {
+        const newSet = new Set(prev);
+        if (wasLiked) {
+          newSet.add(gameId);
+        } else {
+          newSet.delete(gameId);
+        }
+        return newSet;
+      });
+      setLikeCounts(prev => ({
+        ...prev,
+        [gameId]: (prev[gameId] || 0) + (wasLiked ? 1 : -1)
+      }));
+    }
   };
   
-  // Handle comment (placeholder for now)
-  const handleComment = (gameId: string) => {
+  // Handle save/bookmark - calls API
+  const handleSave = async (gameId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // TODO: Open comments modal
+
+    // Optimistic update
+    const wasSaved = savedGames.has(gameId);
+    setSavedGames(prev => {
+      const newSet = new Set(prev);
+      if (wasSaved) {
+        newSet.delete(gameId);
+      } else {
+        newSet.add(gameId);
+      }
+      return newSet;
+    });
+
+    // Call API
+    try {
+      const result = await savedGamesApi.toggle(gameId);
+      // Sync saved state with server
+      setSavedGames(prev => {
+        const newSet = new Set(prev);
+        if (result.saved) {
+          newSet.add(gameId);
+        } else {
+          newSet.delete(gameId);
+        }
+        return newSet;
+      });
+    } catch (e) {
+      // Revert on error
+      setSavedGames(prev => {
+        const newSet = new Set(prev);
+        if (wasSaved) {
+          newSet.add(gameId);
+        } else {
+          newSet.delete(gameId);
+        }
+        return newSet;
+      });
+    }
   };
-  
+
+  // Handle share - opens share sheet
+  const handleShare = (game: Game) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShareGameId(game.id);
+    setShareGameName(game.name);
+    setShowShare(true);
+  };
+
+  // Handle sending game to friend
+  const handleSendToFriend = async (friendId: string, gameId: string) => {
+    try {
+      await messages.send({
+        recipientId: friendId,
+        gameShare: { gameId }
+      });
+    } catch (e) {
+      console.error('Failed to send game:', e);
+    }
+  };
+
   const currentIndexRef = useRef(0);
   const feedRef = useRef<FeedItem[]>([]);
   const translateY = useRef(new Animated.Value(0)).current;
   const isAnimating = useRef(false);
   const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
-  const prevIndexRef = useRef(0);
+  const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
 
   // Pause/resume WebViews when index changes
   useEffect(() => {
     const prevIdx = prevIndexRef.current;
     const currIdx = currentIndex;
-    
+
     if (prevIdx !== currIdx) {
-      // Pause the previous game
-      const prevItem = feed[prevIdx];
-      if (prevItem && webViewRefs.current[prevItem.id]) {
-        webViewRefs.current[prevItem.id]?.injectJavaScript(PAUSE_SCRIPT);
-      }
-      
-      // Resume the current game
-      const currItem = feed[currIdx];
-      if (currItem && webViewRefs.current[currItem.id]) {
+      const currItem = currIdx >= 0 ? feed[currIdx] : null;
+      const currItemId = currItem?.id;
+
+      // Pause all games EXCEPT the current one
+      Object.entries(webViewRefs.current).forEach(([id, webView]) => {
+        if (webView && id !== currItemId) {
+          webView.injectJavaScript(PAUSE_SCRIPT);
+        }
+      });
+
+      // Resume the current game (if not on welcome screen)
+      if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
         webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
       }
-      
+
       prevIndexRef.current = currIdx;
     }
   }, [currentIndex, feed]);
@@ -704,43 +1199,73 @@ export const HomeScreen: React.FC = () => {
     feedRef.current = feed;
   }, [feed]);
 
-  // Show hint for 4 seconds then fade out
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      Animated.timing(hintOpacity, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }).start(() => setShowHint(false));
-    }, 4000);
-    
-    return () => clearTimeout(timer);
-  }, []);
-
   useEffect(() => {
     const init = async () => {
-      // Initialize ads SDK
-      await initializeAds();
-      
-      // Preload first interstitial
-      await loadInterstitial();
-      
-      // Fetch games
+      console.log('[HomeScreen] Starting init...');
+
+      // Check if this is the first launch
+      const hasLaunchedBefore = await AsyncStorage.getItem('hasLaunchedBefore');
+      const isFirstLaunch = !hasLaunchedBefore;
+
+      if (!isFirstLaunch) {
+        // Skip welcome screen on subsequent launches
+        setCurrentIndex(0);
+      }
+
+      // Mark that the app has been launched
+      if (isFirstLaunch) {
+        await AsyncStorage.setItem('hasLaunchedBefore', 'true');
+      }
+
+      // Initialize ads SDK (don't block on this)
+      console.log('[HomeScreen] Initializing ads...');
+      initializeAds().then(() => {
+        console.log('[HomeScreen] Ads SDK initialized successfully');
+        // Native ads are loaded on-demand by NativeAdView component
+      }).catch(e => console.log('[HomeScreen] Ads init error:', e));
+
+      // Fetch games immediately (don't wait for ads)
+      console.log('[HomeScreen] Fetching games...');
       try {
         const data = await gamesApi.list(50);
+        console.log('[HomeScreen] Games fetched:', data?.games?.length || 0);
         if (data.games?.length > 0) {
           allGamesRef.current = data.games;
           setFeed(createFeed(data.games));
+
+          // Store initial like counts from API
+          const counts: { [id: string]: number } = {};
+          data.games.forEach((g: Game) => {
+            counts[g.id] = g.likes || 0;
+          });
+          setLikeCounts(counts);
+
+          // Check which games user has liked (fire and forget)
+          const gameIds = data.games.map((g: Game) => g.id);
+          likesApi.check(gameIds).then(result => {
+            if (result.likedGameIds?.length > 0) {
+              setLikedGames(new Set(result.likedGameIds));
+            }
+          }).catch(() => { });
+          
+          // Check which games user has saved (fire and forget)
+          savedGamesApi.check(gameIds).then(result => {
+            if (result.savedGameIds?.length > 0) {
+              setSavedGames(new Set(result.savedGameIds));
+            }
+          }).catch(() => { });
         }
-      } catch (e) {
+      } catch (e: any) {
+        console.log('[HomeScreen] Games fetch error:', e?.message || e);
         const fallbackGames = [
-          { id: 'flappy-bird', name: 'Flappy Bird' },
-          { id: 'fruit-slicer', name: 'Fruit Slicer' },
-          { id: 'tetris', name: 'Tetris' },
+          { id: 'flappy-bird', name: 'Flappy Bird', likes: 0 },
+          { id: 'fruit-slicer', name: 'Fruit Slicer', likes: 0 },
+          { id: 'tetris', name: 'Tetris', likes: 0 },
         ];
         allGamesRef.current = fallbackGames;
         setFeed(createFeed(fallbackGames));
       } finally {
+        console.log('[HomeScreen] Init complete, setting loading false');
         setLoading(false);
       }
     };
@@ -758,52 +1283,36 @@ export const HomeScreen: React.FC = () => {
           if (data.games?.length > 0) {
             feedCycleRef.current += 1;
             const cycle = feedCycleRef.current;
-            
-            const newItems: FeedItem[] = data.games.map((game: Game, index: number) => ({
-              game,
-              id: `${game.id}-cycle${cycle}-${index}`,
-            }));
-            
+
+            // Use createFeed to maintain ad insertion pattern
+            const newItems = createFeed(data.games, cycle);
+
             setFeed(prev => [...prev, ...newItems]);
           }
         } catch (e) {
           // If fetch fails, just loop existing games
           feedCycleRef.current += 1;
           const cycle = feedCycleRef.current;
-          
-          const shuffledGames = shuffleArray(allGamesRef.current);
-          const newItems: FeedItem[] = shuffledGames.map((game, index) => ({
-            game,
-            id: `${game.id}-cycle${cycle}-${index}`,
-          }));
-          
+
+          // Use createFeed to maintain ad insertion pattern
+          const newItems = createFeed(allGamesRef.current, cycle);
+
           setFeed(prev => [...prev, ...newItems]);
         }
       };
-      
+
       fetchMoreGames();
     }
   }, [currentIndex, feed.length, loading]);
 
-  const animateToIndex = async (newIndex: number) => {
+  const animateToIndex = (newIndex: number) => {
     if (isAnimating.current) return;
     isAnimating.current = true;
-    
+
     const direction = newIndex > currentIndexRef.current ? -1 : 1;
-    
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    // Track games played and show interstitial every N games (only when swiping forward)
-    if (newIndex > currentIndexRef.current) {
-      gamesPlayedRef.current += 1;
-      const adFrequency = getAdFrequency();
-      
-      if (gamesPlayedRef.current % adFrequency === 0) {
-        // Show interstitial ad
-        await showInterstitial();
-      }
-    }
-    
+
     Animated.timing(translateY, {
       toValue: direction * contentHeight,
       duration: 250,
@@ -816,38 +1325,82 @@ export const HomeScreen: React.FC = () => {
     });
   };
 
-  const bottomPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => {
-        setScrollEnabled(true);
-        return true;
-      },
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, gesture) => {
-        if (!isAnimating.current) {
-          translateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (isAnimating.current) return;
-        
-        const idx = currentIndexRef.current;
-        const total = feedRef.current.length;
-        
-        if (gestureState.dy < -SWIPE_THRESHOLD && idx < total - 1) {
-          animateToIndex(idx + 1);
-        } else if (gestureState.dy > SWIPE_THRESHOLD && idx > 0) {
-          animateToIndex(idx - 1);
-        } else {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-          // Keep scrollEnabled true - only disable on tap
-        }
-      },
+  // Show swipe hint with fade in
+  const showHint = () => {
+    if (currentIndexRef.current !== -1) { // Not on welcome screen
+      setShowSwipeHint(true);
+      Animated.timing(swipeHintOpacity, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
+  // Hide swipe hint with fade out
+  const hideHint = () => {
+    Animated.timing(swipeHintOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => setShowSwipeHint(false));
+  };
+
+  // Helper function to update translateY value (for runOnJS)
+  const updateTranslateY = useCallback((value: number) => {
+    translateY.setValue(value);
+  }, [translateY]);
+
+  // Helper function to handle gesture end (for runOnJS)
+  const handleGestureEnd = useCallback((translationY: number) => {
+    hideHint();
+
+    if (isAnimating.current) return;
+
+    const idx = currentIndexRef.current;
+    const total = feedRef.current.length;
+
+    if (translationY < -SWIPE_THRESHOLD && idx < total - 1) {
+      animateToIndex(idx + 1);
+    } else if (translationY > SWIPE_THRESHOLD && idx > -1) {
+      animateToIndex(idx - 1);
+    } else {
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [translateY]);
+
+  // Helper to handle gesture start (for runOnJS)
+  const handleGestureStart = useCallback(() => {
+    setScrollEnabled(true);
+    showHint();
+  }, []);
+
+  // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
+  // The gesture only activates after 15px of vertical movement, allowing taps to pass through
+  const bottomPanGesture = Gesture.Pan()
+    .activeOffsetY([-15, 15]) // Only activate after 15px vertical movement
+    .failOffsetX([-20, 20]) // Fail if horizontal movement is too large
+    .onStart(() => {
+      'worklet';
+      runOnJS(handleGestureStart)();
     })
-  ).current;
+    .onUpdate((event) => {
+      'worklet';
+      if (!isAnimating.current) {
+        runOnJS(updateTranslateY)(event.translationY);
+      }
+    })
+    .onEnd((event) => {
+      'worklet';
+      runOnJS(handleGestureEnd)(event.translationY);
+    })
+    .onFinalize(() => {
+      'worklet';
+      runOnJS(hideHint)();
+    });
 
   // Overlay pan responder - captures touches when scroll mode is active
   const overlayPanResponder = useRef(
@@ -867,13 +1420,13 @@ export const HomeScreen: React.FC = () => {
       },
       onPanResponderRelease: (_, gestureState) => {
         if (isAnimating.current) return;
-        
+
         const idx = currentIndexRef.current;
         const total = feedRef.current.length;
-        
+
         if (gestureState.dy < -SWIPE_THRESHOLD && idx < total - 1) {
           animateToIndex(idx + 1);
-        } else if (gestureState.dy > SWIPE_THRESHOLD && idx > 0) {
+        } else if (gestureState.dy > SWIPE_THRESHOLD && idx > -1) {
           animateToIndex(idx - 1);
         } else {
           Animated.spring(translateY, {
@@ -886,23 +1439,36 @@ export const HomeScreen: React.FC = () => {
   ).current;
 
   // Get prev, current, next items for preloading (2 ahead to handle ads)
+  // Index -1 is the welcome screen
   const visibleItems = useMemo(() => {
-    const result: { item: FeedItem; position: number }[] = [];
-    
-    if (feed[currentIndex - 1]) {
-      result.push({ item: feed[currentIndex - 1], position: -1 });
+    const result: { item: FeedItem | null; position: number; isWelcome: boolean }[] = [];
+
+    // Welcome screen at position -1
+    if (currentIndex === -1) {
+      result.push({ item: null, position: 0, isWelcome: true });
+      if (feed[0]) {
+        result.push({ item: feed[0], position: 1, isWelcome: false });
+      }
+    } else {
+      // Previous item (could be welcome screen)
+      if (currentIndex === 0) {
+        result.push({ item: null, position: -1, isWelcome: true });
+      } else if (feed[currentIndex - 1]) {
+        result.push({ item: feed[currentIndex - 1], position: -1, isWelcome: false });
+      }
+
+      if (feed[currentIndex]) {
+        result.push({ item: feed[currentIndex], position: 0, isWelcome: false });
+      }
+      if (feed[currentIndex + 1]) {
+        result.push({ item: feed[currentIndex + 1], position: 1, isWelcome: false });
+      }
+      // Preload one more ahead so games load while viewing ads
+      if (feed[currentIndex + 2]) {
+        result.push({ item: feed[currentIndex + 2], position: 2, isWelcome: false });
+      }
     }
-    if (feed[currentIndex]) {
-      result.push({ item: feed[currentIndex], position: 0 });
-    }
-    if (feed[currentIndex + 1]) {
-      result.push({ item: feed[currentIndex + 1], position: 1 });
-    }
-    // Preload one more ahead so games load while viewing ads
-    if (feed[currentIndex + 2]) {
-      result.push({ item: feed[currentIndex + 2], position: 2 });
-    }
-    
+
     return result;
   }, [feed, currentIndex]);
 
@@ -914,118 +1480,172 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {visibleItems.map(({ item, position }) => (
-        <Animated.View 
-          key={item.id}
+      {visibleItems.map(({ item, position, isWelcome }) => (
+        <Animated.View
+          key={isWelcome ? 'welcome' : item!.id}
           style={[
-            styles.gameContainer, 
-            { 
+            styles.gameContainer,
+            {
               height: contentHeight,
-              transform: [{ 
-                translateY: Animated.add(translateY, position * contentHeight) 
+              transform: [{
+                translateY: Animated.add(translateY, position * contentHeight)
               }],
               zIndex: position === 0 ? 1 : 0,
             }
           ]}
         >
-          <WebView
-            ref={(ref) => { webViewRefs.current[item.id] = ref; }}
-            source={{ uri: getGameUrl(item.game) }}
-            style={styles.webview}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            thirdPartyCookiesEnabled={!isExternalGame(item.game)}
-            sharedCookiesEnabled={false}
-            injectedJavaScriptBeforeContentLoaded={isExternalGame(item.game) ? AD_BLOCKER_SCRIPT : undefined}
-            onMessage={() => {}} // Suppress messages
-            javaScriptCanOpenWindowsAutomatically={false}
-            setSupportMultipleWindows={false}
-            onLoad={() => {
-              // Auto-pause if not the current game
-              if (position !== 0 && webViewRefs.current[item.id]) {
-                webViewRefs.current[item.id]?.injectJavaScript(PAUSE_SCRIPT);
-              }
-            }}
-            onShouldStartLoadWithRequest={(request) => {
-              if (isExternalGame(item.game)) {
-                const blocked = shouldBlockRequest(request.url);
-                return !blocked;
-              }
-              return true;
-            }}
-            renderError={(errorDomain, errorCode, errorDesc) => (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorEmoji}>📶</Text>
-                <Text style={styles.errorTitle}>Couldn't load game</Text>
-                <Text style={styles.errorMessage}>Check your connection and swipe to try another</Text>
-              </View>
-            )}
-          />
-          {/* TikTok-style action buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleLike(item.game.id)}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name={likedGames.has(item.game.id) ? "heart" : "heart-outline"} 
-                size={35} 
-                color={likedGames.has(item.game.id) ? "#ff2d55" : "#fff"} 
+          {isWelcome ? (
+            // Welcome screen
+            <WelcomeScreen contentHeight={contentHeight} />
+          ) : item!.isAd ? (
+            // Native Ad
+            <NativeAdView contentHeight={contentHeight} />
+          ) : (
+            // Game screen
+            <>
+              <WebView
+                ref={(ref) => { webViewRefs.current[item!.id] = ref; }}
+                source={{ uri: getGameUrl(item!.game!) }}
+                style={styles.webview}
+                javaScriptEnabled
+                domStorageEnabled
+                allowsInlineMediaPlayback
+                mediaPlaybackRequiresUserAction={false}
+                thirdPartyCookiesEnabled={!isExternalGame(item!.game!)}
+                sharedCookiesEnabled={false}
+                injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT : undefined}
+                onMessage={() => { }} // Suppress messages
+                javaScriptCanOpenWindowsAutomatically={false}
+                setSupportMultipleWindows={false}
+                onLoad={() => {
+                  // Auto-pause if not the current game OR if on welcome screen
+                  const shouldPause = position !== 0 || currentIndex === -1;
+                  if (shouldPause && webViewRefs.current[item!.id]) {
+                    webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
+                  }
+                }}
+                onShouldStartLoadWithRequest={(request) => {
+                  if (isExternalGame(item!.game!)) {
+                    const blocked = shouldBlockRequest(request.url);
+                    return !blocked;
+                  }
+                  return true;
+                }}
+                renderError={(errorDomain, errorCode, errorDesc) => (
+                  <View style={styles.errorContainer}>
+                    <Text style={styles.errorEmoji}>📶</Text>
+                    <Text style={styles.errorTitle}>Couldn't load game</Text>
+                    <Text style={styles.errorMessage}>Check your connection and swipe to try another</Text>
+                  </View>
+                )}
               />
-              <Text style={styles.actionCount}>{likedGames.has(item.game.id) ? '1' : '0'}</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleComment(item.game.id)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chatbubble-ellipses" size={33} color="#fff" />
-              <Text style={styles.actionCount}>0</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleShare(item.game)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="arrow-redo" size={33} color="#fff" />
-              <Text style={styles.actionCount}>Share</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {/* Game name - bottom left */}
-          <View style={styles.gameInfo}>
-            <Text style={styles.gameName}>{item.game.name}</Text>
-          </View>
+
+              {/* Only show action buttons and game info for games, not ads */}
+              {!item!.isAd && (
+                <>
+                  {/* TikTok-style action buttons - right side */}
+                  <View style={styles.actionButtons}>
+                    {/* Like */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleLike(item!.game!.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="heart"
+                        size={32}
+                        color={likedGames.has(item!.game!.id) ? "#ff2d55" : "#fff"}
+                      />
+                      <Text style={styles.actionCount}>{likeCounts[item!.game!.id] || 0}</Text>
+                    </TouchableOpacity>
+
+                    {/* Bookmark/Save */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleSave(item!.game!.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={savedGames.has(item!.game!.id) ? "bookmark" : "bookmark-outline"}
+                        size={30}
+                        color={savedGames.has(item!.game!.id) ? "#ffd60a" : "#fff"}
+                      />
+                      <Text style={styles.actionCount}>Save</Text>
+                    </TouchableOpacity>
+
+                    {/* Share */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleShare(item!.game!)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="arrow-redo" size={30} color="#fff" />
+                      <Text style={styles.actionCount}>Share</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Game info - bottom left */}
+                  <View style={styles.gameInfo} pointerEvents="none">
+                    <View style={styles.gameNameRow}>
+                      <Text style={styles.gameName}>{item!.game!.name}</Text>
+                      <View style={styles.gameBadge}>
+                        <Ionicons name="game-controller" size={12} color="#fff" />
+                      </View>
+                    </View>
+                    <Text style={styles.gameTagline}>{getRandomTagline(item!.game!.id)}</Text>
+                  </View>
+                </>
+              )}
+            </>
+          )}
         </Animated.View>
       ))}
-      
+
       {/* For You header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Text style={styles.forYouText}>For You</Text>
       </View>
-      
+
       {/* Scroll overlay - only visible when scroll mode is active */}
       {scrollEnabled && (
-        <View 
-          style={styles.scrollOverlay} 
+        <View
+          style={styles.scrollOverlay}
           {...overlayPanResponder.panHandlers}
         />
       )}
-      
-      <View style={styles.bottomZone} {...bottomPanResponder.panHandlers} />
-      
-      {/* Swipe hint - shows on app open */}
-      {showHint && (
-        <Animated.View style={[styles.hintContainer, { opacity: hintOpacity }]} pointerEvents="none">
-          <View style={styles.hintGlow} />
-          <Text style={styles.hintText}>Swipe from bottom to browse</Text>
+
+      <GestureDetector gesture={bottomPanGesture}>
+        <View style={styles.bottomZone} />
+      </GestureDetector>
+
+      {/* Swipe hint - permanent on welcome, on-touch for games */}
+      {(currentIndex === -1 || showSwipeHint) && (
+        <Animated.View
+          style={[
+            styles.hintContainer,
+            currentIndex !== -1 && { opacity: swipeHintOpacity }
+          ]}
+          pointerEvents="none"
+        >
+          <View style={[
+            styles.hintGlow,
+            currentIndex !== -1 && styles.hintGlowDark
+          ]} />
+          <Text style={[
+            styles.hintText,
+            currentIndex !== -1 && styles.hintTextDark
+          ]}>Swipe from bottom to browse</Text>
         </Animated.View>
       )}
+
+      {/* Share Sheet */}
+      <ShareSheet
+        visible={showShare}
+        onClose={() => setShowShare(false)}
+        gameId={shareGameId}
+        gameName={shareGameName}
+        onSendToFriend={handleSendToFriend}
+      />
     </View>
   );
 };
@@ -1092,22 +1712,30 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    shadowColor: '#fff',
+    shadowColor: '#a855f7',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.4,
     shadowRadius: 15,
   },
   hintText: {
-    color: '#fff',
+    color: '#a855f7',
     fontSize: 14,
-    fontWeight: '500',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    fontWeight: '600',
+    textShadowColor: '#a855f7',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
     marginBottom: 10,
+  },
+  hintGlowDark: {
+    backgroundColor: 'rgba(168, 85, 247, 0.4)',
+    shadowOpacity: 0.7,
+  },
+  hintTextDark: {
+    color: '#a855f7',
+    textShadowRadius: 10,
   },
   errorContainer: {
     flex: 1,
@@ -1133,37 +1761,56 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     position: 'absolute',
-    right: 8,
-    bottom: 140,
+    right: 10,
+    bottom: 120,
     alignItems: 'center',
     zIndex: 10,
   },
   actionButton: {
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 20,
   },
   actionCount: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 2,
+    marginTop: 4,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   gameInfo: {
     position: 'absolute',
-    left: 12,
+    left: 14,
     bottom: 100,
-    right: 70,
+    right: 80,
     zIndex: 10,
+  },
+  gameNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   gameName: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 22,
     fontWeight: '700',
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
+  },
+  gameBadge: {
+    backgroundColor: '#ff4757',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  gameTagline: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });

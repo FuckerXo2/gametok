@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,6 @@ import {
   Share,
   Linking,
   ActivityIndicator,
-  Animated,
-  Dimensions,
-  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -23,9 +20,6 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
 const AVATAR_SIZE = 60;
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const PILL_WIDTH = SCREEN_WIDTH - 32 - 8; // minus padding and inner padding
-const INDICATOR_WIDTH = PILL_WIDTH / 2;
 
 interface Friend {
   id: string;
@@ -39,9 +33,7 @@ interface ShareSheetProps {
   onClose: () => void;
   gameId: string;
   gameName: string;
-  gameIcon?: string;
-  gameColor?: string;
-  onSendToFriend?: (friendId: string, gameId: string, isChallenge?: boolean) => Promise<void>;
+  onSendToFriend?: (friendId: string, gameId: string) => Promise<void>;
 }
 
 const EXTERNAL_SHARE_OPTIONS = [
@@ -69,64 +61,8 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
-  const [isChallenge, setIsChallenge] = useState(false);
-  
-  // Animation for sliding indicator
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const isChallengeRef = useRef(false);
+  const [selectedExternal, setSelectedExternal] = useState<string | null>(null);
 
-  const animateToPosition = (toChallenge: boolean) => {
-    isChallengeRef.current = toChallenge;
-    setIsChallenge(toChallenge);
-    Animated.spring(slideAnim, {
-      toValue: toChallenge ? 1 : 0,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 25,
-    }).start();
-  };
-
-  // Pan responder for swipe gesture on the whole pill
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 10,
-      onPanResponderMove: (_, gs) => {
-        const startVal = isChallengeRef.current ? 1 : 0;
-        const delta = gs.dx / INDICATOR_WIDTH;
-        const newVal = Math.max(0, Math.min(1, startVal + delta));
-        slideAnim.setValue(newVal);
-      },
-      onPanResponderRelease: (_, gs) => {
-        const velocity = gs.vx;
-        let shouldChallenge: boolean;
-        
-        if (Math.abs(velocity) > 0.5) {
-          shouldChallenge = velocity > 0;
-        } else {
-          // Get current animated value position
-          const startVal = isChallengeRef.current ? 1 : 0;
-          const delta = gs.dx / INDICATOR_WIDTH;
-          const currentVal = startVal + delta;
-          shouldChallenge = currentVal > 0.5;
-        }
-        
-        if (shouldChallenge !== isChallengeRef.current) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-        
-        isChallengeRef.current = shouldChallenge;
-        setIsChallenge(shouldChallenge);
-        
-        Animated.spring(slideAnim, {
-          toValue: shouldChallenge ? 1 : 0,
-          useNativeDriver: true,
-          tension: 300,
-          friction: 25,
-        }).start();
-      },
-    })
-  ).current;
 
   // Load friends (following list)
   useEffect(() => {
@@ -170,7 +106,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     try {
       await Promise.all(
         Array.from(selectedFriends).map(friendId => 
-          onSendToFriend?.(friendId, gameId, isChallenge)
+          onSendToFriend?.(friendId, gameId)
         )
       );
       setSentTo(prev => new Set([...prev, ...selectedFriends]));
@@ -187,29 +123,44 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
 
   const handleExternalShare = async (optionId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Just select it, pill and Send button will appear
+    setSelectedExternal(optionId);
+  };
+
+  const executeExternalShare = async () => {
+    if (!selectedExternal) return;
+    
     const shareUrl = getShareUrl();
     const shareMessage = getShareMessage();
 
-    switch (optionId) {
+    switch (selectedExternal) {
       case 'copy':
         await Clipboard.setStringAsync(shareUrl);
         setCopiedLink(true);
-        setTimeout(() => setCopiedLink(false), 2000);
+        setTimeout(() => {
+          setCopiedLink(false);
+          setSelectedExternal(null);
+        }, 2000);
         break;
       case 'snapchat':
         Linking.openURL(`snapchat://`);
+        setSelectedExternal(null);
         break;
       case 'whatsapp':
         Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`);
+        setSelectedExternal(null);
         break;
       case 'sms':
         Linking.openURL(`sms:&body=${encodeURIComponent(shareMessage)}`);
+        setSelectedExternal(null);
         break;
       case 'instagram':
         Linking.openURL('instagram://app');
+        setSelectedExternal(null);
         break;
       case 'more':
         Share.share({ message: shareMessage });
+        setSelectedExternal(null);
         break;
     }
   };
@@ -286,13 +237,12 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       setSelectedFriends(new Set());
       setSentTo(new Set());
       setSending(false);
-      setIsChallenge(false);
-      isChallengeRef.current = false;
-      slideAnim.setValue(0);
+      setSelectedExternal(null);
     }
   }, [visible]);
 
-  const hasSelection = selectedFriends.size > 0;
+  const hasSelection = selectedFriends.size > 0 || selectedExternal !== null;
+
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -302,9 +252,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 16, backgroundColor: colors.surface }]}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.searchIcon}>
-              <Ionicons name="search" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
+            <View style={styles.headerSpacer} />
             <Text style={[styles.title, { color: colors.text }]}>Send to</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color={colors.text} />
@@ -335,80 +283,20 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             )}
           </View>
 
-          {/* Dynamic Island Style Toggle */}
+          {/* Send Button with Pill UI */}
           {hasSelection && (
             <View style={styles.sendSection}>
-              <View style={[styles.islandPill, { backgroundColor: colors.background }]} {...panResponder.panHandlers}>
-                {/* Animated Sliding Indicator */}
-                <Animated.View 
-                  style={[
-                    styles.slideIndicator,
-                    {
-                      transform: [{
-                        translateX: slideAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, INDICATOR_WIDTH],
-                        }),
-                      }],
-                      backgroundColor: slideAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['rgba(255,142,83,0.2)', 'rgba(255,59,48,0.2)'],
-                      }),
-                    },
-                  ]} 
-                />
-                
-                {/* Send Option */}
-                <TouchableOpacity 
-                  style={styles.islandOption}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    animateToPosition(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons 
-                    name="paper-plane" 
-                    size={16} 
-                    color={!isChallenge ? '#FF8E53' : colors.textSecondary} 
-                  />
-                  <Text style={[
-                    styles.islandText, 
-                    { color: colors.textSecondary },
-                    !isChallenge && { color: '#FF8E53' }
-                  ]}>
-                    Send
-                  </Text>
-                </TouchableOpacity>
-                
-                {/* Challenge Option */}
-                <TouchableOpacity 
-                  style={styles.islandOption}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    animateToPosition(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons 
-                    name="trophy" 
-                    size={16} 
-                    color={isChallenge ? '#FF3B30' : colors.textSecondary} 
-                  />
-                  <Text style={[
-                    styles.islandText, 
-                    { color: colors.textSecondary },
-                    isChallenge && { color: '#FF3B30' }
-                  ]}>
-                    Challenge
-                  </Text>
-                </TouchableOpacity>
+              <View style={[styles.islandPill, { backgroundColor: colors.background }]}>
+                <View style={[styles.slideIndicator, { backgroundColor: 'rgba(255,142,83,0.2)' }]} />
+                <View style={styles.islandOption}>
+                  <Ionicons name="paper-plane" size={16} color="#FF8E53" />
+                  <Text style={[styles.islandText, { color: '#FF8E53' }]}>Send</Text>
+                </View>
               </View>
               
-              {/* Send Button */}
               <TouchableOpacity 
-                style={[styles.sendButton, { backgroundColor: isChallenge ? '#FF3B30' : colors.primary }]}
-                onPress={handleSend}
+                style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                onPress={selectedExternal ? executeExternalShare : handleSend}
                 disabled={sending}
                 activeOpacity={0.8}
               >
@@ -416,14 +304,9 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <>
-                    <Ionicons 
-                      name={isChallenge ? "trophy" : "paper-plane"} 
-                      size={18} 
-                      color="#fff" 
-                      style={{ marginRight: 8 }}
-                    />
+                    <Ionicons name="paper-plane" size={18} color="#fff" style={{ marginRight: 8 }} />
                     <Text style={styles.sendButtonText}>
-                      {isChallenge ? 'Challenge' : 'Send'}{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
+                      Send{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
                     </Text>
                   </>
                 )}
@@ -471,11 +354,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  searchIcon: {
+  headerSpacer: {
     width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   title: {
     fontSize: 15,
@@ -595,7 +475,7 @@ const styles = StyleSheet.create({
     top: 4,
     left: 4,
     bottom: 4,
-    width: INDICATOR_WIDTH,
+    right: 4,
     borderRadius: 16,
   },
   islandOption: {
