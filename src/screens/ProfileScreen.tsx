@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,12 +6,26 @@ import {
   ScrollView, 
   TouchableOpacity,
   Dimensions,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { savedGames as savedGamesApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_SIZE = (SCREEN_WIDTH - 4) / 3;
+
+interface Game {
+  id: string;
+  name: string;
+  thumbnail?: string;
+  icon?: string;
+  color?: string;
+  embedUrl?: string;
+}
 
 const USER_GAMES = [
   { id: 1, game: 'Stack Ball', score: 1250, icon: '🎱', color: '#667eea', plays: '12.4K' },
@@ -24,7 +38,39 @@ const USER_GAMES = [
 
 export const ProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'games' | 'liked' | 'saved'>('games');
+  const [savedGames, setSavedGames] = useState<Game[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Load saved games when tab is active
+  useEffect(() => {
+    if (activeTab === 'saved' && user?.id) {
+      loadSavedGames();
+    }
+  }, [activeTab, user?.id]);
+
+  const loadSavedGames = async () => {
+    if (!user?.id) return;
+    
+    setLoading(true);
+    try {
+      const result = await savedGamesApi.userSaved(user.id);
+      setSavedGames(result.games || []);
+    } catch (e) {
+      console.error('Failed to load saved games:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGamePress = async (game: Game) => {
+    // Store the game to play and navigate to home
+    await AsyncStorage.setItem('playGameId', game.id);
+    // TODO: Navigate to home screen and play this game
+    // For now, just log it
+    console.log('Play game:', game.name);
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -115,20 +161,58 @@ export const ProfileScreen: React.FC = () => {
 
         {/* Games Grid */}
         <View style={styles.gamesGrid}>
-          {USER_GAMES.map((item) => (
-            <TouchableOpacity key={item.id} style={styles.gameGridItem}>
-              <View style={[styles.gameGridImage, { backgroundColor: item.color }]}>
-                <Text style={styles.gameGridIcon}>{item.icon}</Text>
-                <View style={styles.gameGridScore}>
-                  <Text style={styles.gameGridScoreText}>{item.score}</Text>
+          {activeTab === 'saved' ? (
+            loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#fff" />
+              </View>
+            ) : savedGames.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="bookmark-outline" size={64} color="#333" />
+                <Text style={styles.emptyText}>No saved games yet</Text>
+                <Text style={styles.emptySubtext}>Tap the bookmark button on games you want to save</Text>
+              </View>
+            ) : (
+              savedGames.map((game) => (
+                <TouchableOpacity 
+                  key={game.id} 
+                  style={styles.savedGameItem}
+                  onPress={() => handleGamePress(game)}
+                  activeOpacity={0.8}
+                >
+                  {game.thumbnail ? (
+                    <Image 
+                      source={{ uri: game.thumbnail }} 
+                      style={styles.savedGameThumbnail}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.savedGameThumbnail, { backgroundColor: game.color || '#667eea' }]}>
+                      <Text style={styles.savedGameIcon}>{game.icon || '🎮'}</Text>
+                    </View>
+                  )}
+                  <View style={styles.savedGameOverlay}>
+                    <Text style={styles.savedGameName} numberOfLines={2}>{game.name}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )
+          ) : (
+            USER_GAMES.map((item) => (
+              <TouchableOpacity key={item.id} style={styles.gameGridItem}>
+                <View style={[styles.gameGridImage, { backgroundColor: item.color }]}>
+                  <Text style={styles.gameGridIcon}>{item.icon}</Text>
+                  <View style={styles.gameGridScore}>
+                    <Text style={styles.gameGridScoreText}>{item.score}</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.gameGridPlays}>
-                <Ionicons name="play" size={12} color="#fff" />
-                <Text style={styles.gameGridPlaysText}>{item.plays}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.gameGridPlays}>
+                  <Ionicons name="play" size={12} color="#fff" />
+                  <Text style={styles.gameGridPlaysText}>{item.plays}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
 
         <View style={{ height: 100 }} />
@@ -284,5 +368,59 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginLeft: 4,
+  },
+  // Saved games styles
+  loadingContainer: {
+    width: SCREEN_WIDTH,
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    width: SCREEN_WIDTH,
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    color: '#666',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
+  savedGameItem: {
+    width: GRID_SIZE,
+    height: GRID_SIZE * 1.4,
+    padding: 1,
+  },
+  savedGameThumbnail: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  savedGameIcon: {
+    fontSize: 36,
+  },
+  savedGameOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 8,
+  },
+  savedGameName: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
