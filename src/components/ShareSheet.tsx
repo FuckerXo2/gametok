@@ -117,7 +117,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const getShareUrl = () => `https://gametok.app/game.html?id=${gameId}`;
+  const getShareUrl = () => `https://gametok-landing.pages.dev/game.html?id=${gameId}`;
   const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮 ${getShareUrl()}`;
 
   const handleExternalShare = async (optionId: string) => {
