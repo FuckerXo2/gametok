@@ -1,6 +1,6 @@
 // Ad Service for GameTok - Google AdMob Native Ads
 import Constants from 'expo-constants';
-import MobileAds, { 
+import MobileAds, {
   MaxAdContentRating,
   TestIds,
   NativeAd,
@@ -24,8 +24,8 @@ const NATIVE_AD_UNIT_ID_ANDROID = 'ca-app-pub-1961802731817431/XXXXXXXX'; // And
 // Use REAL ads
 const USE_TEST_ADS = false;
 
-export const NATIVE_AD_UNIT_ID = USE_TEST_ADS 
-  ? TestIds.NATIVE 
+export const NATIVE_AD_UNIT_ID = USE_TEST_ADS
+  ? TestIds.NATIVE
   : (Platform.OS === 'ios' ? NATIVE_AD_UNIT_ID_IOS : NATIVE_AD_UNIT_ID_ANDROID);
 
 // Detect environment
@@ -86,19 +86,19 @@ export const initializeAds = async () => {
 
   try {
     console.log('[Ads] Initializing AdMob...');
-    
+
     await MobileAds().initialize();
-    
+
     // Set ad content rating
     await MobileAds().setRequestConfiguration({
       maxAdContentRating: MaxAdContentRating.T,
       tagForChildDirectedTreatment: false,
       tagForUnderAgeOfConsent: false,
     });
-    
+
     isInitialized = true;
     console.log('[Ads] AdMob initialized successfully');
-    
+
     return true;
   } catch (error) {
     console.error('[Ads] AdMob initialization failed:', error);

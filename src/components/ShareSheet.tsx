@@ -61,7 +61,6 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
-  const [selectedExternal, setSelectedExternal] = useState<string | null>(null);
 
 
   // Load friends (following list)
@@ -118,49 +117,36 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const getShareUrl = () => `https://gametok.app/game/${gameId}`;
-  const getShareMessage = () => `Check out ${gameName} on GameTok! 🎮 ${getShareUrl()}`;
+  const getShareUrl = () => `https://gametok.app/game.html?id=${gameId}`;
+  const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮 ${getShareUrl()}`;
 
   const handleExternalShare = async (optionId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Just select it, pill and Send button will appear
-    setSelectedExternal(optionId);
-  };
-
-  const executeExternalShare = async () => {
-    if (!selectedExternal) return;
     
     const shareUrl = getShareUrl();
     const shareMessage = getShareMessage();
 
-    switch (selectedExternal) {
+    // Execute immediately instead of showing pill
+    switch (optionId) {
       case 'copy':
         await Clipboard.setStringAsync(shareUrl);
         setCopiedLink(true);
-        setTimeout(() => {
-          setCopiedLink(false);
-          setSelectedExternal(null);
-        }, 2000);
+        setTimeout(() => setCopiedLink(false), 2000);
         break;
       case 'snapchat':
         Linking.openURL(`snapchat://`);
-        setSelectedExternal(null);
         break;
       case 'whatsapp':
         Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`);
-        setSelectedExternal(null);
         break;
       case 'sms':
         Linking.openURL(`sms:&body=${encodeURIComponent(shareMessage)}`);
-        setSelectedExternal(null);
         break;
       case 'instagram':
         Linking.openURL('instagram://app');
-        setSelectedExternal(null);
         break;
       case 'more':
         Share.share({ message: shareMessage });
-        setSelectedExternal(null);
         break;
     }
   };
@@ -237,11 +223,10 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
       setSelectedFriends(new Set());
       setSentTo(new Set());
       setSending(false);
-      setSelectedExternal(null);
     }
   }, [visible]);
 
-  const hasSelection = selectedFriends.size > 0 || selectedExternal !== null;
+  const hasSelection = selectedFriends.size > 0;
 
 
   return (
@@ -283,33 +268,28 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             )}
           </View>
 
-          {/* Send Button with Pill UI */}
+          {/* Send Button */}
           {hasSelection && (
             <View style={styles.sendSection}>
-              <View style={[styles.islandPill, { backgroundColor: colors.background }]}>
-                <View style={[styles.slideIndicator, { backgroundColor: 'rgba(255,142,83,0.2)' }]} />
-                <View style={styles.islandOption}>
-                  <Ionicons name="paper-plane" size={16} color="#FF8E53" />
-                  <Text style={[styles.islandText, { color: '#FF8E53' }]}>Send</Text>
-                </View>
-              </View>
-              
               <TouchableOpacity 
-                style={[styles.sendButton, { backgroundColor: colors.primary }]}
-                onPress={selectedExternal ? executeExternalShare : handleSend}
+                style={[styles.islandPill, { backgroundColor: colors.background }]}
+                onPress={handleSend}
                 disabled={sending}
                 activeOpacity={0.8}
               >
-                {sending ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="paper-plane" size={18} color="#fff" style={{ marginRight: 8 }} />
-                    <Text style={styles.sendButtonText}>
-                      Send{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
-                    </Text>
-                  </>
-                )}
+                <View style={[styles.slideIndicator, { backgroundColor: 'rgba(255,142,83,0.2)' }]} />
+                <View style={styles.islandOption}>
+                  {sending ? (
+                    <ActivityIndicator color="#FF8E53" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="paper-plane" size={16} color="#FF8E53" />
+                      <Text style={[styles.islandText, { color: '#FF8E53' }]}>
+                        Send{selectedFriends.size > 1 ? ` (${selectedFriends.size})` : ''}
+                      </Text>
+                    </>
+                  )}
+                </View>
               </TouchableOpacity>
             </View>
           )}
@@ -467,7 +447,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: 20,
     padding: 4,
-    marginBottom: 14,
     position: 'relative',
   },
   slideIndicator: {
@@ -490,18 +469,6 @@ const styles = StyleSheet.create({
   },
   islandText: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  sendButton: {
-    flexDirection: 'row',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
     fontWeight: '600',
   },
   divider: {

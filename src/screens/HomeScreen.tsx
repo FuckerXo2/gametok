@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -13,12 +13,15 @@ import Svg, { Path, G } from 'react-native-svg';
 import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages } from '../services/api';
 import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
+import { CommentsSheet } from '../components/CommentsSheet';
 import NativeAdView from '../components/NativeAdView';
+import { useDeepLink } from '../../App';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
 const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.10;
+const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.10;
 const SWIPE_THRESHOLD = 50;
 
 interface Game {
@@ -71,56 +74,80 @@ const shouldBlockRequest = (url: string): boolean => {
 // Script to pause/freeze a game
 const PAUSE_SCRIPT = `
 (function() {
-  // Pause ALL HTML5 audio/video elements
+  // Immediately mute everything
+  
+  // 1. Mute ALL HTML5 audio/video elements
   document.querySelectorAll('audio, video').forEach(el => { 
     try { 
       el.pause(); 
       el.muted = true;
+      el.volume = 0;
     } catch(e){} 
   });
   
-  // Mute ALL audio contexts (not just tracked ones)
+  // 2. Suspend ALL AudioContexts
   if (window.AudioContext || window.webkitAudioContext) {
-    // Suspend tracked contexts
+    // Get all audio contexts from our tracking
     if (window._audioContexts) {
       window._audioContexts.forEach(ctx => { 
-        try { 
-          ctx.suspend(); 
-        } catch(e){} 
+        try { ctx.suspend(); } catch(e){} 
       });
     }
-    
-    // Save and mute any gain nodes
+    // Also try to find any untracked contexts
     if (window._allGainNodes) {
       window._allGainNodes.forEach(gain => {
         try { 
           gain._savedValue = gain.gain.value;
-          gain.gain.value = 0; 
+          gain.gain.setValueAtTime(0, gain.context.currentTime);
         } catch(e) {}
       });
     }
   }
   
-  // Mute Unity specifically
-  if (window.unityInstance) {
-    try { window.unityInstance.SendMessage('AudioManager', 'Mute'); } catch(e) {}
-    try { window.unityInstance.SendMessage('SoundManager', 'Mute'); } catch(e) {}
-  }
-  
-  // Global mute fallback
-  if (window._masterGain) {
+  // 3. Mute Howler.js (very common)
+  if (window.Howler) {
     try { 
-      window._originalGainValue = window._masterGain.gain.value;
-      window._masterGain.gain.value = 0; 
+      window.Howler.mute(true);
+      window._howlerWasMuted = true;
     } catch(e) {}
   }
   
-  // Howler.js (common audio library)
-  if (window.Howler) {
-    try { window.Howler.mute(true); } catch(e) {}
+  // 4. Mute Unity
+  if (window.unityInstance) {
+    try { window.unityInstance.SendMessage('AudioManager', 'Mute'); } catch(e) {}
+    try { window.unityInstance.SendMessage('SoundManager', 'Mute'); } catch(e) {}
+    try { window.unityInstance.SendMessage('AudioListener', 'SetVolume', '0'); } catch(e) {}
   }
   
-  // Stop requestAnimationFrame
+  // 5. Mute Phaser
+  if (window.Phaser && window.Phaser.GAMES) {
+    window.Phaser.GAMES.forEach(g => {
+      try { 
+        if (g.sound) {
+          g.sound.mute = true;
+          g.sound.pauseAll && g.sound.pauseAll();
+        }
+      } catch(e) {}
+    });
+  }
+  
+  // 6. Mute CreateJS
+  if (window.createjs) {
+    try { 
+      if (window.createjs.Sound) window.createjs.Sound.muted = true;
+      if (window.createjs.Ticker) window.createjs.Ticker.paused = true;
+    } catch(e) {}
+  }
+  
+  // 7. Global master gain
+  if (window._masterGain) {
+    try { 
+      window._originalGainValue = window._masterGain.gain.value;
+      window._masterGain.gain.setValueAtTime(0, window._masterGain.context.currentTime);
+    } catch(e) {}
+  }
+  
+  // 8. Stop requestAnimationFrame to freeze game
   if (!window._origRAF) {
     window._origRAF = window.requestAnimationFrame;
     window._rafQueue = [];
@@ -129,20 +156,6 @@ const PAUSE_SCRIPT = `
     window._rafQueue.push(cb);
     return window._rafQueue.length;
   };
-  
-  // Pause common game engines
-  if (window.Phaser && window.Phaser.GAMES) {
-    window.Phaser.GAMES.forEach(g => {
-      try { g.sound && g.sound.mute && (g.sound.mute = true); } catch(e) {}
-      try { g.scene && g.scene.pause && g.scene.pause(); } catch(e) {}
-    });
-  }
-  if (window.createjs && window.createjs.Ticker) {
-    window.createjs.Ticker.paused = true;
-  }
-  if (window.createjs && window.createjs.Sound) {
-    try { window.createjs.Sound.muted = true; } catch(e) {}
-  }
   
   window._gamePaused = true;
 })();
@@ -503,15 +516,26 @@ const AD_BLOCKER_SCRIPT = `
       padding: 0 !important;
       border: none !important;
     }
-    /* Hide Unity branding/footer/warnings */
+    /* Hide Unity branding/footer/warnings AND loading screens */
     #unity-footer, .unity-footer, #unity-logo, .unity-logo,
     #unity-fullscreen-button, #unity-build-title, .unity-mobile-warning,
     #unity-warning, .unity-warning, #unity-mobile-warning,
     #unity-progress-bar-empty, #unity-progress-bar-full,
+    #unity-loading-bar, .unity-loading-bar, #unity-loader, .unity-loader,
+    #unity-progress, .unity-progress, #unity-loading, .unity-loading,
+    #unity-loading-cover, .unity-loading-cover,
+    #unity-loading-background, .unity-loading-background,
+    #loading-cover, .loading-cover, #loading-bar, .loading-bar,
+    #preloader, .preloader, #loader, .loader:not(canvas),
     [class*="unity-warning"], [id*="unity-warning"],
+    [class*="unity-load"], [id*="unity-load"],
+    [class*="loading-screen"], [id*="loading-screen"],
+    [class*="splash-screen"], [id*="splash-screen"],
     p:contains("WebGL builds are not supported") {
       display: none !important;
       visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
     /* Hide any ad containers or overlays */
     .ad-container, .ads-container, #ad-container, #ads-container,
@@ -675,6 +699,97 @@ const AD_BLOCKER_SCRIPT = `
 true;
 `;
 
+// Intelligent game ready detection script
+// Monitors multiple signals to determine when a game is actually playable
+const GAME_READY_SCRIPT = `
+(function() {
+  if (window._gameReadyDetectorActive) return;
+  window._gameReadyDetectorActive = true;
+  
+  let gameReady = false;
+  let rafCount = 0;
+  let canvasFound = false;
+  const startTime = Date.now();
+  
+  const notifyReady = () => {
+    if (gameReady) return;
+    gameReady = true;
+    window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'GAME_READY'
+    }));
+  };
+  
+  // 1. Track RAF calls - if game loop is running, game is ready
+  const origRAF = window.requestAnimationFrame;
+  window.requestAnimationFrame = function(cb) {
+    rafCount++;
+    // After 20 frames, game is definitely running
+    if (rafCount >= 20 && !gameReady) {
+      notifyReady();
+    }
+    return origRAF.call(window, cb);
+  };
+  
+  // 2. Check for canvas with content
+  const checkCanvas = () => {
+    if (canvasFound) return;
+    const canvases = document.querySelectorAll('canvas');
+    for (const canvas of canvases) {
+      if (canvas.width > 50 && canvas.height > 50) {
+        canvasFound = true;
+        // Give it a moment to render first frame
+        setTimeout(() => {
+          if (!gameReady && rafCount > 5) notifyReady();
+        }, 500);
+        break;
+      }
+    }
+  };
+  
+  // 3. Check for common game engines being ready
+  const checkEngines = () => {
+    // Unity
+    if (window.unityInstance) { notifyReady(); return true; }
+    // Phaser running
+    if (window.Phaser?.GAMES?.[0]?.isRunning) { notifyReady(); return true; }
+    // PixiJS
+    if (window.PIXI?.Application) { notifyReady(); return true; }
+    // Construct
+    if (window.cr_getC2Runtime || window.C3) { notifyReady(); return true; }
+    // GDevelop
+    if (window.gdjs?.runtimeGame) { notifyReady(); return true; }
+    return false;
+  };
+  
+  // Run checks every 100ms
+  const interval = setInterval(() => {
+    if (gameReady) {
+      clearInterval(interval);
+      return;
+    }
+    checkCanvas();
+    checkEngines();
+    
+    // After 2 seconds with RAF activity, assume ready
+    if (Date.now() - startTime > 2000 && rafCount > 10) {
+      notifyReady();
+    }
+  }, 100);
+  
+  // Fallback: max 5 seconds
+  setTimeout(() => {
+    if (!gameReady) notifyReady();
+    clearInterval(interval);
+  }, 5000);
+  
+  // Minimum 800ms to avoid flash
+  setTimeout(() => {
+    if (rafCount > 15 || canvasFound) notifyReady();
+  }, 800);
+})();
+true;
+`;
+
 // Random taglines for games
 const GAME_TAGLINES = [
   "So addicting 🔥",
@@ -698,6 +813,17 @@ const getRandomTagline = (gameId: string) => {
   // Use gameId to get consistent tagline per game
   const hash = gameId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
   return GAME_TAGLINES[hash % GAME_TAGLINES.length];
+};
+
+// Format count like TikTok (1.2K, 3.4M, etc)
+const formatCount = (count: number): string => {
+  if (count >= 1000000) {
+    return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (count >= 1000) {
+    return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return count.toString();
 };
 
 // Shuffle array randomly (Fisher-Yates)
@@ -1012,14 +1138,250 @@ const welcomeStyles = StyleSheet.create({
   },
 });
 
+// Animated Game Loading Component - Glowing geometric shapes
+const GameLoadingAnimation: React.FC = () => {
+  // Shape rotations
+  const rotation1 = useRef(new Animated.Value(0)).current;
+  const rotation2 = useRef(new Animated.Value(0)).current;
+  const rotation3 = useRef(new Animated.Value(0)).current;
+  
+  // Scale morphing
+  const scale1 = useRef(new Animated.Value(1)).current;
+  const scale2 = useRef(new Animated.Value(0.8)).current;
+  const scale3 = useRef(new Animated.Value(0.6)).current;
+  
+  // Glow pulse
+  const glow = useRef(new Animated.Value(0.4)).current;
+  
+  // Fade in
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Fade in
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
+    // Outer shape - slow rotation
+    Animated.loop(
+      Animated.timing(rotation1, {
+        toValue: 1,
+        duration: 8000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+
+    // Middle shape - medium rotation opposite direction
+    Animated.loop(
+      Animated.timing(rotation2, {
+        toValue: -1,
+        duration: 5000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+
+    // Inner shape - fast rotation
+    Animated.loop(
+      Animated.timing(rotation3, {
+        toValue: 1,
+        duration: 3000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+
+    // Scale morphing - outer
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale1, {
+          toValue: 1.15,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale1, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Scale morphing - middle (offset)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale2, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale2, {
+          toValue: 0.7,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Scale morphing - inner
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale3, {
+          toValue: 0.8,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale3, {
+          toValue: 0.5,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Glow pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(glow, {
+          toValue: 0.4,
+          duration: 1200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const spin1 = rotation1.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const spin2 = rotation2.interpolate({
+    inputRange: [-1, 0],
+    outputRange: ['-360deg', '0deg'],
+  });
+
+  const spin3 = rotation3.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <Animated.View style={[loadingStyles.container, { opacity }]}>
+      {/* Glow effect behind shapes */}
+      <Animated.View style={[loadingStyles.glowOrb, { opacity: glow }]} />
+      
+      {/* Outer hexagon */}
+      <Animated.View style={[loadingStyles.shapeContainer, { transform: [{ rotate: spin1 }, { scale: scale1 }] }]}>
+        <Svg width={120} height={120} viewBox="0 0 120 120">
+          <Path
+            d="M60 10 L105 35 L105 85 L60 110 L15 85 L15 35 Z"
+            stroke="#a855f7"
+            strokeWidth="2"
+            fill="none"
+            opacity="0.8"
+          />
+        </Svg>
+      </Animated.View>
+
+      {/* Middle square (diamond) */}
+      <Animated.View style={[loadingStyles.shapeContainer, loadingStyles.shapeAbsolute, { transform: [{ rotate: spin2 }, { scale: scale2 }] }]}>
+        <Svg width={90} height={90} viewBox="0 0 90 90">
+          <Path
+            d="M45 5 L85 45 L45 85 L5 45 Z"
+            stroke="#06b6d4"
+            strokeWidth="2"
+            fill="none"
+            opacity="0.8"
+          />
+        </Svg>
+      </Animated.View>
+
+      {/* Inner triangle */}
+      <Animated.View style={[loadingStyles.shapeContainer, loadingStyles.shapeAbsolute, { transform: [{ rotate: spin3 }, { scale: scale3 }] }]}>
+        <Svg width={60} height={60} viewBox="0 0 60 60">
+          <Path
+            d="M30 8 L55 52 L5 52 Z"
+            stroke="#f472b6"
+            strokeWidth="2.5"
+            fill="none"
+            opacity="0.9"
+          />
+        </Svg>
+      </Animated.View>
+
+      {/* Center dot */}
+      <View style={loadingStyles.centerDot} />
+    </Animated.View>
+  );
+};
+
+const loadingStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 140,
+    height: 140,
+  },
+  glowOrb: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#a855f7',
+    shadowColor: '#a855f7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 40,
+  },
+  shapeContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shapeAbsolute: {
+    position: 'absolute',
+  },
+  centerDot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+  },
+});
+
 export const HomeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const { sharedGameId, clearSharedGame } = useDeepLink();
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
   const [loading, setLoading] = useState(true);
   const [scrollEnabled, setScrollEnabled] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const swipeHintOpacity = useRef(new Animated.Value(0)).current;
+
+  // Track which games have finished loading (ready to play)
+  const [readyGames, setReadyGames] = useState<Set<string>>(new Set());
 
   // Store original games for infinite loop
   const allGamesRef = useRef<Game[]>([]);
@@ -1029,13 +1391,22 @@ export const HomeScreen: React.FC = () => {
   const [likedGames, setLikedGames] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<{ [gameId: string]: number }>({});
   
-  // Track saved games (bookmarks)
+  // Track saved games (bookmarks) and counts
   const [savedGames, setSavedGames] = useState<Set<string>>(new Set());
+  const [saveCounts, setSaveCounts] = useState<{ [gameId: string]: number }>({});
+  
+  // Track share counts
+  const [shareCounts, setShareCounts] = useState<{ [gameId: string]: number }>({});
 
   // Share sheet state
   const [showShare, setShowShare] = useState(false);
   const [shareGameId, setShareGameId] = useState<string>('');
   const [shareGameName, setShareGameName] = useState<string>('');
+
+  // Comments sheet state
+  const [showComments, setShowComments] = useState(false);
+  const [commentsGameId, setCommentsGameId] = useState<string>('');
+  const [commentsGameName, setCommentsGameName] = useState<string>('');
 
   // Calculate actual content height (screen minus tab bar)
   const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
@@ -1272,6 +1643,42 @@ export const HomeScreen: React.FC = () => {
     init();
   }, []);
 
+  // Handle deep link - navigate to shared game
+  useEffect(() => {
+    if (sharedGameId && feed.length > 0 && !loading) {
+      console.log('[DeepLink] Looking for game:', sharedGameId);
+      
+      // Find the game in the feed
+      const gameIndex = feed.findIndex(item => 
+        item.game?.id === sharedGameId || 
+        item.game?.id?.toLowerCase() === sharedGameId.toLowerCase()
+      );
+      
+      if (gameIndex !== -1) {
+        console.log('[DeepLink] Found game at index:', gameIndex);
+        setCurrentIndex(gameIndex);
+        clearSharedGame();
+      } else {
+        // Game not in current feed - try to fetch it and add to front
+        console.log('[DeepLink] Game not in feed, fetching...');
+        gamesApi.list(100).then(data => {
+          const game = data.games?.find((g: Game) => 
+            g.id === sharedGameId || g.id?.toLowerCase() === sharedGameId.toLowerCase()
+          );
+          if (game) {
+            // Add the shared game to the front of the feed
+            const newItem: FeedItem = { game, id: `shared-${game.id}`, isAd: false };
+            setFeed(prev => [newItem, ...prev]);
+            setCurrentIndex(0);
+          }
+          clearSharedGame();
+        }).catch(() => {
+          clearSharedGame();
+        });
+      }
+    }
+  }, [sharedGameId, feed.length, loading, clearSharedGame]);
+
   // Extend feed when nearing the end (infinite scroll) - fetch NEW random games from server
   useEffect(() => {
     const gamesLeft = feed.length - currentIndex;
@@ -1379,10 +1786,35 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
-  // The gesture only activates after 15px of vertical movement, allowing taps to pass through
+  // The gesture only activates after 25px of vertical movement, allowing taps to pass through
   const bottomPanGesture = Gesture.Pan()
-    .activeOffsetY([-15, 15]) // Only activate after 15px vertical movement
+    .activeOffsetY([-25, 25]) // Only activate after 25px vertical movement
     .failOffsetX([-20, 20]) // Fail if horizontal movement is too large
+    .minDistance(25) // Require minimum drag distance
+    .onStart(() => {
+      'worklet';
+      runOnJS(handleGestureStart)();
+    })
+    .onUpdate((event) => {
+      'worklet';
+      if (!isAnimating.current) {
+        runOnJS(updateTranslateY)(event.translationY);
+      }
+    })
+    .onEnd((event) => {
+      'worklet';
+      runOnJS(handleGestureEnd)(event.translationY);
+    })
+    .onFinalize(() => {
+      'worklet';
+      runOnJS(hideHint)();
+    });
+
+  // Top zone gesture - same as bottom but for swiping down to previous game
+  const topPanGesture = Gesture.Pan()
+    .activeOffsetY([-25, 25])
+    .failOffsetX([-20, 20])
+    .minDistance(25)
     .onStart(() => {
       'worklet';
       runOnJS(handleGestureStart)();
@@ -1514,9 +1946,23 @@ export const HomeScreen: React.FC = () => {
                 thirdPartyCookiesEnabled={!isExternalGame(item!.game!)}
                 sharedCookiesEnabled={false}
                 injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT : undefined}
-                onMessage={() => { }} // Suppress messages
+                onMessage={(event) => {
+                  try {
+                    const data = JSON.parse(event.nativeEvent.data);
+                    if (data.type === 'GAME_READY') {
+                      // Game is actually ready to play
+                      setReadyGames(prev => new Set(prev).add(item!.id));
+                    }
+                  } catch (e) {
+                    // Ignore non-JSON messages
+                  }
+                }}
                 javaScriptCanOpenWindowsAutomatically={false}
                 setSupportMultipleWindows={false}
+                onLoadEnd={() => {
+                  // Inject the game ready detection script
+                  webViewRefs.current[item!.id]?.injectJavaScript(GAME_READY_SCRIPT);
+                }}
                 onLoad={() => {
                   // Auto-pause if not the current game OR if on welcome screen
                   const shouldPause = position !== 0 || currentIndex === -1;
@@ -1540,6 +1986,13 @@ export const HomeScreen: React.FC = () => {
                 )}
               />
 
+              {/* Loading overlay - shows until game is ready */}
+              {!readyGames.has(item!.id) && (
+                <View style={styles.gameLoadingOverlay}>
+                  <GameLoadingAnimation />
+                </View>
+              )}
+
               {/* Only show action buttons and game info for games, not ads */}
               {!item!.isAd && (
                 <>
@@ -1553,10 +2006,25 @@ export const HomeScreen: React.FC = () => {
                     >
                       <Ionicons
                         name="heart"
-                        size={32}
+                        size={35}
                         color={likedGames.has(item!.game!.id) ? "#ff2d55" : "#fff"}
                       />
-                      <Text style={styles.actionCount}>{likeCounts[item!.game!.id] || 0}</Text>
+                      <Text style={styles.actionCount}>{formatCount(likeCounts[item!.game!.id] || 0)}</Text>
+                    </TouchableOpacity>
+
+                    {/* Comments */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setCommentsGameId(item!.game!.id);
+                        setCommentsGameName(item!.game!.name);
+                        setShowComments(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="chatbubble-ellipses" size={32} color="#fff" />
+                      <Text style={styles.actionCount}>0</Text>
                     </TouchableOpacity>
 
                     {/* Bookmark/Save */}
@@ -1566,11 +2034,11 @@ export const HomeScreen: React.FC = () => {
                       activeOpacity={0.7}
                     >
                       <Ionicons
-                        name={savedGames.has(item!.game!.id) ? "bookmark" : "bookmark-outline"}
-                        size={30}
+                        name="bookmark"
+                        size={32}
                         color={savedGames.has(item!.game!.id) ? "#ffd60a" : "#fff"}
                       />
-                      <Text style={styles.actionCount}>Save</Text>
+                      <Text style={styles.actionCount}>{formatCount(saveCounts[item!.game!.id] || 0)}</Text>
                     </TouchableOpacity>
 
                     {/* Share */}
@@ -1579,8 +2047,8 @@ export const HomeScreen: React.FC = () => {
                       onPress={() => handleShare(item!.game!)}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="arrow-redo" size={30} color="#fff" />
-                      <Text style={styles.actionCount}>Share</Text>
+                      <Ionicons name="arrow-redo" size={32} color="#fff" />
+                      <Text style={styles.actionCount}>{formatCount(shareCounts[item!.game!.id] || 0)}</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1614,6 +2082,10 @@ export const HomeScreen: React.FC = () => {
         />
       )}
 
+      <GestureDetector gesture={topPanGesture}>
+        <View style={styles.topZone} />
+      </GestureDetector>
+
       <GestureDetector gesture={bottomPanGesture}>
         <View style={styles.bottomZone} />
       </GestureDetector>
@@ -1645,6 +2117,14 @@ export const HomeScreen: React.FC = () => {
         gameId={shareGameId}
         gameName={shareGameName}
         onSendToFriend={handleSendToFriend}
+      />
+
+      {/* Comments Sheet */}
+      <CommentsSheet
+        visible={showComments}
+        onClose={() => setShowComments(false)}
+        gameId={commentsGameId}
+        gameName={commentsGameName}
       />
     </View>
   );
@@ -1693,6 +2173,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: BOTTOM_ZONE_HEIGHT,
+    backgroundColor: 'transparent',
+    zIndex: 10,
+  },
+  topZone: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: TOP_ZONE_HEIGHT,
     backgroundColor: 'transparent',
     zIndex: 10,
   },
@@ -1761,23 +2250,23 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     position: 'absolute',
-    right: 10,
-    bottom: 120,
+    right: 8,
+    bottom: 100,
     alignItems: 'center',
     zIndex: 10,
   },
   actionButton: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   actionCount: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 4,
   },
   gameInfo: {
     position: 'absolute',
@@ -1812,5 +2301,12 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  gameLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
   },
 });

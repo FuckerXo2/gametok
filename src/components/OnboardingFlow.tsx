@@ -169,12 +169,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Check if user already has a username (returning user)
-      // If they do, complete onboarding. If not, go to username step
-      if (result?.user?.username) {
-        onComplete();
-      } else {
+      // Check if this is a new user - if so, go through onboarding
+      if (result?.isNewUser) {
         animateTransition('username');
+      } else {
+        onComplete();
       }
     } catch (e: any) {
       if (e.code === 'ERR_REQUEST_CANCELED') {
@@ -212,12 +211,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
         
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         
-        // Check if user already has a username (returning user)
-        // If they do, complete onboarding. If not, go to username step
-        if (result?.user?.username) {
-          onComplete();
-        } else {
+        // Check if this is a new user - if so, go through onboarding
+        if (result?.isNewUser) {
           animateTransition('username');
+        } else {
+          onComplete();
         }
       }
     } catch (e: any) {

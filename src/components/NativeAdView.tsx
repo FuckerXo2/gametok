@@ -46,7 +46,7 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
   // Check if AdMob is available
   const hasAdMob = !isExpoGo && NativeAdClass && NativeAdViewComponent && NativeMediaView;
 
-  // Load native ad using the new v16 API
+  // Load native ad
   useEffect(() => {
     if (!hasAdMob) return;
 
@@ -76,7 +76,6 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
 
     loadAd();
 
-    // Cleanup: destroy ad when component unmounts
     return () => {
       if (adRef.current?.destroy) {
         adRef.current.destroy();
@@ -201,8 +200,7 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     );
   }
 
-  // Render the real native ad using v16 API
-  // All elements must be inside NativeAdViewComponent to satisfy AdMob requirements
+  // Render AdMob native ad
   return (
     <View style={[styles.container, { height: contentHeight }]}>
       <NativeAdViewComponent nativeAd={nativeAd} style={styles.nativeAdWrapper}>
@@ -210,20 +208,16 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
           colors={['#1a1a2e', '#16213e', '#0f0f23']}
           style={styles.adContainer}
         >
-          {/* Sponsored badge */}
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
             <Text style={styles.sponsoredText}>Sponsored</Text>
           </View>
 
-          {/* Media content - takes most of the screen */}
           <View style={styles.mediaContainer}>
             <NativeMediaView style={styles.nativeMediaView} />
           </View>
 
-          {/* Bottom info section */}
           <View style={[styles.adInfoOverlay, { paddingBottom: insets.bottom + 90 }]}>
             <View style={styles.adHeader}>
-              {/* Icon */}
               {nativeAd.icon && NativeAsset && (
                 <NativeAsset assetType={NativeAssetType?.ICON}>
                   <Image
@@ -239,7 +233,6 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
               )}
 
               <View style={styles.adTitleContainer}>
-                {/* Headline */}
                 {NativeAsset && (
                   <NativeAsset assetType={NativeAssetType?.HEADLINE}>
                     <Text style={styles.adHeadline} numberOfLines={1}>
@@ -248,7 +241,6 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
                   </NativeAsset>
                 )}
 
-                {/* Body/Tagline */}
                 {nativeAd.body && NativeAsset && (
                   <NativeAsset assetType={NativeAssetType?.BODY}>
                     <Text style={styles.adSubtitle} numberOfLines={2}>
@@ -261,7 +253,6 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
                 )}
               </View>
 
-              {/* CTA Button */}
               {nativeAd.callToAction && NativeAsset && (
                 <NativeAsset assetType={NativeAssetType?.CALL_TO_ACTION}>
                   <View style={styles.ctaButton}>
@@ -272,7 +263,6 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
             </View>
           </View>
 
-          {/* Side actions - now inside NativeAdView */}
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
             <View style={styles.actionBtn}>
               <View style={styles.actionIcon}>

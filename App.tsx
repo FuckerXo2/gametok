@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,6 +19,14 @@ import { requestTrackingPermission } from './src/services/ads';
 
 // Prevent native splash from auto-hiding
 SplashScreen.preventAutoHideAsync();
+
+// Deep link context - to pass shared game ID to HomeScreen
+interface DeepLinkContextType {
+  sharedGameId: string | null;
+  clearSharedGame: () => void;
+}
+const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => {} });
+export const useDeepLink = () => useContext(DeepLinkContext);
 
 type TabName = 'home' | 'discover' | 'inbox' | 'profile';
 
@@ -55,10 +63,12 @@ const MainApp = () => {
 const AppContent = () => {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const [sharedGameId, setSharedGameId] = useState<string | null>(null);
 
   useEffect(() => {
     checkOnboarding();
     requestTrackingPermission();
+    handleDeepLink();
   }, []);
 
   const checkOnboarding = async () => {
@@ -69,6 +79,38 @@ const AppContent = () => {
       setShowOnboarding(true);
     }
   };
+
+  // Handle deep links
+  const handleDeepLink = async () => {
+    // Check if app was opened via deep link
+    const initialUrl = await Linking.getInitialURL();
+    if (initialUrl) {
+      parseDeepLink(initialUrl);
+    }
+
+    // Listen for deep links while app is open
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      parseDeepLink(url);
+    });
+
+    return () => subscription.remove();
+  };
+
+  const parseDeepLink = (url: string) => {
+    try {
+      // Handle gametok://game/flappy-bird or https://gametok.app/game.html?id=flappy-bird
+      const gameMatch = url.match(/game[\/=]([^\/\?&]+)/);
+      if (gameMatch) {
+        const gameId = gameMatch[1];
+        console.log('[DeepLink] Opening game:', gameId);
+        setSharedGameId(gameId);
+      }
+    } catch (e) {
+      console.log('[DeepLink] Parse error:', e);
+    }
+  };
+
+  const clearSharedGame = () => setSharedGameId(null);
 
   const handleOnboardingComplete = () => {
     AsyncStorage.setItem('hasSeenOnboarding', 'true');
@@ -99,9 +141,11 @@ const AppContent = () => {
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      <MainApp />
-    </View>
+    <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
+      <View style={{ flex: 1 }}>
+        <MainApp />
+      </View>
+    </DeepLinkContext.Provider>
   );
 };
 

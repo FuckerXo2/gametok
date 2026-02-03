@@ -247,15 +247,19 @@ export const messages = {
 
 // Comments API
 export const comments = {
-  get: async (gameId: string, limit = 50) => {
+  list: async (gameId: string, limit = 50) => {
     return request(`/comments/${gameId}?limit=${limit}`);
   },
   
-  add: async (gameId: string, text: string) => {
+  create: async (gameId: string, text: string) => {
     return request('/comments', {
       method: 'POST',
       body: JSON.stringify({ gameId, text }),
     });
+  },
+  
+  like: async (commentId: string) => {
+    return request(`/comments/${commentId}/like`, { method: 'POST' });
   },
   
   delete: async (commentId: string) => {

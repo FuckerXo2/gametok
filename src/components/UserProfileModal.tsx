@@ -252,25 +252,31 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={[styles.container, { backgroundColor: isDark ? '#1a1a1a' : '#f0f0f0' }]}>
         <View style={styles.headerSection}>
+          {/* Back button outside ImageBackground for reliable touch */}
+          <View style={[styles.absoluteTopButtons, { paddingTop: insets.top }]}>
+            <TouchableOpacity 
+              style={styles.topBtn} 
+              onPress={onClose}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={28} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.topRight}>
+              <TouchableOpacity style={styles.topBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="share-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.topBtn} onPress={showOptions} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
           <ImageBackground
             source={{ uri: 'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=800' }}
-            style={[styles.coverImage, { paddingTop: insets.top }]}
+            style={[styles.coverImage, { paddingTop: insets.top + 60 }]}
             resizeMode="cover"
           >
-            <View style={styles.topButtons}>
-              <TouchableOpacity style={styles.topBtn} onPress={onClose}>
-                <Ionicons name="chevron-back" size={28} color="#fff" />
-              </TouchableOpacity>
-              <View style={styles.topRight}>
-                <TouchableOpacity style={styles.topBtn}>
-                  <Ionicons name="share-outline" size={24} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.topBtn} onPress={showOptions}>
-                  <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
             <View style={styles.profileOverlay}>
               <View style={styles.avatarContainer}>
                 <Avatar uri={user.avatar} size={64} style={styles.avatar} />
@@ -355,8 +361,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 const styles = StyleSheet.create({
   container: { flex: 1 },
   headerSection: { height: 380 },
-  coverImage: { flex: 1, justifyContent: 'space-between' },
-  topButtons: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 },
+  absoluteTopButtons: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    paddingHorizontal: 16, 
+    paddingTop: 8, 
+    zIndex: 100 
+  },
+  coverImage: { flex: 1, justifyContent: 'flex-end' },
+  topButtons: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, zIndex: 10 },
   topBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
   topRight: { flexDirection: 'row', gap: 8 },
   profileOverlay: { paddingHorizontal: 16, paddingBottom: 16 },

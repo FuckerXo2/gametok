@@ -53,7 +53,9 @@ export const TabNavigator: React.FC = () => {
           fontSize: 10,
           marginTop: 2,
         },
+        lazy: false,
       }}
+      detachInactiveScreens={false}
     >
       <Tab.Screen
         name="Home"
@@ -62,6 +64,8 @@ export const TabNavigator: React.FC = () => {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
           ),
+          lazy: false,
+          unmountOnBlur: false,
         }}
       />
       <Tab.Screen
