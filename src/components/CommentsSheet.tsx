@@ -12,11 +12,14 @@ import {
   Image,
   Keyboard,
   Platform,
+  Alert,
+  ActionSheetIOS,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { comments as commentsApi } from '../services/api';
+import { comments as commentsApi, moderation } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.65;
@@ -71,6 +74,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
   gameName,
 }) => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,6 +84,101 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const keyboardOffset = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
+
+  // Handle long press on comment - show action sheet
+  const handleCommentLongPress = (comment: Comment) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const isOwnComment = user?.id === comment.userId;
+    
+    const options = isOwnComment 
+      ? ['Delete Comment', 'Cancel']
+      : ['Report Comment', 'Block User', 'Cancel'];
+    
+    const destructiveIndex = 0;
+    const cancelIndex = options.length - 1;
+
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options,
+        destructiveButtonIndex: destructiveIndex,
+        cancelButtonIndex: cancelIndex,
+      },
+      async (buttonIndex) => {
+        if (isOwnComment) {
+          if (buttonIndex === 0) {
+            // Delete
+            handleDeleteComment(comment.id);
+          }
+        } else {
+          if (buttonIndex === 0) {
+            // Report
+            handleReportComment(comment);
+          } else if (buttonIndex === 1) {
+            // Block
+            handleBlockUser(comment);
+          }
+        }
+      }
+    );
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await commentsApi.delete(commentId);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      setTotalCount(prev => prev - 1);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to delete comment');
+    }
+  };
+
+  const handleReportComment = (comment: Comment) => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: 'Why are you reporting this comment?',
+        options: ['Spam', 'Harassment', 'Hate Speech', 'Inappropriate Content', 'Cancel'],
+        cancelButtonIndex: 4,
+      },
+      async (buttonIndex) => {
+        const reasons = ['spam', 'harassment', 'hate_speech', 'inappropriate'];
+        if (buttonIndex < 4) {
+          try {
+            await moderation.report(comment.userId, reasons[buttonIndex], comment.text, 'comment', comment.id);
+            Alert.alert('Reported', 'Thanks for letting us know. We\'ll review this comment.');
+          } catch (e) {
+            Alert.alert('Error', 'Failed to submit report');
+          }
+        }
+      }
+    );
+  };
+
+  const handleBlockUser = async (comment: Comment) => {
+    Alert.alert(
+      'Block User',
+      `Block ${comment.username}? You won't see their comments anymore.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await moderation.block(comment.userId);
+              // Remove their comments from view
+              setComments(prev => prev.filter(c => c.userId !== comment.userId));
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Blocked', `${comment.username} has been blocked`);
+            } catch (e) {
+              Alert.alert('Error', 'Failed to block user');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Animate bottom section with keyboard
   useEffect(() => {
@@ -244,7 +343,12 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
   };
 
   const renderComment = ({ item }: { item: Comment }) => (
-    <View style={styles.commentItem}>
+    <TouchableOpacity 
+      style={styles.commentItem}
+      onLongPress={() => handleCommentLongPress(item)}
+      delayLongPress={400}
+      activeOpacity={0.8}
+    >
       {/* Avatar */}
       <View style={styles.avatar}>
         {item.avatarUrl ? (
@@ -292,7 +396,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
           </Text>
         )}
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
