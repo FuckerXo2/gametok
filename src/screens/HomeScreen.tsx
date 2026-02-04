@@ -2052,7 +2052,7 @@ export const HomeScreen: React.FC = () => {
                       activeOpacity={0.7}
                     >
                       <Ionicons
-                        name={savedGames.has(item!.game!.id) ? "bookmark" : "bookmark-outline"}
+                        name="bookmark"
                         size={32}
                         color={savedGames.has(item!.game!.id) ? "#ffd60a" : "#fff"}
                       />
