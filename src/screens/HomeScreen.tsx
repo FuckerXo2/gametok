@@ -1391,8 +1391,9 @@ export const HomeScreen: React.FC = () => {
   const [likedGames, setLikedGames] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<{ [gameId: string]: number }>({});
   
-  // Track saved games (bookmarks)
+  // Track saved games (bookmarks) and counts
   const [savedGames, setSavedGames] = useState<Set<string>>(new Set());
+  const [saveCounts, setSaveCounts] = useState<{ [gameId: string]: number }>({});
   
   // Track share counts
   const [shareCounts, setShareCounts] = useState<{ [gameId: string]: number }>({});
@@ -1481,6 +1482,10 @@ export const HomeScreen: React.FC = () => {
       }
       return newSet;
     });
+    setSaveCounts(prev => ({
+      ...prev,
+      [gameId]: (prev[gameId] || 0) + (wasSaved ? -1 : 1)
+    }));
 
     // Call API
     try {
@@ -1495,6 +1500,13 @@ export const HomeScreen: React.FC = () => {
         }
         return newSet;
       });
+      // Update with server's count
+      if (result.saveCount !== undefined) {
+        setSaveCounts(prev => ({
+          ...prev,
+          [gameId]: result.saveCount
+        }));
+      }
     } catch (e) {
       // Revert on error
       setSavedGames(prev => {
@@ -1506,6 +1518,10 @@ export const HomeScreen: React.FC = () => {
         }
         return newSet;
       });
+      setSaveCounts(prev => ({
+        ...prev,
+        [gameId]: (prev[gameId] || 0) + (wasSaved ? 1 : -1)
+      }));
     }
   };
 
@@ -1603,12 +1619,15 @@ export const HomeScreen: React.FC = () => {
           allGamesRef.current = data.games;
           setFeed(createFeed(data.games));
 
-          // Store initial like counts from API
-          const counts: { [id: string]: number } = {};
-          data.games.forEach((g: Game) => {
-            counts[g.id] = g.likes || 0;
+          // Store initial like and save counts from API
+          const likeCnts: { [id: string]: number } = {};
+          const saveCnts: { [id: string]: number } = {};
+          data.games.forEach((g: any) => {
+            likeCnts[g.id] = g.likes || 0;
+            saveCnts[g.id] = g.saves || 0;
           });
-          setLikeCounts(counts);
+          setLikeCounts(likeCnts);
+          setSaveCounts(saveCnts);
 
           // Check which games user has liked (fire and forget)
           const gameIds = data.games.map((g: Game) => g.id);
@@ -2037,6 +2056,7 @@ export const HomeScreen: React.FC = () => {
                         size={32}
                         color={savedGames.has(item!.game!.id) ? "#ffd60a" : "#fff"}
                       />
+                      <Text style={styles.actionCount}>{formatCount(saveCounts[item!.game!.id] || 0)}</Text>
                     </TouchableOpacity>
 
                     {/* Share */}
