@@ -1391,9 +1391,8 @@ export const HomeScreen: React.FC = () => {
   const [likedGames, setLikedGames] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<{ [gameId: string]: number }>({});
   
-  // Track saved games (bookmarks) and counts
+  // Track saved games (bookmarks)
   const [savedGames, setSavedGames] = useState<Set<string>>(new Set());
-  const [saveCounts, setSaveCounts] = useState<{ [gameId: string]: number }>({});
   
   // Track share counts
   const [shareCounts, setShareCounts] = useState<{ [gameId: string]: number }>({});
@@ -2034,11 +2033,10 @@ export const HomeScreen: React.FC = () => {
                       activeOpacity={0.7}
                     >
                       <Ionicons
-                        name="bookmark"
+                        name={savedGames.has(item!.game!.id) ? "bookmark" : "bookmark-outline"}
                         size={32}
                         color={savedGames.has(item!.game!.id) ? "#ffd60a" : "#fff"}
                       />
-                      <Text style={styles.actionCount}>{formatCount(saveCounts[item!.game!.id] || 0)}</Text>
                     </TouchableOpacity>
 
                     {/* Share */}
