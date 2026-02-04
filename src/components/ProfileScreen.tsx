@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -10,17 +10,38 @@ import {
   Switch,
   Alert,
   Linking,
+  Image,
+  Dimensions,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { auth } from '../services/api';
+import { auth, likes as likesApi, savedGames as savedGamesApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
 
-const SUGGESTED_FRIENDS: any[] = [];
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const GRID_GAP = 2;
+const NUM_COLUMNS = 3;
+const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+const GAMES_HOST = 'https://gametok-games.pages.dev';
+
+interface Game {
+  id: string;
+  name: string;
+  thumbnail?: string;
+  embedUrl?: string;
+}
+
+// Get thumbnail URL for a game
+const getThumbnailUrl = (game: Game) => {
+  if (game.thumbnail) return game.thumbnail;
+  return `${GAMES_HOST}/thumbnails/${game.id}.png`;
+};
 
 export const ProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -29,6 +50,13 @@ export const ProfileScreen: React.FC = () => {
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'liked' | 'saved'>('liked');
+  const [likedGames, setLikedGames] = useState<Game[]>([]);
+  const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
+  const [loadingLiked, setLoadingLiked] = useState(false);
+  const [loadingSaved, setLoadingSaved] = useState(false);
 
   const username = isAuthenticated ? user?.username : 'guest';
   const displayName = isAuthenticated ? user?.displayName : '';
@@ -36,8 +64,78 @@ export const ProfileScreen: React.FC = () => {
   const bio = isAuthenticated ? (user?.bio || '') : '';
   const followers = isAuthenticated ? (user?.followers?.length || 0) : 0;
 
+  // Fetch liked games
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      fetchLikedGames();
+      fetchSavedGames();
+    }
+  }, [isAuthenticated, user?.id]);
+
+  const fetchLikedGames = async () => {
+    if (!user?.id) return;
+    setLoadingLiked(true);
+    try {
+      const result = await likesApi.userLikes(user.id);
+      setLikedGames(result.games || []);
+    } catch (e) {
+      console.log('Failed to fetch liked games:', e);
+    } finally {
+      setLoadingLiked(false);
+    }
+  };
+
+  const fetchSavedGames = async () => {
+    if (!user?.id) return;
+    setLoadingSaved(true);
+    try {
+      const result = await savedGamesApi.userSaved(user.id);
+      setSavedGamesList(result.games || []);
+    } catch (e) {
+      console.log('Failed to fetch saved games:', e);
+    } finally {
+      setLoadingSaved(false);
+    }
+  };
+
+  const renderGameTile = ({ item }: { item: Game }) => (
+    <TouchableOpacity style={styles.gameTile} activeOpacity={0.8}>
+      <Image 
+        source={{ uri: getThumbnailUrl(item) }} 
+        style={styles.gameThumbnail}
+        resizeMode="cover"
+      />
+      {/* Play count overlay - like TikTok views */}
+      <View style={styles.tileOverlay}>
+        <Ionicons name="game-controller" size={12} color="#fff" />
+        <Text style={styles.tileCount}>{item.name}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderEmptyState = (type: 'liked' | 'saved') => (
+    <View style={styles.emptyState}>
+      <Ionicons 
+        name={type === 'liked' ? 'heart-outline' : 'bookmark-outline'} 
+        size={48} 
+        color={colors.textSecondary} 
+      />
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>
+        {type === 'liked' ? 'No liked games yet' : 'No saved games yet'}
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+        {type === 'liked' 
+          ? 'Games you like will appear here' 
+          : 'Tap the bookmark to save games'}
+      </Text>
+    </View>
+  );
+
+  const currentGames = activeTab === 'liked' ? likedGames : savedGamesList;
+  const isLoading = activeTab === 'liked' ? loadingLiked : loadingSaved;
+
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#1a1a1a' : '#f0f0f0' }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#000' : '#fff' }]}>
       {/* Header with background */}
       <View style={styles.headerSection}>
         <ImageBackground
@@ -47,15 +145,12 @@ export const ProfileScreen: React.FC = () => {
         >
           {/* Top buttons */}
           <View style={styles.topButtons}>
+            <TouchableOpacity style={styles.topBtn} onPress={() => setShowAddFriends(true)}>
+              <Ionicons name="person-add-outline" size={22} color="#fff" />
+            </TouchableOpacity>
             <View style={styles.topRight}>
-              <TouchableOpacity style={styles.topBtn}>
-                <Ionicons name="notifications-outline" size={24} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.topBtn}>
-                <Ionicons name="share-outline" size={24} color="#fff" />
-              </TouchableOpacity>
               <TouchableOpacity style={styles.topBtn} onPress={() => setShowSettings(true)}>
-                <Ionicons name="settings-outline" size={24} color="#fff" />
+                <Ionicons name="menu-outline" size={26} color="#fff" />
               </TouchableOpacity>
             </View>
           </View>
@@ -64,71 +159,95 @@ export const ProfileScreen: React.FC = () => {
           <View style={styles.profileOverlay}>
             {/* Avatar */}
             <View style={styles.avatarContainer}>
-              <Avatar uri={avatar} size={70} />
+              <Avatar uri={avatar} size={80} />
             </View>
             
-            {/* Username and followers */}
-            <View style={styles.userInfo}>
-              <Text style={styles.username}>{displayName || username}</Text>
-              <Text style={styles.followers}>· {followers.toLocaleString()} Followers</Text>
+            {/* Username */}
+            <Text style={styles.displayName}>{displayName || username}</Text>
+            <Text style={styles.handle}>@{username}</Text>
+
+            {/* Stats row */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{followers}</Text>
+                <Text style={styles.statLabel}>Followers</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{likedGames.length}</Text>
+                <Text style={styles.statLabel}>Liked</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>{savedGamesList.length}</Text>
+                <Text style={styles.statLabel}>Saved</Text>
+              </View>
             </View>
 
             {/* Bio */}
-            {bio ? (
-              <Text style={styles.bio}>{bio}</Text>
-            ) : null}
+            {bio ? <Text style={styles.bio}>{bio}</Text> : null}
 
-            {/* Action buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.editProfileBtn} onPress={() => setShowEditProfile(true)}>
-                <Ionicons name="pencil" size={18} color="#fff" />
-                <Text style={styles.editProfileText}>Edit Profile</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Edit Profile Button */}
+            <TouchableOpacity 
+              style={styles.editProfileBtn} 
+              onPress={() => setShowEditProfile(true)}
+            >
+              <Text style={styles.editProfileText}>Edit profile</Text>
+            </TouchableOpacity>
           </View>
         </ImageBackground>
       </View>
 
-      {/* Find Friends Section */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity onPress={() => setShowAddFriends(true)}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Find Friends</Text>
+      {/* Tabs */}
+      <View style={[styles.tabsContainer, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'liked' && styles.tabActive]}
+          onPress={() => setActiveTab('liked')}
+        >
+          <Ionicons 
+            name={activeTab === 'liked' ? 'heart' : 'heart-outline'} 
+            size={22} 
+            color={activeTab === 'liked' ? colors.text : colors.textSecondary} 
+          />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
+          onPress={() => setActiveTab('saved')}
+        >
+          <Ionicons 
+            name={activeTab === 'saved' ? 'bookmark' : 'bookmark-outline'} 
+            size={22} 
+            color={activeTab === 'saved' ? colors.text : colors.textSecondary} 
+          />
         </TouchableOpacity>
         
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.friendsScroll}
-        >
-          {SUGGESTED_FRIENDS.map((friend) => (
-            <View key={friend.id} style={[styles.friendCard, { backgroundColor: colors.background }]}>
-              <TouchableOpacity style={styles.dismissBtn}>
-                <Ionicons name="close" size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-              
-              <View style={styles.friendAvatarContainer}>
-                <Avatar uri={friend.avatar} size={56} />
-                {friend.online && <View style={styles.onlineDot} />}
-              </View>
-              
-              <Text style={[styles.friendName, { color: colors.text }]} numberOfLines={1}>
-                {friend.name}
-              </Text>
-              <Text style={[styles.friendStatus, { color: colors.textSecondary }]}>
-                {friend.status}
-              </Text>
-              
-              <TouchableOpacity style={[styles.addBtn, { borderColor: colors.border }]}>
-                <Ionicons name="person-add-outline" size={16} color={colors.primary} />
-                <Text style={[styles.addBtnText, { color: colors.primary }]}>Add</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
+        {/* Active indicator */}
+        <View style={[
+          styles.tabIndicator, 
+          { 
+            backgroundColor: colors.text,
+            left: activeTab === 'liked' ? '25%' : '75%',
+            transform: [{ translateX: -20 }],
+          }
+        ]} />
+      </View>
 
-        {/* Extra space at bottom */}
-        <View style={{ height: 100 }} />
-      </ScrollView>
+      {/* Games Grid */}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : currentGames.length === 0 ? (
+        renderEmptyState(activeTab)
+      ) : (
+        <FlatList
+          data={currentGames}
+          renderItem={renderGameTile}
+          keyExtractor={item => item.id}
+          numColumns={NUM_COLUMNS}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.gridContainer}
+          columnWrapperStyle={styles.gridRow}
+        />
+      )}
 
       {/* Add Friends Modal */}
       <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
@@ -167,14 +286,6 @@ export const ProfileScreen: React.FC = () => {
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
-              
-              <TouchableOpacity style={[styles.settingsItem, { borderBottomColor: colors.border }]}>
-                <View style={styles.settingsItemLeft}>
-                  <Ionicons name="notifications-outline" size={22} color={colors.text} />
-                  <Text style={[styles.settingsItemText, { color: colors.text }]}>Notifications</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
 
               {/* Preferences Section */}
               <Text style={[styles.settingsSectionTitle, { color: colors.textSecondary, marginTop: 24 }]}>PREFERENCES</Text>
@@ -208,18 +319,7 @@ export const ProfileScreen: React.FC = () => {
               
               <TouchableOpacity 
                 style={[styles.settingsItem, { borderBottomColor: colors.border }]}
-                onPress={() => Linking.openURL('https://gametok.app/help')}
-              >
-                <View style={styles.settingsItemLeft}>
-                  <Ionicons name="help-circle-outline" size={22} color={colors.text} />
-                  <Text style={[styles.settingsItemText, { color: colors.text }]}>Help Center</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.settingsItem, { borderBottomColor: colors.border }]}
-                onPress={() => Linking.openURL('https://gametok.app/privacy')}
+                onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}
               >
                 <View style={styles.settingsItemLeft}>
                   <Ionicons name="shield-checkmark-outline" size={22} color={colors.text} />
@@ -230,7 +330,7 @@ export const ProfileScreen: React.FC = () => {
               
               <TouchableOpacity 
                 style={[styles.settingsItem, { borderBottomColor: colors.border }]}
-                onPress={() => Linking.openURL('https://gametok.app/terms')}
+                onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}
               >
                 <View style={styles.settingsItemLeft}>
                   <Ionicons name="document-text-outline" size={22} color={colors.text} />
@@ -259,7 +359,7 @@ export const ProfileScreen: React.FC = () => {
                 onPress={() => {
                   Alert.alert(
                     'Delete Account',
-                    'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently removed.',
+                    'Are you sure? This cannot be undone.',
                     [
                       { text: 'Cancel', style: 'cancel' },
                       { 
@@ -271,7 +371,7 @@ export const ProfileScreen: React.FC = () => {
                             setShowSettings(false);
                             logout();
                           } catch (error) {
-                            Alert.alert('Error', 'Failed to delete account. Please try again.');
+                            Alert.alert('Error', 'Failed to delete account.');
                           }
                         }
                       }
@@ -300,7 +400,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerSection: {
-    height: 380,
+    height: 340,
   },
   coverImage: {
     flex: 1,
@@ -308,7 +408,7 @@ const styles = StyleSheet.create({
   },
   topButtons: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 8,
   },
@@ -325,132 +425,130 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   profileOverlay: {
-    paddingHorizontal: 16,
+    alignItems: 'center',
     paddingBottom: 16,
   },
   avatarContainer: {
     marginBottom: 8,
   },
-  avatarEmoji: {
-    fontSize: 32,
+  displayName: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
   },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  handle: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
     marginBottom: 12,
   },
-  username: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  statsRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
   },
-  followers: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 14,
-    marginLeft: 4,
+  statItem: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  statNumber: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  statLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
   },
   bio: {
     color: 'rgba(255,255,255,0.9)',
     fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 40,
     marginBottom: 12,
-    lineHeight: 20,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
   },
   editProfileBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+    paddingHorizontal: 40,
+    paddingVertical: 10,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
   editProfileText: {
-    fontSize: 15,
-    fontWeight: '600',
     color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
-  content: {
-    flex: 1,
-    paddingTop: 20,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  friendsScroll: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  friendCard: {
-    width: 110,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  dismissBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  friendAvatarContainer: {
+  // Tabs
+  tabsContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
     position: 'relative',
-    marginBottom: 8,
   },
-  friendAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  tabActive: {},
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    width: 40,
+    height: 2,
+  },
+  // Grid
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  friendEmoji: {
-    fontSize: 28,
+  gridContainer: {
+    paddingTop: GRID_GAP,
   },
-  onlineDot: {
+  gridRow: {
+    gap: GRID_GAP,
+  },
+  gameTile: {
+    width: TILE_SIZE,
+    height: TILE_SIZE * 1.3,
+    marginBottom: GRID_GAP,
+  },
+  gameThumbnail: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1a1a1a',
+  },
+  tileOverlay: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#4CD964',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  friendName: {
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  friendStatus: {
-    fontSize: 9,
-    textAlign: 'center',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  addBtn: {
+    bottom: 6,
+    left: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
   },
-  addBtnText: {
-    fontSize: 13,
+  tileCount: {
+    color: '#fff',
+    fontSize: 11,
     fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  // Empty state
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 4,
   },
   // Settings Modal
   settingsOverlay: {
@@ -502,10 +600,6 @@ const styles = StyleSheet.create({
   },
   settingsItemText: {
     fontSize: 16,
-  },
-  logoutItem: {
-    marginTop: 24,
-    borderBottomWidth: 0,
   },
   deleteItem: {
     borderBottomWidth: 0,
