@@ -285,14 +285,14 @@ const styles = StyleSheet.create({
   
   gameName: { fontSize: 14, color: 'rgba(255,255,255,0.6)', paddingHorizontal: 16, marginBottom: 12 },
   
-  myRankCard: { marginHorizontal: 16, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  myRankLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  myRankLabel: { fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 },
-  myRankTier: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  myRankCard: { marginHorizontal: 16, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  myRankLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  myRankLabel: { fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 0.5 },
+  myRankTier: { fontSize: 14, fontWeight: '700', color: '#fff' },
   myRankRight: { alignItems: 'flex-end' },
-  myRankNum: { fontSize: 24, fontWeight: '800', color: '#fff' },
-  myRankPoints: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  myRankPointsText: { fontSize: 14, fontWeight: '600', color: '#ffd60a' },
+  myRankNum: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  myRankPoints: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  myRankPointsText: { fontSize: 12, fontWeight: '600', color: '#ffd60a' },
   
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
@@ -301,25 +301,25 @@ const styles = StyleSheet.create({
   
   list: { flex: 1, paddingHorizontal: 12 },
   
-  playerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 12, marginBottom: 8 },
-  playerRowMe: { backgroundColor: 'rgba(34,197,94,0.15)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)' },
+  playerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginBottom: 6 },
+  playerRowMe: { backgroundColor: 'rgba(34,197,94,0.12)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)' },
   
-  rankBadge: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  rankText: { fontSize: 14, fontWeight: '700' },
+  rankBadge: { width: 26, height: 26, borderRadius: 6, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  rankText: { fontSize: 12, fontWeight: '700' },
   
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 10 },
+  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 8 },
   
   playerInfo: { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  playerName: { fontSize: 14, fontWeight: '600', color: '#fff', flexShrink: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  playerName: { fontSize: 13, fontWeight: '600', color: '#fff', flexShrink: 1 },
   playerNameMe: { color: '#22c55e' },
-  youBadge: { backgroundColor: '#22c55e', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  youText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-  tierRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  tierLabel: { fontSize: 11, fontWeight: '600' },
+  youBadge: { backgroundColor: '#22c55e', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
+  youText: { fontSize: 8, fontWeight: '800', color: '#fff' },
+  tierRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
+  tierLabel: { fontSize: 10, fontWeight: '600' },
   
-  pointsWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  pointsText: { fontSize: 14, fontWeight: '700', color: '#ffd60a' },
+  pointsWrap: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  pointsText: { fontSize: 13, fontWeight: '700', color: '#ffd60a' },
 });
 
 export default LeaderboardModal;
