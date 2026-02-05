@@ -29,6 +29,8 @@ interface LeaderboardEntry {
   avatar: string | null;
   points: number;
   playTime: number;
+  isCurrentUser?: boolean;
+  isLive?: boolean;
 }
 
 interface LeaderboardModalProps {
@@ -36,6 +38,15 @@ interface LeaderboardModalProps {
   onClose: () => void;
   gameId: string;
   gameName: string;
+  // Current user info for live display
+  currentUser?: {
+    id: string;
+    username: string;
+    displayName?: string | null;
+    avatar?: string | null;
+  } | null;
+  sessionPoints: number;
+  sessionPlayTime: number;
 }
 
 const formatPoints = (points: number): string => {
@@ -45,6 +56,7 @@ const formatPoints = (points: number): string => {
 };
 
 const formatPlayTime = (seconds: number): string => {
+  if (seconds < 60) return `${seconds}s`;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
@@ -56,11 +68,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   onClose,
   gameId,
   gameName,
+  currentUser,
+  sessionPoints,
+  sessionPlayTime,
 }) => {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [userRank, setUserRank] = useState<{ rank: number; points: number } | null>(null);
   
   const translateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -131,12 +145,54 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     try {
       const data = await gamification.getGameLeaderboard(gameId, 50);
       setLeaderboard(data.leaderboard || []);
-      setUserRank(data.userRank || null);
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
+      setLeaderboard([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Merge current user with live points into leaderboard
+  const getMergedLeaderboard = (): LeaderboardEntry[] => {
+    if (!currentUser) return leaderboard;
+    
+    // Find if current user is already in leaderboard
+    const existingEntry = leaderboard.find(e => e.userId === currentUser.id);
+    const totalPoints = (existingEntry?.points || 0) + sessionPoints;
+    const totalPlayTime = (existingEntry?.playTime || 0) + sessionPlayTime;
+    
+    // Create current user entry
+    const currentUserEntry = {
+      rank: 0, // Will be calculated
+      userId: currentUser.id,
+      username: currentUser.username,
+      displayName: currentUser.displayName || null,
+      avatar: currentUser.avatar || null,
+      points: totalPoints,
+      playTime: totalPlayTime,
+      isCurrentUser: true as boolean,
+      isLive: sessionPoints > 0 as boolean,
+    };
+    
+    // Filter out existing entry for current user and add updated one
+    let merged = leaderboard
+      .filter(e => e.userId !== currentUser.id)
+      .map(e => ({ ...e, isCurrentUser: false as boolean, isLive: false as boolean }));
+    
+    // Add current user
+    merged.push(currentUserEntry);
+    
+    // Sort by points descending
+    merged.sort((a, b) => b.points - a.points);
+    
+    // Assign ranks
+    merged = merged.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+    }));
+    
+    return merged;
   };
 
   const getRankStyle = (rank: number) => {
@@ -151,7 +207,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     const isTopThree = item.rank <= 3;
 
     return (
-      <View style={[styles.row, isTopThree && styles.topThreeRow]}>
+      <View style={[
+        styles.row, 
+        isTopThree && styles.topThreeRow,
+        item.isCurrentUser && styles.currentUserRow
+      ]}>
         <LinearGradient
           colors={rankStyle.bg as [string, string]}
           style={styles.rankBadge}
@@ -160,21 +220,37 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         </LinearGradient>
         <Image
           source={item.avatar ? { uri: item.avatar } : require('../../assets/icon.png')}
-          style={styles.avatar}
+          style={[styles.avatar, item.isCurrentUser && styles.currentUserAvatar]}
         />
         <View style={styles.userInfo}>
-          <Text style={styles.displayName} numberOfLines={1}>
-            {item.displayName || item.username}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text style={[styles.displayName, item.isCurrentUser && styles.currentUserName]} numberOfLines={1}>
+              {item.displayName || item.username}
+            </Text>
+            {item.isCurrentUser && (
+              <View style={styles.youBadge}>
+                <Text style={styles.youBadgeText}>YOU</Text>
+              </View>
+            )}
+            {item.isLive && (
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.playTime}>{formatPlayTime(item.playTime)} played</Text>
         </View>
-        <View style={styles.pointsBadge}>
+        <View style={[styles.pointsBadge, item.isCurrentUser && styles.currentUserPoints]}>
           <FontAwesome5 name="coins" size={10} color="#ffd60a" />
           <Text style={styles.points}>{formatPoints(item.points)}</Text>
         </View>
       </View>
     );
   };
+
+  const mergedLeaderboard = getMergedLeaderboard();
+  const currentUserRank = mergedLeaderboard.find(e => e.isCurrentUser);
 
   if (!visible) return null;
 
@@ -218,19 +294,22 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {userRank && (
+          {currentUser && currentUserRank && (
             <View style={styles.yourRank}>
               <LinearGradient
-                colors={['rgba(168,85,247,0.3)', 'rgba(99,102,241,0.2)']}
+                colors={['rgba(34,197,94,0.3)', 'rgba(22,163,74,0.2)']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFill}
               />
               <Text style={styles.yourRankLabel}>Your Rank</Text>
-              <Text style={styles.yourRankValue}>#{userRank.rank}</Text>
+              <Text style={styles.yourRankValue}>#{currentUserRank.rank}</Text>
               <View style={styles.yourPointsWrap}>
                 <FontAwesome5 name="coins" size={12} color="#ffd60a" />
-                <Text style={styles.yourPointsText}>{formatPoints(userRank.points)}</Text>
+                <Text style={styles.yourPointsText}>{formatPoints(currentUserRank.points)}</Text>
+                {sessionPoints > 0 && (
+                  <Text style={styles.livePointsText}>+{sessionPoints}</Text>
+                )}
               </View>
             </View>
           )}
@@ -239,17 +318,9 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="small" color="#a855f7" />
             </View>
-          ) : leaderboard.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <View style={styles.emptyIconWrap}>
-                <Ionicons name="podium-outline" size={40} color="#a855f7" />
-              </View>
-              <Text style={styles.emptyText}>No players yet</Text>
-              <Text style={styles.emptySubtext}>Be the first to claim the top spot!</Text>
-            </View>
           ) : (
             <FlatList
-              data={leaderboard}
+              data={mergedLeaderboard}
               keyExtractor={(item) => item.userId}
               renderItem={renderItem}
               contentContainerStyle={styles.listContent}
@@ -330,7 +401,7 @@ const styles = StyleSheet.create({
     gap: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.3)',
+    borderColor: 'rgba(34,197,94,0.4)',
   },
   yourRankLabel: {
     fontSize: 12,
@@ -357,34 +428,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffd60a',
   },
+  livePointsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#22c55e',
+    marginLeft: 4,
+  },
   loadingWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emptyWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  emptyIconWrap: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(168,85,247,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  emptyText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
   },
   listContent: {
     paddingHorizontal: 12,
@@ -404,6 +457,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(168,85,247,0.1)',
     borderWidth: 1,
     borderColor: 'rgba(168,85,247,0.2)',
+  },
+  currentUserRow: {
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.3)',
   },
   rankBadge: {
     width: 28,
@@ -426,13 +484,56 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.1)',
   },
+  currentUserAvatar: {
+    borderColor: '#22c55e',
+  },
   userInfo: {
     flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   displayName: {
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+    flexShrink: 1,
+  },
+  currentUserName: {
+    color: '#22c55e',
+  },
+  youBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  youBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+  },
+  liveText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ef4444',
   },
   playTime: {
     fontSize: 11,
@@ -447,6 +548,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
+  },
+  currentUserPoints: {
+    backgroundColor: 'rgba(34,197,94,0.2)',
   },
   points: {
     fontSize: 12,

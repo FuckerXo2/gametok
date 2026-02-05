@@ -2585,6 +2585,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         onClose={() => setShowLeaderboard(false)}
         gameId={leaderboardGameId}
         gameName={leaderboardGameName}
+        currentUser={user ? {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatar: user.avatar,
+        } : null}
+        sessionPoints={sessionPoints}
+        sessionPlayTime={gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0}
       />
     </View>
   );
