@@ -102,6 +102,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     }
   }, [visible, gameId]);
 
+  // Force re-render every second to update live points display
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (!visible) return;
+    const interval = setInterval(() => forceUpdate(n => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, [visible]);
+
   const closeSheet = () => {
     Animated.parallel([
       Animated.timing(translateY, { toValue: SHEET_HEIGHT, duration: 200, useNativeDriver: true }),
