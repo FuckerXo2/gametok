@@ -52,7 +52,7 @@ const MainApp = () => {
         
         {/* Rewards - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'rewards' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'rewards' ? 'auto' : 'none'}>
-          <RewardsScreen />
+          <RewardsScreen isActive={activeTab === 'rewards'} />
         </View>
         
         {/* Inbox - always mounted */}
@@ -62,7 +62,7 @@ const MainApp = () => {
         
         {/* Profile - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'profile' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
-          <ProfileScreen />
+          <ProfileScreen isActive={activeTab === 'profile'} />
         </View>
       </View>
       <BottomNav activeTab={activeTab} onTabPress={setActiveTab} />

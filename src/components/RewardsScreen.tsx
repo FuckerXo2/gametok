@@ -500,7 +500,7 @@ const RewardsMarketplace: React.FC<{
 };
 
 // Main component
-export const RewardsScreen: React.FC = () => {
+export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   
@@ -511,6 +511,7 @@ export const RewardsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [claimingChallenge, setClaimingChallenge] = useState<string | null>(null);
+  const lastFetchRef = useRef<number>(0);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -518,7 +519,16 @@ export const RewardsScreen: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  const fetchData = async (isRefresh = false) => {
+  // Refresh when tab becomes active (but not too frequently)
+  useEffect(() => {
+    if (isActive && isAuthenticated && !loading) {
+      const now = Date.now();
+      // Only refresh if it's been more than 5 seconds since last fetch
+      if (now - lastFetchRef.current > 5000) {
+        fetchData(true);
+      }
+    }
+  }, [isActive]);  const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     
@@ -533,6 +543,7 @@ export const RewardsScreen: React.FC = () => {
       setChallenges(challengesRes.challenges || []);
       setAchievements(achievementsRes.achievements || []);
       setRewards(rewardsRes.rewards || []);
+      lastFetchRef.current = Date.now();
     } catch (e) {
       console.log('Failed to fetch rewards data:', e);
     } finally {

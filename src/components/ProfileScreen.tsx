@@ -77,7 +77,7 @@ const LevelRing: React.FC<{ level: number; progress: number; size?: number; text
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 
-export const ProfileScreen: React.FC = () => {
+export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark, toggleTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
@@ -87,6 +87,7 @@ export const ProfileScreen: React.FC = () => {
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
+  const lastFetchRef = useRef<number>(0);
   
   const socialStats = {
     followers: user?.followers?.length || 0,
@@ -102,6 +103,16 @@ export const ProfileScreen: React.FC = () => {
     if (isAuthenticated) fetchData();
   }, [isAuthenticated]);
 
+  // Refresh when tab becomes active
+  useEffect(() => {
+    if (isActive && isAuthenticated && !refreshing) {
+      const now = Date.now();
+      if (now - lastFetchRef.current > 5000) {
+        fetchData(true);
+      }
+    }
+  }, [isActive]);
+
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
@@ -111,6 +122,7 @@ export const ProfileScreen: React.FC = () => {
       ]);
       setStats(statsRes);
       setSavedGamesList(savedRes.games || []);
+      lastFetchRef.current = Date.now();
     } catch (e) {
       console.log('Failed to fetch data:', e);
     } finally {
