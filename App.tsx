@@ -10,6 +10,7 @@ import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { DiscoverScreen } from './src/components/DiscoverScreen';
+import { RewardsScreen } from './src/components/RewardsScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -28,32 +29,41 @@ interface DeepLinkContextType {
 const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => {} });
 export const useDeepLink = () => useContext(DeepLinkContext);
 
-type TabName = 'home' | 'discover' | 'inbox' | 'profile';
+type TabName = 'home' | 'discover' | 'inbox' | 'rewards' | 'profile';
 
 const MainApp = () => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
   const { isDark, colors } = useTheme();
 
-  const renderScreen = () => {
-    switch (activeTab) {
-      case 'home':
-        return <HomeScreen />;
-      case 'discover':
-        return <DiscoverScreen />;
-      case 'inbox':
-        return <InboxScreen />;
-      case 'profile':
-        return <ProfileScreen />;
-      default:
-        return <HomeScreen />;
-    }
-  };
-
+  // Keep all screens mounted, just hide/show them
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
-        {renderScreen()}
+        {/* Home - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'home' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
+          <HomeScreen isActive={activeTab === 'home'} />
+        </View>
+        
+        {/* Discover - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'discover' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'discover' ? 'auto' : 'none'}>
+          <DiscoverScreen />
+        </View>
+        
+        {/* Rewards - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'rewards' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'rewards' ? 'auto' : 'none'}>
+          <RewardsScreen />
+        </View>
+        
+        {/* Inbox - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'inbox' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'inbox' ? 'auto' : 'none'}>
+          <InboxScreen />
+        </View>
+        
+        {/* Profile - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'profile' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
+          <ProfileScreen />
+        </View>
       </View>
       <BottomNav activeTab={activeTab} onTabPress={setActiveTab} />
     </>
@@ -178,6 +188,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  screenContainer: {
+    ...StyleSheet.absoluteFillObject,
   },
   loading: {
     flex: 1,

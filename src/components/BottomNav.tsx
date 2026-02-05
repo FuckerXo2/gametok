@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
-type TabName = 'home' | 'discover' | 'inbox' | 'profile';
+type TabName = 'home' | 'discover' | 'inbox' | 'rewards' | 'profile';
 
 interface BottomNavProps {
   activeTab: TabName;
@@ -18,6 +18,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
   const tabs: { name: TabName; icon: string; iconActive: string; label: string }[] = [
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
     { name: 'discover', icon: 'people-outline', iconActive: 'people', label: 'Connect' },
+    { name: 'rewards', icon: 'gift-outline', iconActive: 'gift', label: 'Rewards' },
     { name: 'inbox', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', label: 'Inbox' },
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
   ];

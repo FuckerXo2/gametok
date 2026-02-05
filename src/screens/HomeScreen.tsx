@@ -10,12 +10,13 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
-import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages } from '../services/api';
+import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress, gamification } from '../services/api';
 import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
 import { CommentsSheet } from '../components/CommentsSheet';
 import NativeAdView from '../components/NativeAdView';
 import { useDeepLink } from '../../App';
+import { useAuth } from '../context/AuthContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
@@ -75,71 +76,86 @@ const shouldBlockRequest = (url: string): boolean => {
 const PAUSE_SCRIPT = `
 (function() {
   // Immediately mute everything
+  window._gamePaused = true;
   
-  // 1. Mute ALL HTML5 audio/video elements
-  document.querySelectorAll('audio, video').forEach(el => { 
-    try { 
-      el.pause(); 
-      el.muted = true;
-      el.volume = 0;
-    } catch(e){} 
-  });
+  // Clear any existing mute interval
+  if (window._muteInterval) {
+    clearInterval(window._muteInterval);
+  }
   
-  // 2. Suspend ALL AudioContexts
-  if (window.AudioContext || window.webkitAudioContext) {
-    // Get all audio contexts from our tracking
+  // Function to mute everything
+  const muteAll = () => {
+    // 1. Mute ALL HTML5 audio/video elements
+    document.querySelectorAll('audio, video').forEach(el => { 
+      try { 
+        el.pause(); 
+        el.muted = true;
+        el.volume = 0;
+      } catch(e){} 
+    });
+    
+    // 2. Suspend ALL AudioContexts
     if (window._audioContexts) {
       window._audioContexts.forEach(ctx => { 
         try { ctx.suspend(); } catch(e){} 
       });
     }
-    // Also try to find any untracked contexts
     if (window._allGainNodes) {
       window._allGainNodes.forEach(gain => {
         try { 
-          gain._savedValue = gain.gain.value;
           gain.gain.setValueAtTime(0, gain.context.currentTime);
         } catch(e) {}
       });
     }
-  }
+    
+    // 3. Mute Howler.js
+    if (window.Howler) {
+      try { window.Howler.mute(true); } catch(e) {}
+    }
+    
+    // 4. Mute Phaser
+    if (window.Phaser && window.Phaser.GAMES) {
+      window.Phaser.GAMES.forEach(g => {
+        try { 
+          if (g.sound) {
+            g.sound.mute = true;
+            g.sound.pauseAll && g.sound.pauseAll();
+          }
+        } catch(e) {}
+      });
+    }
+    
+    // 5. Mute CreateJS
+    if (window.createjs && window.createjs.Sound) {
+      try { window.createjs.Sound.muted = true; } catch(e) {}
+    }
+  };
   
-  // 3. Mute Howler.js (very common)
-  if (window.Howler) {
-    try { 
-      window.Howler.mute(true);
-      window._howlerWasMuted = true;
-    } catch(e) {}
-  }
+  // Mute immediately
+  muteAll();
   
-  // 4. Mute Unity
+  // Keep checking and muting every 500ms while paused
+  window._muteInterval = setInterval(() => {
+    if (window._gamePaused) {
+      muteAll();
+    } else {
+      clearInterval(window._muteInterval);
+    }
+  }, 500);
+  
+  // Unity
   if (window.unityInstance) {
     try { window.unityInstance.SendMessage('AudioManager', 'Mute'); } catch(e) {}
     try { window.unityInstance.SendMessage('SoundManager', 'Mute'); } catch(e) {}
     try { window.unityInstance.SendMessage('AudioListener', 'SetVolume', '0'); } catch(e) {}
   }
   
-  // 5. Mute Phaser
-  if (window.Phaser && window.Phaser.GAMES) {
-    window.Phaser.GAMES.forEach(g => {
-      try { 
-        if (g.sound) {
-          g.sound.mute = true;
-          g.sound.pauseAll && g.sound.pauseAll();
-        }
-      } catch(e) {}
-    });
+  // CreateJS Ticker
+  if (window.createjs && window.createjs.Ticker) {
+    try { window.createjs.Ticker.paused = true; } catch(e) {}
   }
   
-  // 6. Mute CreateJS
-  if (window.createjs) {
-    try { 
-      if (window.createjs.Sound) window.createjs.Sound.muted = true;
-      if (window.createjs.Ticker) window.createjs.Ticker.paused = true;
-    } catch(e) {}
-  }
-  
-  // 7. Global master gain
+  // Global master gain
   if (window._masterGain) {
     try { 
       window._originalGainValue = window._masterGain.gain.value;
@@ -147,7 +163,7 @@ const PAUSE_SCRIPT = `
     } catch(e) {}
   }
   
-  // 8. Stop requestAnimationFrame to freeze game
+  // Stop requestAnimationFrame to freeze game
   if (!window._origRAF) {
     window._origRAF = window.requestAnimationFrame;
     window._rafQueue = [];
@@ -156,8 +172,6 @@ const PAUSE_SCRIPT = `
     window._rafQueue.push(cb);
     return window._rafQueue.length;
   };
-  
-  window._gamePaused = true;
 })();
 true;
 `;
@@ -165,6 +179,13 @@ true;
 // Script to resume/unfreeze a game
 const RESUME_SCRIPT = `
 (function() {
+  // Clear the mute interval first
+  window._gamePaused = false;
+  if (window._muteInterval) {
+    clearInterval(window._muteInterval);
+    window._muteInterval = null;
+  }
+  
   // Resume Web Audio API contexts first
   if (window._audioContexts) {
     window._audioContexts.forEach(ctx => { 
@@ -227,8 +248,6 @@ const RESUME_SCRIPT = `
   if (window.createjs && window.createjs.Sound) {
     try { window.createjs.Sound.muted = false; } catch(e) {}
   }
-  
-  window._gamePaused = false;
 })();
 true;
 `;
@@ -244,21 +263,46 @@ const AD_BLOCKER_SCRIPT = `
   // Track audio contexts and gain nodes for pause/resume
   window._audioContexts = [];
   window._allGainNodes = [];
+  window._gamePaused = false; // Will be set to true by PAUSE_SCRIPT
+  
   const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
   if (OrigAudioContext) {
     window.AudioContext = window.webkitAudioContext = function() {
       const ctx = new OrigAudioContext();
       window._audioContexts.push(ctx);
       
+      // If game is paused, immediately suspend new contexts
+      if (window._gamePaused) {
+        try { ctx.suspend(); } catch(e) {}
+      }
+      
       // Also intercept createGain to track all gain nodes
       const origCreateGain = ctx.createGain.bind(ctx);
       ctx.createGain = function() {
         const gain = origCreateGain();
         window._allGainNodes.push(gain);
+        // If paused, mute new gain nodes
+        if (window._gamePaused) {
+          try { gain.gain.setValueAtTime(0, ctx.currentTime); } catch(e) {}
+        }
         return gain;
       };
       
       return ctx;
+    };
+  }
+  
+  // Also intercept Audio constructor
+  const OrigAudio = window.Audio;
+  if (OrigAudio) {
+    window.Audio = function(src) {
+      const audio = new OrigAudio(src);
+      // If game is paused, mute new audio elements
+      if (window._gamePaused) {
+        audio.muted = true;
+        audio.volume = 0;
+      }
+      return audio;
     };
   }
   
@@ -324,8 +368,8 @@ const AD_BLOCKER_SCRIPT = `
     });
   }
   
-  // Clear localStorage/sessionStorage for tracking
-  try { localStorage.clear(); } catch(e) {}
+  // Don't clear localStorage - we need it for game saves!
+  // Only clear sessionStorage for tracking
   try { sessionStorage.clear(); } catch(e) {}
 
   window.google = window.google || {};
@@ -372,7 +416,114 @@ const AD_BLOCKER_SCRIPT = `
     callbacks.onReward && callbacks.onReward();
     callbacks.success && callbacks.success();
     callbacks.complete && callbacks.complete();
+    // More callback variations
+    callbacks.done && callbacks.done();
+    callbacks.finished && callbacks.finished();
+    callbacks.callback && callbacks.callback();
+    callbacks.onDone && callbacks.onDone();
+    callbacks.onFinished && callbacks.onFinished();
+    callbacks.onSuccess && callbacks.onSuccess();
+    callbacks.onClose && callbacks.onClose();
+    callbacks.close && callbacks.close();
+    callbacks.beforeReward && callbacks.beforeReward();
+    callbacks.afterReward && callbacks.afterReward();
+    callbacks.adViewed && callbacks.adViewed();
+    callbacks.onAdViewed && callbacks.onAdViewed();
+    callbacks.rewardReceived && callbacks.rewardReceived();
+    callbacks.onRewardReceived && callbacks.onRewardReceived();
   };
+  
+  // Aggressive ad container removal
+  const removeAdElements = () => {
+    const adSelectors = [
+      'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', 'iframe[src*="googlesyndication"]',
+      'iframe[id*="ad"]', 'iframe[class*="ad"]', 'iframe[src*="imasdk"]',
+      'div[id*="preroll"]', 'div[class*="preroll"]', 'div[id*="ad-"]', 'div[class*="ad-"]',
+      'div[id*="video-ad"]', 'div[class*="video-ad"]', 'div[id*="rewarded"]',
+      '.gdsdk-container', '#gdsdk-container', '[class*="gdsdk"]', '[id*="gdsdk"]',
+      '.ad-container', '#ad-container', '.ads-container', '#ads-container',
+      '.advertisement', '#advertisement', '.ad-overlay', '#ad-overlay',
+      '[class*="interstitial"]', '[id*="interstitial"]',
+      '[class*="preroll"]', '[id*="preroll"]',
+      'video[src*="ad"]', 'video[class*="ad"]', 'video[id*="ad"]'
+    ];
+    adSelectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.display = 'none';
+        el.style.visibility = 'hidden';
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
+        el.style.position = 'absolute';
+        el.style.left = '-9999px';
+        try { el.remove(); } catch(e) {}
+      });
+    });
+    
+    // GameMonetize specific: find and remove "skip" countdown elements
+    document.querySelectorAll('*').forEach(el => {
+      const text = el.innerText || el.textContent || '';
+      if (text.includes('skip this in') || text.includes('Skip Ad') || 
+          text.includes('skip ad') || text.includes('Advertisement') ||
+          text.includes('skip in') || text.includes('Skip in')) {
+        // Find the parent container and nuke it
+        let parent = el;
+        for (let i = 0; i < 5; i++) {
+          if (parent.parentElement) parent = parent.parentElement;
+        }
+        parent.style.display = 'none';
+        try { parent.remove(); } catch(e) {}
+        el.style.display = 'none';
+        try { el.remove(); } catch(e) {}
+      }
+    });
+    
+    // Y8/Yad Games: remove "More Games" links and cross-promo overlays
+    document.querySelectorAll('*').forEach(el => {
+      const text = el.innerText || el.textContent || '';
+      if (text.includes('More Games') || text.includes('more games') ||
+          text.includes('Play More') || text.includes('play more') ||
+          text.includes('Similar Games') || text.includes('You May Also Like') ||
+          text.includes('Recommended') || text.includes('Try These') ||
+          text.includes('Play Again') && el.tagName === 'A') {
+        el.style.display = 'none';
+        el.style.pointerEvents = 'none';
+        try { el.remove(); } catch(e) {}
+      }
+    });
+    
+    // Block all external links (anything not pointing to the game itself)
+    document.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if (href.startsWith('http') && !href.includes(window.location.hostname)) {
+        a.style.display = 'none';
+        a.style.pointerEvents = 'none';
+        a.removeAttribute('href');
+        a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
+      }
+    });
+    
+    // Also look for fixed position elements at bottom (ad bars)
+    document.querySelectorAll('div, span, p').forEach(el => {
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      // If it's fixed at bottom and small height, likely an ad bar
+      if (style.position === 'fixed' && rect.bottom > window.innerHeight - 100 && rect.height < 80) {
+        const text = el.innerText || '';
+        if (text.includes('skip') || text.includes('Skip') || text.includes('ad') || text.includes('Ad')) {
+          el.style.display = 'none';
+          try { el.remove(); } catch(e) {}
+        }
+      }
+    });
+  };
+  
+  // Run ad removal more aggressively
+  setInterval(removeAdElements, 200);
+  setTimeout(removeAdElements, 50);
+  setTimeout(removeAdElements, 100);
+  setTimeout(removeAdElements, 200);
+  setTimeout(removeAdElements, 500);
+  setTimeout(removeAdElements, 1000);
   
   window.sdk = {
     showBanner: function() { return Promise.resolve(); },
@@ -543,6 +694,22 @@ const AD_BLOCKER_SCRIPT = `
     .gdsdk-container, #gdsdk-container { 
       display: none !important; 
     }
+    /* GameMonetize skip ad bar and video ads */
+    [class*="skip"], [id*="skip"], [class*="Skip"], [id*="Skip"],
+    [class*="preroll"], [id*="preroll"], [class*="Preroll"], [id*="Preroll"],
+    [class*="video-ad"], [id*="video-ad"], [class*="videoAd"], [id*="videoAd"],
+    [class*="adContainer"], [id*="adContainer"], [class*="ad-wrapper"], [id*="ad-wrapper"],
+    [class*="rewarded"], [id*="rewarded"], [class*="interstitial"], [id*="interstitial"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      position: absolute !important;
+      left: -9999px !important;
+      top: -9999px !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
     /* Hide cookie consent banners */
     .cookie-consent, .cookie-banner, .cookie-notice, .cookie-popup,
     .consent-banner, .consent-popup, .consent-modal, .consent-overlay,
@@ -699,6 +866,70 @@ const AD_BLOCKER_SCRIPT = `
 true;
 `;
 
+// Cloud save script - intercepts localStorage and syncs with server
+// This is a function because we need to inject the gameId and initial data
+const createCloudSaveScript = (gameId: string, initialData: Record<string, string> = {}) => `
+(function() {
+  if (window._cloudSaveActive) return;
+  window._cloudSaveActive = true;
+  
+  const GAME_ID = '${gameId}';
+  const SAVE_DEBOUNCE_MS = 2000; // Save to server every 2 seconds max
+  
+  // Restore initial data from server
+  const initialData = ${JSON.stringify(initialData)};
+  Object.keys(initialData).forEach(key => {
+    try {
+      localStorage.setItem(key, initialData[key]);
+    } catch(e) {}
+  });
+  
+  // Track changes for debounced save
+  let pendingChanges = {};
+  let saveTimeout = null;
+  
+  // Send changes to React Native
+  const syncToServer = () => {
+    if (Object.keys(pendingChanges).length === 0) return;
+    
+    // Collect all localStorage data
+    const allData = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) {
+        allData[key] = localStorage.getItem(key);
+      }
+    }
+    
+    window.ReactNativeWebView?.postMessage(JSON.stringify({
+      type: 'CLOUD_SAVE',
+      gameId: GAME_ID,
+      storageData: allData
+    }));
+    
+    pendingChanges = {};
+  };
+  
+  // Intercept localStorage.setItem
+  const origSetItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key, value) {
+    origSetItem(key, value);
+    pendingChanges[key] = value;
+    
+    // Debounce the save
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(syncToServer, SAVE_DEBOUNCE_MS);
+  };
+  
+  // Also save when page unloads
+  window.addEventListener('beforeunload', syncToServer);
+  window.addEventListener('pagehide', syncToServer);
+  
+  console.log('[CloudSave] Initialized for game:', GAME_ID);
+})();
+true;
+`;
+
 // Intelligent game ready detection script
 // Monitors multiple signals to determine when a game is actually playable
 const GAME_READY_SCRIPT = `
@@ -713,6 +944,11 @@ const GAME_READY_SCRIPT = `
   
   const notifyReady = () => {
     if (gameReady) return;
+    // Minimum 1.5 seconds before we can mark as ready
+    if (Date.now() - startTime < 1500) {
+      setTimeout(notifyReady, 1500 - (Date.now() - startTime));
+      return;
+    }
     gameReady = true;
     window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'GAME_READY'
@@ -776,16 +1012,16 @@ const GAME_READY_SCRIPT = `
     }
   }, 100);
   
-  // Fallback: max 5 seconds
+  // Fallback: max 6 seconds
   setTimeout(() => {
     if (!gameReady) notifyReady();
     clearInterval(interval);
-  }, 5000);
+  }, 6000);
   
-  // Minimum 800ms to avoid flash
+  // After 2 seconds with good activity, mark ready
   setTimeout(() => {
-    if (rafCount > 15 || canvasFound) notifyReady();
-  }, 800);
+    if (rafCount > 30 || canvasFound) notifyReady();
+  }, 2000);
 })();
 true;
 `;
@@ -1370,9 +1606,15 @@ const loadingStyles = StyleSheet.create({
   },
 });
 
-export const HomeScreen: React.FC = () => {
+interface HomeScreenProps {
+  isActive?: boolean;
+}
+
+export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   const insets = useSafeAreaInsets();
   const { sharedGameId, clearSharedGame } = useDeepLink();
+  const { user } = useAuth();
+  const isFocused = isActive; // Use the prop instead of navigation hook
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
   const [loading, setLoading] = useState(true);
@@ -1397,6 +1639,17 @@ export const HomeScreen: React.FC = () => {
   
   // Track share counts
   const [shareCounts, setShareCounts] = useState<{ [gameId: string]: number }>({});
+  
+  // Cloud save - track loaded progress per game
+  const loadedProgressRef = useRef<{ [gameId: string]: Record<string, string> }>({});
+  
+  // Gamification - track play time for current game
+  const gameStartTimeRef = useRef<number | null>(null);
+  const lastTrackedGameRef = useRef<string | null>(null);
+  
+  // Live session points counter (ticks up every 5 seconds)
+  const [sessionPoints, setSessionPoints] = useState(0);
+  const sessionPointsIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Share sheet state
   const [showShare, setShowShare] = useState(false);
@@ -1552,8 +1805,62 @@ export const HomeScreen: React.FC = () => {
   const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
   const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
 
+  // Pause/resume WebViews when focus changes (navigating to/from other tabs)
+  useEffect(() => {
+    if (!isFocused) {
+      // Pause ALL games when leaving the tab
+      Object.values(webViewRefs.current).forEach(webView => {
+        if (webView) {
+          webView.injectJavaScript(PAUSE_SCRIPT);
+        }
+      });
+      
+      // Record play time when leaving tab
+      if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
+        const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+        const gameId = lastTrackedGameRef.current;
+        
+        if (playTimeSeconds >= 5) {
+          console.log(`[Gamification] Tab unfocused - played ${gameId} for ${playTimeSeconds}s`);
+          gamification.gamePlayed(gameId, playTimeSeconds).catch(e => {
+            console.log('[Gamification] Failed to record play:', e);
+          });
+        }
+        gameStartTimeRef.current = null;
+      }
+      
+      // Pause session points interval when leaving tab
+      if (sessionPointsIntervalRef.current) {
+        clearInterval(sessionPointsIntervalRef.current);
+        sessionPointsIntervalRef.current = null;
+      }
+    } else {
+      // Resume current game when coming back to the tab
+      const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
+      if (currItem && webViewRefs.current[currItem.id]) {
+        webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+      }
+      
+      // Restart play time tracking when coming back
+      if (currItem?.game?.id) {
+        gameStartTimeRef.current = Date.now();
+        lastTrackedGameRef.current = currItem.game.id;
+        
+        // Resume session points interval
+        if (!sessionPointsIntervalRef.current) {
+          sessionPointsIntervalRef.current = setInterval(() => {
+            setSessionPoints(prev => prev + 1);
+          }, 5000);
+        }
+      }
+    }
+  }, [isFocused]);
+
   // Pause/resume WebViews when index changes
   useEffect(() => {
+    // Don't do anything if tab is not focused
+    if (!isFocused) return;
+    
     const prevIdx = prevIndexRef.current;
     const currIdx = currentIndex;
 
@@ -1575,11 +1882,64 @@ export const HomeScreen: React.FC = () => {
 
       prevIndexRef.current = currIdx;
     }
-  }, [currentIndex, feed]);
+  }, [currentIndex, feed, isFocused]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
+
+  // Track game play time for gamification
+  useEffect(() => {
+    const currentItem = currentIndex >= 0 ? feed[currentIndex] : null;
+    const currentGameId = currentItem?.game?.id || null;
+    
+    // If we switched away from a game, record the play time
+    if (lastTrackedGameRef.current && lastTrackedGameRef.current !== currentGameId && gameStartTimeRef.current && user) {
+      const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+      const gameId = lastTrackedGameRef.current;
+      
+      // Only track if played for at least 5 seconds
+      if (playTimeSeconds >= 5) {
+        console.log(`[Gamification] Played ${gameId} for ${playTimeSeconds}s`);
+        gamification.gamePlayed(gameId, playTimeSeconds).then(result => {
+          console.log('[Gamification] Points earned:', result.pointsEarned, 'XP:', result.xpEarned);
+        }).catch(e => {
+          console.log('[Gamification] Failed to record play:', e);
+        });
+      }
+      
+      gameStartTimeRef.current = null;
+      
+      // Clear session points interval when leaving game
+      if (sessionPointsIntervalRef.current) {
+        clearInterval(sessionPointsIntervalRef.current);
+        sessionPointsIntervalRef.current = null;
+      }
+    }
+    
+    // If we're now on a new game, start tracking
+    if (currentGameId && currentGameId !== lastTrackedGameRef.current) {
+      gameStartTimeRef.current = Date.now();
+      setSessionPoints(0); // Reset session points for new game
+      
+      // Start interval to increment points every 5 seconds
+      if (sessionPointsIntervalRef.current) {
+        clearInterval(sessionPointsIntervalRef.current);
+      }
+      sessionPointsIntervalRef.current = setInterval(() => {
+        setSessionPoints(prev => prev + 1);
+      }, 5000); // +1 point every 5 seconds
+    }
+    
+    lastTrackedGameRef.current = currentGameId;
+    
+    // Cleanup on unmount
+    return () => {
+      if (sessionPointsIntervalRef.current) {
+        clearInterval(sessionPointsIntervalRef.current);
+      }
+    };
+  }, [currentIndex, feed, user]);
 
   useEffect(() => {
     feedRef.current = feed;
@@ -1959,17 +2319,26 @@ export const HomeScreen: React.FC = () => {
                 style={styles.webview}
                 javaScriptEnabled
                 domStorageEnabled
+                cacheEnabled={true}
                 allowsInlineMediaPlayback
                 mediaPlaybackRequiresUserAction={false}
-                thirdPartyCookiesEnabled={!isExternalGame(item!.game!)}
+                thirdPartyCookiesEnabled={false}
                 sharedCookiesEnabled={false}
                 injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT : undefined}
-                onMessage={(event) => {
+                onMessage={async (event) => {
                   try {
                     const data = JSON.parse(event.nativeEvent.data);
                     if (data.type === 'GAME_READY') {
                       // Game is actually ready to play
                       setReadyGames(prev => new Set(prev).add(item!.id));
+                    } else if (data.type === 'CLOUD_SAVE' && user) {
+                      // Save game progress to server
+                      try {
+                        await gameProgress.save(data.gameId, data.storageData);
+                        console.log('[CloudSave] Saved progress for', data.gameId);
+                      } catch (e) {
+                        console.log('[CloudSave] Failed to save:', e);
+                      }
                     }
                   } catch (e) {
                     // Ignore non-JSON messages
@@ -1977,9 +2346,25 @@ export const HomeScreen: React.FC = () => {
                 }}
                 javaScriptCanOpenWindowsAutomatically={false}
                 setSupportMultipleWindows={false}
-                onLoadEnd={() => {
+                onLoadEnd={async () => {
                   // Inject the game ready detection script
                   webViewRefs.current[item!.id]?.injectJavaScript(GAME_READY_SCRIPT);
+                  
+                  // Load and inject cloud save for external games if user is logged in
+                  if (isExternalGame(item!.game!) && user && item!.game?.id) {
+                    try {
+                      // Check if we already loaded progress for this game
+                      if (!loadedProgressRef.current[item!.game!.id]) {
+                        const result = await gameProgress.get(item!.game!.id);
+                        loadedProgressRef.current[item!.game!.id] = result.storageData || {};
+                      }
+                      const savedData = loadedProgressRef.current[item!.game!.id];
+                      webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, savedData));
+                    } catch (e) {
+                      // Still inject cloud save even if loading fails
+                      webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, {}));
+                    }
+                  }
                 }}
                 onLoad={() => {
                   // Auto-pause if not the current game OR if on welcome screen
@@ -1995,13 +2380,6 @@ export const HomeScreen: React.FC = () => {
                   }
                   return true;
                 }}
-                renderError={(errorDomain, errorCode, errorDesc) => (
-                  <View style={styles.errorContainer}>
-                    <Text style={styles.errorEmoji}>📶</Text>
-                    <Text style={styles.errorTitle}>Couldn't load game</Text>
-                    <Text style={styles.errorMessage}>Check your connection and swipe to try another</Text>
-                  </View>
-                )}
               />
 
               {/* Loading overlay - shows until game is ready */}
@@ -2016,6 +2394,12 @@ export const HomeScreen: React.FC = () => {
                 <>
                   {/* TikTok-style action buttons - right side */}
                   <View style={styles.actionButtons}>
+                    {/* Session Points Counter */}
+                    <View style={styles.actionButton}>
+                      <Ionicons name="trophy" size={32} color="#ffd60a" />
+                      <Text style={[styles.actionCount, { color: '#ffd60a' }]}>+{sessionPoints}</Text>
+                    </View>
+
                     {/* Like */}
                     <TouchableOpacity
                       style={styles.actionButton}
@@ -2219,7 +2603,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    backgroundColor: '#a855f7',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     shadowColor: '#a855f7',
@@ -2228,7 +2612,7 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
   },
   hintText: {
-    color: '#a855f7',
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
     textShadowColor: '#a855f7',
@@ -2237,7 +2621,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   hintGlowDark: {
-    backgroundColor: 'rgba(168, 85, 247, 0.4)',
+    backgroundColor: '#a855f7',
     shadowOpacity: 0.7,
   },
   hintTextDark: {
