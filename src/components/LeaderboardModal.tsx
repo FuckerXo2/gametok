@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { gamification } from '../services/api';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_HEIGHT = SCREEN_HEIGHT * 0.8;
+const SHEET_HEIGHT = SCREEN_HEIGHT * 0.75;
 
 interface LeaderboardEntry {
   rank: number;
@@ -47,18 +47,19 @@ interface LeaderboardModalProps {
   sessionPlayTime: number;
 }
 
-// Tier definitions
 const TIERS = [
-  { name: 'Champion', color: '#9333ea', gradient: ['#a855f7', '#7c3aed'] as [string, string], icon: 'trophy', minRank: 1, maxRank: 1 },
-  { name: 'Diamond', color: '#3b82f6', gradient: ['#60a5fa', '#2563eb'] as [string, string], icon: 'diamond', minRank: 2, maxRank: 2 },
-  { name: 'Gold', color: '#eab308', gradient: ['#facc15', '#ca8a04'] as [string, string], icon: 'star', minRank: 3, maxRank: 5 },
-  { name: 'Silver', color: '#6b7280', gradient: ['#9ca3af', '#4b5563'] as [string, string], icon: 'medal', minRank: 6, maxRank: 15 },
-  { name: 'Bronze', color: '#ea580c', gradient: ['#fb923c', '#c2410c'] as [string, string], icon: 'award', minRank: 16, maxRank: Infinity },
+  { name: 'Champion', color: '#a855f7', icon: 'crown', minRank: 1, maxRank: 1 },
+  { name: 'Diamond', color: '#3b82f6', icon: 'gem', minRank: 2, maxRank: 3 },
+  { name: 'Gold', color: '#eab308', icon: 'star', minRank: 4, maxRank: 10 },
+  { name: 'Silver', color: '#94a3b8', icon: 'medal', minRank: 11, maxRank: 25 },
+  { name: 'Bronze', color: '#f97316', icon: 'award', minRank: 26, maxRank: Infinity },
 ];
+
+const getTier = (rank: number) => TIERS.find(t => rank >= t.minRank && rank <= t.maxRank) || TIERS[4];
 
 const formatPoints = (points: number): string => {
   if (points >= 1000000) return `${(points / 1000000).toFixed(1)}M`;
-  if (points >= 1000) return `${(points / 1000).toFixed(0)}K`;
+  if (points >= 1000) return `${(points / 1000).toFixed(1)}K`;
   return points.toLocaleString();
 };
 
@@ -74,7 +75,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [expandedTiers, setExpandedTiers] = useState<Set<string>>(new Set(TIERS.map(t => t.name)));
   
   const translateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -150,74 +150,46 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     return merged;
   };
 
-  const toggleTier = (tierName: string) => {
-    setExpandedTiers(prev => {
-      const next = new Set(prev);
-      if (next.has(tierName)) next.delete(tierName);
-      else next.add(tierName);
-      return next;
-    });
-  };
-
   const mergedLeaderboard = getMergedLeaderboard();
   const currentUserEntry = mergedLeaderboard.find(e => e.isCurrentUser);
+  const currentTier = currentUserEntry ? getTier(currentUserEntry.rank) : null;
 
-  const getPlayersInTier = (tier: typeof TIERS[0]) => {
-    return mergedLeaderboard.filter(p => p.rank >= tier.minRank && p.rank <= tier.maxRank && !p.isCurrentUser);
-  };
-
-  const renderPlayer = (player: LeaderboardEntry, showRank = true) => (
-    <View key={player.userId} style={[styles.playerRow, player.isCurrentUser && styles.playerRowMe]}>
-      <Image
-        source={player.avatar ? { uri: player.avatar } : require('../../assets/icon.png')}
-        style={styles.playerAvatar}
-      />
-      <View style={styles.playerInfo}>
-        <Text style={styles.playerName} numberOfLines={1}>
-          {player.displayName || player.username}
-          {player.isCurrentUser && <Text style={styles.meTag}> (Me)</Text>}
-        </Text>
-      </View>
-      {player.rank <= 3 && (
-        <FontAwesome5 
-          name="medal" 
-          size={16} 
-          color={player.rank === 1 ? '#ffd700' : player.rank === 2 ? '#c0c0c0' : '#cd7f32'} 
-          style={styles.medalIcon}
-        />
-      )}
-      <Text style={styles.playerPoints}>{formatPoints(player.points)}</Text>
-    </View>
-  );
-
-  const renderTier = (tier: typeof TIERS[0]) => {
-    const players = getPlayersInTier(tier);
-    const isExpanded = expandedTiers.has(tier.name);
-    const hasPlayers = players.length > 0;
-
+  const renderPlayer = (player: LeaderboardEntry) => {
+    const tier = getTier(player.rank);
+    const isMe = player.isCurrentUser;
+    
     return (
-      <View key={tier.name} style={styles.tierSection}>
-        <TouchableOpacity 
-          style={styles.tierHeader} 
-          onPress={() => toggleTier(tier.name)}
-          activeOpacity={0.8}
-        >
-          <LinearGradient colors={tier.gradient} style={styles.tierGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-            <FontAwesome5 name={tier.icon} size={16} color="#fff" style={styles.tierIcon} />
-            <Text style={styles.tierName}>{tier.name}</Text>
-            <View style={styles.tierRight}>
-              <View style={styles.expandBtn}>
-                <Ionicons name={isExpanded ? 'remove' : 'add'} size={18} color="#fff" />
-              </View>
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+      <View key={player.userId} style={[styles.playerRow, isMe && styles.playerRowMe]}>
+        <View style={[styles.rankBadge, { backgroundColor: tier.color + '30' }]}>
+          <Text style={[styles.rankText, { color: tier.color }]}>{player.rank}</Text>
+        </View>
         
-        {isExpanded && hasPlayers && (
-          <View style={styles.tierPlayers}>
-            {players.map(p => renderPlayer(p))}
+        <Image
+          source={player.avatar ? { uri: player.avatar } : require('../../assets/icon.png')}
+          style={[styles.avatar, isMe && { borderColor: '#22c55e', borderWidth: 2 }]}
+        />
+        
+        <View style={styles.playerInfo}>
+          <View style={styles.nameRow}>
+            <Text style={[styles.playerName, isMe && styles.playerNameMe]} numberOfLines={1}>
+              {player.displayName || player.username}
+            </Text>
+            {isMe && (
+              <View style={styles.youBadge}>
+                <Text style={styles.youText}>YOU</Text>
+              </View>
+            )}
           </View>
-        )}
+          <View style={styles.tierRow}>
+            <FontAwesome5 name={tier.icon} size={10} color={tier.color} />
+            <Text style={[styles.tierLabel, { color: tier.color }]}>{tier.name}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.pointsWrap}>
+          <FontAwesome5 name="coins" size={12} color="#ffd60a" />
+          <Text style={styles.pointsText}>{formatPoints(player.points)}</Text>
+        </View>
       </View>
     );
   };
@@ -231,8 +203,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeSheet} activeOpacity={1} />
         </Animated.View>
 
-        <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
-          <LinearGradient colors={['#e0f2fe', '#bfdbfe', '#93c5fd']} style={StyleSheet.absoluteFill} />
+        <Animated.View style={[styles.sheet, { transform: [{ translateY }], paddingBottom: insets.bottom }]}>
+          <LinearGradient colors={['#1a1a2e', '#16213e', '#0f3460']} style={StyleSheet.absoluteFill} />
           
           <View style={styles.handleArea} {...panResponder.panHandlers}>
             <View style={styles.handle} />
@@ -240,45 +212,59 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Top Run</Text>
-            <Ionicons name="information-circle-outline" size={20} color="#64748b" />
-          </View>
-          <Text style={styles.subHeader}>{gameName}</Text>
-
-          {loading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#3b82f6" />
+            <View style={styles.headerLeft}>
+              <Ionicons name="trophy" size={22} color="#ffd60a" />
+              <Text style={styles.headerTitle}>Leaderboard</Text>
             </View>
-          ) : (
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-              {TIERS.map(tier => renderTier(tier))}
-              <View style={{ height: 100 }} />
-            </ScrollView>
-          )}
+            <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}>
+              <Ionicons name="close" size={24} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.gameName}>{gameName}</Text>
 
-          {/* Fixed bottom - current user position */}
-          {currentUserEntry && (
-            <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
-              <View style={styles.myPosition}>
-                <Text style={styles.myRank}>#{currentUserEntry.rank}</Text>
-                <Image
-                  source={currentUserEntry.avatar ? { uri: currentUserEntry.avatar } : require('../../assets/icon.png')}
-                  style={styles.myAvatar}
-                />
-                <Text style={styles.myName} numberOfLines={1}>
-                  {currentUserEntry.displayName || currentUserEntry.username} (Me)
-                </Text>
-                <Text style={styles.myPoints}>{formatPoints(currentUserEntry.points)}</Text>
+          {/* Your rank card */}
+          {currentUserEntry && currentTier && (
+            <View style={styles.myRankCard}>
+              <LinearGradient 
+                colors={[currentTier.color + '40', currentTier.color + '20']} 
+                style={StyleSheet.absoluteFill} 
+                start={{ x: 0, y: 0 }} 
+                end={{ x: 1, y: 0 }} 
+              />
+              <View style={styles.myRankLeft}>
+                <FontAwesome5 name={currentTier.icon} size={18} color={currentTier.color} />
+                <View>
+                  <Text style={styles.myRankLabel}>Your Rank</Text>
+                  <Text style={styles.myRankTier}>{currentTier.name}</Text>
+                </View>
+              </View>
+              <View style={styles.myRankRight}>
+                <Text style={styles.myRankNum}>#{currentUserEntry.rank}</Text>
+                <View style={styles.myRankPoints}>
+                  <FontAwesome5 name="coins" size={12} color="#ffd60a" />
+                  <Text style={styles.myRankPointsText}>{formatPoints(currentUserEntry.points)}</Text>
+                </View>
               </View>
             </View>
           )}
 
-          {/* Close button */}
-          <TouchableOpacity style={styles.closeBtn} onPress={closeSheet}>
-            <View style={styles.closeBtnInner}>
-              <Ionicons name="close" size={24} color="#fff" />
+          {loading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="large" color="#a855f7" />
             </View>
-          </TouchableOpacity>
+          ) : mergedLeaderboard.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="podium-outline" size={48} color="rgba(255,255,255,0.3)" />
+              <Text style={styles.emptyText}>No players yet</Text>
+              <Text style={styles.emptySubtext}>Start playing to claim the top spot!</Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+              {mergedLeaderboard.map(renderPlayer)}
+              <View style={{ height: 20 }} />
+            </ScrollView>
+          )}
         </Animated.View>
       </View>
     </Modal>
@@ -287,50 +273,53 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
   sheet: { height: SHEET_HEIGHT, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  handleArea: { alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
-  handle: { width: 40, height: 4, backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 2 },
+  handleArea: { alignItems: 'center', paddingVertical: 12 },
+  handle: { width: 40, height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2 },
   
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingBottom: 4 },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#1e293b' },
-  subHeader: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 4 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  closeBtn: { padding: 4 },
+  
+  gameName: { fontSize: 14, color: 'rgba(255,255,255,0.6)', paddingHorizontal: 16, marginBottom: 12 },
+  
+  myRankCard: { marginHorizontal: 16, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  myRankLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  myRankLabel: { fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 },
+  myRankTier: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  myRankRight: { alignItems: 'flex-end' },
+  myRankNum: { fontSize: 24, fontWeight: '800', color: '#fff' },
+  myRankPoints: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  myRankPointsText: { fontSize: 14, fontWeight: '600', color: '#ffd60a' },
   
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scrollView: { flex: 1, paddingHorizontal: 12 },
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  emptyText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  emptySubtext: { fontSize: 13, color: 'rgba(255,255,255,0.5)' },
   
-  // Tier styles
-  tierSection: { marginBottom: 8 },
-  tierHeader: { borderRadius: 8, overflow: 'hidden' },
-  tierGradient: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14 },
-  tierIcon: { marginRight: 10 },
-  tierName: { fontSize: 16, fontWeight: '700', color: '#fff', flex: 1 },
-  tierRight: { flexDirection: 'row', alignItems: 'center' },
-  expandBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' },
+  list: { flex: 1, paddingHorizontal: 12 },
   
-  tierPlayers: { backgroundColor: 'rgba(255,255,255,0.7)', borderBottomLeftRadius: 8, borderBottomRightRadius: 8, paddingVertical: 4 },
+  playerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 12, marginBottom: 8 },
+  playerRowMe: { backgroundColor: 'rgba(34,197,94,0.15)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)' },
   
-  // Player row
-  playerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
-  playerRowMe: { backgroundColor: 'rgba(59,130,246,0.1)' },
-  playerAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e2e8f0', marginRight: 12 },
+  rankBadge: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  rankText: { fontSize: 14, fontWeight: '700' },
+  
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 10 },
+  
   playerInfo: { flex: 1 },
-  playerName: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
-  meTag: { color: '#3b82f6', fontWeight: '700' },
-  medalIcon: { marginRight: 8 },
-  playerPoints: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  playerName: { fontSize: 14, fontWeight: '600', color: '#fff', flexShrink: 1 },
+  playerNameMe: { color: '#22c55e' },
+  youBadge: { backgroundColor: '#22c55e', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  youText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  tierRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  tierLabel: { fontSize: 11, fontWeight: '600' },
   
-  // Bottom bar (your position)
-  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#1e3a5f', paddingTop: 12, paddingHorizontal: 16 },
-  myPosition: { flexDirection: 'row', alignItems: 'center' },
-  myRank: { fontSize: 16, fontWeight: '800', color: '#fff', width: 40 },
-  myAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#334155', marginRight: 10, borderWidth: 2, borderColor: '#60a5fa' },
-  myName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#fff' },
-  myPoints: { fontSize: 16, fontWeight: '700', color: '#fbbf24' },
-  
-  // Close button
-  closeBtn: { position: 'absolute', bottom: 20, alignSelf: 'center' },
-  closeBtnInner: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#dc2626', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
+  pointsWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pointsText: { fontSize: 14, fontWeight: '700', color: '#ffd60a' },
 });
 
 export default LeaderboardModal;
