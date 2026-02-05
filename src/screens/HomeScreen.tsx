@@ -1651,6 +1651,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   // Live session points counter (ticks up every 5 seconds)
   const [sessionPoints, setSessionPoints] = useState(0);
   const sessionPointsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Track session points per game so they persist when switching back
+  const gameSessionPointsRef = useRef<{ [gameId: string]: number }>({});
 
   // Share sheet state
   const [showShare, setShowShare] = useState(false);
@@ -1666,6 +1668,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardGameId, setLeaderboardGameId] = useState<string>('');
   const [leaderboardGameName, setLeaderboardGameName] = useState<string>('');
+
+  // Handle opening leaderboard - submit current session points first
+  const handleOpenLeaderboard = async (gameId: string, gameName: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    // Submit current session points to backend before showing leaderboard
+    if (gameStartTimeRef.current && user && sessionPoints > 0) {
+      const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+      if (playTimeSeconds >= 5) {
+        try {
+          await gamification.gamePlayed(gameId, playTimeSeconds);
+          // Reset the start time to now (so we don't double-count)
+          gameStartTimeRef.current = Date.now();
+        } catch (e) {
+          console.log('[Gamification] Failed to sync points:', e);
+        }
+      }
+    }
+    
+    setLeaderboardGameId(gameId);
+    setLeaderboardGameName(gameName);
+    setShowLeaderboard(true);
+  };
 
   // Calculate actual content height (screen minus tab bar)
   const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
@@ -1899,16 +1924,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     const currentItem = currentIndex >= 0 ? feed[currentIndex] : null;
     const currentGameId = currentItem?.game?.id || null;
     
-    // If we switched away from a game, record the play time
+    // If we switched away from a game, record the play time and save session points
     if (lastTrackedGameRef.current && lastTrackedGameRef.current !== currentGameId && gameStartTimeRef.current && user) {
       const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
       const gameId = lastTrackedGameRef.current;
+      
+      // Save current session points for this game before switching
+      gameSessionPointsRef.current[gameId] = sessionPoints;
       
       // Only track if played for at least 5 seconds
       if (playTimeSeconds >= 5) {
         console.log(`[Gamification] Played ${gameId} for ${playTimeSeconds}s`);
         gamification.gamePlayed(gameId, playTimeSeconds).then(result => {
           console.log('[Gamification] Points earned:', result.pointsEarned, 'XP:', result.xpEarned);
+          // Clear saved session points after successful sync
+          gameSessionPointsRef.current[gameId] = 0;
         }).catch(e => {
           console.log('[Gamification] Failed to record play:', e);
         });
@@ -1926,14 +1956,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     // If we're now on a new game, start tracking
     if (currentGameId && currentGameId !== lastTrackedGameRef.current) {
       gameStartTimeRef.current = Date.now();
-      setSessionPoints(0); // Reset session points for new game
+      
+      // Restore saved session points for this game, or start at 0
+      const savedPoints = gameSessionPointsRef.current[currentGameId] || 0;
+      setSessionPoints(savedPoints);
       
       // Start interval to increment points every 5 seconds
       if (sessionPointsIntervalRef.current) {
         clearInterval(sessionPointsIntervalRef.current);
       }
       sessionPointsIntervalRef.current = setInterval(() => {
-        setSessionPoints(prev => prev + 1);
+        setSessionPoints(prev => {
+          const newPoints = prev + 1;
+          // Also update the ref so it persists
+          if (currentGameId) {
+            gameSessionPointsRef.current[currentGameId] = newPoints;
+          }
+          return newPoints;
+        });
       }, 5000); // +1 point every 5 seconds
     }
     
@@ -2403,12 +2443,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
                     {/* Session Points Counter - tap for leaderboard */}
                     <TouchableOpacity
                       style={styles.actionButton}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        setLeaderboardGameId(item!.game!.id);
-                        setLeaderboardGameName(item!.game!.name);
-                        setShowLeaderboard(true);
-                      }}
+                      onPress={() => handleOpenLeaderboard(item!.game!.id, item!.game!.name)}
                       activeOpacity={0.7}
                     >
                       <Ionicons name="trophy" size={32} color="#ffd60a" />
