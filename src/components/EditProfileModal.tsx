@@ -37,20 +37,31 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Reset form when modal opens
+  React.useEffect(() => {
+    if (visible && user) {
+      setDisplayName(user.displayName || '');
+      setBio(user.bio || '');
+      setAvatarUrl(user.avatar || '');
+    }
+  }, [visible, user]);
+
   const handleSave = async () => {
     if (!user) return;
     
     setIsSaving(true);
     try {
-      await users.update(user.id, {
+      const result = await users.update(user.id, {
         displayName: displayName.trim() || user.displayName,
         bio: bio.trim(),
-        avatar: avatarUrl.trim() || undefined,
+        avatar: avatarUrl || undefined,
       });
+      console.log('[EditProfile] Update result:', result);
       await refreshUser();
       onClose();
     } catch (error) {
       console.log('Failed to update profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -77,10 +88,12 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
     // Upload to Cloudinary
     setIsUploading(true);
     try {
+      console.log('[EditProfile] Uploading image:', result.assets[0].uri);
       const imageUrl = await uploadImage(result.assets[0].uri);
+      console.log('[EditProfile] Upload success, URL:', imageUrl);
       setAvatarUrl(imageUrl);
     } catch (error) {
-      console.log('Upload failed:', error);
+      console.log('[EditProfile] Upload failed:', error);
       Alert.alert('Upload failed', 'Could not upload image. Please try again.');
     } finally {
       setIsUploading(false);
