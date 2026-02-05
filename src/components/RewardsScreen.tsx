@@ -9,11 +9,10 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
-  ImageBackground,
   RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../context/AuthContext';
@@ -59,6 +58,13 @@ interface Reward {
   stock?: number;
 }
 
+// Coin icon component
+const CoinIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#ffd60a' }) => (
+  <View style={[styles.coinIconWrap, { width: size, height: size, borderRadius: size / 2 }]}>
+    <FontAwesome5 name="coins" size={size * 0.55} color={color} />
+  </View>
+);
+
 // Hero card with animated gradient background
 const HeroCard: React.FC<{ 
   balance: number; 
@@ -72,7 +78,6 @@ const HeroCard: React.FC<{
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
   useEffect(() => {
-    // Shimmer effect
     Animated.loop(
       Animated.timing(shimmerAnim, {
         toValue: 1,
@@ -81,7 +86,6 @@ const HeroCard: React.FC<{
       })
     ).start();
     
-    // Pulse for streak
     if (streak > 0) {
       Animated.loop(
         Animated.sequence([
@@ -105,12 +109,8 @@ const HeroCard: React.FC<{
         end={{ x: 1, y: 1 }}
         style={styles.heroGradient}
       >
-        {/* Animated shimmer overlay */}
         <Animated.View 
-          style={[
-            styles.shimmer,
-            { transform: [{ translateX: shimmerTranslate }] }
-          ]}
+          style={[styles.shimmer, { transform: [{ translateX: shimmerTranslate }] }]}
         >
           <LinearGradient
             colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent']}
@@ -120,28 +120,25 @@ const HeroCard: React.FC<{
           />
         </Animated.View>
 
-        {/* Main balance */}
         <View style={styles.heroMain}>
           <Text style={styles.heroLabel}>TOTAL COINS</Text>
           {loading ? (
             <ActivityIndicator color="#ffd60a" size="large" />
           ) : (
             <View style={styles.balanceRow}>
-              <Text style={styles.coinIcon}>🪙</Text>
+              <View style={styles.bigCoinIcon}>
+                <FontAwesome5 name="coins" size={32} color="#ffd60a" />
+              </View>
               <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
             </View>
           )}
         </View>
 
-        {/* Stats row */}
         <View style={styles.heroStats}>
           {/* Level */}
           <View style={styles.heroStat}>
             <View style={styles.levelBadge}>
-              <LinearGradient
-                colors={['#a855f7', '#6366f1']}
-                style={styles.levelGradient}
-              >
+              <LinearGradient colors={['#a855f7', '#6366f1']} style={styles.levelGradient}>
                 <Text style={styles.levelNum}>{level}</Text>
               </LinearGradient>
             </View>
@@ -154,7 +151,7 @@ const HeroCard: React.FC<{
           {/* Streak */}
           <View style={styles.heroStat}>
             <Animated.View style={[styles.streakBadge, { transform: [{ scale: pulseAnim }] }]}>
-              <Text style={styles.streakFire}>🔥</Text>
+              <Ionicons name="flame" size={26} color="#f97316" />
               <Text style={styles.streakNum}>{streak}</Text>
             </Animated.View>
             <Text style={styles.heroStatLabel}>Day Streak</Text>
@@ -167,7 +164,9 @@ const HeroCard: React.FC<{
 
           {/* Lifetime */}
           <View style={styles.heroStat}>
-            <Text style={styles.lifetimeIcon}>💎</Text>
+            <View style={styles.lifetimeIcon}>
+              <Ionicons name="diamond" size={26} color="#06b6d4" />
+            </View>
             <Text style={styles.heroStatLabel}>Lifetime</Text>
             <Text style={styles.lifetimeValue}>{balance.toLocaleString()}</Text>
           </View>
@@ -177,7 +176,32 @@ const HeroCard: React.FC<{
   );
 };
 
-// Daily missions section with visual progress
+// Get icon for challenge type
+const getChallengeIcon = (iconName: string): { name: string; family: 'ionicons' | 'material' | 'fontawesome' } => {
+  const iconMap: Record<string, { name: string; family: 'ionicons' | 'material' | 'fontawesome' }> = {
+    '🎮': { name: 'game-controller', family: 'ionicons' },
+    '🏆': { name: 'trophy', family: 'ionicons' },
+    '⏱️': { name: 'timer', family: 'ionicons' },
+    '❤️': { name: 'heart', family: 'ionicons' },
+    '💬': { name: 'chatbubble', family: 'ionicons' },
+    '👥': { name: 'people', family: 'ionicons' },
+    '🔗': { name: 'share-social', family: 'ionicons' },
+    '📱': { name: 'phone-portrait', family: 'ionicons' },
+    '⭐': { name: 'star', family: 'ionicons' },
+    '🎯': { name: 'bullseye', family: 'material' },
+  };
+  return iconMap[iconName] || { name: 'game-controller', family: 'ionicons' };
+};
+
+const ChallengeIconComponent: React.FC<{ icon: string; size?: number; color?: string }> = ({ icon, size = 20, color = '#fff' }) => {
+  const iconData = getChallengeIcon(icon);
+  if (iconData.family === 'material') {
+    return <MaterialCommunityIcons name={iconData.name as any} size={size} color={color} />;
+  }
+  return <Ionicons name={iconData.name as any} size={size} color={color} />;
+};
+
+// Daily missions section
 const DailyMissions: React.FC<{
   challenges: Challenge[];
   onClaim: (id: string) => void;
@@ -186,7 +210,6 @@ const DailyMissions: React.FC<{
 }> = ({ challenges, onClaim, claimingId, loading }) => {
   const hoursLeft = 24 - new Date().getHours();
   
-  // Default challenges if none from API
   const displayChallenges = challenges.length > 0 ? challenges : [
     { id: '1', title: 'Play 3 Games', icon: '🎮', progress: 0, target: 3, reward_points: 50, completed: false, claimed: false },
     { id: '2', title: 'Win 1 Game', icon: '🏆', progress: 0, target: 1, reward_points: 100, completed: false, claimed: false },
@@ -197,7 +220,9 @@ const DailyMissions: React.FC<{
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionEmoji}>🎯</Text>
+          <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(168,85,247,0.2)' }]}>
+            <MaterialCommunityIcons name="target" size={18} color="#a855f7" />
+          </View>
           <View>
             <Text style={styles.sectionTitle}>Daily Missions</Text>
             <Text style={styles.sectionSub}>Resets in {hoursLeft}h</Text>
@@ -216,7 +241,7 @@ const DailyMissions: React.FC<{
         </View>
       ) : (
         <View style={styles.missionsGrid}>
-          {displayChallenges.map((challenge, index) => {
+          {displayChallenges.map((challenge) => {
             const progress = Math.min(challenge.progress / challenge.target, 1);
             const isComplete = challenge.completed && !challenge.claimed;
             const isClaimed = challenge.claimed;
@@ -235,11 +260,11 @@ const DailyMissions: React.FC<{
               >
                 <View style={styles.missionTop}>
                   <View style={[styles.missionIconWrap, isComplete && styles.missionIconComplete]}>
-                    <Text style={styles.missionIcon}>{challenge.icon}</Text>
+                    <ChallengeIconComponent icon={challenge.icon} size={18} color={isComplete ? '#ffd60a' : '#a855f7'} />
                   </View>
                   <View style={styles.missionReward}>
                     <Text style={styles.missionRewardText}>+{challenge.reward_points}</Text>
-                    <Text style={styles.coinSmall}>🪙</Text>
+                    <FontAwesome5 name="coins" size={10} color="#ffd60a" />
                   </View>
                 </View>
                 
@@ -277,17 +302,41 @@ const DailyMissions: React.FC<{
   );
 };
 
+// Get icon for achievement
+const getAchievementIcon = (iconName: string): { name: string; family: 'ionicons' | 'material' | 'fontawesome' } => {
+  const iconMap: Record<string, { name: string; family: 'ionicons' | 'material' | 'fontawesome' }> = {
+    '👶': { name: 'footsteps', family: 'ionicons' },
+    '🎮': { name: 'game-controller', family: 'ionicons' },
+    '🔥': { name: 'flame', family: 'ionicons' },
+    '🦋': { name: 'people', family: 'ionicons' },
+    '💎': { name: 'diamond', family: 'ionicons' },
+    '🏆': { name: 'trophy', family: 'ionicons' },
+    '⭐': { name: 'star', family: 'ionicons' },
+    '🎯': { name: 'bullseye', family: 'material' },
+    '💪': { name: 'fitness', family: 'ionicons' },
+    '🚀': { name: 'rocket', family: 'ionicons' },
+  };
+  return iconMap[iconName] || { name: 'ribbon', family: 'ionicons' };
+};
+
+const AchievementIconComponent: React.FC<{ icon: string; size?: number; color?: string }> = ({ icon, size = 24, color = '#fff' }) => {
+  const iconData = getAchievementIcon(icon);
+  if (iconData.family === 'material') {
+    return <MaterialCommunityIcons name={iconData.name as any} size={size} color={color} />;
+  }
+  return <Ionicons name={iconData.name as any} size={size} color={color} />;
+};
+
 // Achievements showcase
 const AchievementsShowcase: React.FC<{
   achievements: Achievement[];
   onPress: (a: Achievement) => void;
 }> = ({ achievements, onPress }) => {
-  // Default achievements if none
   const displayAchievements = achievements.length > 0 ? achievements : [
     { id: '1', name: 'First Steps', icon: '👶', unlocked: false, reward_points: 100 },
     { id: '2', name: 'Game Master', icon: '🎮', unlocked: false, reward_points: 250 },
     { id: '3', name: 'On Fire', icon: '🔥', unlocked: false, reward_points: 500 },
-    { id: '4', name: 'Social Butterfly', icon: '🦋', unlocked: false, reward_points: 200 },
+    { id: '4', name: 'Social Star', icon: '🦋', unlocked: false, reward_points: 200 },
     { id: '5', name: 'Collector', icon: '💎', unlocked: false, reward_points: 1000 },
   ] as Achievement[];
 
@@ -297,7 +346,9 @@ const AchievementsShowcase: React.FC<{
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionEmoji}>🏆</Text>
+          <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
+            <Ionicons name="trophy" size={18} color="#f59e0b" />
+          </View>
           <View>
             <Text style={styles.sectionTitle}>Achievements</Text>
             <Text style={styles.sectionSub}>{unlockedCount} of {displayAchievements.length} unlocked</Text>
@@ -322,7 +373,11 @@ const AchievementsShowcase: React.FC<{
             activeOpacity={0.8}
           >
             <View style={[styles.achievementIconWrap, achievement.unlocked && styles.achievementIconUnlocked]}>
-              <Text style={styles.achievementIcon}>{achievement.icon}</Text>
+              <AchievementIconComponent 
+                icon={achievement.icon} 
+                size={24} 
+                color={achievement.unlocked ? '#a855f7' : 'rgba(255,255,255,0.4)'} 
+              />
               {achievement.unlocked && (
                 <View style={styles.achievementCheck}>
                   <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
@@ -332,7 +387,7 @@ const AchievementsShowcase: React.FC<{
             <Text style={styles.achievementName} numberOfLines={2}>{achievement.name}</Text>
             <View style={styles.achievementReward}>
               <Text style={styles.achievementRewardText}>+{achievement.reward_points}</Text>
-              <Text style={styles.coinTiny}>🪙</Text>
+              <FontAwesome5 name="coins" size={9} color="#ffd60a" />
             </View>
             {!achievement.unlocked && <View style={styles.lockedOverlay} />}
           </TouchableOpacity>
@@ -348,7 +403,6 @@ const RewardsMarketplace: React.FC<{
   balance: number;
   onClaim: (r: Reward) => void;
 }> = ({ rewards, balance, onClaim }) => {
-  // Default rewards if none
   const displayRewards = rewards.length > 0 ? rewards : [
     { id: '1', name: '$5 Amazon Gift Card', description: 'Redeem for Amazon credit', cost: 5000, category: 'giftcard' },
     { id: '2', name: '$10 App Store', description: 'iOS App Store credit', cost: 10000, category: 'giftcard' },
@@ -368,13 +422,13 @@ const RewardsMarketplace: React.FC<{
     }
   };
 
-  const getCategoryIcon = (category: string) => {
+  const getCategoryIcon = (category: string): { name: string; family: 'ionicons' | 'fontawesome' } => {
     switch (category) {
-      case 'giftcard': return '🎁';
-      case 'badge': return '🏅';
-      case 'boost': return '⚡';
-      case 'cosmetic': return '✨';
-      default: return '🎮';
+      case 'giftcard': return { name: 'gift', family: 'ionicons' };
+      case 'badge': return { name: 'ribbon', family: 'ionicons' };
+      case 'boost': return { name: 'flash', family: 'ionicons' };
+      case 'cosmetic': return { name: 'sparkles', family: 'ionicons' };
+      default: return { name: 'game-controller', family: 'ionicons' };
     }
   };
 
@@ -382,14 +436,16 @@ const RewardsMarketplace: React.FC<{
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionEmoji}>🛒</Text>
+          <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(34,197,94,0.2)' }]}>
+            <Ionicons name="storefront" size={18} color="#22c55e" />
+          </View>
           <View>
             <Text style={styles.sectionTitle}>Rewards Shop</Text>
             <Text style={styles.sectionSub}>Spend your coins</Text>
           </View>
         </View>
         <View style={styles.balancePill}>
-          <Text style={styles.balancePillIcon}>🪙</Text>
+          <FontAwesome5 name="coins" size={12} color="#ffd60a" />
           <Text style={styles.balancePillText}>{balance.toLocaleString()}</Text>
         </View>
       </View>
@@ -398,6 +454,7 @@ const RewardsMarketplace: React.FC<{
         {displayRewards.map((reward) => {
           const canAfford = balance >= reward.cost;
           const outOfStock = reward.stock !== undefined && reward.stock !== null && reward.stock <= 0;
+          const iconData = getCategoryIcon(reward.category);
           
           return (
             <TouchableOpacity
@@ -410,14 +467,14 @@ const RewardsMarketplace: React.FC<{
                 colors={getCategoryGradient(reward.category)}
                 style={styles.rewardIconBg}
               >
-                <Text style={styles.rewardIcon}>{getCategoryIcon(reward.category)}</Text>
+                <Ionicons name={iconData.name as any} size={24} color="#fff" />
               </LinearGradient>
               
               <Text style={styles.rewardName} numberOfLines={2}>{reward.name}</Text>
               <Text style={styles.rewardDesc} numberOfLines={1}>{reward.description}</Text>
               
               <View style={[styles.rewardCostBadge, canAfford && styles.rewardCostAfford]}>
-                <Text style={styles.rewardCostIcon}>🪙</Text>
+                <FontAwesome5 name="coins" size={12} color={canAfford ? '#22c55e' : 'rgba(255,255,255,0.5)'} />
                 <Text style={[styles.rewardCostText, canAfford && styles.rewardCostTextAfford]}>
                   {reward.cost.toLocaleString()}
                 </Text>
@@ -501,7 +558,7 @@ export const RewardsScreen: React.FC = () => {
         c.id === challengeId ? { ...c, claimed: true } : c
       ));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('🎉 Reward Claimed!', `+${result.pointsEarned} coins added to your balance!`);
+      Alert.alert('Reward Claimed!', `+${result.pointsEarned} coins added to your balance!`);
     } catch (e) {
       Alert.alert('Error', 'Failed to claim reward');
     } finally {
@@ -511,7 +568,7 @@ export const RewardsScreen: React.FC = () => {
 
   const handleClaimReward = async (reward: Reward) => {
     Alert.alert(
-      `${reward.name}`,
+      reward.name,
       `Spend ${reward.cost.toLocaleString()} coins on this reward?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -526,7 +583,7 @@ export const RewardsScreen: React.FC = () => {
                 points: { ...prev.points, balance: result.newBalance }
               } : null);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('🎉 Congratulations!', `You've claimed: ${reward.name}\n\nCheck your email for redemption details.`);
+              Alert.alert('Congratulations!', `You've claimed: ${reward.name}\n\nCheck your email for redemption details.`);
             } catch (e: any) {
               Alert.alert('Error', e.message || 'Failed to claim');
             }
@@ -538,8 +595,8 @@ export const RewardsScreen: React.FC = () => {
 
   const showAchievementDetail = (achievement: Achievement) => {
     Alert.alert(
-      `${achievement.icon} ${achievement.name}`,
-      `${achievement.description || 'Complete this achievement to earn rewards!'}\n\n${achievement.unlocked ? '✅ Unlocked!' : `🔒 Reward: +${achievement.reward_points} coins`}`
+      achievement.name,
+      `${achievement.description || 'Complete this achievement to earn rewards!'}\n\n${achievement.unlocked ? 'Unlocked!' : `Reward: +${achievement.reward_points} coins`}`
     );
   };
 
@@ -548,14 +605,16 @@ export const RewardsScreen: React.FC = () => {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <LinearGradient colors={['#1a1a2e', '#0f0f23']} style={styles.notLoggedIn}>
           <View style={styles.notLoggedInContent}>
-            <Text style={styles.notLoggedInEmoji}>🎁</Text>
+            <View style={styles.notLoggedInIconWrap}>
+              <Ionicons name="gift" size={48} color="#a855f7" />
+            </View>
             <Text style={styles.notLoggedInTitle}>Unlock Rewards</Text>
             <Text style={styles.notLoggedInSub}>Sign in to earn coins, complete challenges, and claim real rewards!</Text>
             <View style={styles.previewRewards}>
-              <Text style={styles.previewIcon}>🎁</Text>
-              <Text style={styles.previewIcon}>💳</Text>
-              <Text style={styles.previewIcon}>🏆</Text>
-              <Text style={styles.previewIcon}>⚡</Text>
+              <View style={styles.previewIcon}><Ionicons name="gift" size={24} color="#f59e0b" /></View>
+              <View style={styles.previewIcon}><Ionicons name="card" size={24} color="#a855f7" /></View>
+              <View style={styles.previewIcon}><Ionicons name="trophy" size={24} color="#22c55e" /></View>
+              <View style={styles.previewIcon}><Ionicons name="flash" size={24} color="#06b6d4" /></View>
             </View>
           </View>
         </LinearGradient>
@@ -577,7 +636,6 @@ export const RewardsScreen: React.FC = () => {
           />
         }
       >
-        {/* Hero Card */}
         <View style={{ paddingTop: insets.top + 8 }}>
           <HeroCard 
             balance={stats?.points.balance || 0}
@@ -589,7 +647,6 @@ export const RewardsScreen: React.FC = () => {
           />
         </View>
 
-        {/* Daily Missions */}
         <DailyMissions 
           challenges={challenges}
           onClaim={handleClaimChallenge}
@@ -597,13 +654,11 @@ export const RewardsScreen: React.FC = () => {
           loading={loading}
         />
 
-        {/* Achievements */}
         <AchievementsShowcase 
           achievements={achievements}
           onPress={showAchievementDetail}
         />
 
-        {/* Rewards Shop */}
         <RewardsMarketplace 
           rewards={rewards}
           balance={stats?.points.balance || 0}
@@ -619,6 +674,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
   
+  // Coin icon
+  coinIconWrap: { backgroundColor: 'rgba(255,214,10,0.2)', justifyContent: 'center', alignItems: 'center' },
+  
   // Hero Card
   heroCard: { marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', marginBottom: 8 },
   heroGradient: { padding: 24, paddingBottom: 20 },
@@ -626,8 +684,8 @@ const styles = StyleSheet.create({
   heroMain: { alignItems: 'center', marginBottom: 24 },
   heroLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600', letterSpacing: 2, marginBottom: 8 },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  coinIcon: { fontSize: 44 },
-  balanceValue: { color: '#ffd60a', fontSize: 52, fontWeight: '800' },
+  bigCoinIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,214,10,0.15)', justifyContent: 'center', alignItems: 'center' },
+  balanceValue: { color: '#ffd60a', fontSize: 48, fontWeight: '800' },
   
   heroStats: { flexDirection: 'row', justifyContent: 'space-around' },
   heroStat: { alignItems: 'center', flex: 1 },
@@ -639,20 +697,19 @@ const styles = StyleSheet.create({
   xpBar: { width: 50, height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' },
   xpFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 2 },
   
-  streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  streakFire: { fontSize: 28 },
+  streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   streakNum: { color: '#fff', fontSize: 22, fontWeight: '800' },
   multiplierPill: { backgroundColor: 'rgba(245,158,11,0.3)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   multiplierText: { color: '#fbbf24', fontSize: 10, fontWeight: '700' },
   
-  lifetimeIcon: { fontSize: 28 },
+  lifetimeIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(6,182,212,0.15)', justifyContent: 'center', alignItems: 'center' },
   lifetimeValue: { color: '#fff', fontSize: 14, fontWeight: '700' },
   
   // Sections
   section: { marginTop: 24, paddingHorizontal: 16 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  sectionEmoji: { fontSize: 24 },
+  sectionIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
   sectionSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
   seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -676,10 +733,8 @@ const styles = StyleSheet.create({
   missionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   missionIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center' },
   missionIconComplete: { backgroundColor: 'rgba(255,214,10,0.3)' },
-  missionIcon: { fontSize: 18 },
-  missionReward: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  missionReward: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   missionRewardText: { color: '#ffd60a', fontSize: 11, fontWeight: '700' },
-  coinSmall: { fontSize: 10 },
   missionTitle: { color: '#fff', fontSize: 11, fontWeight: '600', marginBottom: 8, height: 28 },
   missionProgressBar: { height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
   missionProgressFill: { height: '100%', borderRadius: 2 },
@@ -714,12 +769,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   achievementIconUnlocked: { backgroundColor: 'rgba(168,85,247,0.3)', borderWidth: 2, borderColor: '#a855f7' },
-  achievementIcon: { fontSize: 26 },
   achievementCheck: { position: 'absolute', bottom: -2, right: -2 },
   achievementName: { color: '#fff', fontSize: 11, textAlign: 'center', fontWeight: '600', marginBottom: 6, height: 28 },
-  achievementReward: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  achievementReward: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   achievementRewardText: { color: '#ffd60a', fontSize: 11, fontWeight: '700' },
-  coinTiny: { fontSize: 10 },
   lockedOverlay: { 
     ...StyleSheet.absoluteFillObject, 
     backgroundColor: 'rgba(0,0,0,0.4)', 
@@ -730,7 +783,6 @@ const styles = StyleSheet.create({
   
   // Rewards
   balancePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
-  balancePillIcon: { fontSize: 14 },
   balancePillText: { color: '#ffd60a', fontSize: 14, fontWeight: '700' },
   rewardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   rewardCard: { 
@@ -742,12 +794,10 @@ const styles = StyleSheet.create({
   },
   rewardCardDim: { opacity: 0.6 },
   rewardIconBg: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  rewardIcon: { fontSize: 28 },
   rewardName: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: 4, height: 36 },
   rewardDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 11, textAlign: 'center', marginBottom: 12 },
   rewardCostBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   rewardCostAfford: { backgroundColor: 'rgba(34,197,94,0.2)' },
-  rewardCostIcon: { fontSize: 14 },
   rewardCostText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700' },
   rewardCostTextAfford: { color: '#22c55e' },
   soldOutBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: '#ef4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
@@ -758,9 +808,9 @@ const styles = StyleSheet.create({
   // Not logged in
   notLoggedIn: { flex: 1 },
   notLoggedInContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  notLoggedInEmoji: { fontSize: 80, marginBottom: 20 },
+  notLoggedInIconWrap: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(168,85,247,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
   notLoggedInTitle: { color: '#fff', fontSize: 28, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
   notLoggedInSub: { color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', lineHeight: 24 },
   previewRewards: { flexDirection: 'row', gap: 16, marginTop: 32 },
-  previewIcon: { fontSize: 40 },
+  previewIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
 });

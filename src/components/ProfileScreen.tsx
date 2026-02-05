@@ -18,7 +18,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
@@ -118,7 +118,7 @@ const DailyCheckIn: React.FC<{
   bonus: number;
   onClaim: () => void;
   loading: boolean;
-}> = ({ canClaim, streak, bonus, onClaim, loading }) => {
+}> = ({ canClaim, streak, onClaim, bonus, loading }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
   useEffect(() => {
@@ -147,7 +147,7 @@ const DailyCheckIn: React.FC<{
         >
           <View style={styles.checkInLeft}>
             <View style={styles.checkInIconWrap}>
-              <Text style={styles.checkInEmoji}>{canClaim ? '🎁' : '✓'}</Text>
+              <Ionicons name={canClaim ? "gift" : "checkmark-circle"} size={24} color="#fff" />
             </View>
             <View>
               <Text style={styles.checkInTitle}>
@@ -187,7 +187,6 @@ export const ProfileScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
-  const [loadingSaved, setLoadingSaved] = useState(false);
 
   const username = isAuthenticated ? user?.username : 'guest';
   const displayName = isAuthenticated ? user?.displayName : '';
@@ -258,8 +257,8 @@ export const ProfileScreen: React.FC = () => {
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
-        '🎉 Daily Bonus!', 
-        `+${result.pointsEarned} coins\n+${result.xpEarned} XP\n\n🔥 ${result.streak.current} day streak!`
+        'Daily Bonus!', 
+        `+${result.pointsEarned} coins\n+${result.xpEarned} XP\n\n${result.streak.current} day streak!`
       );
     } catch (e: any) {
       if (e.message?.includes('Already claimed')) {
@@ -292,7 +291,9 @@ export const ProfileScreen: React.FC = () => {
     return (
       <View style={[styles.container, { backgroundColor: '#0a0a0f', paddingTop: insets.top }]}>
         <View style={styles.notLoggedIn}>
-          <Text style={styles.notLoggedInEmoji}>👤</Text>
+          <View style={styles.notLoggedInIconWrap}>
+            <Ionicons name="person" size={40} color="#a855f7" />
+          </View>
           <Text style={styles.notLoggedInTitle}>Your Profile</Text>
           <Text style={styles.notLoggedInSubtitle}>Sign in to track your progress and save your favorite games</Text>
         </View>
@@ -319,7 +320,6 @@ export const ProfileScreen: React.FC = () => {
           colors={['#1a1a2e', '#16213e', '#0f0f23']}
           style={[styles.header, { paddingTop: insets.top + 12 }]}
         >
-          {/* Top buttons */}
           <View style={styles.topButtons}>
             <TouchableOpacity style={styles.topBtn} onPress={() => setShowAddFriends(true)}>
               <Ionicons name="person-add-outline" size={20} color="#fff" />
@@ -329,7 +329,6 @@ export const ProfileScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Profile info */}
           <View style={styles.profileSection}>
             <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9}>
               <View style={styles.avatarWrap}>
@@ -344,11 +343,12 @@ export const ProfileScreen: React.FC = () => {
             <Text style={styles.handle}>@{username}</Text>
           </View>
 
-          {/* Stats cards */}
           <View style={styles.statsRow}>
             {/* Coins */}
             <View style={styles.statCard}>
-              <Text style={styles.statIcon}>🪙</Text>
+              <View style={styles.statIconWrap}>
+                <FontAwesome5 name="coins" size={20} color="#ffd60a" />
+              </View>
               <Text style={styles.statValue}>
                 {loadingStats ? '...' : (stats?.points.balance || 0).toLocaleString()}
               </Text>
@@ -372,7 +372,7 @@ export const ProfileScreen: React.FC = () => {
             {/* Streak */}
             <View style={styles.statCard}>
               <View style={styles.streakWrap}>
-                <Text style={styles.statIcon}>🔥</Text>
+                <Ionicons name="flame" size={24} color="#f97316" />
                 <Text style={styles.streakNum}>{stats?.streak.current || 0}</Text>
               </View>
               <Text style={styles.statLabel}>Streak</Text>
@@ -400,13 +400,15 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionEmoji}>💾</Text>
+              <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(168,85,247,0.2)' }]}>
+                <Ionicons name="bookmark" size={16} color="#a855f7" />
+              </View>
               <Text style={styles.sectionTitle}>Saved Games</Text>
             </View>
             <Text style={styles.sectionCount}>{savedGamesList.length}</Text>
           </View>
           
-          {loadingSaved || loadingStats ? (
+          {loadingStats ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator color="#a855f7" />
             </View>
@@ -453,7 +455,7 @@ export const ProfileScreen: React.FC = () => {
               
               <View style={styles.settingsItem}>
                 <View style={styles.settingsItemLeft}>
-                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(168,85,247,0.2)' }]}>
+                  <View style={[styles.settingsItemIconWrap, { backgroundColor: 'rgba(168,85,247,0.2)' }]}>
                     <Ionicons name={isDark ? "moon" : "sunny-outline"} size={18} color="#a855f7" />
                   </View>
                   <Text style={styles.settingsItemText}>Dark Mode</Text>
@@ -470,7 +472,7 @@ export const ProfileScreen: React.FC = () => {
               
               <TouchableOpacity style={styles.settingsItem} onPress={() => Linking.openURL('mailto:gametokapp@gmail.com')}>
                 <View style={styles.settingsItemLeft}>
-                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(34,197,94,0.2)' }]}>
+                  <View style={[styles.settingsItemIconWrap, { backgroundColor: 'rgba(34,197,94,0.2)' }]}>
                     <Ionicons name="mail-outline" size={18} color="#22c55e" />
                   </View>
                   <Text style={styles.settingsItemText}>Contact Us</Text>
@@ -480,7 +482,7 @@ export const ProfileScreen: React.FC = () => {
               
               <TouchableOpacity style={styles.settingsItem} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}>
                 <View style={styles.settingsItemLeft}>
-                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(59,130,246,0.2)' }]}>
+                  <View style={[styles.settingsItemIconWrap, { backgroundColor: 'rgba(59,130,246,0.2)' }]}>
                     <Ionicons name="shield-checkmark-outline" size={18} color="#3b82f6" />
                   </View>
                   <Text style={styles.settingsItemText}>Privacy Policy</Text>
@@ -490,7 +492,7 @@ export const ProfileScreen: React.FC = () => {
               
               <TouchableOpacity style={styles.settingsItem} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}>
                 <View style={styles.settingsItemLeft}>
-                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
+                  <View style={[styles.settingsItemIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
                     <Ionicons name="document-text-outline" size={18} color="#f59e0b" />
                   </View>
                   <Text style={styles.settingsItemText}>Terms of Service</Text>
@@ -502,7 +504,7 @@ export const ProfileScreen: React.FC = () => {
 
               <TouchableOpacity style={styles.settingsItem} onPress={() => { setShowSettings(false); logout(); }}>
                 <View style={styles.settingsItemLeft}>
-                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
+                  <View style={[styles.settingsItemIconWrap, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
                     <Ionicons name="log-out-outline" size={18} color="#ef4444" />
                   </View>
                   <Text style={[styles.settingsItemText, { color: '#ef4444' }]}>Log Out</Text>
@@ -522,7 +524,7 @@ export const ProfileScreen: React.FC = () => {
                 }}
               >
                 <View style={styles.settingsItemLeft}>
-                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
+                  <View style={[styles.settingsItemIconWrap, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
                     <Ionicons name="trash-outline" size={18} color="#ef4444" />
                   </View>
                   <Text style={[styles.settingsItemText, { color: '#ef4444' }]}>Delete Account</Text>
@@ -576,12 +578,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16, 
     alignItems: 'center',
   },
-  statIcon: { fontSize: 28, marginBottom: 4 },
-  statValue: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  statIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,214,10,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  statValue: { color: '#fff', fontSize: 20, fontWeight: '800' },
   statLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
   levelNumber: { color: '#fff', fontSize: 18, fontWeight: '800' },
   streakWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  streakNum: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  streakNum: { color: '#fff', fontSize: 20, fontWeight: '800' },
   multiplierBadge: { 
     position: 'absolute', 
     top: 8, 
@@ -596,8 +598,8 @@ const styles = StyleSheet.create({
   // Sections
   section: { paddingHorizontal: 16, marginTop: 20 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionEmoji: { fontSize: 20 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionIconWrap: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
   sectionCount: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
 
@@ -606,7 +608,6 @@ const styles = StyleSheet.create({
   checkInGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
   checkInLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
   checkInIconWrap: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
-  checkInEmoji: { fontSize: 24 },
   checkInTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   checkInSubtitle: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
   claimBadge: { backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14 },
@@ -628,7 +629,7 @@ const styles = StyleSheet.create({
   
   // Not logged in
   notLoggedIn: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  notLoggedInEmoji: { fontSize: 64, marginBottom: 16 },
+  notLoggedInIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(168,85,247,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   notLoggedInTitle: { color: '#fff', fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   notLoggedInSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 15, textAlign: 'center', lineHeight: 22 },
 
@@ -644,6 +645,6 @@ const styles = StyleSheet.create({
   settingsSectionTitle: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', marginTop: 20, marginBottom: 12, letterSpacing: 1 },
   settingsItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
   settingsItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  settingsIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  settingsItemIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   settingsItemText: { color: '#fff', fontSize: 15, fontWeight: '500' },
 });
