@@ -98,9 +98,6 @@ const LevelRing: React.FC<{ level: number; progress: number; size?: number }> = 
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-// Tab selector
-type ProfileTab = 'saved' | 'activity';
-
 export const ProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors, isDark, toggleTheme } = useTheme();
@@ -110,8 +107,6 @@ export const ProfileScreen: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showFollowers, setShowFollowers] = useState(false);
   const [showFollowing, setShowFollowing] = useState(false);
-  
-  const [activeTab, setActiveTab] = useState<ProfileTab>('saved');
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -265,25 +260,14 @@ export const ProfileScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'saved' && styles.tabActive]} 
-            onPress={() => setActiveTab('saved')}
-          >
-            <Ionicons name="bookmark" size={22} color={activeTab === 'saved' ? '#fff' : '#666'} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'activity' && styles.tabActive]} 
-            onPress={() => setActiveTab('activity')}
-          >
-            <Ionicons name="time" size={22} color={activeTab === 'activity' ? '#fff' : '#666'} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Tab Content */}
-        {activeTab === 'saved' ? (
-          savedGamesList.length === 0 ? (
+        {/* Saved Games Section */}
+        <View style={styles.savedSection}>
+          <View style={styles.savedHeader}>
+            <Ionicons name="bookmark" size={18} color="#fff" />
+            <Text style={styles.savedTitle}>Saved Games</Text>
+          </View>
+          
+          {savedGamesList.length === 0 ? (
             <View style={styles.emptyTab}>
               <Ionicons name="bookmark-outline" size={48} color="#333" />
               <Text style={styles.emptyTabText}>No saved games yet</Text>
@@ -297,13 +281,8 @@ export const ProfileScreen: React.FC = () => {
               scrollEnabled={false}
               contentContainerStyle={styles.gamesGrid}
             />
-          )
-        ) : (
-          <View style={styles.emptyTab}>
-            <Ionicons name="time-outline" size={48} color="#333" />
-            <Text style={styles.emptyTabText}>Activity coming soon</Text>
-          </View>
-        )}
+          )}
+        </View>
       </ScrollView>
 
       {/* Modals */}
@@ -418,10 +397,10 @@ const styles = StyleSheet.create({
   editProfileBtn: { backgroundColor: '#1a1a1a', borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: '#333' },
   editProfileText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   
-  // Tabs
-  tabsContainer: { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: '#222' },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 12 },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: '#fff' },
+  // Saved Games Section
+  savedSection: { marginTop: 16 },
+  savedHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 0.5, borderBottomColor: '#222' },
+  savedTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
   
   // Games Grid
   gamesGrid: { paddingHorizontal: 1 },
