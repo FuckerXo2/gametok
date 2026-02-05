@@ -13,6 +13,8 @@ import {
   PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { gamification } from '../services/api';
 
@@ -138,20 +140,24 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   };
 
   const getRankStyle = (rank: number) => {
-    if (rank === 1) return { bg: '#ffd700', text: '#000' };
-    if (rank === 2) return { bg: '#c0c0c0', text: '#000' };
-    if (rank === 3) return { bg: '#cd7f32', text: '#000' };
-    return { bg: 'rgba(255,255,255,0.1)', text: '#fff' };
+    if (rank === 1) return { bg: ['#ffd700', '#f59e0b'], text: '#000' };
+    if (rank === 2) return { bg: ['#e5e7eb', '#9ca3af'], text: '#000' };
+    if (rank === 3) return { bg: ['#f59e0b', '#b45309'], text: '#000' };
+    return { bg: ['rgba(168,85,247,0.3)', 'rgba(99,102,241,0.3)'], text: '#fff' };
   };
 
   const renderItem = ({ item }: { item: LeaderboardEntry }) => {
     const rankStyle = getRankStyle(item.rank);
+    const isTopThree = item.rank <= 3;
 
     return (
-      <View style={styles.row}>
-        <View style={[styles.rankBadge, { backgroundColor: rankStyle.bg }]}>
+      <View style={[styles.row, isTopThree && styles.topThreeRow]}>
+        <LinearGradient
+          colors={rankStyle.bg as [string, string]}
+          style={styles.rankBadge}
+        >
           <Text style={[styles.rankText, { color: rankStyle.text }]}>{item.rank}</Text>
-        </View>
+        </LinearGradient>
         <Image
           source={item.avatar ? { uri: item.avatar } : require('../../assets/icon.png')}
           style={styles.avatar}
@@ -163,7 +169,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           <Text style={styles.playTime}>{formatPlayTime(item.playTime)} played</Text>
         </View>
         <View style={styles.pointsBadge}>
-          <Ionicons name="flash" size={12} color="#ffd60a" />
+          <FontAwesome5 name="coins" size={10} color="#ffd60a" />
           <Text style={styles.points}>{formatPoints(item.points)}</Text>
         </View>
       </View>
@@ -190,26 +196,40 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             }
           ]}
         >
+          <LinearGradient
+            colors={['#1a1a2e', '#16213e', '#0f3460']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
           <View style={styles.handleArea} {...panResponder.panHandlers}>
             <View style={styles.handle} />
           </View>
 
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Ionicons name="trophy" size={20} color="#ffd60a" />
+              <View style={styles.trophyWrap}>
+                <Ionicons name="trophy" size={18} color="#ffd60a" />
+              </View>
               <Text style={styles.headerTitle}>{gameName}</Text>
             </View>
             <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color="#888" />
+              <Ionicons name="close" size={24} color="rgba(255,255,255,0.6)" />
             </TouchableOpacity>
           </View>
 
           {userRank && (
             <View style={styles.yourRank}>
+              <LinearGradient
+                colors={['rgba(168,85,247,0.3)', 'rgba(99,102,241,0.2)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
               <Text style={styles.yourRankLabel}>Your Rank</Text>
               <Text style={styles.yourRankValue}>#{userRank.rank}</Text>
               <View style={styles.yourPointsWrap}>
-                <Ionicons name="flash" size={14} color="#ffd60a" />
+                <FontAwesome5 name="coins" size={12} color="#ffd60a" />
                 <Text style={styles.yourPointsText}>{formatPoints(userRank.points)}</Text>
               </View>
             </View>
@@ -217,12 +237,15 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color="#ffd60a" />
+              <ActivityIndicator size="small" color="#a855f7" />
             </View>
           ) : leaderboard.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Ionicons name="podium-outline" size={40} color="#444" />
+              <View style={styles.emptyIconWrap}>
+                <Ionicons name="podium-outline" size={40} color="#a855f7" />
+              </View>
               <Text style={styles.emptyText}>No players yet</Text>
+              <Text style={styles.emptySubtext}>Be the first to claim the top spot!</Text>
             </View>
           ) : (
             <FlatList
@@ -246,13 +269,13 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   sheet: {
     height: SHEET_HEIGHT,
-    backgroundColor: '#1a1a1a',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
   },
   handleArea: {
     alignItems: 'center',
@@ -261,7 +284,7 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
-    backgroundColor: '#444',
+    backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 2,
   },
   header: {
@@ -276,8 +299,16 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flex: 1,
+  },
+  trophyWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,214,10,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 16,
@@ -291,28 +322,35 @@ const styles = StyleSheet.create({
   yourRank: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,214,10,0.1)',
     marginHorizontal: 16,
     marginVertical: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     gap: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.3)',
   },
   yourRankLabel: {
     fontSize: 12,
-    color: '#888',
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
   },
   yourRankValue: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#fff',
   },
   yourPointsWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     marginLeft: 'auto',
+    backgroundColor: 'rgba(255,214,10,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   yourPointsText: {
     fontSize: 14,
@@ -330,9 +368,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  emptyIconWrap: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(168,85,247,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
   emptyText: {
-    color: '#666',
-    fontSize: 14,
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
   },
   listContent: {
     paddingHorizontal: 12,
@@ -343,15 +395,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     marginVertical: 3,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 10,
+    borderRadius: 12,
+  },
+  topThreeRow: {
+    backgroundColor: 'rgba(168,85,247,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.2)',
   },
   rankBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -361,11 +418,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#333',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     marginRight: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   userInfo: {
     flex: 1,
@@ -377,17 +436,17 @@ const styles = StyleSheet.create({
   },
   playTime: {
     fontSize: 11,
-    color: '#666',
-    marginTop: 1,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 2,
   },
   pointsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(255,214,10,0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 4,
+    backgroundColor: 'rgba(255,214,10,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   points: {
     fontSize: 12,
