@@ -1651,6 +1651,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   // Live session points counter (ticks up every 5 seconds)
   const [sessionPoints, setSessionPoints] = useState(0);
   const sessionPointsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const periodicSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   // Track session points per game so they persist when switching back
   const gameSessionPointsRef = useRef<{ [gameId: string]: number }>({});
 
@@ -1951,6 +1952,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         clearInterval(sessionPointsIntervalRef.current);
         sessionPointsIntervalRef.current = null;
       }
+      // Clear periodic sync interval
+      if (periodicSyncIntervalRef.current) {
+        clearInterval(periodicSyncIntervalRef.current);
+        periodicSyncIntervalRef.current = null;
+      }
     }
     
     // If we're now on a new game, start tracking
@@ -1975,6 +1981,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
           return newPoints;
         });
       }, 5000); // +1 point every 5 seconds
+      
+      // Start periodic sync interval - sync to backend every 30 seconds
+      if (periodicSyncIntervalRef.current) {
+        clearInterval(periodicSyncIntervalRef.current);
+      }
+      periodicSyncIntervalRef.current = setInterval(() => {
+        if (gameStartTimeRef.current && user && currentGameId) {
+          const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+          if (playTimeSeconds >= 5) {
+            console.log(`[Gamification] Periodic sync for ${currentGameId}: ${playTimeSeconds}s`);
+            gamification.gamePlayed(currentGameId, playTimeSeconds).then(() => {
+              // Reset start time after successful sync
+              gameStartTimeRef.current = Date.now();
+            }).catch(e => {
+              console.log('[Gamification] Periodic sync failed:', e);
+            });
+          }
+        }
+      }, 30000); // Sync every 30 seconds
     }
     
     lastTrackedGameRef.current = currentGameId;
@@ -1983,6 +2008,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     return () => {
       if (sessionPointsIntervalRef.current) {
         clearInterval(sessionPointsIntervalRef.current);
+      }
+      if (periodicSyncIntervalRef.current) {
+        clearInterval(periodicSyncIntervalRef.current);
       }
     };
   }, [currentIndex, feed, user]);
