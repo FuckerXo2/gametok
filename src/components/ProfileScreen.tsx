@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,16 +30,15 @@ import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GRID_GAP = 2;
+const GRID_GAP = 3;
 const NUM_COLUMNS = 3;
-const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+const TILE_SIZE = (SCREEN_WIDTH - 32 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
 interface Game {
   id: string;
   name: string;
   thumbnail?: string;
-  embedUrl?: string;
 }
 
 interface GamificationStats {
@@ -52,10 +52,10 @@ const getThumbnailUrl = (game: Game) => {
   return `${GAMES_HOST}/thumbnails/${game.id}.png`;
 };
 
-// Animated Level Ring Component
-const LevelRing: React.FC<{ level: number; progress: number; size?: number }> = ({ level, progress, size = 70 }) => {
+// Animated Level Ring
+const LevelRing: React.FC<{ level: number; progress: number; size?: number }> = ({ level, progress, size = 80 }) => {
   const animatedProgress = useRef(new Animated.Value(0)).current;
-  const strokeWidth = 4;
+  const strokeWidth = 5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   
@@ -111,77 +111,50 @@ const LevelRing: React.FC<{ level: number; progress: number; size?: number }> = 
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-// Streak Flame Component
-const StreakFlame: React.FC<{ streak: number; multiplier: number }> = ({ streak, multiplier }) => {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  
-  useEffect(() => {
-    if (streak > 0) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
-    }
-  }, [streak]);
-
-  return (
-    <Animated.View style={[styles.streakContainer, { transform: [{ scale: pulseAnim }] }]}>
-      <Text style={styles.streakEmoji}>🔥</Text>
-      <Text style={styles.streakNumber}>{streak}</Text>
-      {multiplier > 1 && (
-        <View style={styles.multiplierBadge}>
-          <Text style={styles.multiplierText}>{multiplier}x</Text>
-        </View>
-      )}
-    </Animated.View>
-  );
-};
-
-// Daily Check-in Card
+// Daily Check-in Banner
 const DailyCheckIn: React.FC<{ 
   canClaim: boolean; 
   streak: number; 
+  bonus: number;
   onClaim: () => void;
   loading: boolean;
-}> = ({ canClaim, streak, onClaim, loading }) => {
-  const glowAnim = useRef(new Animated.Value(0.3)).current;
+}> = ({ canClaim, streak, bonus, onClaim, loading }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   
   useEffect(() => {
     if (canClaim) {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(glowAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
-          Animated.timing(glowAnim, { toValue: 0.3, duration: 1500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.02, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
         ])
       ).start();
     }
   }, [canClaim]);
 
-  const bonus = streak >= 365 ? 500 : streak >= 100 ? 250 : streak >= 30 ? 150 : streak >= 7 ? 100 : streak >= 3 ? 75 : 50;
-
   return (
     <TouchableOpacity 
       onPress={canClaim ? onClaim : undefined} 
-      activeOpacity={canClaim ? 0.8 : 1}
+      activeOpacity={canClaim ? 0.9 : 1}
       disabled={loading}
     >
-      <Animated.View style={[styles.checkInCard, canClaim && { shadowOpacity: glowAnim }]}>
+      <Animated.View style={[styles.checkInCard, { transform: [{ scale: pulseAnim }] }]}>
         <LinearGradient
-          colors={canClaim ? ['#a855f7', '#6366f1'] : ['#374151', '#1f2937']}
+          colors={canClaim ? ['#a855f7', '#6366f1', '#4f46e5'] : ['#374151', '#1f2937', '#111827']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.checkInGradient}
         >
           <View style={styles.checkInLeft}>
-            <Text style={styles.checkInEmoji}>🎁</Text>
+            <View style={styles.checkInIconWrap}>
+              <Text style={styles.checkInEmoji}>{canClaim ? '🎁' : '✓'}</Text>
+            </View>
             <View>
               <Text style={styles.checkInTitle}>
-                {canClaim ? 'Claim Daily Bonus!' : 'Come back tomorrow!'}
+                {canClaim ? 'Daily Bonus Ready!' : 'Claimed Today'}
               </Text>
               <Text style={styles.checkInSubtitle}>
-                {canClaim ? `+${bonus} points waiting` : `Day ${streak} streak 🔥`}
+                {canClaim ? `+${bonus} coins waiting for you` : `Day ${streak} streak • Come back tomorrow`}
               </Text>
             </View>
           </View>
@@ -208,12 +181,11 @@ export const ProfileScreen: React.FC = () => {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   
-  // Gamification state (just for header stats)
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
   const [claimingDaily, setClaimingDaily] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
-  // Saved games
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
 
@@ -228,35 +200,38 @@ export const ProfileScreen: React.FC = () => {
     return lastClaim !== today;
   };
 
+  const getDailyBonus = () => {
+    const streak = stats?.streak.current || 0;
+    if (streak >= 365) return 500;
+    if (streak >= 100) return 250;
+    if (streak >= 30) return 150;
+    if (streak >= 7) return 100;
+    if (streak >= 3) return 75;
+    return 50;
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
-      fetchStats();
-      fetchSavedGames();
+      fetchData();
     }
   }, [isAuthenticated]);
 
-  const fetchStats = async () => {
-    setLoadingStats(true);
+  const fetchData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoadingStats(true);
+    
     try {
-      const statsRes = await gamification.getStats();
+      const [statsRes, savedRes] = await Promise.all([
+        gamification.getStats(),
+        user?.id ? savedGamesApi.userSaved(user.id) : Promise.resolve({ games: [] }),
+      ]);
       setStats(statsRes);
+      setSavedGamesList(savedRes.games || []);
     } catch (e) {
-      console.log('Failed to fetch stats:', e);
+      console.log('Failed to fetch data:', e);
     } finally {
       setLoadingStats(false);
-    }
-  };
-
-  const fetchSavedGames = async () => {
-    if (!user?.id) return;
-    setLoadingSaved(true);
-    try {
-      const result = await savedGamesApi.userSaved(user.id);
-      setSavedGamesList(result.games || []);
-    } catch (e) {
-      console.log('Failed to fetch saved games:', e);
-    } finally {
-      setLoadingSaved(false);
+      setRefreshing(false);
     }
   };
 
@@ -282,7 +257,10 @@ export const ProfileScreen: React.FC = () => {
       } : null);
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('🎉 Daily Bonus!', `+${result.pointsEarned} points\n+${result.xpEarned} XP\n\nStreak: ${result.streak.current} days!`);
+      Alert.alert(
+        '🎉 Daily Bonus!', 
+        `+${result.pointsEarned} coins\n+${result.xpEarned} XP\n\n🔥 ${result.streak.current} day streak!`
+      );
     } catch (e: any) {
       if (e.message?.includes('Already claimed')) {
         Alert.alert('Already Claimed', 'Come back tomorrow for your next bonus!');
@@ -301,88 +279,108 @@ export const ProfileScreen: React.FC = () => {
         style={styles.gameThumbnail}
         resizeMode="cover"
       />
-      <View style={styles.tileOverlay}>
-        <Ionicons name="game-controller" size={12} color="#fff" />
-        <Text style={styles.tileCount}>{item.name}</Text>
-      </View>
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.8)']}
+        style={styles.tileGradient}
+      >
+        <Text style={styles.tileName} numberOfLines={1}>{item.name}</Text>
+      </LinearGradient>
     </TouchableOpacity>
   );
 
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { backgroundColor: '#000', paddingTop: insets.top }]}>
+      <View style={[styles.container, { backgroundColor: '#0a0a0f', paddingTop: insets.top }]}>
         <View style={styles.notLoggedIn}>
-          <Text style={styles.notLoggedInEmoji}>🎮</Text>
-          <Text style={styles.notLoggedInTitle}>Sign in to track your progress</Text>
-          <Text style={styles.notLoggedInSubtitle}>Earn points, complete challenges, and unlock rewards!</Text>
+          <Text style={styles.notLoggedInEmoji}>👤</Text>
+          <Text style={styles.notLoggedInTitle}>Your Profile</Text>
+          <Text style={styles.notLoggedInSubtitle}>Sign in to track your progress and save your favorite games</Text>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: '#000' }]}>
+    <View style={[styles.container, { backgroundColor: '#0a0a0f' }]}>
       <ScrollView 
         style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchData(true)}
+            tintColor="#a855f7"
+          />
+        }
       >
-        {/* Header with stats */}
+        {/* Profile Header */}
         <LinearGradient
           colors={['#1a1a2e', '#16213e', '#0f0f23']}
-          style={[styles.header, { paddingTop: insets.top + 16 }]}
+          style={[styles.header, { paddingTop: insets.top + 12 }]}
         >
           {/* Top buttons */}
           <View style={styles.topButtons}>
             <TouchableOpacity style={styles.topBtn} onPress={() => setShowAddFriends(true)}>
-              <Ionicons name="person-add-outline" size={22} color="#fff" />
+              <Ionicons name="person-add-outline" size={20} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.topBtn} onPress={() => setShowSettings(true)}>
-              <Ionicons name="menu-outline" size={26} color="#fff" />
+              <Ionicons name="settings-outline" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
 
-          {/* Profile row */}
-          <View style={styles.profileRow}>
-            <Avatar uri={avatar} size={60} />
-            <View style={styles.profileInfo}>
-              <Text style={styles.displayName}>{displayName || username}</Text>
-              <Text style={styles.handle}>@{username}</Text>
-            </View>
-            <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
-              <Ionicons name="pencil" size={16} color="#fff" />
+          {/* Profile info */}
+          <View style={styles.profileSection}>
+            <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9}>
+              <View style={styles.avatarWrap}>
+                <Avatar uri={avatar} size={90} />
+                <View style={styles.editAvatarBadge}>
+                  <Ionicons name="pencil" size={12} color="#fff" />
+                </View>
+              </View>
             </TouchableOpacity>
+            
+            <Text style={styles.displayName}>{displayName || username}</Text>
+            <Text style={styles.handle}>@{username}</Text>
           </View>
 
-          {/* Stats row: Points, Level, Streak */}
+          {/* Stats cards */}
           <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statEmoji}>💰</Text>
+            {/* Coins */}
+            <View style={styles.statCard}>
+              <Text style={styles.statIcon}>🪙</Text>
               <Text style={styles.statValue}>
                 {loadingStats ? '...' : (stats?.points.balance || 0).toLocaleString()}
               </Text>
-              <Text style={styles.statLabel}>Points</Text>
+              <Text style={styles.statLabel}>Coins</Text>
             </View>
 
-            <View style={styles.statBox}>
+            {/* Level */}
+            <View style={styles.statCard}>
               {loadingStats ? (
                 <ActivityIndicator color="#a855f7" />
               ) : (
                 <LevelRing 
                   level={stats?.level.current || 1} 
                   progress={stats?.level.progress || 0} 
-                  size={60}
+                  size={56}
                 />
               )}
               <Text style={styles.statLabel}>Level</Text>
             </View>
 
-            <View style={styles.statBox}>
-              <StreakFlame 
-                streak={stats?.streak.current || 0} 
-                multiplier={stats?.streak.multiplier || 1}
-              />
+            {/* Streak */}
+            <View style={styles.statCard}>
+              <View style={styles.streakWrap}>
+                <Text style={styles.statIcon}>🔥</Text>
+                <Text style={styles.streakNum}>{stats?.streak.current || 0}</Text>
+              </View>
               <Text style={styles.statLabel}>Streak</Text>
+              {(stats?.streak.multiplier || 1) > 1 && (
+                <View style={styles.multiplierBadge}>
+                  <Text style={styles.multiplierText}>{stats?.streak.multiplier}x</Text>
+                </View>
+              )}
             </View>
           </View>
         </LinearGradient>
@@ -392,6 +390,7 @@ export const ProfileScreen: React.FC = () => {
           <DailyCheckIn 
             canClaim={canClaimDaily()} 
             streak={stats?.streak.current || 0}
+            bonus={getDailyBonus()}
             onClaim={handleClaimDaily}
             loading={claimingDaily}
           />
@@ -400,16 +399,24 @@ export const ProfileScreen: React.FC = () => {
         {/* Saved Games */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Saved Games</Text>
-            <Text style={styles.sectionSubtitle}>{savedGamesList.length}</Text>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionEmoji}>💾</Text>
+              <Text style={styles.sectionTitle}>Saved Games</Text>
+            </View>
+            <Text style={styles.sectionCount}>{savedGamesList.length}</Text>
           </View>
-          {loadingSaved ? (
-            <ActivityIndicator color="#a855f7" style={{ marginVertical: 20 }} />
+          
+          {loadingSaved || loadingStats ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color="#a855f7" />
+            </View>
           ) : savedGamesList.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="bookmark-outline" size={40} color="#666" />
-              <Text style={styles.emptyText}>No saved games yet</Text>
-              <Text style={styles.emptySubtext}>Tap the bookmark icon on any game to save it</Text>
+              <View style={styles.emptyIconWrap}>
+                <Ionicons name="bookmark-outline" size={32} color="#666" />
+              </View>
+              <Text style={styles.emptyTitle}>No saved games yet</Text>
+              <Text style={styles.emptySubtext}>Tap the bookmark icon on any game to save it here</Text>
             </View>
           ) : (
             <FlatList
@@ -433,19 +440,22 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.settingsOverlay}>
           <TouchableOpacity style={styles.settingsDismiss} onPress={() => setShowSettings(false)} activeOpacity={1} />
           <View style={styles.settingsContainer}>
+            <View style={styles.settingsHandle} />
             <View style={styles.settingsHeader}>
               <Text style={styles.settingsTitle}>Settings</Text>
-              <TouchableOpacity onPress={() => setShowSettings(false)}>
+              <TouchableOpacity onPress={() => setShowSettings(false)} style={styles.settingsClose}>
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={styles.settingsContent}>
+            <ScrollView style={styles.settingsContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.settingsSectionTitle}>PREFERENCES</Text>
               
               <View style={styles.settingsItem}>
                 <View style={styles.settingsItemLeft}>
-                  <Ionicons name={isDark ? "moon" : "sunny-outline"} size={22} color="#fff" />
+                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(168,85,247,0.2)' }]}>
+                    <Ionicons name={isDark ? "moon" : "sunny-outline"} size={18} color="#a855f7" />
+                  </View>
                   <Text style={styles.settingsItemText}>Dark Mode</Text>
                 </View>
                 <Switch
@@ -458,46 +468,44 @@ export const ProfileScreen: React.FC = () => {
 
               <Text style={styles.settingsSectionTitle}>SUPPORT</Text>
               
-              <TouchableOpacity 
-                style={styles.settingsItem}
-                onPress={() => Linking.openURL('mailto:gametokapp@gmail.com')}
-              >
+              <TouchableOpacity style={styles.settingsItem} onPress={() => Linking.openURL('mailto:gametokapp@gmail.com')}>
                 <View style={styles.settingsItemLeft}>
-                  <Ionicons name="mail-outline" size={22} color="#fff" />
+                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(34,197,94,0.2)' }]}>
+                    <Ionicons name="mail-outline" size={18} color="#22c55e" />
+                  </View>
                   <Text style={styles.settingsItemText}>Contact Us</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#666" />
+                <Ionicons name="chevron-forward" size={18} color="#666" />
               </TouchableOpacity>
               
-              <TouchableOpacity 
-                style={styles.settingsItem}
-                onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}
-              >
+              <TouchableOpacity style={styles.settingsItem} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}>
                 <View style={styles.settingsItemLeft}>
-                  <Ionicons name="shield-checkmark-outline" size={22} color="#fff" />
+                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(59,130,246,0.2)' }]}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color="#3b82f6" />
+                  </View>
                   <Text style={styles.settingsItemText}>Privacy Policy</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#666" />
+                <Ionicons name="chevron-forward" size={18} color="#666" />
               </TouchableOpacity>
               
-              <TouchableOpacity 
-                style={styles.settingsItem}
-                onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}
-              >
+              <TouchableOpacity style={styles.settingsItem} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}>
                 <View style={styles.settingsItemLeft}>
-                  <Ionicons name="document-text-outline" size={22} color="#fff" />
+                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
+                    <Ionicons name="document-text-outline" size={18} color="#f59e0b" />
+                  </View>
                   <Text style={styles.settingsItemText}>Terms of Service</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#666" />
+                <Ionicons name="chevron-forward" size={18} color="#666" />
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.settingsItem, { marginTop: 24 }]} 
-                onPress={() => { setShowSettings(false); logout(); }}
-              >
+              <Text style={styles.settingsSectionTitle}>ACCOUNT</Text>
+
+              <TouchableOpacity style={styles.settingsItem} onPress={() => { setShowSettings(false); logout(); }}>
                 <View style={styles.settingsItemLeft}>
-                  <Ionicons name="log-out-outline" size={22} color="#FF3B30" />
-                  <Text style={[styles.settingsItemText, { color: '#FF3B30' }]}>Log Out</Text>
+                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
+                    <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+                  </View>
+                  <Text style={[styles.settingsItemText, { color: '#ef4444' }]}>Log Out</Text>
                 </View>
               </TouchableOpacity>
 
@@ -514,12 +522,14 @@ export const ProfileScreen: React.FC = () => {
                 }}
               >
                 <View style={styles.settingsItemLeft}>
-                  <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-                  <Text style={[styles.settingsItemText, { color: '#FF3B30' }]}>Delete Account</Text>
+                  <View style={[styles.settingsIconWrap, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                  </View>
+                  <Text style={[styles.settingsItemText, { color: '#ef4444' }]}>Delete Account</Text>
                 </View>
               </TouchableOpacity>
 
-              <View style={{ height: 40 }} />
+              <View style={{ height: 50 }} />
             </ScrollView>
           </View>
         </View>
@@ -528,82 +538,112 @@ export const ProfileScreen: React.FC = () => {
   );
 };
 
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
   
   // Header
-  header: { paddingHorizontal: 20, paddingBottom: 24 },
+  header: { paddingHorizontal: 16, paddingBottom: 24, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
   topButtons: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   topBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
   
-  // Profile row
-  profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  profileInfo: { flex: 1, marginLeft: 12 },
-  displayName: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  handle: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
-  editBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  // Profile section
+  profileSection: { alignItems: 'center', marginBottom: 24 },
+  avatarWrap: { position: 'relative', marginBottom: 12 },
+  editAvatarBadge: { 
+    position: 'absolute', 
+    bottom: 0, 
+    right: 0, 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    backgroundColor: '#a855f7', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#1a1a2e',
+  },
+  displayName: { color: '#fff', fontSize: 24, fontWeight: '800', marginBottom: 4 },
+  handle: { color: 'rgba(255,255,255,0.5)', fontSize: 14 },
   
   // Stats row
-  statsRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  statBox: { alignItems: 'center', minWidth: 80 },
-  statEmoji: { fontSize: 28, marginBottom: 4 },
-  statValue: { color: '#fff', fontSize: 22, fontWeight: '700' },
-  statLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4 },
-  
-  // Level ring
-  levelNumber: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  
-  // Streak
-  streakContainer: { alignItems: 'center' },
-  streakEmoji: { fontSize: 28 },
-  streakNumber: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: -4 },
-  multiplierBadge: { position: 'absolute', top: -4, right: -12, backgroundColor: '#f59e0b', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  multiplierText: { color: '#000', fontSize: 10, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-around', gap: 12 },
+  statCard: { 
+    flex: 1, 
+    backgroundColor: 'rgba(255,255,255,0.05)', 
+    borderRadius: 20, 
+    paddingVertical: 16, 
+    alignItems: 'center',
+  },
+  statIcon: { fontSize: 28, marginBottom: 4 },
+  statValue: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  statLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  levelNumber: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  streakWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  streakNum: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  multiplierBadge: { 
+    position: 'absolute', 
+    top: 8, 
+    right: 8, 
+    backgroundColor: '#f59e0b', 
+    paddingHorizontal: 6, 
+    paddingVertical: 2, 
+    borderRadius: 8 
+  },
+  multiplierText: { color: '#000', fontSize: 9, fontWeight: '800' },
   
   // Sections
   section: { paddingHorizontal: 16, marginTop: 20 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionEmoji: { fontSize: 20 },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  sectionSubtitle: { color: '#888', fontSize: 14 },
+  sectionCount: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
 
   // Daily check-in
-  checkInCard: { borderRadius: 16, overflow: 'hidden', shadowColor: '#a855f7', shadowOffset: { width: 0, height: 0 }, shadowRadius: 20 },
+  checkInCard: { borderRadius: 20, overflow: 'hidden' },
   checkInGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
-  checkInLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  checkInEmoji: { fontSize: 32 },
+  checkInLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
+  checkInIconWrap: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  checkInEmoji: { fontSize: 24 },
   checkInTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  checkInSubtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
-  claimBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  claimText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  checkInSubtitle: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
+  claimBadge: { backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14 },
+  claimText: { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   
   // Saved games grid
   gridRow: { gap: GRID_GAP },
-  gameTile: { width: TILE_SIZE, height: TILE_SIZE * 1.3, marginBottom: GRID_GAP },
-  gameThumbnail: { width: '100%', height: '100%', backgroundColor: '#1a1a1a', borderRadius: 8 },
-  tileOverlay: { position: 'absolute', bottom: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  tileCount: { color: '#fff', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  gameTile: { width: TILE_SIZE, height: TILE_SIZE * 1.3, marginBottom: GRID_GAP, borderRadius: 12, overflow: 'hidden' },
+  gameThumbnail: { width: '100%', height: '100%', backgroundColor: '#1a1a1a' },
+  tileGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, paddingTop: 24 },
+  tileName: { color: '#fff', fontSize: 11, fontWeight: '600' },
   
-  // Empty states
-  emptyState: { alignItems: 'center', paddingVertical: 40 },
-  emptyText: { color: '#888', fontSize: 16, marginTop: 12, fontWeight: '600' },
-  emptySubtext: { color: '#666', fontSize: 13, marginTop: 4 },
+  // Empty & loading states
+  loadingBox: { height: 150, justifyContent: 'center', alignItems: 'center' },
+  emptyState: { alignItems: 'center', paddingVertical: 40, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 20 },
+  emptyIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  emptyTitle: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 6 },
+  emptySubtext: { color: 'rgba(255,255,255,0.4)', fontSize: 13, textAlign: 'center', paddingHorizontal: 40 },
   
   // Not logged in
   notLoggedIn: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   notLoggedInEmoji: { fontSize: 64, marginBottom: 16 },
-  notLoggedInTitle: { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
-  notLoggedInSubtitle: { color: '#888', fontSize: 14, textAlign: 'center' },
+  notLoggedInTitle: { color: '#fff', fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
+  notLoggedInSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 15, textAlign: 'center', lineHeight: 22 },
 
   // Settings Modal
-  settingsOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  settingsOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   settingsDismiss: { flex: 1 },
-  settingsContainer: { backgroundColor: '#1a1a2e', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%' },
-  settingsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: '#333' },
-  settingsTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  settingsContainer: { backgroundColor: '#1a1a2e', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%' },
+  settingsHandle: { width: 40, height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, alignSelf: 'center', marginTop: 12 },
+  settingsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
+  settingsTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  settingsClose: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
   settingsContent: { paddingHorizontal: 20 },
-  settingsSectionTitle: { color: '#888', fontSize: 12, fontWeight: '600', marginTop: 16, marginBottom: 8, letterSpacing: 0.5 },
-  settingsItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: '#333' },
+  settingsSectionTitle: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700', marginTop: 20, marginBottom: 12, letterSpacing: 1 },
+  settingsItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
   settingsItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  settingsItemText: { color: '#fff', fontSize: 16 },
+  settingsIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  settingsItemText: { color: '#fff', fontSize: 15, fontWeight: '500' },
 });

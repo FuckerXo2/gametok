@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
+  ImageBackground,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,164 +59,390 @@ interface Reward {
   stock?: number;
 }
 
-// Animated header with points
-const PointsHeader: React.FC<{ balance: number; loading: boolean }> = ({ balance, loading }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+// Hero card with animated gradient background
+const HeroCard: React.FC<{ 
+  balance: number; 
+  level: number; 
+  xpProgress: number;
+  streak: number;
+  multiplier: number;
+  loading: boolean;
+}> = ({ balance, level, xpProgress, streak, multiplier, loading }) => {
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   
   useEffect(() => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 1.1, duration: 150, useNativeDriver: true }),
-      Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
-    ]).start();
-  }, [balance]);
+    // Shimmer effect
+    Animated.loop(
+      Animated.timing(shimmerAnim, {
+        toValue: 1,
+        duration: 2000,
+        useNativeDriver: true,
+      })
+    ).start();
+    
+    // Pulse for streak
+    if (streak > 0) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [streak]);
+
+  const shimmerTranslate = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-SCREEN_WIDTH, SCREEN_WIDTH],
+  });
 
   return (
-    <LinearGradient
-      colors={['#1a1a2e', '#16213e']}
-      style={styles.pointsHeader}
-    >
-      <Text style={styles.pointsLabel}>Your Balance</Text>
-      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        {loading ? (
-          <ActivityIndicator color="#ffd60a" size="large" />
-        ) : (
-          <View style={styles.pointsRow}>
-            <Text style={styles.pointsEmoji}>💰</Text>
-            <Text style={styles.pointsValue}>{balance.toLocaleString()}</Text>
-          </View>
-        )}
-      </Animated.View>
-      <Text style={styles.pointsSubtext}>Earn points by playing games</Text>
-    </LinearGradient>
-  );
-};
-
-// Challenge Card with progress
-const ChallengeCard: React.FC<{ 
-  challenge: Challenge; 
-  onClaim: () => void;
-  loading: boolean;
-}> = ({ challenge, onClaim, loading }) => {
-  const progress = Math.min(challenge.progress / challenge.target, 1);
-  const isComplete = challenge.completed && !challenge.claimed;
-  
-  return (
-    <View style={[styles.challengeCard, isComplete && styles.challengeCardComplete]}>
-      <View style={styles.challengeTop}>
-        <View style={styles.challengeIconWrap}>
-          <Text style={styles.challengeIcon}>{challenge.icon}</Text>
-        </View>
-        <View style={styles.challengeInfo}>
-          <Text style={styles.challengeTitle}>{challenge.title}</Text>
-          <Text style={styles.challengeDesc}>{challenge.progress}/{challenge.target}</Text>
-        </View>
-        <View style={styles.challengeRewardBadge}>
-          <Text style={styles.challengeRewardText}>+{challenge.reward_points}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.progressBg}>
-        <LinearGradient
-          colors={isComplete ? ['#22c55e', '#16a34a'] : ['#a855f7', '#6366f1']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[styles.progressFill, { width: `${progress * 100}%` }]}
-        />
-      </View>
-      
-      {isComplete && (
-        <TouchableOpacity 
-          style={styles.claimBtn} 
-          onPress={onClaim}
-          disabled={loading}
-          activeOpacity={0.8}
+    <View style={styles.heroCard}>
+      <LinearGradient
+        colors={['#1a1a2e', '#16213e', '#0f3460']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroGradient}
+      >
+        {/* Animated shimmer overlay */}
+        <Animated.View 
+          style={[
+            styles.shimmer,
+            { transform: [{ translateX: shimmerTranslate }] }
+          ]}
         >
           <LinearGradient
-            colors={['#22c55e', '#16a34a']}
-            style={styles.claimBtnGradient}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.claimBtnText}>CLAIM REWARD</Text>
+            colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        {/* Main balance */}
+        <View style={styles.heroMain}>
+          <Text style={styles.heroLabel}>TOTAL COINS</Text>
+          {loading ? (
+            <ActivityIndicator color="#ffd60a" size="large" />
+          ) : (
+            <View style={styles.balanceRow}>
+              <Text style={styles.coinIcon}>🪙</Text>
+              <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Stats row */}
+        <View style={styles.heroStats}>
+          {/* Level */}
+          <View style={styles.heroStat}>
+            <View style={styles.levelBadge}>
+              <LinearGradient
+                colors={['#a855f7', '#6366f1']}
+                style={styles.levelGradient}
+              >
+                <Text style={styles.levelNum}>{level}</Text>
+              </LinearGradient>
+            </View>
+            <Text style={styles.heroStatLabel}>Level</Text>
+            <View style={styles.xpBar}>
+              <View style={[styles.xpFill, { width: `${xpProgress * 100}%` }]} />
+            </View>
+          </View>
+
+          {/* Streak */}
+          <View style={styles.heroStat}>
+            <Animated.View style={[styles.streakBadge, { transform: [{ scale: pulseAnim }] }]}>
+              <Text style={styles.streakFire}>🔥</Text>
+              <Text style={styles.streakNum}>{streak}</Text>
+            </Animated.View>
+            <Text style={styles.heroStatLabel}>Day Streak</Text>
+            {multiplier > 1 && (
+              <View style={styles.multiplierPill}>
+                <Text style={styles.multiplierText}>{multiplier}x bonus</Text>
+              </View>
             )}
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
-      
-      {challenge.claimed && (
-        <View style={styles.claimedBadge}>
-          <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
-          <Text style={styles.claimedText}>Claimed</Text>
+          </View>
+
+          {/* Lifetime */}
+          <View style={styles.heroStat}>
+            <Text style={styles.lifetimeIcon}>💎</Text>
+            <Text style={styles.heroStatLabel}>Lifetime</Text>
+            <Text style={styles.lifetimeValue}>{balance.toLocaleString()}</Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+};
+
+// Daily missions section with visual progress
+const DailyMissions: React.FC<{
+  challenges: Challenge[];
+  onClaim: (id: string) => void;
+  claimingId: string | null;
+  loading: boolean;
+}> = ({ challenges, onClaim, claimingId, loading }) => {
+  const hoursLeft = 24 - new Date().getHours();
+  
+  // Default challenges if none from API
+  const displayChallenges = challenges.length > 0 ? challenges : [
+    { id: '1', title: 'Play 3 Games', icon: '🎮', progress: 0, target: 3, reward_points: 50, completed: false, claimed: false },
+    { id: '2', title: 'Win 1 Game', icon: '🏆', progress: 0, target: 1, reward_points: 100, completed: false, claimed: false },
+    { id: '3', title: 'Play for 10 min', icon: '⏱️', progress: 0, target: 10, reward_points: 75, completed: false, claimed: false },
+  ] as Challenge[];
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionEmoji}>🎯</Text>
+          <View>
+            <Text style={styles.sectionTitle}>Daily Missions</Text>
+            <Text style={styles.sectionSub}>Resets in {hoursLeft}h</Text>
+          </View>
+        </View>
+        <View style={styles.missionProgress}>
+          <Text style={styles.missionProgressText}>
+            {displayChallenges.filter(c => c.completed).length}/{displayChallenges.length}
+          </Text>
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color="#a855f7" />
+        </View>
+      ) : (
+        <View style={styles.missionsGrid}>
+          {displayChallenges.map((challenge, index) => {
+            const progress = Math.min(challenge.progress / challenge.target, 1);
+            const isComplete = challenge.completed && !challenge.claimed;
+            const isClaimed = challenge.claimed;
+            
+            return (
+              <TouchableOpacity
+                key={challenge.id}
+                style={[
+                  styles.missionCard,
+                  isComplete && styles.missionCardComplete,
+                  isClaimed && styles.missionCardClaimed,
+                ]}
+                onPress={isComplete ? () => onClaim(challenge.id) : undefined}
+                activeOpacity={isComplete ? 0.8 : 1}
+                disabled={claimingId === challenge.id}
+              >
+                <View style={styles.missionTop}>
+                  <View style={[styles.missionIconWrap, isComplete && styles.missionIconComplete]}>
+                    <Text style={styles.missionIcon}>{challenge.icon}</Text>
+                  </View>
+                  <View style={styles.missionReward}>
+                    <Text style={styles.missionRewardText}>+{challenge.reward_points}</Text>
+                    <Text style={styles.coinSmall}>🪙</Text>
+                  </View>
+                </View>
+                
+                <Text style={styles.missionTitle}>{challenge.title}</Text>
+                
+                <View style={styles.missionProgressBar}>
+                  <LinearGradient
+                    colors={isClaimed ? ['#22c55e', '#16a34a'] : isComplete ? ['#ffd60a', '#f59e0b'] : ['#a855f7', '#6366f1']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.missionProgressFill, { width: `${progress * 100}%` }]}
+                  />
+                </View>
+                
+                <Text style={styles.missionProgressText2}>
+                  {isClaimed ? '✓ Claimed' : `${challenge.progress}/${challenge.target}`}
+                </Text>
+
+                {isComplete && claimingId !== challenge.id && (
+                  <View style={styles.claimOverlay}>
+                    <Text style={styles.claimOverlayText}>TAP TO CLAIM</Text>
+                  </View>
+                )}
+                {claimingId === challenge.id && (
+                  <View style={styles.claimOverlay}>
+                    <ActivityIndicator color="#fff" size="small" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
     </View>
   );
 };
 
-// Achievement Badge
-const AchievementBadge: React.FC<{ achievement: Achievement; onPress: () => void }> = ({ achievement, onPress }) => (
-  <TouchableOpacity 
-    style={[styles.achievementBadge, !achievement.unlocked && styles.achievementLocked]}
-    onPress={onPress}
-    activeOpacity={0.8}
-  >
-    <View style={[styles.achievementIconWrap, achievement.unlocked && styles.achievementIconUnlocked]}>
-      <Text style={styles.achievementIcon}>{achievement.icon}</Text>
-    </View>
-    <Text style={styles.achievementName} numberOfLines={2}>{achievement.name}</Text>
-    {achievement.unlocked && (
-      <View style={styles.achievementCheck}>
-        <Ionicons name="checkmark-circle" size={14} color="#22c55e" />
-      </View>
-    )}
-  </TouchableOpacity>
-);
+// Achievements showcase
+const AchievementsShowcase: React.FC<{
+  achievements: Achievement[];
+  onPress: (a: Achievement) => void;
+}> = ({ achievements, onPress }) => {
+  // Default achievements if none
+  const displayAchievements = achievements.length > 0 ? achievements : [
+    { id: '1', name: 'First Steps', icon: '👶', unlocked: false, reward_points: 100 },
+    { id: '2', name: 'Game Master', icon: '🎮', unlocked: false, reward_points: 250 },
+    { id: '3', name: 'On Fire', icon: '🔥', unlocked: false, reward_points: 500 },
+    { id: '4', name: 'Social Butterfly', icon: '🦋', unlocked: false, reward_points: 200 },
+    { id: '5', name: 'Collector', icon: '💎', unlocked: false, reward_points: 1000 },
+  ] as Achievement[];
 
-// Reward Shop Item
-const RewardItem: React.FC<{ 
-  reward: Reward; 
+  const unlockedCount = displayAchievements.filter(a => a.unlocked).length;
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionEmoji}>🏆</Text>
+          <View>
+            <Text style={styles.sectionTitle}>Achievements</Text>
+            <Text style={styles.sectionSub}>{unlockedCount} of {displayAchievements.length} unlocked</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.seeAllBtn}>
+          <Text style={styles.seeAllText}>See All</Text>
+          <Ionicons name="chevron-forward" size={16} color="#a855f7" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.achievementsScroll}
+      >
+        {displayAchievements.slice(0, 8).map((achievement) => (
+          <TouchableOpacity
+            key={achievement.id}
+            style={[styles.achievementCard, !achievement.unlocked && styles.achievementLocked]}
+            onPress={() => onPress(achievement)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.achievementIconWrap, achievement.unlocked && styles.achievementIconUnlocked]}>
+              <Text style={styles.achievementIcon}>{achievement.icon}</Text>
+              {achievement.unlocked && (
+                <View style={styles.achievementCheck}>
+                  <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+                </View>
+              )}
+            </View>
+            <Text style={styles.achievementName} numberOfLines={2}>{achievement.name}</Text>
+            <View style={styles.achievementReward}>
+              <Text style={styles.achievementRewardText}>+{achievement.reward_points}</Text>
+              <Text style={styles.coinTiny}>🪙</Text>
+            </View>
+            {!achievement.unlocked && <View style={styles.lockedOverlay} />}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
+
+// Rewards marketplace
+const RewardsMarketplace: React.FC<{
+  rewards: Reward[];
   balance: number;
-  onPress: () => void;
-}> = ({ reward, balance, onPress }) => {
-  const canAfford = balance >= reward.cost;
-  const outOfStock = reward.stock !== undefined && reward.stock !== null && reward.stock <= 0;
-  
-  const getCategoryEmoji = () => {
-    switch (reward.category) {
+  onClaim: (r: Reward) => void;
+}> = ({ rewards, balance, onClaim }) => {
+  // Default rewards if none
+  const displayRewards = rewards.length > 0 ? rewards : [
+    { id: '1', name: '$5 Amazon Gift Card', description: 'Redeem for Amazon credit', cost: 5000, category: 'giftcard' },
+    { id: '2', name: '$10 App Store', description: 'iOS App Store credit', cost: 10000, category: 'giftcard' },
+    { id: '3', name: 'VIP Badge', description: 'Show off your status', cost: 2500, category: 'badge' },
+    { id: '4', name: '2x Points Boost', description: '24 hour double points', cost: 1000, category: 'boost' },
+    { id: '5', name: 'Custom Avatar Frame', description: 'Stand out from the crowd', cost: 1500, category: 'cosmetic' },
+    { id: '6', name: '$25 PlayStation', description: 'PSN Store credit', cost: 25000, category: 'giftcard' },
+  ] as Reward[];
+
+  const getCategoryGradient = (category: string): [string, string] => {
+    switch (category) {
+      case 'giftcard': return ['#f59e0b', '#d97706'];
+      case 'badge': return ['#a855f7', '#7c3aed'];
+      case 'boost': return ['#06b6d4', '#0891b2'];
+      case 'cosmetic': return ['#ec4899', '#db2777'];
+      default: return ['#6366f1', '#4f46e5'];
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
       case 'giftcard': return '🎁';
       case 'badge': return '🏅';
       case 'boost': return '⚡';
       case 'cosmetic': return '✨';
-      case 'merch': return '👕';
-      case 'perk': return '🌟';
       default: return '🎮';
     }
   };
-  
+
   return (
-    <TouchableOpacity 
-      style={[styles.rewardItem, !canAfford && styles.rewardItemDim]}
-      onPress={canAfford && !outOfStock ? onPress : undefined}
-      activeOpacity={canAfford ? 0.8 : 1}
-    >
-      <View style={styles.rewardIconWrap}>
-        <Text style={styles.rewardEmoji}>{getCategoryEmoji()}</Text>
-      </View>
-      <Text style={styles.rewardName} numberOfLines={2}>{reward.name}</Text>
-      <Text style={styles.rewardDesc} numberOfLines={1}>{reward.description}</Text>
-      <View style={[styles.rewardCostBadge, canAfford && styles.rewardCostAfford]}>
-        <Text style={styles.rewardCostText}>{reward.cost.toLocaleString()}</Text>
-      </View>
-      {outOfStock && (
-        <View style={styles.soldOutBadge}>
-          <Text style={styles.soldOutText}>SOLD OUT</Text>
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionEmoji}>🛒</Text>
+          <View>
+            <Text style={styles.sectionTitle}>Rewards Shop</Text>
+            <Text style={styles.sectionSub}>Spend your coins</Text>
+          </View>
         </View>
-      )}
-    </TouchableOpacity>
+        <View style={styles.balancePill}>
+          <Text style={styles.balancePillIcon}>🪙</Text>
+          <Text style={styles.balancePillText}>{balance.toLocaleString()}</Text>
+        </View>
+      </View>
+
+      <View style={styles.rewardsGrid}>
+        {displayRewards.map((reward) => {
+          const canAfford = balance >= reward.cost;
+          const outOfStock = reward.stock !== undefined && reward.stock !== null && reward.stock <= 0;
+          
+          return (
+            <TouchableOpacity
+              key={reward.id}
+              style={[styles.rewardCard, !canAfford && styles.rewardCardDim]}
+              onPress={canAfford && !outOfStock ? () => onClaim(reward) : undefined}
+              activeOpacity={canAfford ? 0.8 : 1}
+            >
+              <LinearGradient
+                colors={getCategoryGradient(reward.category)}
+                style={styles.rewardIconBg}
+              >
+                <Text style={styles.rewardIcon}>{getCategoryIcon(reward.category)}</Text>
+              </LinearGradient>
+              
+              <Text style={styles.rewardName} numberOfLines={2}>{reward.name}</Text>
+              <Text style={styles.rewardDesc} numberOfLines={1}>{reward.description}</Text>
+              
+              <View style={[styles.rewardCostBadge, canAfford && styles.rewardCostAfford]}>
+                <Text style={styles.rewardCostIcon}>🪙</Text>
+                <Text style={[styles.rewardCostText, canAfford && styles.rewardCostTextAfford]}>
+                  {reward.cost.toLocaleString()}
+                </Text>
+              </View>
+
+              {outOfStock && (
+                <View style={styles.soldOutBadge}>
+                  <Text style={styles.soldOutText}>SOLD OUT</Text>
+                </View>
+              )}
+              
+              {!canAfford && !outOfStock && (
+                <View style={styles.needMoreBadge}>
+                  <Text style={styles.needMoreText}>Need {(reward.cost - balance).toLocaleString()} more</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
 };
 
+// Main component
 export const RewardsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
@@ -224,6 +452,7 @@ export const RewardsScreen: React.FC = () => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [claimingChallenge, setClaimingChallenge] = useState<string | null>(null);
 
   useEffect(() => {
@@ -232,8 +461,10 @@ export const RewardsScreen: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    
     try {
       const [statsRes, challengesRes, achievementsRes, rewardsRes] = await Promise.all([
         gamification.getStats(),
@@ -249,6 +480,7 @@ export const RewardsScreen: React.FC = () => {
       console.log('Failed to fetch rewards data:', e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -269,6 +501,7 @@ export const RewardsScreen: React.FC = () => {
         c.id === challengeId ? { ...c, claimed: true } : c
       ));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('🎉 Reward Claimed!', `+${result.pointsEarned} coins added to your balance!`);
     } catch (e) {
       Alert.alert('Error', 'Failed to claim reward');
     } finally {
@@ -278,8 +511,8 @@ export const RewardsScreen: React.FC = () => {
 
   const handleClaimReward = async (reward: Reward) => {
     Alert.alert(
-      reward.name,
-      `Spend ${reward.cost.toLocaleString()} points?`,
+      `${reward.name}`,
+      `Spend ${reward.cost.toLocaleString()} coins on this reward?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -293,7 +526,7 @@ export const RewardsScreen: React.FC = () => {
                 points: { ...prev.points, balance: result.newBalance }
               } : null);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('🎉 Claimed!', `You got: ${reward.name}`);
+              Alert.alert('🎉 Congratulations!', `You've claimed: ${reward.name}\n\nCheck your email for redemption details.`);
             } catch (e: any) {
               Alert.alert('Error', e.message || 'Failed to claim');
             }
@@ -306,113 +539,76 @@ export const RewardsScreen: React.FC = () => {
   const showAchievementDetail = (achievement: Achievement) => {
     Alert.alert(
       `${achievement.icon} ${achievement.name}`,
-      `${achievement.description}\n\n${achievement.unlocked ? '✅ Unlocked!' : `🔒 Reward: +${achievement.reward_points} points`}`
+      `${achievement.description || 'Complete this achievement to earn rewards!'}\n\n${achievement.unlocked ? '✅ Unlocked!' : `🔒 Reward: +${achievement.reward_points} coins`}`
     );
   };
 
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.notLoggedIn}>
-          <Text style={styles.notLoggedInEmoji}>🎁</Text>
-          <Text style={styles.notLoggedInTitle}>Sign in to earn rewards</Text>
-          <Text style={styles.notLoggedInSub}>Complete challenges, unlock achievements, and claim prizes!</Text>
-        </View>
+        <LinearGradient colors={['#1a1a2e', '#0f0f23']} style={styles.notLoggedIn}>
+          <View style={styles.notLoggedInContent}>
+            <Text style={styles.notLoggedInEmoji}>🎁</Text>
+            <Text style={styles.notLoggedInTitle}>Unlock Rewards</Text>
+            <Text style={styles.notLoggedInSub}>Sign in to earn coins, complete challenges, and claim real rewards!</Text>
+            <View style={styles.previewRewards}>
+              <Text style={styles.previewIcon}>🎁</Text>
+              <Text style={styles.previewIcon}>💳</Text>
+              <Text style={styles.previewIcon}>🏆</Text>
+              <Text style={styles.previewIcon}>⚡</Text>
+            </View>
+          </View>
+        </LinearGradient>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: '#000' }]}>
+    <View style={[styles.container, { backgroundColor: '#0a0a0f' }]}>
       <ScrollView 
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchData(true)}
+            tintColor="#a855f7"
+          />
+        }
       >
-        {/* Points Header */}
-        <View style={{ paddingTop: insets.top }}>
-          <PointsHeader balance={stats?.points.balance || 0} loading={loading} />
+        {/* Hero Card */}
+        <View style={{ paddingTop: insets.top + 8 }}>
+          <HeroCard 
+            balance={stats?.points.balance || 0}
+            level={stats?.level.current || 1}
+            xpProgress={stats?.level.progress || 0}
+            streak={stats?.streak.current || 0}
+            multiplier={stats?.streak.multiplier || 1}
+            loading={loading}
+          />
         </View>
 
-        {/* Daily Challenges */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Daily Challenges</Text>
-              <Text style={styles.sectionSub}>Resets in {24 - new Date().getHours()}h</Text>
-            </View>
-            <TouchableOpacity onPress={fetchData}>
-              <Ionicons name="refresh" size={20} color="#888" />
-            </TouchableOpacity>
-          </View>
-          
-          {loading ? (
-            <ActivityIndicator color="#a855f7" style={{ marginVertical: 30 }} />
-          ) : challenges.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No challenges available</Text>
-            </View>
-          ) : (
-            challenges.map(challenge => (
-              <ChallengeCard 
-                key={challenge.id}
-                challenge={challenge}
-                onClaim={() => handleClaimChallenge(challenge.id)}
-                loading={claimingChallenge === challenge.id}
-              />
-            ))
-          )}
-        </View>
+        {/* Daily Missions */}
+        <DailyMissions 
+          challenges={challenges}
+          onClaim={handleClaimChallenge}
+          claimingId={claimingChallenge}
+          loading={loading}
+        />
 
         {/* Achievements */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Achievements</Text>
-              <Text style={styles.sectionSub}>
-                {achievements.filter(a => a.unlocked).length} / {achievements.length} unlocked
-              </Text>
-            </View>
-          </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.achievementsRow}
-          >
-            {achievements.map(achievement => (
-              <AchievementBadge 
-                key={achievement.id} 
-                achievement={achievement}
-                onPress={() => showAchievementDetail(achievement)}
-              />
-            ))}
-          </ScrollView>
-        </View>
+        <AchievementsShowcase 
+          achievements={achievements}
+          onPress={showAchievementDetail}
+        />
 
         {/* Rewards Shop */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Rewards Shop</Text>
-              <Text style={styles.sectionSub}>Spend your hard-earned points</Text>
-            </View>
-            <View style={styles.balancePill}>
-              <Text style={styles.balancePillText}>💰 {(stats?.points.balance || 0).toLocaleString()}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.rewardsGrid}>
-            {rewards.map(reward => (
-              <RewardItem 
-                key={reward.id}
-                reward={reward}
-                balance={stats?.points.balance || 0}
-                onPress={() => handleClaimReward(reward)}
-              />
-            ))}
-          </View>
-        </View>
+        <RewardsMarketplace 
+          rewards={rewards}
+          balance={stats?.points.balance || 0}
+          onClaim={handleClaimReward}
+        />
       </ScrollView>
     </View>
   );
@@ -423,70 +619,148 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
   
-  // Points Header
-  pointsHeader: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 20 },
-  pointsLabel: { color: '#888', fontSize: 14, marginBottom: 8 },
-  pointsRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  pointsEmoji: { fontSize: 40 },
-  pointsValue: { color: '#ffd60a', fontSize: 48, fontWeight: '800' },
-  pointsSubtext: { color: '#666', fontSize: 13, marginTop: 8 },
+  // Hero Card
+  heroCard: { marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', marginBottom: 8 },
+  heroGradient: { padding: 24, paddingBottom: 20 },
+  shimmer: { position: 'absolute', top: 0, bottom: 0, width: 100 },
+  heroMain: { alignItems: 'center', marginBottom: 24 },
+  heroLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600', letterSpacing: 2, marginBottom: 8 },
+  balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  coinIcon: { fontSize: 44 },
+  balanceValue: { color: '#ffd60a', fontSize: 52, fontWeight: '800' },
+  
+  heroStats: { flexDirection: 'row', justifyContent: 'space-around' },
+  heroStat: { alignItems: 'center', flex: 1 },
+  heroStatLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6, marginBottom: 4 },
+  
+  levelBadge: { width: 48, height: 48, borderRadius: 24, overflow: 'hidden' },
+  levelGradient: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  levelNum: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  xpBar: { width: 50, height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' },
+  xpFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 2 },
+  
+  streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  streakFire: { fontSize: 28 },
+  streakNum: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  multiplierPill: { backgroundColor: 'rgba(245,158,11,0.3)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  multiplierText: { color: '#fbbf24', fontSize: 10, fontWeight: '700' },
+  
+  lifetimeIcon: { fontSize: 28 },
+  lifetimeValue: { color: '#fff', fontSize: 14, fontWeight: '700' },
   
   // Sections
-  section: { paddingHorizontal: 16, marginTop: 24 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  sectionTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  sectionSub: { color: '#888', fontSize: 13, marginTop: 2 },
+  section: { marginTop: 24, paddingHorizontal: 16 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionEmoji: { fontSize: 24 },
+  sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  sectionSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
+  seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  seeAllText: { color: '#a855f7', fontSize: 13, fontWeight: '600' },
   
-  // Challenges
-  challengeCard: { backgroundColor: '#1a1a2e', borderRadius: 16, padding: 16, marginBottom: 12 },
-  challengeCardComplete: { borderWidth: 1, borderColor: '#22c55e' },
-  challengeTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  challengeIconWrap: { width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center' },
-  challengeIcon: { fontSize: 24 },
-  challengeInfo: { flex: 1, marginLeft: 12 },
-  challengeTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  challengeDesc: { color: '#888', fontSize: 13, marginTop: 2 },
-  challengeRewardBadge: { backgroundColor: 'rgba(168,85,247,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  challengeRewardText: { color: '#a855f7', fontSize: 13, fontWeight: '700' },
-  progressBg: { height: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 4 },
-  claimBtn: { marginTop: 12, borderRadius: 12, overflow: 'hidden' },
-  claimBtnGradient: { paddingVertical: 14, alignItems: 'center' },
-  claimBtnText: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.5 },
-  claimedBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, justifyContent: 'center' },
-  claimedText: { color: '#22c55e', fontSize: 13, fontWeight: '600' },
+  // Missions
+  missionProgress: { backgroundColor: 'rgba(168,85,247,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  missionProgressText: { color: '#a855f7', fontSize: 13, fontWeight: '700' },
+  loadingBox: { height: 150, justifyContent: 'center', alignItems: 'center' },
+  missionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  missionCard: { 
+    width: (SCREEN_WIDTH - 42) / 3, 
+    backgroundColor: '#1a1a2e', 
+    borderRadius: 16, 
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  missionCardComplete: { borderColor: '#ffd60a', backgroundColor: 'rgba(255,214,10,0.1)' },
+  missionCardClaimed: { opacity: 0.6 },
+  missionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  missionIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center' },
+  missionIconComplete: { backgroundColor: 'rgba(255,214,10,0.3)' },
+  missionIcon: { fontSize: 18 },
+  missionReward: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  missionRewardText: { color: '#ffd60a', fontSize: 11, fontWeight: '700' },
+  coinSmall: { fontSize: 10 },
+  missionTitle: { color: '#fff', fontSize: 11, fontWeight: '600', marginBottom: 8, height: 28 },
+  missionProgressBar: { height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
+  missionProgressFill: { height: '100%', borderRadius: 2 },
+  missionProgressText2: { color: 'rgba(255,255,255,0.5)', fontSize: 10, textAlign: 'center' },
+  claimOverlay: { 
+    ...StyleSheet.absoluteFillObject, 
+    backgroundColor: 'rgba(255,214,10,0.9)', 
+    borderRadius: 16, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  claimOverlayText: { color: '#000', fontSize: 10, fontWeight: '800' },
 
   // Achievements
-  achievementsRow: { paddingRight: 16 },
-  achievementBadge: { width: 80, alignItems: 'center', marginRight: 12 },
-  achievementLocked: { opacity: 0.4 },
-  achievementIconWrap: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  achievementIconUnlocked: { backgroundColor: 'rgba(168,85,247,0.3)' },
-  achievementIcon: { fontSize: 28 },
-  achievementName: { color: '#fff', fontSize: 11, textAlign: 'center', lineHeight: 14 },
-  achievementCheck: { position: 'absolute', top: 0, right: 8 },
+  achievementsScroll: { paddingRight: 16 },
+  achievementCard: { 
+    width: 90, 
+    backgroundColor: '#1a1a2e', 
+    borderRadius: 16, 
+    padding: 12, 
+    marginRight: 10,
+    alignItems: 'center',
+  },
+  achievementLocked: { opacity: 0.5 },
+  achievementIconWrap: { 
+    width: 52, 
+    height: 52, 
+    borderRadius: 26, 
+    backgroundColor: 'rgba(255,255,255,0.1)', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  achievementIconUnlocked: { backgroundColor: 'rgba(168,85,247,0.3)', borderWidth: 2, borderColor: '#a855f7' },
+  achievementIcon: { fontSize: 26 },
+  achievementCheck: { position: 'absolute', bottom: -2, right: -2 },
+  achievementName: { color: '#fff', fontSize: 11, textAlign: 'center', fontWeight: '600', marginBottom: 6, height: 28 },
+  achievementReward: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  achievementRewardText: { color: '#ffd60a', fontSize: 11, fontWeight: '700' },
+  coinTiny: { fontSize: 10 },
+  lockedOverlay: { 
+    ...StyleSheet.absoluteFillObject, 
+    backgroundColor: 'rgba(0,0,0,0.4)', 
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   
   // Rewards
-  balancePill: { backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  balancePillText: { color: '#ffd60a', fontSize: 13, fontWeight: '600' },
+  balancePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  balancePillIcon: { fontSize: 14 },
+  balancePillText: { color: '#ffd60a', fontSize: 14, fontWeight: '700' },
   rewardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  rewardItem: { width: (SCREEN_WIDTH - 44) / 2, backgroundColor: '#1a1a2e', borderRadius: 16, padding: 16, alignItems: 'center' },
-  rewardItemDim: { opacity: 0.5 },
-  rewardIconWrap: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  rewardEmoji: { fontSize: 28 },
-  rewardName: { color: '#fff', fontSize: 14, fontWeight: '600', textAlign: 'center', marginBottom: 4 },
-  rewardDesc: { color: '#888', fontSize: 11, textAlign: 'center', marginBottom: 12 },
-  rewardCostBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  rewardCard: { 
+    width: (SCREEN_WIDTH - 44) / 2, 
+    backgroundColor: '#1a1a2e', 
+    borderRadius: 20, 
+    padding: 16,
+    alignItems: 'center',
+  },
+  rewardCardDim: { opacity: 0.6 },
+  rewardIconBg: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  rewardIcon: { fontSize: 28 },
+  rewardName: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: 4, height: 36 },
+  rewardDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 11, textAlign: 'center', marginBottom: 12 },
+  rewardCostBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   rewardCostAfford: { backgroundColor: 'rgba(34,197,94,0.2)' },
-  rewardCostText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  soldOutBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: '#ef4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  soldOutText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  rewardCostIcon: { fontSize: 14 },
+  rewardCostText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700' },
+  rewardCostTextAfford: { color: '#22c55e' },
+  soldOutBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: '#ef4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  soldOutText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  needMoreBadge: { position: 'absolute', bottom: 8, left: 8, right: 8 },
+  needMoreText: { color: 'rgba(255,255,255,0.4)', fontSize: 9, textAlign: 'center' },
   
-  // Empty states
-  emptyBox: { backgroundColor: '#1a1a2e', borderRadius: 12, padding: 30, alignItems: 'center' },
-  emptyText: { color: '#666', fontSize: 14 },
-  notLoggedIn: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  notLoggedInEmoji: { fontSize: 64, marginBottom: 16 },
-  notLoggedInTitle: { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
-  notLoggedInSub: { color: '#888', fontSize: 14, textAlign: 'center' },
+  // Not logged in
+  notLoggedIn: { flex: 1 },
+  notLoggedInContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  notLoggedInEmoji: { fontSize: 80, marginBottom: 20 },
+  notLoggedInTitle: { color: '#fff', fontSize: 28, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
+  notLoggedInSub: { color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', lineHeight: 24 },
+  previewRewards: { flexDirection: 'row', gap: 16, marginTop: 32 },
+  previewIcon: { fontSize: 40 },
 });
