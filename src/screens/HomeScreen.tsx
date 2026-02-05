@@ -14,6 +14,7 @@ import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, mess
 import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
 import { CommentsSheet } from '../components/CommentsSheet';
+import { LeaderboardModal } from '../components/LeaderboardModal';
 import NativeAdView from '../components/NativeAdView';
 import { useDeepLink } from '../../App';
 import { useAuth } from '../context/AuthContext';
@@ -1661,6 +1662,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   const [commentsGameId, setCommentsGameId] = useState<string>('');
   const [commentsGameName, setCommentsGameName] = useState<string>('');
 
+  // Leaderboard modal state
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardGameId, setLeaderboardGameId] = useState<string>('');
+  const [leaderboardGameName, setLeaderboardGameName] = useState<string>('');
+
   // Calculate actual content height (screen minus tab bar)
   const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
 
@@ -2394,11 +2400,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
                 <>
                   {/* TikTok-style action buttons - right side */}
                   <View style={styles.actionButtons}>
-                    {/* Session Points Counter */}
-                    <View style={styles.actionButton}>
+                    {/* Session Points Counter - tap for leaderboard */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setLeaderboardGameId(item!.game!.id);
+                        setLeaderboardGameName(item!.game!.name);
+                        setShowLeaderboard(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
                       <Ionicons name="trophy" size={32} color="#ffd60a" />
                       <Text style={[styles.actionCount, { color: '#ffd60a' }]}>+{sessionPoints}</Text>
-                    </View>
+                    </TouchableOpacity>
 
                     {/* Like */}
                     <TouchableOpacity
@@ -2527,6 +2542,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         onClose={() => setShowComments(false)}
         gameId={commentsGameId}
         gameName={commentsGameName}
+      />
+
+      {/* Leaderboard Modal */}
+      <LeaderboardModal
+        visible={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        gameId={leaderboardGameId}
+        gameName={leaderboardGameName}
       />
     </View>
   );

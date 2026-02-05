@@ -365,4 +365,9 @@ export const gamification = {
   getLeaderboard: async (type: 'points' | 'level' | 'streak' = 'points', limit = 50) => {
     return request(`/gamification/leaderboard?type=${type}&limit=${limit}`);
   },
+  
+  // Get per-game leaderboard
+  getGameLeaderboard: async (gameId: string, limit = 50) => {
+    return request(`/gamification/leaderboard/${gameId}?limit=${limit}`);
+  },
 };
