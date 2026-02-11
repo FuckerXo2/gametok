@@ -55,10 +55,10 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
 
 // Auth API
 export const auth = {
-  signup: async (username: string, password: string, displayName?: string) => {
+  signup: async (username: string, password: string, displayName?: string, email?: string) => {
     const data = await request('/auth/signup', {
       method: 'POST',
-      body: JSON.stringify({ username, password, displayName }),
+      body: JSON.stringify({ username, password, displayName, email }),
     });
     await setToken(data.token);
     return data;
@@ -142,6 +142,10 @@ export const users = {
 export const games = {
   list: async (limit = 10, offset = 0) => {
     return request(`/games?limit=${limit}&offset=${offset}`);
+  },
+  
+  search: async (query: string, limit = 50) => {
+    return request(`/games/search?q=${encodeURIComponent(query)}&limit=${limit}`);
   },
   
   get: async (gameId: string) => {
@@ -234,6 +238,28 @@ export const feed = {
   },
   global: async (limit = 20) => {
     return request(`/feed/global?limit=${limit}`);
+  },
+};
+
+// Stories API
+export const stories = {
+  list: async () => {
+    return request('/stories');
+  },
+  
+  create: async (mediaUrl: string, mediaType: 'image' | 'video' = 'image', caption?: string) => {
+    return request('/stories', {
+      method: 'POST',
+      body: JSON.stringify({ mediaUrl, mediaType, caption }),
+    });
+  },
+  
+  view: async (storyId: string) => {
+    return request(`/stories/${storyId}/view`, { method: 'POST' });
+  },
+  
+  delete: async (storyId: string) => {
+    return request(`/stories/${storyId}`, { method: 'DELETE' });
   },
 };
 

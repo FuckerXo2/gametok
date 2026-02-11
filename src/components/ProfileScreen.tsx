@@ -11,15 +11,16 @@ import {
   Image,
   Dimensions,
   FlatList,
-  Animated,
-  Easing,
   RefreshControl,
+  StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useAuthScreen } from '../../App';
 import { auth, savedGames as savedGamesApi, gamification } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
@@ -35,7 +36,6 @@ interface Game { id: string; name: string; thumbnail?: string; }
 interface GamificationStats {
   points: { balance: number; lifetimeEarned: number };
   streak: { current: number; longest: number; lastClaimDate: string | null; multiplier: number };
-  level: { current: number; xp: number; currentXp: number; xpForNextLevel: number; progress: number };
 }
 
 const getThumbnailUrl = (game: Game) => game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png`;
@@ -45,42 +45,12 @@ const formatNumber = (num: number): string => {
   return num.toString();
 };
 
-const LevelRing: React.FC<{ level: number; progress: number; size?: number; textColor: string }> = ({ level, progress, size = 36, textColor }) => {
-  const animatedProgress = useRef(new Animated.Value(0)).current;
-  const strokeWidth = 3;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  
-  useEffect(() => {
-    Animated.timing(animatedProgress, { toValue: progress, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
-  }, [progress]);
-
-  const strokeDashoffset = animatedProgress.interpolate({ inputRange: [0, 1], outputRange: [circumference, 0] });
-
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' }}>
-        <Defs>
-          <SvgGradient id="lvlGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#a855f7" />
-            <Stop offset="100%" stopColor="#06b6d4" />
-          </SvgGradient>
-        </Defs>
-        <Circle cx={size/2} cy={size/2} r={radius} stroke="rgba(128,128,128,0.2)" strokeWidth={strokeWidth} fill="transparent" />
-        <AnimatedCircle cx={size/2} cy={size/2} r={radius} stroke="url(#lvlGrad)" strokeWidth={strokeWidth} fill="transparent" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} rotation="-90" origin={`${size/2}, ${size/2}`} />
-      </Svg>
-      <Text style={{ color: textColor, fontSize: 11, fontWeight: '800' }}>{level}</Text>
-    </View>
-  );
-};
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark, toggleTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
+  const { showAuthScreen, showLoginScreen } = useAuthScreen();
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -108,7 +78,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     if (isActive && isAuthenticated && !refreshing) {
       const now = Date.now();
       if (now - lastFetchRef.current > 5000) {
-        fetchData(true);
+        // Small delay to allow HomeScreen's sync to complete first
+        setTimeout(() => {
+          fetchData(true);
+        }, 500);
       }
     }
   }, [isActive]);
@@ -137,13 +110,70 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   );
 
   if (!isAuthenticated) {
+    // Show a preview profile with auth overlay
     return (
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
-        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(168,85,247,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
-          <Ionicons name="person" size={40} color="#a855f7" />
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Preview Profile Content */}
+        <ScrollView contentContainerStyle={{ paddingBottom: 100 }} scrollEnabled={false}>
+          <View style={{ paddingHorizontal: 16, paddingTop: insets.top + 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <View style={{ width: 40 }} />
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@username</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            
+            {/* Preview Profile Info */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 20 }}>
+                <Ionicons name="person" size={40} color="#a855f7" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 4 }}>Your Name</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 14 }}>Your bio goes here...</Text>
+              </View>
+            </View>
+            
+            {/* Preview Stats */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>0</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Following</Text>
+              </View>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>0</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Followers</Text>
+              </View>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>0</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Likes</Text>
+              </View>
+            </View>
+            
+            {/* Preview Saved Games Grid */}
+            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Saved Games</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
+              {[1,2,3,4,5,6].map(i => (
+                <View key={i} style={{ width: TILE_SIZE, height: TILE_SIZE, backgroundColor: colors.surface, borderRadius: 4 }} />
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+        
+        {/* Auth Overlay */}
+        <View style={StyleSheet.absoluteFill}>
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 }}>Sign up to continue</Text>
+            <TouchableOpacity style={{ width: 200, borderRadius: 25, overflow: 'hidden' }} onPress={showAuthScreen} activeOpacity={0.8}>
+              <LinearGradient colors={['#a855f7', '#7c3aed']} style={{ paddingVertical: 14, alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Sign Up</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={showLoginScreen}>
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 16 }}>or log in</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={{ color: colors.text, fontSize: 22, fontWeight: '700', textAlign: 'center', marginBottom: 8 }}>Your Profile</Text>
-        <Text style={{ color: colors.textSecondary, fontSize: 15, textAlign: 'center', lineHeight: 22 }}>Sign in to connect with friends and track your gaming journey</Text>
       </View>
     );
   }
@@ -170,12 +200,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           {/* Profile Info Row */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
             <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9}>
-              <View style={{ position: 'relative' }}>
-                <Avatar uri={avatar} size={86} />
-                <View style={{ position: 'absolute', bottom: -4, right: -4, backgroundColor: colors.background, borderRadius: 20, padding: 2 }}>
-                  <LevelRing level={stats?.level.current || 1} progress={stats?.level.progress || 0} size={32} textColor={colors.text} />
-                </View>
-              </View>
+              <Avatar uri={avatar} size={86} />
             </TouchableOpacity>
 
             <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>

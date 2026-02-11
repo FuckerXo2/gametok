@@ -9,7 +9,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
-import { DiscoverScreen } from './src/components/DiscoverScreen';
+import { ConnectScreen } from './src/components/ConnectScreen';
 import { RewardsScreen } from './src/components/RewardsScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
@@ -29,7 +29,16 @@ interface DeepLinkContextType {
 const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => {} });
 export const useDeepLink = () => useContext(DeepLinkContext);
 
-type TabName = 'home' | 'discover' | 'inbox' | 'rewards' | 'profile';
+// Auth screen context - to show login/signup from anywhere
+interface AuthScreenContextType {
+  showAuthScreen: () => void;
+  showLoginScreen: () => void;
+  hideAuthScreen: () => void;
+}
+const AuthScreenContext = createContext<AuthScreenContextType>({ showAuthScreen: () => {}, showLoginScreen: () => {}, hideAuthScreen: () => {} });
+export const useAuthScreen = () => useContext(AuthScreenContext);
+
+type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
 const MainApp = () => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
@@ -45,9 +54,9 @@ const MainApp = () => {
           <HomeScreen isActive={activeTab === 'home'} />
         </View>
         
-        {/* Discover - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'discover' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'discover' ? 'auto' : 'none'}>
-          <DiscoverScreen />
+        {/* Explore (game discovery) - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'explore' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
+          <ConnectScreen />
         </View>
         
         {/* Rewards - always mounted */}
@@ -55,8 +64,8 @@ const MainApp = () => {
           <RewardsScreen isActive={activeTab === 'rewards'} />
         </View>
         
-        {/* Inbox - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'inbox' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'inbox' ? 'auto' : 'none'}>
+        {/* Connect (social + messages) - always mounted */}
+        <View style={[styles.screenContainer, { display: activeTab === 'connect' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
           <InboxScreen />
         </View>
         
@@ -74,12 +83,21 @@ const AppContent = () => {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [startWithLogin, setStartWithLogin] = useState(false);
 
   useEffect(() => {
     checkOnboarding();
     requestTrackingPermission();
     handleDeepLink();
   }, []);
+
+  // Hide auth screen when user successfully logs in
+  useEffect(() => {
+    if (isAuthenticated && showAuth) {
+      setShowAuth(false);
+    }
+  }, [isAuthenticated]);
 
   const checkOnboarding = async () => {
     try {
@@ -132,7 +150,7 @@ const AppContent = () => {
     return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
-  // User hasn't seen onboarding yet
+  // User hasn't seen onboarding yet - show intro slides
   if (showOnboarding) {
     return (
       <View style={{ flex: 1 }}>
@@ -141,21 +159,33 @@ const AppContent = () => {
     );
   }
 
-  // Onboarding done, not logged in - show login
-  if (!isAuthenticated) {
+  // Show auth screen (triggered from AuthGate)
+  if (showAuth) {
     return (
       <View style={{ flex: 1 }}>
-        <OnboardingFlow onComplete={handleOnboardingComplete} isAuthLoading={false} />
+        <OnboardingFlow 
+          onComplete={() => { setShowAuth(false); setStartWithLogin(false); }} 
+          isAuthLoading={false} 
+          skipIntro={startWithLogin} 
+          startWithLogin={startWithLogin} 
+        />
       </View>
     );
   }
 
+  // Go straight to main app - individual screens handle auth gating
   return (
-    <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
-      <View style={{ flex: 1 }}>
-        <MainApp />
-      </View>
-    </DeepLinkContext.Provider>
+    <AuthScreenContext.Provider value={{ 
+      showAuthScreen: () => { setStartWithLogin(false); setShowAuth(true); }, 
+      showLoginScreen: () => { setStartWithLogin(true); setShowAuth(true); },
+      hideAuthScreen: () => setShowAuth(false) 
+    }}>
+      <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
+        <View style={{ flex: 1 }}>
+          <MainApp />
+        </View>
+      </DeepLinkContext.Provider>
+    </AuthScreenContext.Provider>
   );
 };
 

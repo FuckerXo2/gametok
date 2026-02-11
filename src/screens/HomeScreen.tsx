@@ -16,14 +16,15 @@ import { ShareSheet } from '../components/ShareSheet';
 import { CommentsSheet } from '../components/CommentsSheet';
 import { LeaderboardModal } from '../components/LeaderboardModal';
 import NativeAdView from '../components/NativeAdView';
+import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { useDeepLink } from '../../App';
 import { useAuth } from '../context/AuthContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
-const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.10;
-const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.10;
+const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
+const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15;
 const SWIPE_THRESHOLD = 50;
 
 interface Game {
@@ -249,6 +250,100 @@ const RESUME_SCRIPT = `
   if (window.createjs && window.createjs.Sound) {
     try { window.createjs.Sound.muted = false; } catch(e) {}
   }
+})();
+true;
+`;
+
+// Edge blocking script - prevents WebView from capturing swipe gestures at screen edges
+// This is injected into ALL games (both internal and external)
+const EDGE_BLOCK_SCRIPT = `
+(function() {
+  if (window._edgeBlockActive) return;
+  window._edgeBlockActive = true;
+  
+  const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
+  
+  // Block ALL touch events in edge zones at capture phase
+  const blockEdgeTouches = (e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const touch = e.touches[0];
+    const y = touch.clientY;
+    const screenHeight = window.innerHeight;
+    
+    // If touch is in edge zone, stop it from reaching game
+    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      // Don't preventDefault - let native handle it
+    }
+  };
+  
+  // Capture phase listeners - intercept before game handlers
+  document.addEventListener('touchstart', blockEdgeTouches, { capture: true, passive: true });
+  document.addEventListener('touchmove', blockEdgeTouches, { capture: true, passive: true });
+  document.addEventListener('touchend', blockEdgeTouches, { capture: true, passive: true });
+  
+  // Also block pointer events for mouse/stylus
+  const blockEdgePointer = (e) => {
+    const y = e.clientY;
+    const screenHeight = window.innerHeight;
+    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+  };
+  document.addEventListener('pointerdown', blockEdgePointer, { capture: true, passive: true });
+  document.addEventListener('pointermove', blockEdgePointer, { capture: true, passive: true });
+  
+  // Create visible blockers that absorb touches (backup method)
+  const createBlocker = (isTop) => {
+    const div = document.createElement('div');
+    div.style.cssText = \`
+      position: fixed !important;
+      left: 0 !important;
+      right: 0 !important;
+      height: \${EDGE_ZONE}px !important;
+      \${isTop ? 'top: 0' : 'bottom: 0'} !important;
+      z-index: 2147483647 !important;
+      pointer-events: auto !important;
+      touch-action: pan-y !important;
+      background: transparent !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+    \`;
+    div.setAttribute('data-edge-blocker', isTop ? 'top' : 'bottom');
+    
+    // Absorb all touch events on this element
+    div.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
+    div.addEventListener('touchmove', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
+    div.addEventListener('touchend', (e) => {
+      e.stopPropagation();
+    }, { passive: true });
+    
+    return div;
+  };
+  
+  const setup = () => {
+    if (!document.body) {
+      setTimeout(setup, 100);
+      return;
+    }
+    // Remove any existing blockers
+    document.querySelectorAll('[data-edge-blocker]').forEach(el => el.remove());
+    
+    const topBlocker = createBlocker(true);
+    const bottomBlocker = createBlocker(false);
+    document.body.appendChild(topBlocker);
+    document.body.appendChild(bottomBlocker);
+  };
+  
+  setup();
+  // Re-setup periodically in case game removes our blockers
+  setInterval(setup, 3000);
 })();
 true;
 `;
@@ -518,13 +613,15 @@ const AD_BLOCKER_SCRIPT = `
     });
   };
   
-  // Run ad removal more aggressively
-  setInterval(removeAdElements, 200);
-  setTimeout(removeAdElements, 50);
+  // Run ad removal periodically (but NOT loader removal - that was breaking games)
+  setInterval(removeAdElements, 500);
+  
+  // Initial ad removal attempts
+  setTimeout(removeAdElements, 0);
   setTimeout(removeAdElements, 100);
-  setTimeout(removeAdElements, 200);
   setTimeout(removeAdElements, 500);
   setTimeout(removeAdElements, 1000);
+  setTimeout(removeAdElements, 2000);
   
   window.sdk = {
     showBanner: function() { return Promise.resolve(); },
@@ -682,12 +779,16 @@ const AD_BLOCKER_SCRIPT = `
     [class*="unity-warning"], [id*="unity-warning"],
     [class*="unity-load"], [id*="unity-load"],
     [class*="loading-screen"], [id*="loading-screen"],
-    [class*="splash-screen"], [id*="splash-screen"],
-    p:contains("WebGL builds are not supported") {
+    [class*="splash-screen"], [id*="splash-screen"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
+      position: absolute !important;
+      left: -9999px !important;
+      top: -9999px !important;
+      width: 0 !important;
+      height: 0 !important;
     }
     /* Hide any ad containers or overlays */
     .ad-container, .ads-container, #ad-container, #ads-container,
@@ -695,8 +796,7 @@ const AD_BLOCKER_SCRIPT = `
     .gdsdk-container, #gdsdk-container { 
       display: none !important; 
     }
-    /* GameMonetize skip ad bar and video ads */
-    [class*="skip"], [id*="skip"], [class*="Skip"], [id*="Skip"],
+    /* Ad-related elements only */
     [class*="preroll"], [id*="preroll"], [class*="Preroll"], [id*="Preroll"],
     [class*="video-ad"], [id*="video-ad"], [class*="videoAd"], [id*="videoAd"],
     [class*="adContainer"], [id*="adContainer"], [class*="ad-wrapper"], [id*="ad-wrapper"],
@@ -863,6 +963,54 @@ const AD_BLOCKER_SCRIPT = `
   
   // Also run on window resize
   window.addEventListener('resize', forceFullscreen);
+  
+  // CRITICAL: Block touch events at screen edges to allow native swipe gestures
+  // This prevents the WebView from capturing swipe gestures at top/bottom
+  const EDGE_ZONE = window.innerHeight * 0.12; // 12% of screen height
+  
+  const blockEdgeTouches = (e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const touch = e.touches[0];
+    const y = touch.clientY;
+    const screenHeight = window.innerHeight;
+    
+    // Block touches in top or bottom edge zones
+    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+      e.stopPropagation();
+      // Don't preventDefault - let it bubble to native
+    }
+  };
+  
+  // Capture phase to intercept before game handlers
+  document.addEventListener('touchstart', blockEdgeTouches, { capture: true, passive: true });
+  document.addEventListener('touchmove', blockEdgeTouches, { capture: true, passive: true });
+  
+  // Also add invisible overlay divs at edges that block pointer events
+  const createEdgeBlocker = (position) => {
+    const div = document.createElement('div');
+    div.style.cssText = \`
+      position: fixed;
+      left: 0;
+      right: 0;
+      height: \${EDGE_ZONE}px;
+      \${position}: 0;
+      z-index: 999999;
+      pointer-events: none;
+      touch-action: none;
+    \`;
+    document.body.appendChild(div);
+  };
+  
+  // Create edge blockers after DOM is ready
+  const setupEdgeBlockers = () => {
+    if (document.body) {
+      createEdgeBlocker('top');
+      createEdgeBlocker('bottom');
+    } else {
+      setTimeout(setupEdgeBlockers, 100);
+    }
+  };
+  setupEdgeBlockers();
 })();
 true;
 `;
@@ -1867,6 +2015,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         sessionPointsIntervalRef.current = null;
       }
     } else {
+      // CRITICAL: Reset scroll state when coming back to tab
+      // This prevents the scroll overlay from being stuck in active state
+      setScrollEnabled(false);
+      isAnimating.current = false;
+      translateY.setValue(0); // Reset any partial swipe animation
+      
       // Resume current game when coming back to the tab
       const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
       if (currItem && webViewRefs.current[currItem.id]) {
@@ -1961,6 +2115,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     
     // If we're now on a new game, start tracking
     if (currentGameId && currentGameId !== lastTrackedGameRef.current) {
+      console.log(`[Gamification] Starting to track game: ${currentGameId}, user: ${user?.id || 'NO USER'}`);
       gameStartTimeRef.current = Date.now();
       
       // Restore saved session points for this game, or start at 0
@@ -1974,6 +2129,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       sessionPointsIntervalRef.current = setInterval(() => {
         setSessionPoints(prev => {
           const newPoints = prev + 1;
+          console.log(`[Gamification] Local points: ${newPoints}`);
           // Also update the ref so it persists
           if (currentGameId) {
             gameSessionPointsRef.current[currentGameId] = newPoints;
@@ -1982,24 +2138,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         });
       }, 5000); // +1 point every 5 seconds
       
-      // Start periodic sync interval - sync to backend every 30 seconds
+      // Start periodic sync interval - sync to backend every 5 seconds
       if (periodicSyncIntervalRef.current) {
         clearInterval(periodicSyncIntervalRef.current);
       }
       periodicSyncIntervalRef.current = setInterval(() => {
+        console.log(`[Gamification] Sync check - gameStartTime: ${gameStartTimeRef.current}, user: ${user?.id || 'NO USER'}, gameId: ${currentGameId}`);
         if (gameStartTimeRef.current && user && currentGameId) {
           const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
           if (playTimeSeconds >= 5) {
-            console.log(`[Gamification] Periodic sync for ${currentGameId}: ${playTimeSeconds}s`);
-            gamification.gamePlayed(currentGameId, playTimeSeconds).then(() => {
+            console.log(`[Gamification] Syncing ${currentGameId}: ${playTimeSeconds}s played`);
+            gamification.gamePlayed(currentGameId, playTimeSeconds).then((result) => {
+              console.log(`[Gamification] Sync SUCCESS - points earned: ${result.pointsEarned}`);
               // Reset start time after successful sync
               gameStartTimeRef.current = Date.now();
             }).catch(e => {
-              console.log('[Gamification] Periodic sync failed:', e);
+              console.log('[Gamification] Sync FAILED:', e.message || e);
             });
           }
         }
-      }, 30000); // Sync every 30 seconds
+      }, 5000); // Sync every 5 seconds
     }
     
     lastTrackedGameRef.current = currentGameId;
@@ -2213,6 +2371,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   // Helper function to handle gesture end (for runOnJS)
   const handleGestureEnd = useCallback((translationY: number) => {
     hideHint();
+    setScrollEnabled(false); // Reset scroll mode after gesture ends
 
     if (isAnimating.current) return;
 
@@ -2239,7 +2398,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
 
   // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
   // The gesture only activates after 25px of vertical movement, allowing taps to pass through
-  const bottomPanGesture = Gesture.Pan()
+  const bottomPanGesture = useMemo(() => Gesture.Pan()
     .activeOffsetY([-25, 25]) // Only activate after 25px vertical movement
     .failOffsetX([-20, 20]) // Fail if horizontal movement is too large
     .minDistance(25) // Require minimum drag distance
@@ -2259,11 +2418,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     })
     .onFinalize(() => {
       'worklet';
+      runOnJS(setScrollEnabled)(false); // Safety reset
       runOnJS(hideHint)();
-    });
+    }), [handleGestureStart, updateTranslateY, handleGestureEnd, hideHint]);
 
   // Top zone gesture - same as bottom but for swiping down to previous game
-  const topPanGesture = Gesture.Pan()
+  const topPanGesture = useMemo(() => Gesture.Pan()
     .activeOffsetY([-25, 25])
     .failOffsetX([-20, 20])
     .minDistance(25)
@@ -2283,8 +2443,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     })
     .onFinalize(() => {
       'worklet';
+      runOnJS(setScrollEnabled)(false); // Safety reset
       runOnJS(hideHint)();
-    });
+    }), [handleGestureStart, updateTranslateY, handleGestureEnd, hideHint]);
 
   // Overlay pan responder - captures touches when scroll mode is active
   const overlayPanResponder = useRef(
@@ -2396,9 +2557,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
                 cacheEnabled={true}
                 allowsInlineMediaPlayback
                 mediaPlaybackRequiresUserAction={false}
+                scrollEnabled={false}
+                bounces={false}
+                overScrollMode="never"
+                nestedScrollEnabled={false}
                 thirdPartyCookiesEnabled={false}
                 sharedCookiesEnabled={false}
-                injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT : undefined}
+                injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT : EDGE_BLOCK_SCRIPT}
                 onMessage={async (event) => {
                   try {
                     const data = JSON.parse(event.nativeEvent.data);
@@ -2455,6 +2620,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
                   return true;
                 }}
               />
+
+              {/* Touch blocking zones at edges - these intercept touches before WebView gets them */}
+              {/* Using pointerEvents="box-only" to capture touches but not block children */}
+              <View style={styles.edgeBlockerTop} pointerEvents="box-only" />
+              <View style={styles.edgeBlockerBottom} pointerEvents="box-only" />
 
               {/* Loading overlay - shows until game is ready */}
               {!readyGames.has(item!.id) && (
@@ -2563,11 +2733,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       )}
 
       <GestureDetector gesture={topPanGesture}>
-        <View style={styles.topZone} />
+        <View style={styles.topZone} pointerEvents="box-only" collapsable={false} />
       </GestureDetector>
 
       <GestureDetector gesture={bottomPanGesture}>
-        <View style={styles.bottomZone} />
+        <View style={styles.bottomZone} pointerEvents="box-only" collapsable={false} />
       </GestureDetector>
 
       {/* Swipe hint - permanent on welcome, on-touch for games */}
@@ -2622,6 +2792,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         sessionPoints={sessionPoints}
         sessionPlayTime={gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0}
       />
+
+      {/* Onboarding Tooltip Walkthrough */}
+      <OnboardingOverlay onComplete={() => {}} />
     </View>
   );
 };
@@ -2670,7 +2843,8 @@ const styles = StyleSheet.create({
     right: 0,
     height: BOTTOM_ZONE_HEIGHT,
     backgroundColor: 'transparent',
-    zIndex: 10,
+    zIndex: 9999,
+    elevation: 9999,
   },
   topZone: {
     position: 'absolute',
@@ -2679,7 +2853,26 @@ const styles = StyleSheet.create({
     right: 0,
     height: TOP_ZONE_HEIGHT,
     backgroundColor: 'transparent',
-    zIndex: 10,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  edgeBlockerTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: TOP_ZONE_HEIGHT,
+    backgroundColor: 'transparent',
+    zIndex: 95, // Above WebView (which has no zIndex), below gesture zones (100)
+  },
+  edgeBlockerBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_ZONE_HEIGHT,
+    backgroundColor: 'transparent',
+    zIndex: 95, // Above WebView (which has no zIndex), below gesture zones (100)
   },
   hintContainer: {
     position: 'absolute',

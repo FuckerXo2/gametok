@@ -98,15 +98,17 @@ const GameTokLogo = () => {
 interface OnboardingFlowProps {
   onComplete: () => void;
   isAuthLoading?: boolean;
+  skipIntro?: boolean;
+  startWithLogin?: boolean;
 }
 
-export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAuthLoading = false }) => {
+export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAuthLoading = false, skipIntro = false, startWithLogin = false }) => {
   const insets = useSafeAreaInsets();
   const { signup, login, loginWithOAuth, user, refreshUser } = useAuth();
   const { colors } = useTheme();
   
-  const [step, setStep] = useState<OnboardingStep>('welcome');
-  const [isLogin, setIsLogin] = useState(false);
+  const [step, setStep] = useState<OnboardingStep>(skipIntro ? (startWithLogin ? 'credentials' : 'birthday') : 'welcome');
+  const [isLogin, setIsLogin] = useState(startWithLogin);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
@@ -301,7 +303,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     setLoading(true);
     setError('');
     try {
-      await signup(username.trim(), password, username.trim());
+      await signup(username.trim(), password, username.trim(), email.trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       animateTransition('profile');
     } catch (e: any) {

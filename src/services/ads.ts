@@ -1,41 +1,27 @@
-// Ad Service for GameTok - Google AdMob Native Ads
+// Ad Service for GameTok - LevelPlay (ironSource) Only
 import Constants from 'expo-constants';
-import MobileAds, {
-  MaxAdContentRating,
-  TestIds,
-  NativeAd,
-  NativeAdEventType
-} from 'react-native-google-mobile-ads';
-import { Platform } from 'react-native';
+import { 
+  initializeLevelPlay, 
+  showInterstitial as showLevelPlayInterstitial,
+  showRewarded as showLevelPlayRewarded,
+  isInterstitialReady,
+  isRewardedReady,
+} from './levelplay';
 
 // Default ad frequency - will be overridden by remote config
 let AD_FREQUENCY = 3;
 export const getAdFrequency = () => AD_FREQUENCY;
 export { AD_FREQUENCY };
 
-// AdMob Configuration
-const ADMOB_APP_ID_IOS = 'ca-app-pub-1961802731817431~8301521567';
-const ADMOB_APP_ID_ANDROID = 'ca-app-pub-1961802731817431~XXXXXXXX'; // Android not set up yet
-
-// Native Ad Unit IDs
-const NATIVE_AD_UNIT_ID_IOS = 'ca-app-pub-1961802731817431/8986743812';
-const NATIVE_AD_UNIT_ID_ANDROID = 'ca-app-pub-1961802731817431/XXXXXXXX'; // Android not set up yet
-
-// Use REAL ads
-const USE_TEST_ADS = false;
-
-export const NATIVE_AD_UNIT_ID = USE_TEST_ADS
-  ? TestIds.NATIVE
-  : (Platform.OS === 'ios' ? NATIVE_AD_UNIT_ID_IOS : NATIVE_AD_UNIT_ID_ANDROID);
-
 // Detect environment
-const executionEnvironment = Constants.executionEnvironment;
+const executionEnvironment = Constants.executionEnvironment as string;
 export const isExpoGo = Constants.appOwnership === 'expo' || executionEnvironment === 'expoGo';
 export const shouldDisableAds = isExpoGo;
 
 let isInitialized = false;
+let levelPlayInitialized = false;
 
-console.log('[Ads] AdMob Native Ads service initialized');
+console.log('[Ads] Ad service initialized');
 
 // ============================================
 // REMOTE CONFIG
@@ -84,65 +70,69 @@ export const initializeAds = async () => {
     console.log('[Ads] Remote config fetch timed out');
   }
 
+  // Initialize LevelPlay for all ad types (native, interstitial, rewarded)
   try {
-    console.log('[Ads] Initializing AdMob...');
-
-    await MobileAds().initialize();
-
-    // Set ad content rating
-    await MobileAds().setRequestConfiguration({
-      maxAdContentRating: MaxAdContentRating.T,
-      tagForChildDirectedTreatment: false,
-      tagForUnderAgeOfConsent: false,
-    });
-
-    isInitialized = true;
-    console.log('[Ads] AdMob initialized successfully');
-
-    return true;
+    console.log('[Ads] Initializing LevelPlay...');
+    levelPlayInitialized = await initializeLevelPlay();
+    console.log('[Ads] LevelPlay initialized:', levelPlayInitialized);
   } catch (error) {
-    console.error('[Ads] AdMob initialization failed:', error);
-    return false;
+    console.error('[Ads] LevelPlay initialization failed:', error);
   }
+
+  isInitialized = true;
+  return levelPlayInitialized;
 };
 
 // ============================================
-// NATIVE ADS
-// ============================================
-
-export const getNativeAdUnitId = (): string => {
-  return NATIVE_AD_UNIT_ID;
-};
-
-// ============================================
-// STUB FUNCTIONS (for compatibility)
+// INTERSTITIAL ADS (LevelPlay)
 // ============================================
 
 export const loadInterstitial = async (): Promise<boolean> => {
-  return isInitialized;
+  // LevelPlay auto-loads after showing
+  return levelPlayInitialized;
 };
 
 export const showInterstitial = async (): Promise<boolean> => {
-  return false;
+  if (!levelPlayInitialized) {
+    console.log('[Ads] LevelPlay not initialized');
+    return false;
+  }
+  return await showLevelPlayInterstitial();
 };
 
+// ============================================
+// REWARDED ADS (LevelPlay)
+// ============================================
+
 export const loadRewardedAd = async (): Promise<boolean> => {
-  return false;
+  return levelPlayInitialized;
 };
 
 export const showRewardedAd = async (): Promise<{ rewarded: boolean }> => {
-  return { rewarded: false };
+  if (!levelPlayInitialized) {
+    console.log('[Ads] LevelPlay not initialized');
+    return { rewarded: false };
+  }
+  
+  return new Promise((resolve) => {
+    showLevelPlayRewarded((reward) => {
+      resolve({ rewarded: true });
+    }).then((shown) => {
+      if (!shown) {
+        resolve({ rewarded: false });
+      }
+    });
+  });
 };
 
 export const preloadInterstitials = async () => {
-  // Native ads are loaded on-demand
+  // LevelPlay handles preloading automatically
 };
 
 export const isAdNetworkReady = (): boolean => {
-  return isInitialized;
+  return isInitialized && levelPlayInitialized;
 };
 
 export const requestTrackingPermission = async (): Promise<boolean> => {
-  // AdMob handles ATT internally
   return true;
 };

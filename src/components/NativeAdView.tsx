@@ -4,31 +4,27 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isExpoGo, getNativeAdUnitId } from '../services/ads';
+import Constants from 'expo-constants';
 
-// Import AdMob components directly (will be undefined in Expo Go)
-let NativeAdClass: any;
-let NativeAdViewComponent: any;
-let NativeMediaView: any;
-let NativeAsset: any;
-let NativeAssetType: any;
-let TestIds: any;
+// Check if running in Expo Go
+const isExpoGo = Constants.appOwnership === 'expo' || (Constants.executionEnvironment as string) === 'expoGo';
+
+// Import LevelPlay components (will be undefined in Expo Go)
+let LevelPlayNativeAd: any;
+let LevelPlayNativeAdView: any;
+let LevelPlayTemplateType: any;
 
 try {
-  const adModule = require('react-native-google-mobile-ads');
-  NativeAdClass = adModule.NativeAd;
-  NativeAdViewComponent = adModule.NativeAdView;
-  NativeMediaView = adModule.NativeMediaView;
-  NativeAsset = adModule.NativeAsset;
-  NativeAssetType = adModule.NativeAssetType;
-  TestIds = adModule.TestIds;
+  const levelPlayModule = require('unity-levelplay-mediation');
+  LevelPlayNativeAd = levelPlayModule.LevelPlayNativeAd;
+  LevelPlayNativeAdView = levelPlayModule.LevelPlayNativeAdView;
+  LevelPlayTemplateType = levelPlayModule.LevelPlayTemplateType;
 } catch (e) {
-  console.log('[Ad] AdMob module not available');
+  console.log('[Ad] LevelPlay module not available');
 }
 
 interface NativeAdViewProps {
@@ -41,50 +37,83 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
   const [adLoaded, setAdLoaded] = useState(false);
   const [adFailed, setAdFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const adRef = useRef<any>(null);
 
-  // Check if AdMob is available
-  const hasAdMob = !isExpoGo && NativeAdClass && NativeAdViewComponent && NativeMediaView;
+  // Check if LevelPlay is available
+  const hasLevelPlay = !isExpoGo && LevelPlayNativeAd && LevelPlayNativeAdView;
 
-  // Load native ad
+  // Create and load native ad
   useEffect(() => {
-    if (!hasAdMob) return;
+    if (!hasLevelPlay) return;
 
-    const loadAd = async () => {
+    let ad: any = null;
+
+    const createAd = () => {
       try {
-        const adUnitId = __DEV__ ? TestIds.NATIVE : getNativeAdUnitId();
-        console.log('[Ad] Loading native ad with unit ID:', adUnitId);
+        console.log('[Ad] Creating LevelPlay native ad...');
+        
+        const listener = {
+          onAdLoaded: (loadedAd: any, adInfo: any) => {
+            console.log('[Ad] LevelPlay native ad loaded:', JSON.stringify(adInfo));
+            setAdLoaded(true);
+            setAdFailed(false);
+          },
+          onAdLoadFailed: (failedAd: any, error: any) => {
+            console.log('[Ad] LevelPlay native ad load failed:', JSON.stringify(error));
+            if (retryCount < 2) {
+              setTimeout(() => setRetryCount(prev => prev + 1), 3000);
+            } else {
+              setAdFailed(true);
+            }
+          },
+          onAdImpression: (impressionAd: any, adInfo: any) => {
+            console.log('[Ad] LevelPlay native ad impression');
+          },
+          onAdClicked: (clickedAd: any, adInfo: any) => {
+            console.log('[Ad] LevelPlay native ad clicked');
+          },
+        };
 
-        const ad = await NativeAdClass.createForAdRequest(adUnitId, {
-          requestNonPersonalizedAdsOnly: false,
-        });
+        console.log('[Ad] Building native ad with placement: Home_Screen');
+        ad = LevelPlayNativeAd.builder()
+          .withPlacement('Home_Screen')
+          .withListener(listener)
+          .build();
 
-        adRef.current = ad;
         setNativeAd(ad);
-        setAdLoaded(true);
-        setAdFailed(false);
-        console.log('[Ad] Native ad loaded successfully');
+        
+        console.log('[Ad] Native ad object created, calling loadAd()...');
+        // Load the ad
+        ad.loadAd();
+        console.log('[Ad] LevelPlay native ad load requested');
+        
+        // Timeout after 10 seconds if no response
+        setTimeout(() => {
+          if (!adLoaded) {
+            console.log('[Ad] Native ad load timeout - no response after 10s');
+            setAdFailed(true);
+          }
+        }, 10000);
       } catch (error: any) {
-        console.log('[Ad] Failed to load native ad:', error?.message || error);
-        if (retryCount < 2) {
-          setTimeout(() => setRetryCount(prev => prev + 1), 2000);
-        } else {
-          setAdFailed(true);
+        console.log('[Ad] Error creating LevelPlay native ad:', error?.message || error);
+        setAdFailed(true);
+      }
+    };
+
+    createAd();
+
+    return () => {
+      if (ad) {
+        try {
+          ad.destroyAd();
+        } catch (e) {
+          // Ignore cleanup errors
         }
       }
     };
+  }, [hasLevelPlay, retryCount]);
 
-    loadAd();
-
-    return () => {
-      if (adRef.current?.destroy) {
-        adRef.current.destroy();
-      }
-    };
-  }, [hasAdMob, retryCount]);
-
-  // Placeholder for Expo Go or if AdMob not available
-  if (isExpoGo || !hasAdMob) {
+  // Placeholder for Expo Go or if LevelPlay not available
+  if (isExpoGo || !hasLevelPlay) {
     return (
       <View style={[styles.container, { height: contentHeight }]}>
         <LinearGradient
@@ -200,79 +229,34 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     );
   }
 
-  // Render AdMob native ad
+  // Render LevelPlay native ad using Medium template (better for full-screen feed)
   return (
     <View style={[styles.container, { height: contentHeight }]}>
-      <NativeAdViewComponent nativeAd={nativeAd} style={styles.nativeAdWrapper}>
-        <LinearGradient
-          colors={['#1a1a2e', '#16213e', '#0f0f23']}
-          style={styles.adContainer}
-        >
-          <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
-            <Text style={styles.sponsoredText}>Sponsored</Text>
-          </View>
+      <LinearGradient
+        colors={['#1a1a2e', '#16213e', '#0f0f23']}
+        style={styles.adContainer}
+      >
+        <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
+          <Text style={styles.sponsoredText}>Sponsored</Text>
+        </View>
 
-          <View style={styles.mediaContainer}>
-            <NativeMediaView style={styles.nativeMediaView} />
-          </View>
+        <View style={styles.nativeAdContainer}>
+          <LevelPlayNativeAdView
+            style={styles.levelPlayNativeAd}
+            nativeAd={nativeAd}
+            templateType={LevelPlayTemplateType.Medium}
+          />
+        </View>
 
-          <View style={[styles.adInfoOverlay, { paddingBottom: insets.bottom + 90 }]}>
-            <View style={styles.adHeader}>
-              {nativeAd.icon && NativeAsset && (
-                <NativeAsset assetType={NativeAssetType?.ICON}>
-                  <Image
-                    source={{ uri: nativeAd.icon.url }}
-                    style={styles.adIcon}
-                  />
-                </NativeAsset>
-              )}
-              {!nativeAd.icon && (
-                <View style={styles.adIconPlaceholder}>
-                  <Ionicons name="megaphone" size={24} color="#FF8E53" />
-                </View>
-              )}
-
-              <View style={styles.adTitleContainer}>
-                {NativeAsset && (
-                  <NativeAsset assetType={NativeAssetType?.HEADLINE}>
-                    <Text style={styles.adHeadline} numberOfLines={1}>
-                      {nativeAd.headline || 'Advertisement'}
-                    </Text>
-                  </NativeAsset>
-                )}
-
-                {nativeAd.body && NativeAsset && (
-                  <NativeAsset assetType={NativeAssetType?.BODY}>
-                    <Text style={styles.adSubtitle} numberOfLines={2}>
-                      {nativeAd.body}
-                    </Text>
-                  </NativeAsset>
-                )}
-                {!nativeAd.body && (
-                  <Text style={styles.adSubtitle}>Tap to learn more</Text>
-                )}
-              </View>
-
-              {nativeAd.callToAction && NativeAsset && (
-                <NativeAsset assetType={NativeAssetType?.CALL_TO_ACTION}>
-                  <View style={styles.ctaButton}>
-                    <Text style={styles.ctaText}>{nativeAd.callToAction}</Text>
-                  </View>
-                </NativeAsset>
-              )}
+        <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
+          <View style={styles.actionBtn}>
+            <View style={styles.actionIcon}>
+              <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
             </View>
+            <Text style={styles.actionLabel}>Ad Info</Text>
           </View>
-
-          <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-            <View style={styles.actionBtn}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
-              </View>
-              <Text style={styles.actionLabel}>Ad Info</Text>
-            </View>
-          </View>
-        </LinearGradient>
-      </NativeAdViewComponent>
+        </View>
+      </LinearGradient>
     </View>
   );
 };
@@ -309,26 +293,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  nativeAdWrapper: {
-    flex: 1,
-  },
-  mediaContainer: {
+  nativeAdContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 100,
   },
-  nativeMediaView: {
-    width: '100%',
-    height: '100%',
-  },
-  adInfoOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 70,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+  levelPlayNativeAd: {
+    width: 300,
+    height: 350,
   },
   mockAdContent: {
     flex: 1,
@@ -384,12 +359,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  adIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    marginRight: 12,
-  },
   adIconPlaceholder: {
     width: 44,
     height: 44,
@@ -411,17 +380,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
-  },
-  ctaButton: {
-    backgroundColor: '#FF8E53',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  ctaText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
   },
   sideActions: {
     position: 'absolute',

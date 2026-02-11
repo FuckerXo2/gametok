@@ -14,16 +14,19 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../context/AuthContext';
 import { gamification } from '../services/api';
+import { RewardPopup } from './RewardPopup';
+import { useAuthScreen } from '../../App';
+import { AchievementsModal } from './AchievementsModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface GamificationStats {
-  points: { balance: number; lifetimeEarned: number };
+  points: { balance: number; lifetimeEarned: number; usdValue?: number; coinsPerUsd?: number };
   streak: { current: number; longest: number; lastClaimDate: string | null; multiplier: number };
-  level: { current: number; xp: number; currentXp: number; xpForNextLevel: number; progress: number };
 }
 
 interface Challenge {
@@ -58,22 +61,14 @@ interface Reward {
   stock?: number;
 }
 
-// Coin icon component
-const CoinIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#ffd60a' }) => (
-  <View style={[styles.coinIconWrap, { width: size, height: size, borderRadius: size / 2 }]}>
-    <FontAwesome5 name="coins" size={size * 0.55} color={color} />
-  </View>
-);
-
 // Hero card with animated gradient background
 const HeroCard: React.FC<{ 
   balance: number; 
-  level: number; 
-  xpProgress: number;
   streak: number;
   multiplier: number;
+  usdValue?: number;
   loading: boolean;
-}> = ({ balance, level, xpProgress, streak, multiplier, loading }) => {
+}> = ({ balance, streak, multiplier, usdValue, loading }) => {
   const shimmerAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
@@ -125,52 +120,35 @@ const HeroCard: React.FC<{
           {loading ? (
             <ActivityIndicator color="#ffd60a" size="large" />
           ) : (
-            <View style={styles.balanceRow}>
-              <View style={styles.bigCoinIcon}>
-                <FontAwesome5 name="coins" size={32} color="#ffd60a" />
+            <>
+              <View style={styles.balanceRow}>
+                <View style={styles.bigCoinIcon}>
+                  <FontAwesome5 name="coins" size={32} color="#ffd60a" />
+                </View>
+                <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
               </View>
-              <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
-            </View>
+              {usdValue !== undefined && usdValue > 0 && (
+                <Text style={styles.usdValue}>≈ ${usdValue.toFixed(2)} USD</Text>
+              )}
+            </>
           )}
         </View>
 
-        <View style={styles.heroStats}>
-          {/* Level */}
-          <View style={styles.heroStat}>
-            <View style={styles.levelBadge}>
-              <LinearGradient colors={['#a855f7', '#6366f1']} style={styles.levelGradient}>
-                <Text style={styles.levelNum}>{level}</Text>
-              </LinearGradient>
-            </View>
-            <Text style={styles.heroStatLabel}>Level</Text>
-            <View style={styles.xpBar}>
-              <View style={[styles.xpFill, { width: `${xpProgress * 100}%` }]} />
-            </View>
-          </View>
-
-          {/* Streak */}
-          <View style={styles.heroStat}>
+        {/* Streak section */}
+        {streak > 0 && (
+          <View style={styles.streakSection}>
             <Animated.View style={[styles.streakBadge, { transform: [{ scale: pulseAnim }] }]}>
-              <Ionicons name="flame" size={26} color="#f97316" />
+              <Ionicons name="flame" size={22} color="#f97316" />
               <Text style={styles.streakNum}>{streak}</Text>
             </Animated.View>
-            <Text style={styles.heroStatLabel}>Day Streak</Text>
+            <Text style={styles.streakLabel}>Day Streak</Text>
             {multiplier > 1 && (
               <View style={styles.multiplierPill}>
                 <Text style={styles.multiplierText}>{multiplier}x bonus</Text>
               </View>
             )}
           </View>
-
-          {/* Lifetime */}
-          <View style={styles.heroStat}>
-            <View style={styles.lifetimeIcon}>
-              <Ionicons name="diamond" size={26} color="#06b6d4" />
-            </View>
-            <Text style={styles.heroStatLabel}>Lifetime</Text>
-            <Text style={styles.lifetimeValue}>{balance.toLocaleString()}</Text>
-          </View>
-        </View>
+        )}
       </LinearGradient>
     </View>
   );
@@ -331,7 +309,8 @@ const AchievementIconComponent: React.FC<{ icon: string; size?: number; color?: 
 const AchievementsShowcase: React.FC<{
   achievements: Achievement[];
   onPress: (a: Achievement) => void;
-}> = ({ achievements, onPress }) => {
+  onSeeAll: () => void;
+}> = ({ achievements, onPress, onSeeAll }) => {
   const displayAchievements = achievements.length > 0 ? achievements : [
     { id: '1', name: 'First Steps', icon: '👶', unlocked: false, reward_points: 100 },
     { id: '2', name: 'Game Master', icon: '🎮', unlocked: false, reward_points: 250 },
@@ -354,7 +333,7 @@ const AchievementsShowcase: React.FC<{
             <Text style={styles.sectionSub}>{unlockedCount} of {displayAchievements.length} unlocked</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.seeAllBtn}>
+        <TouchableOpacity style={styles.seeAllBtn} onPress={onSeeAll}>
           <Text style={styles.seeAllText}>See All</Text>
           <Ionicons name="chevron-forward" size={16} color="#a855f7" />
         </TouchableOpacity>
@@ -503,6 +482,7 @@ const RewardsMarketplace: React.FC<{
 export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
+  const { showAuthScreen, showLoginScreen } = useAuthScreen();
   
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -512,6 +492,13 @@ export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [refreshing, setRefreshing] = useState(false);
   const [claimingChallenge, setClaimingChallenge] = useState<string | null>(null);
   const lastFetchRef = useRef<number>(0);
+  
+  // Reward popup state
+  const [rewardPopupVisible, setRewardPopupVisible] = useState(false);
+  const [rewardPopupCoins, setRewardPopupCoins] = useState(0);
+  const [rewardPopupTitle, setRewardPopupTitle] = useState('Reward Claimed!');
+  const [rewardPopupSubtitle, setRewardPopupSubtitle] = useState<string | undefined>(undefined);
+  const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -525,7 +512,10 @@ export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       const now = Date.now();
       // Only refresh if it's been more than 5 seconds since last fetch
       if (now - lastFetchRef.current > 5000) {
-        fetchData(true);
+        // Small delay to allow HomeScreen's sync to complete first
+        setTimeout(() => {
+          fetchData(true);
+        }, 500);
       }
     }
   }, [isActive]);  const fetchData = async (isRefresh = false) => {
@@ -568,8 +558,11 @@ export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       setChallenges(prev => prev.map(c => 
         c.id === challengeId ? { ...c, claimed: true } : c
       ));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Reward Claimed!', `+${result.pointsEarned} coins added to your balance!`);
+      // Show custom reward popup
+      setRewardPopupCoins(result.pointsEarned);
+      setRewardPopupTitle('Mission Complete!');
+      setRewardPopupSubtitle('Coins added to your balance');
+      setRewardPopupVisible(true);
     } catch (e) {
       Alert.alert('Error', 'Failed to claim reward');
     } finally {
@@ -593,8 +586,11 @@ export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 ...prev,
                 points: { ...prev.points, balance: result.newBalance }
               } : null);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Congratulations!', `You've claimed: ${reward.name}\n\nCheck your email for redemption details.`);
+              // Show custom reward popup for successful claim
+              setRewardPopupCoins(0);
+              setRewardPopupTitle('Reward Claimed!');
+              setRewardPopupSubtitle(`You've claimed: ${reward.name}\n\nCheck your email for redemption details.`);
+              setRewardPopupVisible(true);
             } catch (e: any) {
               Alert.alert('Error', e.message || 'Failed to claim');
             }
@@ -611,27 +607,29 @@ export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     );
   };
 
-  if (!isAuthenticated) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <LinearGradient colors={['#1a1a2e', '#0f0f23']} style={styles.notLoggedIn}>
-          <View style={styles.notLoggedInContent}>
-            <View style={styles.notLoggedInIconWrap}>
-              <Ionicons name="gift" size={48} color="#a855f7" />
-            </View>
-            <Text style={styles.notLoggedInTitle}>Unlock Rewards</Text>
-            <Text style={styles.notLoggedInSub}>Sign in to earn coins, complete challenges, and claim real rewards!</Text>
-            <View style={styles.previewRewards}>
-              <View style={styles.previewIcon}><Ionicons name="gift" size={24} color="#f59e0b" /></View>
-              <View style={styles.previewIcon}><Ionicons name="card" size={24} color="#a855f7" /></View>
-              <View style={styles.previewIcon}><Ionicons name="trophy" size={24} color="#22c55e" /></View>
-              <View style={styles.previewIcon}><Ionicons name="flash" size={24} color="#06b6d4" /></View>
-            </View>
-          </View>
+  // Auth overlay component
+  const AuthOverlay = () => (
+    <View style={styles.authOverlay}>
+      <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+      <Text style={styles.authTitle}>Sign up to continue</Text>
+      <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen} activeOpacity={0.8}>
+        <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.authBtnGradient}>
+          <Text style={styles.authBtnText}>Sign Up</Text>
         </LinearGradient>
-      </View>
-    );
-  }
+      </TouchableOpacity>
+      <TouchableOpacity onPress={showLoginScreen}>
+        <Text style={styles.authLoginText}>or log in</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Mock data for unauthenticated preview
+  const previewStats = { points: { balance: 2450, usdValue: 0.02 }, streak: { current: 3, multiplier: 1.15 } };
+  const previewChallenges = [
+    { id: '1', title: 'Play 3 Games', icon: '🎮', progress: 1, target: 3, reward_points: 50, completed: false, claimed: false },
+    { id: '2', title: 'Play 10 Minutes', icon: '⏱️', progress: 4, target: 10, reward_points: 75, completed: false, claimed: false },
+    { id: '3', title: 'Like 5 Games', icon: '❤️', progress: 2, target: 5, reward_points: 30, completed: false, claimed: false },
+  ] as Challenge[];
 
   return (
     <View style={[styles.container, { backgroundColor: '#0a0a0f' }]}>
@@ -639,43 +637,53 @@ export const RewardsScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => fetchData(true)}
-            tintColor="#a855f7"
-          />
-        }
+        scrollEnabled={isAuthenticated}
       >
         <View style={{ paddingTop: insets.top + 8 }}>
           <HeroCard 
-            balance={stats?.points.balance || 0}
-            level={stats?.level.current || 1}
-            xpProgress={stats?.level.progress || 0}
-            streak={stats?.streak.current || 0}
-            multiplier={stats?.streak.multiplier || 1}
-            loading={loading}
+            balance={isAuthenticated ? (stats?.points.balance || 0) : previewStats.points.balance}
+            streak={isAuthenticated ? (stats?.streak.current || 0) : previewStats.streak.current}
+            multiplier={isAuthenticated ? (stats?.streak.multiplier || 1) : previewStats.streak.multiplier}
+            usdValue={isAuthenticated ? stats?.points.usdValue : previewStats.points.usdValue}
+            loading={isAuthenticated && loading}
           />
         </View>
 
         <DailyMissions 
-          challenges={challenges}
+          challenges={isAuthenticated ? challenges : previewChallenges}
           onClaim={handleClaimChallenge}
           claimingId={claimingChallenge}
-          loading={loading}
+          loading={isAuthenticated && loading}
         />
 
         <AchievementsShowcase 
           achievements={achievements}
           onPress={showAchievementDetail}
+          onSeeAll={() => setAchievementsModalVisible(true)}
         />
 
         <RewardsMarketplace 
           rewards={rewards}
-          balance={stats?.points.balance || 0}
+          balance={isAuthenticated ? (stats?.points.balance || 0) : previewStats.points.balance}
           onClaim={handleClaimReward}
         />
       </ScrollView>
+      
+      {!isAuthenticated && <AuthOverlay />}
+      
+      <RewardPopup
+        visible={rewardPopupVisible}
+        coins={rewardPopupCoins}
+        title={rewardPopupTitle}
+        subtitle={rewardPopupSubtitle}
+        onClose={() => setRewardPopupVisible(false)}
+      />
+      
+      <AchievementsModal
+        visible={achievementsModalVisible}
+        achievements={achievements}
+        onClose={() => setAchievementsModalVisible(false)}
+      />
     </View>
   );
 };
@@ -685,36 +693,24 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
   
-  // Coin icon
-  coinIconWrap: { backgroundColor: 'rgba(255,214,10,0.2)', justifyContent: 'center', alignItems: 'center' },
-  
   // Hero Card
   heroCard: { marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', marginBottom: 8 },
   heroGradient: { padding: 24, paddingBottom: 20 },
   shimmer: { position: 'absolute', top: 0, bottom: 0, width: 100 },
-  heroMain: { alignItems: 'center', marginBottom: 24 },
+  heroMain: { alignItems: 'center', marginBottom: 16 },
   heroLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600', letterSpacing: 2, marginBottom: 8 },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   bigCoinIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,214,10,0.15)', justifyContent: 'center', alignItems: 'center' },
   balanceValue: { color: '#ffd60a', fontSize: 48, fontWeight: '800' },
+  usdValue: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 4 },
   
-  heroStats: { flexDirection: 'row', justifyContent: 'space-around' },
-  heroStat: { alignItems: 'center', flex: 1 },
-  heroStatLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6, marginBottom: 4 },
-  
-  levelBadge: { width: 48, height: 48, borderRadius: 24, overflow: 'hidden' },
-  levelGradient: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  levelNum: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  xpBar: { width: 50, height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' },
-  xpFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 2 },
-  
+  // Streak section
+  streakSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  streakNum: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  streakNum: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  streakLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
   multiplierPill: { backgroundColor: 'rgba(245,158,11,0.3)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   multiplierText: { color: '#fbbf24', fontSize: 10, fontWeight: '700' },
-  
-  lifetimeIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(6,182,212,0.15)', justifyContent: 'center', alignItems: 'center' },
-  lifetimeValue: { color: '#fff', fontSize: 14, fontWeight: '700' },
   
   // Sections
   section: { marginTop: 24, paddingHorizontal: 16 },
@@ -824,4 +820,15 @@ const styles = StyleSheet.create({
   notLoggedInSub: { color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', lineHeight: 24 },
   previewRewards: { flexDirection: 'row', gap: 16, marginTop: 32 },
   previewIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  signUpBtn: { marginTop: 24, width: '100%', maxWidth: 280, borderRadius: 16, overflow: 'hidden' },
+  signUpGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
+  signUpText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  
+  // Auth overlay - minimal
+  authOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+  authTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 },
+  authBtn: { width: 200, borderRadius: 25, overflow: 'hidden' },
+  authBtnGradient: { paddingVertical: 14, alignItems: 'center' },
+  authBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  authLoginText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 16 },
 });
