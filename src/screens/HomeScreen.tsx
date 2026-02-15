@@ -19,6 +19,7 @@ import NativeAdView from '../components/NativeAdView';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { useDeepLink } from '../../App';
 import { useAuth } from '../context/AuthContext';
+import adBlockList from '../data/adBlockList.json';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
@@ -51,27 +52,21 @@ const getGameUrl = (game: Game) => {
 
 const isExternalGame = (game: Game) => !!game.embedUrl;
 
-// Domains to block at request level
-const AD_DOMAINS = [
-  'imasdk.googleapis.com',
-  'pagead2.googlesyndication.com',
-  'doubleclick.net',
-  'googlesyndication.com',
-  'googleadservices.com',
-  'adservice.google',
-  'googleads.g.doubleclick.net',
-  'www.googletagservices.com',
-  'securepubads.g.doubleclick.net',
-  'tpc.googlesyndication.com',
-  'ad.doubleclick.net',
-  // Famobi/GameDistribution ads
-  'adinplay.com',
-  'gamedistribution.com',
-  'gdsdk.com',
-];
+// Load ad domains from curated EasyList-based blocklist
+const AD_DOMAINS: string[] = adBlockList.domains;
 
+// Check if URL should be blocked - uses Set for O(1) lookup on exact matches
+// and falls back to substring matching for partial domain matches
+const AD_DOMAINS_SET = new Set(AD_DOMAINS);
 const shouldBlockRequest = (url: string): boolean => {
-  return AD_DOMAINS.some(domain => url.includes(domain));
+  const urlLower = url.toLowerCase();
+  // Fast path: check if any domain is in the URL
+  for (const domain of AD_DOMAINS) {
+    if (urlLower.includes(domain)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 // Script to pause/freeze a game
@@ -80,9 +75,22 @@ const PAUSE_SCRIPT = `
   // Immediately mute everything
   window._gamePaused = true;
   
-  // Clear any existing mute interval
+  // Clear ALL intervals to prevent memory leaks
   if (window._muteInterval) {
     clearInterval(window._muteInterval);
+    window._muteInterval = null;
+  }
+  if (window._adRemovalInterval) {
+    clearInterval(window._adRemovalInterval);
+    window._adRemovalInterval = null;
+  }
+  if (window._edgeBlockerInterval) {
+    clearInterval(window._edgeBlockerInterval);
+    window._edgeBlockerInterval = null;
+  }
+  if (window._gameReadyInterval) {
+    clearInterval(window._gameReadyInterval);
+    window._gameReadyInterval = null;
   }
   
   // Function to mute everything
@@ -136,14 +144,7 @@ const PAUSE_SCRIPT = `
   // Mute immediately
   muteAll();
   
-  // Keep checking and muting every 500ms while paused
-  window._muteInterval = setInterval(() => {
-    if (window._gamePaused) {
-      muteAll();
-    } else {
-      clearInterval(window._muteInterval);
-    }
-  }, 500);
+  // DON'T start a new interval - just mute once. This prevents memory leaks.
   
   // Unity
   if (window.unityInstance) {
@@ -256,6 +257,10 @@ true;
 
 // Edge blocking script - prevents WebView from capturing swipe gestures at screen edges
 // This is injected into ALL games (both internal and external)
+// NOTE: We only use event listeners, NOT div blockers, because:
+// 1. Native gesture zones handle the actual swipe detection
+// 2. Div blockers with pointer-events:auto could interfere with native touch handling
+// 3. Event listeners just stop propagation within the WebView, letting native handle it
 const EDGE_BLOCK_SCRIPT = `
 (function() {
   if (window._edgeBlockActive) return;
@@ -263,7 +268,8 @@ const EDGE_BLOCK_SCRIPT = `
   
   const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
   
-  // Block ALL touch events in edge zones at capture phase
+  // Block touch events in edge zones at capture phase
+  // This prevents games from capturing swipes that should go to native gesture handlers
   const blockEdgeTouches = (e) => {
     if (!e.touches || e.touches.length === 0) return;
     const touch = e.touches[0];
@@ -295,55 +301,8 @@ const EDGE_BLOCK_SCRIPT = `
   document.addEventListener('pointerdown', blockEdgePointer, { capture: true, passive: true });
   document.addEventListener('pointermove', blockEdgePointer, { capture: true, passive: true });
   
-  // Create visible blockers that absorb touches (backup method)
-  const createBlocker = (isTop) => {
-    const div = document.createElement('div');
-    div.style.cssText = \`
-      position: fixed !important;
-      left: 0 !important;
-      right: 0 !important;
-      height: \${EDGE_ZONE}px !important;
-      \${isTop ? 'top: 0' : 'bottom: 0'} !important;
-      z-index: 2147483647 !important;
-      pointer-events: auto !important;
-      touch-action: pan-y !important;
-      background: transparent !important;
-      -webkit-user-select: none !important;
-      user-select: none !important;
-    \`;
-    div.setAttribute('data-edge-blocker', isTop ? 'top' : 'bottom');
-    
-    // Absorb all touch events on this element
-    div.addEventListener('touchstart', (e) => {
-      e.stopPropagation();
-    }, { passive: true });
-    div.addEventListener('touchmove', (e) => {
-      e.stopPropagation();
-    }, { passive: true });
-    div.addEventListener('touchend', (e) => {
-      e.stopPropagation();
-    }, { passive: true });
-    
-    return div;
-  };
-  
-  const setup = () => {
-    if (!document.body) {
-      setTimeout(setup, 100);
-      return;
-    }
-    // Remove any existing blockers
-    document.querySelectorAll('[data-edge-blocker]').forEach(el => el.remove());
-    
-    const topBlocker = createBlocker(true);
-    const bottomBlocker = createBlocker(false);
-    document.body.appendChild(topBlocker);
-    document.body.appendChild(bottomBlocker);
-  };
-  
-  setup();
-  // Re-setup periodically in case game removes our blockers
-  setInterval(setup, 3000);
+  // NO div blockers - native gesture zones handle swipe detection
+  // Div blockers with pointer-events:auto were causing issues over time
 })();
 true;
 `;
@@ -614,7 +573,9 @@ const AD_BLOCKER_SCRIPT = `
   };
   
   // Run ad removal periodically (but NOT loader removal - that was breaking games)
-  setInterval(removeAdElements, 500);
+  // Store interval ID so it can be cleared on pause
+  // Run every 2 seconds instead of 500ms to reduce CPU load
+  window._adRemovalInterval = setInterval(removeAdElements, 2000);
   
   // Initial ad removal attempts
   setTimeout(removeAdElements, 0);
@@ -695,19 +656,38 @@ const AD_BLOCKER_SCRIPT = `
   window.adBreak = window.sdk.adBreak;
   window.adConfig = window.sdk.adConfig;
   
-  const adDomains = ['imasdk.googleapis.com', 'pagead2.googlesyndication.com', 'doubleclick.net', 'googlesyndication.com', 'googleadservices.com'];
+  // Comprehensive ad domain list from EasyList (injected from React Native)
+  const adDomains = ${JSON.stringify(AD_DOMAINS)};
   
+  // Block ad requests at fetch level
   const origFetch = window.fetch;
   window.fetch = function(url) {
-    if (typeof url === 'string' && adDomains.some(d => url.includes(d))) {
-      return Promise.resolve(new Response('', { status: 200 }));
+    if (typeof url === 'string') {
+      const urlLower = url.toLowerCase();
+      for (let i = 0; i < adDomains.length; i++) {
+        if (urlLower.includes(adDomains[i])) {
+          console.log('[AdBlock] Blocked fetch:', url);
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
+      }
     }
     return origFetch.apply(this, arguments);
   };
   
+  // Block ad requests at XHR level
   const origXHROpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(m, url) {
-    this._blocked = typeof url === 'string' && adDomains.some(d => url.includes(d));
+    this._blocked = false;
+    if (typeof url === 'string') {
+      const urlLower = url.toLowerCase();
+      for (let i = 0; i < adDomains.length; i++) {
+        if (urlLower.includes(adDomains[i])) {
+          this._blocked = true;
+          console.log('[AdBlock] Blocked XHR:', url);
+          break;
+        }
+      }
+    }
     return origXHROpen.apply(this, arguments);
   };
   const origXHRSend = XMLHttpRequest.prototype.send;
@@ -966,6 +946,7 @@ const AD_BLOCKER_SCRIPT = `
   
   // CRITICAL: Block touch events at screen edges to allow native swipe gestures
   // This prevents the WebView from capturing swipe gestures at top/bottom
+  // NOTE: We only use event listeners, NOT div blockers - native gesture zones handle swipes
   const EDGE_ZONE = window.innerHeight * 0.12; // 12% of screen height
   
   const blockEdgeTouches = (e) => {
@@ -985,32 +966,7 @@ const AD_BLOCKER_SCRIPT = `
   document.addEventListener('touchstart', blockEdgeTouches, { capture: true, passive: true });
   document.addEventListener('touchmove', blockEdgeTouches, { capture: true, passive: true });
   
-  // Also add invisible overlay divs at edges that block pointer events
-  const createEdgeBlocker = (position) => {
-    const div = document.createElement('div');
-    div.style.cssText = \`
-      position: fixed;
-      left: 0;
-      right: 0;
-      height: \${EDGE_ZONE}px;
-      \${position}: 0;
-      z-index: 999999;
-      pointer-events: none;
-      touch-action: none;
-    \`;
-    document.body.appendChild(div);
-  };
-  
-  // Create edge blockers after DOM is ready
-  const setupEdgeBlockers = () => {
-    if (document.body) {
-      createEdgeBlocker('top');
-      createEdgeBlocker('bottom');
-    } else {
-      setTimeout(setupEdgeBlockers, 100);
-    }
-  };
-  setupEdgeBlockers();
+  // NO div blockers - native gesture zones handle swipe detection
 })();
 true;
 `;
@@ -1146,10 +1102,11 @@ const GAME_READY_SCRIPT = `
     return false;
   };
   
-  // Run checks every 100ms
-  const interval = setInterval(() => {
+  // Run checks every 100ms - store ID so it can be cleared
+  window._gameReadyInterval = setInterval(() => {
     if (gameReady) {
-      clearInterval(interval);
+      clearInterval(window._gameReadyInterval);
+      window._gameReadyInterval = null;
       return;
     }
     checkCanvas();
@@ -1164,7 +1121,10 @@ const GAME_READY_SCRIPT = `
   // Fallback: max 6 seconds
   setTimeout(() => {
     if (!gameReady) notifyReady();
-    clearInterval(interval);
+    if (window._gameReadyInterval) {
+      clearInterval(window._gameReadyInterval);
+      window._gameReadyInterval = null;
+    }
   }, 6000);
   
   // After 2 seconds with good activity, mark ready
@@ -1386,30 +1346,9 @@ const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) =
       {/* Tagline above bottom zone */}
       <Text style={welcomeStyles.tagline}>Swipe. Play. Repeat.</Text>
 
-      {/* Bottom swipe zone with neon glow */}
+      {/* Bottom swipe zone - purple background, no glow */}
       <View style={welcomeStyles.bottomZone}>
-        {/* Neon glow bar */}
-        <Animated.View style={[
-          welcomeStyles.glowBarContainer,
-          {
-            opacity: glowPulse,
-            transform: [{ scaleX: barWidth }],
-          }
-        ]}>
-          <LinearGradient
-            colors={['#00f5ff', '#a855f7', '#ff00aa']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={welcomeStyles.glowBar}
-          />
-          {/* Glow effect layer */}
-          <LinearGradient
-            colors={['#00f5ff', '#a855f7', '#ff00aa']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={welcomeStyles.glowBarBlur}
-          />
-        </Animated.View>
+        <View style={welcomeStyles.purpleBar} />
       </View>
 
       {/* Animated swipe hand - positioned absolutely from screen bottom */}
@@ -1481,6 +1420,16 @@ const welcomeStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingBottom: 25,
+  },
+  purpleBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_ZONE_HEIGHT,
+    backgroundColor: 'rgba(168, 85, 247, 0.5)',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   glowBarContainer: {
     width: 200,
@@ -1767,6 +1716,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
   const [loading, setLoading] = useState(true);
+  
+  // Force gesture zone refresh every 60 seconds to prevent gesture handler from becoming unresponsive
+  const [gestureKey, setGestureKey] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGestureKey(k => k + 1);
+    }, 60000); // Refresh every 60 seconds
+    return () => clearInterval(interval);
+  }, []);
   const [scrollEnabled, setScrollEnabled] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const swipeHintOpacity = useRef(new Animated.Value(0)).current;
@@ -2398,7 +2356,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
 
   // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
   // The gesture only activates after 25px of vertical movement, allowing taps to pass through
-  const bottomPanGesture = useMemo(() => Gesture.Pan()
+  // Using Gesture.Pan() directly without useMemo - gestures are lightweight and this avoids stale closure issues
+  const bottomPanGesture = Gesture.Pan()
     .activeOffsetY([-25, 25]) // Only activate after 25px vertical movement
     .failOffsetX([-20, 20]) // Fail if horizontal movement is too large
     .minDistance(25) // Require minimum drag distance
@@ -2420,10 +2379,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       'worklet';
       runOnJS(setScrollEnabled)(false); // Safety reset
       runOnJS(hideHint)();
-    }), [handleGestureStart, updateTranslateY, handleGestureEnd, hideHint]);
+    });
 
   // Top zone gesture - same as bottom but for swiping down to previous game
-  const topPanGesture = useMemo(() => Gesture.Pan()
+  const topPanGesture = Gesture.Pan()
     .activeOffsetY([-25, 25])
     .failOffsetX([-20, 20])
     .minDistance(25)
@@ -2445,7 +2404,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       'worklet';
       runOnJS(setScrollEnabled)(false); // Safety reset
       runOnJS(hideHint)();
-    }), [handleGestureStart, updateTranslateY, handleGestureEnd, hideHint]);
+    });
 
   // Overlay pan responder - captures touches when scroll mode is active
   const overlayPanResponder = useRef(
@@ -2621,10 +2580,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
                 }}
               />
 
-              {/* Touch blocking zones at edges - these intercept touches before WebView gets them */}
-              {/* Using pointerEvents="box-only" to capture touches but not block children */}
-              <View style={styles.edgeBlockerTop} pointerEvents="box-only" />
-              <View style={styles.edgeBlockerBottom} pointerEvents="box-only" />
+              {/* Native gesture zones (GestureDetector) handle edge swipes */}
+              {/* No need for additional edge blockers inside WebView container */}
 
               {/* Loading overlay - shows until game is ready */}
               {!readyGames.has(item!.id) && (
@@ -2733,11 +2690,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       )}
 
       <GestureDetector gesture={topPanGesture}>
-        <View style={styles.topZone} pointerEvents="box-only" collapsable={false} />
+        <View key={`top-zone-${gestureKey}`} style={styles.topZone} pointerEvents="box-only" collapsable={false} />
       </GestureDetector>
 
       <GestureDetector gesture={bottomPanGesture}>
-        <View style={styles.bottomZone} pointerEvents="box-only" collapsable={false} />
+        <View key={`bottom-zone-${gestureKey}`} style={styles.bottomZone} pointerEvents="box-only" collapsable={false} />
       </GestureDetector>
 
       {/* Swipe hint - permanent on welcome, on-touch for games */}
@@ -2855,24 +2812,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     zIndex: 9999,
     elevation: 9999,
-  },
-  edgeBlockerTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: TOP_ZONE_HEIGHT,
-    backgroundColor: 'transparent',
-    zIndex: 95, // Above WebView (which has no zIndex), below gesture zones (100)
-  },
-  edgeBlockerBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'transparent',
-    zIndex: 95, // Above WebView (which has no zIndex), below gesture zones (100)
   },
   hintContainer: {
     position: 'absolute',
