@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, getToken } from '../services/api';
+import { registerForPushNotifications, savePushToken, removePushToken } from '../services/notifications';
 
 interface User {
   id: string;
@@ -63,6 +64,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.login(username, password);
     console.log('[Auth] Login successful, token saved');
     setUser(data.user);
+    
+    // Register for push notifications
+    const pushToken = await registerForPushNotifications();
+    if (pushToken) {
+      const authToken = await getToken();
+      if (authToken) {
+        await savePushToken(pushToken, authToken);
+      }
+    }
   };
 
   const signup = async (username: string, password: string, displayName?: string, email?: string) => {
@@ -70,6 +80,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.signup(username, password, displayName, email);
     console.log('[Auth] Signup successful, token saved');
     setUser(data.user);
+    
+    // Register for push notifications
+    const pushToken = await registerForPushNotifications();
+    if (pushToken) {
+      const authToken = await getToken();
+      if (authToken) {
+        await savePushToken(pushToken, authToken);
+      }
+    }
   };
 
   const loginWithOAuth = async (provider: 'apple' | 'google', oauthData: any) => {
@@ -77,10 +96,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.oauth(provider, oauthData);
     console.log('[Auth] OAuth successful, token saved');
     setUser(data.user);
+    
+    // Register for push notifications
+    const pushToken = await registerForPushNotifications();
+    if (pushToken) {
+      const authToken = await getToken();
+      if (authToken) {
+        await savePushToken(pushToken, authToken);
+      }
+    }
+    
     return data;
   };
 
   const logout = async () => {
+    // Remove push token from backend
+    const authToken = await getToken();
+    if (authToken) {
+      await removePushToken(authToken);
+    }
+    
     await auth.logout();
     setUser(null);
   };

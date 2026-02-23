@@ -1,0 +1,79 @@
+GameTOK - Xcode Console Logs
+Native Ad Loading Attempt
+=====================================
+
+[Ads] Ad service initialized
+[HomeScreen] Starting init...
+[HomeScreen] Initializing ads...
+[HomeScreen] Fetching games...
+
+[Ads] Remote config loaded, ad frequency: 3
+[Ads] Initializing LevelPlay...
+
+[LevelPlay] Setting privacy/consent settings...
+[LevelPlay SDK] API: UITHREAD: true [LevelPlay setConsent:] - consent: 1
+[LevelPlay SDK] API: UITHREAD: true [LevelPlay setMetaDataWithKey:values:] - setMetaData: key = do_not_sell, values = false
+[LevelPlay SDK] API: UITHREAD: true [LevelPlay setMetaDataWithKey:values:] - setMetaData: key = is_child_directed, values = false
+[LevelPlay SDK] API: UITHREAD: true [LevelPlay setMetaDataWithKey:values:] - setMetaData: key = is_test_suite, values = enable
+[LevelPlay] Privacy settings configured
+
+[LevelPlay] Initializing with app key: 2504ecd05
+[LevelPlay SDK] Initializing with app key: 2504ecd05
+[LevelPlay] Init success
+[Ads] LevelPlay initialized: true
+
+[HomeScreen] Games fetched: 50
+[HomeScreen] Init complete, setting loading false
+
+--- User scrolls to native ad slot (after 3 games) ---
+
+[Ad] Creating LevelPlay native ad with placement: Home_Screen
+[LevelPlay SDK] Creating native ad with placement: Home_Screen
+[Ad] Native ad object created, calling loadAd()...
+[Ad] LevelPlay native ad load requested
+
+[LevelPlay SDK] Requesting native ad from networks...
+[LevelPlay SDK] Checking IronSource Network...
+[LevelPlay SDK] IronSource Network: No inventory available
+
+[Ad] LevelPlay native ad load failed
+[Ad] Error Code: 508
+[Ad] Error Message: No fill
+[Ad] Full Error: {"errorCode":508,"errorMessage":"No fill"}
+
+[Ad] Retrying... (attempt 1 of 2)
+
+--- Retry attempt after 3 seconds ---
+
+[Ad] Creating LevelPlay native ad with placement: Home_Screen
+[Ad] Native ad load requested
+
+[LevelPlay SDK] Requesting native ad from networks...
+[LevelPlay SDK] Checking IronSource Network...
+[LevelPlay SDK] IronSource Network: No inventory available
+
+[Ad] LevelPlay native ad load failed
+[Ad] Error Code: 508
+[Ad] Error Message: No fill
+[Ad] Full Error: {"errorCode":508,"errorMessage":"No fill"}
+
+[Ad] Retrying... (attempt 2 of 2)
+
+--- Final retry attempt after 3 seconds ---
+
+[Ad] Creating LevelPlay native ad with placement: Home_Screen
+[Ad] Native ad load requested
+
+[LevelPlay SDK] Requesting native ad from networks...
+[LevelPlay SDK] Checking IronSource Network...
+[LevelPlay SDK] IronSource Network: No inventory available
+
+[Ad] LevelPlay native ad load failed
+[Ad] Error Code: 508
+[Ad] Error Message: No fill
+[Ad] Full Error: {"errorCode":508,"errorMessage":"No fill"}
+
+[Ad] Max retries reached, showing fallback
+
+=====================================
+End of logs

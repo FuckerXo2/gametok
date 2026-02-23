@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,107 +14,106 @@ import Constants from 'expo-constants';
 // Check if running in Expo Go
 const isExpoGo = Constants.appOwnership === 'expo' || (Constants.executionEnvironment as string) === 'expoGo';
 
-// Import LevelPlay components (will be undefined in Expo Go)
-let LevelPlayNativeAd: any;
-let LevelPlayNativeAdView: any;
-let LevelPlayTemplateType: any;
+// Import Google Mobile Ads native ad components (will be undefined in Expo Go)
+let GNativeAd: any;
+let GNativeAdView: any;
+let GNativeAsset: any;
+let GNativeAssetType: any;
+let GNativeMediaView: any;
+let GTestIds: any;
 
 try {
-  const levelPlayModule = require('unity-levelplay-mediation');
-  LevelPlayNativeAd = levelPlayModule.LevelPlayNativeAd;
-  LevelPlayNativeAdView = levelPlayModule.LevelPlayNativeAdView;
-  LevelPlayTemplateType = levelPlayModule.LevelPlayTemplateType;
+  const gmaModule = require('react-native-google-mobile-ads');
+  GNativeAd = gmaModule.NativeAd;
+  GNativeAdView = gmaModule.NativeAdView;
+  GNativeAsset = gmaModule.NativeAsset;
+  GNativeAssetType = gmaModule.NativeAssetType;
+  GNativeMediaView = gmaModule.NativeMediaView;
+  GTestIds = gmaModule.TestIds;
 } catch (e) {
-  console.log('[Ad] LevelPlay module not available');
+  console.log('[Ad] Google Mobile Ads module not available');
 }
+
+// TODO: Replace with your real native ad unit ID from AdMob
+const NATIVE_AD_UNIT_ID = __DEV__
+  ? GTestIds?.NATIVE || 'ca-app-pub-3940256099942544/3986624511' // Test ID
+  : 'ca-app-pub-1961802731817431/8986743812'; // Production ad unit ID
 
 interface NativeAdViewProps {
   contentHeight: number;
 }
 
-const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
+const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
   const insets = useSafeAreaInsets();
   const [nativeAd, setNativeAd] = useState<any>(null);
   const [adLoaded, setAdLoaded] = useState(false);
   const [adFailed, setAdFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
-  // Check if LevelPlay is available
-  const hasLevelPlay = !isExpoGo && LevelPlayNativeAd && LevelPlayNativeAdView;
+  // Check if Google Mobile Ads is available
+  const hasGMA = !isExpoGo && GNativeAd && GNativeAdView;
 
   // Create and load native ad
   useEffect(() => {
-    if (!hasLevelPlay) return;
+    if (!hasGMA) return;
 
-    let ad: any = null;
+    let destroyed = false;
 
-    const createAd = () => {
+    const loadAd = async () => {
       try {
-        console.log('[Ad] Creating LevelPlay native ad...');
-        
-        const listener = {
-          onAdLoaded: (loadedAd: any, adInfo: any) => {
-            console.log('[Ad] LevelPlay native ad loaded:', JSON.stringify(adInfo));
-            setAdLoaded(true);
-            setAdFailed(false);
-          },
-          onAdLoadFailed: (failedAd: any, error: any) => {
-            console.log('[Ad] LevelPlay native ad load failed:', JSON.stringify(error));
-            if (retryCount < 2) {
-              setTimeout(() => setRetryCount(prev => prev + 1), 3000);
-            } else {
-              setAdFailed(true);
-            }
-          },
-          onAdImpression: (impressionAd: any, adInfo: any) => {
-            console.log('[Ad] LevelPlay native ad impression');
-          },
-          onAdClicked: (clickedAd: any, adInfo: any) => {
-            console.log('[Ad] LevelPlay native ad clicked');
-          },
-        };
+        console.log('[Ad] Creating Google native ad...');
+        const ad = await GNativeAd.createForAdRequest(NATIVE_AD_UNIT_ID, {
+          requestNonPersonalizedAdsOnly: false,
+        });
 
-        console.log('[Ad] Building native ad with placement: Home_Screen');
-        ad = LevelPlayNativeAd.builder()
-          .withPlacement('Home_Screen')
-          .withListener(listener)
-          .build();
+        if (destroyed) {
+          ad.destroy();
+          return;
+        }
 
+        console.log('[Ad] Google native ad loaded:', ad.headline);
         setNativeAd(ad);
-        
-        console.log('[Ad] Native ad object created, calling loadAd()...');
-        // Load the ad
-        ad.loadAd();
-        console.log('[Ad] LevelPlay native ad load requested');
-        
-        // Timeout after 10 seconds if no response
-        setTimeout(() => {
-          if (!adLoaded) {
-            console.log('[Ad] Native ad load timeout - no response after 10s');
-            setAdFailed(true);
-          }
-        }, 10000);
+        setAdLoaded(true);
+        setAdFailed(false);
       } catch (error: any) {
-        console.log('[Ad] Error creating LevelPlay native ad:', error?.message || error);
-        setAdFailed(true);
+        console.log('[Ad] Google native ad load failed:', error?.message || error);
+        if (!destroyed && retryCount < 2) {
+          console.log('[Ad] Retrying... (attempt', retryCount + 1, 'of 2)');
+          setTimeout(() => {
+            if (!destroyed) setRetryCount(prev => prev + 1);
+          }, 3000);
+        } else if (!destroyed) {
+          console.log('[Ad] Max retries reached, showing fallback');
+          setAdFailed(true);
+        }
       }
     };
 
-    createAd();
+    loadAd();
+
+    // Timeout after 15 seconds if no response
+    const timeout = setTimeout(() => {
+      if (!adLoaded && !destroyed) {
+        console.log('[Ad] Native ad load timeout - no response after 15s');
+        setAdFailed(true);
+      }
+    }, 15000);
 
     return () => {
-      if (ad) {
+      destroyed = true;
+      clearTimeout(timeout);
+      if (nativeAd) {
         try {
-          ad.destroyAd();
+          nativeAd.destroy();
         } catch (e) {
           // Ignore cleanup errors
         }
       }
     };
-  }, [hasLevelPlay, retryCount]);
+  }, [hasGMA, retryCount]);
 
-  // Placeholder for Expo Go or if LevelPlay not available
-  if (isExpoGo || !hasLevelPlay) {
+  // Placeholder for Expo Go or if GMA not available
+  if (isExpoGo || !hasGMA) {
     return (
       <View style={[styles.container, { height: contentHeight }]}>
         <LinearGradient
@@ -229,34 +229,112 @@ const NativeAdView: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     );
   }
 
-  // Render LevelPlay native ad using Medium template (better for full-screen feed)
+  // Render Google native ad with custom layout
   return (
     <View style={[styles.container, { height: contentHeight }]}>
-      <LinearGradient
-        colors={['#1a1a2e', '#16213e', '#0f0f23']}
-        style={styles.adContainer}
+      <GNativeAdView
+        nativeAd={nativeAd}
+        style={[styles.container, { width: '100%', height: '100%' }]}
       >
-        <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
-          <Text style={styles.sponsoredText}>Sponsored</Text>
-        </View>
+        <View
+          style={[styles.adContainer, { backgroundColor: '#16213e' }]}
+        >
+          <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
+            <Text style={styles.sponsoredText}>Sponsored</Text>
+          </View>
 
-        <View style={styles.nativeAdContainer}>
-          <LevelPlayNativeAdView
-            style={styles.levelPlayNativeAd}
-            nativeAd={nativeAd}
-            templateType={LevelPlayTemplateType.Medium}
-          />
-        </View>
+          <View style={styles.nativeAdInner}>
+            {/* Media content (image/video) */}
+            {GNativeMediaView && (
+              <GNativeMediaView style={styles.nativeMediaView} />
+            )}
 
-        <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
-          <View style={styles.actionBtn}>
-            <View style={styles.actionIcon}>
-              <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+            {/* Ad icon + headline */}
+            <View style={styles.nativeAdInfo}>
+              {nativeAd.icon && (
+                <GNativeAsset assetType={GNativeAssetType.ICON}>
+                  <Image
+                    source={{ uri: nativeAd.icon.uri }}
+                    style={styles.nativeAdIcon}
+                  />
+                </GNativeAsset>
+              )}
+              <View style={styles.nativeAdTextContainer}>
+                <GNativeAsset assetType={GNativeAssetType.HEADLINE}>
+                  <Text style={styles.nativeAdHeadline} numberOfLines={2}>
+                    {nativeAd.headline}
+                  </Text>
+                </GNativeAsset>
+                {nativeAd.advertiser && (
+                  <GNativeAsset assetType={GNativeAssetType.ADVERTISER}>
+                    <Text style={styles.nativeAdAdvertiser} numberOfLines={1}>
+                      {nativeAd.advertiser}
+                    </Text>
+                  </GNativeAsset>
+                )}
+              </View>
             </View>
-            <Text style={styles.actionLabel}>Ad Info</Text>
+
+            {/* Body text */}
+            {nativeAd.body && (
+              <GNativeAsset assetType={GNativeAssetType.BODY}>
+                <Text style={styles.nativeAdBody} numberOfLines={3}>
+                  {nativeAd.body}
+                </Text>
+              </GNativeAsset>
+            )}
+
+            {/* Star rating */}
+            {nativeAd.starRating && (
+              <View style={styles.starRatingContainer}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Ionicons
+                    key={star}
+                    name={star <= Math.round(nativeAd.starRating) ? 'star' : 'star-outline'}
+                    size={16}
+                    color="#FFD700"
+                  />
+                ))}
+                <Text style={styles.starRatingText}>{nativeAd.starRating.toFixed(1)}</Text>
+              </View>
+            )}
+
+            {/* CTA Button */}
+            {nativeAd.callToAction && (
+              <GNativeAsset assetType={GNativeAssetType.CALL_TO_ACTION}>
+                <View style={styles.nativeCtaButton}>
+                  <Text style={styles.nativeCtaText}>{nativeAd.callToAction}</Text>
+                </View>
+              </GNativeAsset>
+            )}
+
+            {/* Store & price */}
+            {(nativeAd.store || nativeAd.price) && (
+              <View style={styles.storeRow}>
+                {nativeAd.store && (
+                  <GNativeAsset assetType={GNativeAssetType.STORE}>
+                    <Text style={styles.storeText}>{nativeAd.store}</Text>
+                  </GNativeAsset>
+                )}
+                {nativeAd.price && (
+                  <GNativeAsset assetType={GNativeAssetType.PRICE}>
+                    <Text style={styles.priceText}>{nativeAd.price}</Text>
+                  </GNativeAsset>
+                )}
+              </View>
+            )}
+          </View>
+
+          <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
+            <View style={styles.actionBtn}>
+              <View style={styles.actionIcon}>
+                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+              </View>
+              <Text style={styles.actionLabel}>Ad Info</Text>
+            </View>
           </View>
         </View>
-      </LinearGradient>
+      </GNativeAdView>
     </View>
   );
 };
@@ -293,18 +371,97 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  // Google native ad styles
   nativeAdContainer: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 100,
+    paddingTop: 80,
+    paddingBottom: 120,
   },
-  levelPlayNativeAd: {
-    width: 300,
-    height: 350,
+  nativeAdInner: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 80,
+    paddingBottom: 120,
   },
+  nativeMediaView: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  nativeAdInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  nativeAdIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    marginRight: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  nativeAdTextContainer: {
+    flex: 1,
+  },
+  nativeAdHeadline: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  nativeAdAdvertiser: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  nativeAdBody: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  starRatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  starRatingText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    marginLeft: 8,
+  },
+  nativeCtaButton: {
+    backgroundColor: '#FF8E53',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  nativeCtaText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  storeRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  storeText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  priceText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  // Shared styles
   mockAdContent: {
     flex: 1,
     justifyContent: 'center',
@@ -403,4 +560,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default NativeAdView;
+export default NativeAdComponent;

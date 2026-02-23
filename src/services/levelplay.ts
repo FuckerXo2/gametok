@@ -32,23 +32,42 @@ export const initializeLevelPlay = async (): Promise<boolean> => {
   }
 
   return new Promise((resolve) => {
+    // CRITICAL: Set privacy/consent settings BEFORE initialization
+    console.log('[LevelPlay] Setting privacy/consent settings...');
+    
+    // GDPR Consent - set to true (assuming user consented)
+    // TODO: Get actual consent from user consent flow
+    LevelPlay.setConsent(true);
+    
+    // US Privacy - set to false (allow data sharing)
+    // NOTE: setMetaData expects an array of values, not a string
+    LevelPlay.setMetaData('do_not_sell', ['false']);
+    
+    // Child-directed - set to false for general audience apps
+    LevelPlay.setMetaData('is_child_directed', ['false']);
+    
     // Enable test suite and debug logging
     LevelPlay.setMetaData('is_test_suite', ['enable']);
     LevelPlay.setAdaptersDebug(true);
     
+    console.log('[LevelPlay] Privacy settings configured');
+    
     const initListener: LevelPlayInitListener = {
       onInitFailed: (error: LevelPlayInitError) => {
         console.log('[LevelPlay] Init failed:', error.errorMessage);
+        console.log('[LevelPlay] Error details:', JSON.stringify(error));
         resolve(false);
       },
       onInitSuccess: (configuration: LevelPlayConfiguration) => {
         console.log('[LevelPlay] Init success');
+        console.log('[LevelPlay] Configuration:', JSON.stringify(configuration));
         isInitialized = true;
         resolve(true);
       },
     };
 
     const initRequest = LevelPlayInitRequest.builder(APP_KEY).build();
+    console.log('[LevelPlay] Initializing with app key:', APP_KEY);
     LevelPlay.init(initRequest, initListener);
   });
 };

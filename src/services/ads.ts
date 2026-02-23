@@ -1,12 +1,5 @@
-// Ad Service for GameTok - LevelPlay (ironSource) Only
+// Ad Service for GameTok - Google AdMob (Native Ads Only)
 import Constants from 'expo-constants';
-import { 
-  initializeLevelPlay, 
-  showInterstitial as showLevelPlayInterstitial,
-  showRewarded as showLevelPlayRewarded,
-  isInterstitialReady,
-  isRewardedReady,
-} from './levelplay';
 
 // Default ad frequency - will be overridden by remote config
 let AD_FREQUENCY = 3;
@@ -19,7 +12,6 @@ export const isExpoGo = Constants.appOwnership === 'expo' || executionEnvironmen
 export const shouldDisableAds = isExpoGo;
 
 let isInitialized = false;
-let levelPlayInitialized = false;
 
 console.log('[Ads] Ad service initialized');
 
@@ -70,67 +62,16 @@ export const initializeAds = async () => {
     console.log('[Ads] Remote config fetch timed out');
   }
 
-  // Initialize LevelPlay for all ad types (native, interstitial, rewarded)
-  try {
-    console.log('[Ads] Initializing LevelPlay...');
-    levelPlayInitialized = await initializeLevelPlay();
-    console.log('[Ads] LevelPlay initialized:', levelPlayInitialized);
-  } catch (error) {
-    console.error('[Ads] LevelPlay initialization failed:', error);
-  }
+  // Google Mobile Ads initialization is handled by the NativeAdView component
+  // No SDK-level init needed here — native ads load on demand
 
   isInitialized = true;
-  return levelPlayInitialized;
-};
-
-// ============================================
-// INTERSTITIAL ADS (LevelPlay)
-// ============================================
-
-export const loadInterstitial = async (): Promise<boolean> => {
-  // LevelPlay auto-loads after showing
-  return levelPlayInitialized;
-};
-
-export const showInterstitial = async (): Promise<boolean> => {
-  if (!levelPlayInitialized) {
-    console.log('[Ads] LevelPlay not initialized');
-    return false;
-  }
-  return await showLevelPlayInterstitial();
-};
-
-// ============================================
-// REWARDED ADS (LevelPlay)
-// ============================================
-
-export const loadRewardedAd = async (): Promise<boolean> => {
-  return levelPlayInitialized;
-};
-
-export const showRewardedAd = async (): Promise<{ rewarded: boolean }> => {
-  if (!levelPlayInitialized) {
-    console.log('[Ads] LevelPlay not initialized');
-    return { rewarded: false };
-  }
-  
-  return new Promise((resolve) => {
-    showLevelPlayRewarded((reward) => {
-      resolve({ rewarded: true });
-    }).then((shown) => {
-      if (!shown) {
-        resolve({ rewarded: false });
-      }
-    });
-  });
-};
-
-export const preloadInterstitials = async () => {
-  // LevelPlay handles preloading automatically
+  console.log('[Ads] Init complete');
+  return true;
 };
 
 export const isAdNetworkReady = (): boolean => {
-  return isInitialized && levelPlayInitialized;
+  return isInitialized;
 };
 
 export const requestTrackingPermission = async (): Promise<boolean> => {

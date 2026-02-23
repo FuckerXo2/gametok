@@ -1,10 +1,11 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
@@ -17,6 +18,8 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { requestTrackingPermission } from './src/services/ads';
+import { addNotificationResponseListener, addNotificationReceivedListener, registerForPushNotifications, savePushToken } from './src/services/notifications';
+import { getToken } from './src/services/api';
 
 // Prevent native splash from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -26,7 +29,7 @@ interface DeepLinkContextType {
   sharedGameId: string | null;
   clearSharedGame: () => void;
 }
-const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => {} });
+const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => { } });
 export const useDeepLink = () => useContext(DeepLinkContext);
 
 // Auth screen context - to show login/signup from anywhere
@@ -35,14 +38,23 @@ interface AuthScreenContextType {
   showLoginScreen: () => void;
   hideAuthScreen: () => void;
 }
-const AuthScreenContext = createContext<AuthScreenContextType>({ showAuthScreen: () => {}, showLoginScreen: () => {}, hideAuthScreen: () => {} });
+const AuthScreenContext = createContext<AuthScreenContextType>({ showAuthScreen: () => { }, showLoginScreen: () => { }, hideAuthScreen: () => { } });
 export const useAuthScreen = () => useContext(AuthScreenContext);
 
 type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
 const MainApp = () => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
+  const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const { isDark, colors } = useTheme();
+
+  const handleTabPress = (tab: TabName) => {
+    if (tab === 'home' && activeTab === 'home') {
+      // Already on home — trigger refresh
+      setHomeRefreshTrigger(prev => prev + 1);
+    }
+    setActiveTab(tab);
+  };
 
   // Keep all screens mounted, just hide/show them
   return (
@@ -51,30 +63,30 @@ const MainApp = () => {
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         {/* Home - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'home' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
-          <HomeScreen isActive={activeTab === 'home'} />
+          <HomeScreen isActive={activeTab === 'home'} refreshTrigger={homeRefreshTrigger} />
         </View>
-        
+
         {/* Explore (game discovery) - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'explore' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
           <ConnectScreen />
         </View>
-        
+
         {/* Rewards - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'rewards' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'rewards' ? 'auto' : 'none'}>
           <RewardsScreen isActive={activeTab === 'rewards'} />
         </View>
-        
+
         {/* Connect (social + messages) - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'connect' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
           <InboxScreen />
         </View>
-        
+
         {/* Profile - always mounted */}
         <View style={[styles.screenContainer, { display: activeTab === 'profile' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
           <ProfileScreen isActive={activeTab === 'profile'} />
         </View>
       </View>
-      <BottomNav activeTab={activeTab} onTabPress={setActiveTab} />
+      <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
     </>
   );
 };
@@ -85,12 +97,61 @@ const AppContent = () => {
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [startWithLogin, setStartWithLogin] = useState(false);
+  const notificationListener = useRef<any>();
+  const responseListener = useRef<any>();
 
   useEffect(() => {
     checkOnboarding();
     requestTrackingPermission();
     handleDeepLink();
+    setupNotifications();
+
+    // Request notification permission on app start (for existing users after update)
+    if (isAuthenticated) {
+      registerForPushNotifications().then(async (token) => {
+        if (token) {
+          const authToken = await getToken();
+          if (authToken) {
+            await savePushToken(token, authToken);
+          }
+        }
+      }).catch(e => console.log('[Notifications] Registration error:', e));
+    }
+
+    return () => {
+      // Cleanup notification listeners
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
   }, []);
+
+  // Setup notification handlers
+  const setupNotifications = () => {
+    // Handle notification received while app is open
+    notificationListener.current = addNotificationReceivedListener(notification => {
+      console.log('[Notifications] Received:', notification);
+    });
+
+    // Handle notification tap
+    responseListener.current = addNotificationResponseListener(response => {
+      console.log('[Notifications] Tapped:', response);
+      const data = response.notification.request.content.data;
+
+      // Handle different notification types
+      if (data.type === 'game') {
+        setSharedGameId(data.gameId);
+      } else if (data.type === 'message') {
+        // Navigate to inbox
+        // You can add a callback here to switch tabs
+      } else if (data.type === 'social') {
+        // Navigate to profile or connect tab
+      }
+    });
+  };
 
   // Hide auth screen when user successfully logs in
   useEffect(() => {
@@ -100,12 +161,11 @@ const AppContent = () => {
   }, [isAuthenticated]);
 
   const checkOnboarding = async () => {
-    try {
-      const seen = await AsyncStorage.getItem('hasSeenOnboarding');
-      setShowOnboarding(seen !== 'true');
-    } catch {
-      setShowOnboarding(true);
-    }
+    // We bypass the initial onboarding screen block entirely so EVERY user 
+    // lands on the HomeScreen immediately, mimicking TikTok.
+    // They will only see the Onboarding/Login flow when they try to interact 
+    // with gated features (which triggers showAuthScreen).
+    setShowOnboarding(false);
   };
 
   // Handle deep links
@@ -163,11 +223,11 @@ const AppContent = () => {
   if (showAuth) {
     return (
       <View style={{ flex: 1 }}>
-        <OnboardingFlow 
-          onComplete={() => { setShowAuth(false); setStartWithLogin(false); }} 
-          isAuthLoading={false} 
-          skipIntro={startWithLogin} 
-          startWithLogin={startWithLogin} 
+        <OnboardingFlow
+          onComplete={() => { setShowAuth(false); setStartWithLogin(false); }}
+          isAuthLoading={false}
+          skipIntro={startWithLogin}
+          startWithLogin={startWithLogin}
         />
       </View>
     );
@@ -175,10 +235,10 @@ const AppContent = () => {
 
   // Go straight to main app - individual screens handle auth gating
   return (
-    <AuthScreenContext.Provider value={{ 
-      showAuthScreen: () => { setStartWithLogin(false); setShowAuth(true); }, 
+    <AuthScreenContext.Provider value={{
+      showAuthScreen: () => { setStartWithLogin(false); setShowAuth(true); },
       showLoginScreen: () => { setStartWithLogin(true); setShowAuth(true); },
-      hideAuthScreen: () => setShowAuth(false) 
+      hideAuthScreen: () => setShowAuth(false)
     }}>
       <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
         <View style={{ flex: 1 }}>

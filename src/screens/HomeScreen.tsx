@@ -23,8 +23,8 @@ import { useAuth } from '../context/AuthContext';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
-const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
-const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15;
+const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.13; // 13% for better swipe detection
+const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.13;
 const SWIPE_THRESHOLD = 50;
 
 interface Game {
@@ -64,10 +64,23 @@ const AD_DOMAINS = [
   'securepubads.g.doubleclick.net',
   'tpc.googlesyndication.com',
   'ad.doubleclick.net',
-  // Famobi/GameDistribution ads
-  'adinplay.com',
-  'gamedistribution.com',
+  'amazon-adsystem.com',
+  'a-mo.net',
+  'applovin.com',
+  'criteo.com',
+  'pubmatic.com',
+  'rubiconproject.com',
+  'openx.net',
+  'smartadserver.com',
+  'casalemedia.com',
+  // Only specific ad endpoints, do NOT block the main game host domains
+  'api.gamemonetize.com',
+  'api.gamemonetize.co',
+  'gamemonetize.com/gamemonetize.js',
+  'html5.gamedistribution.com/rvv1/gdsdk/gdsdk.js',
+  'gamedistribution.com/rvv1/',
   'gdsdk.com',
+  'adinplay.com',
 ];
 
 const shouldBlockRequest = (url: string): boolean => {
@@ -261,7 +274,7 @@ const EDGE_BLOCK_SCRIPT = `
   if (window._edgeBlockActive) return;
   window._edgeBlockActive = true;
   
-  const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
+  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
   
   // Block ALL touch events in edge zones at capture phase
   const blockEdgeTouches = (e) => {
@@ -541,7 +554,8 @@ const AD_BLOCKER_SCRIPT = `
       '.advertisement', '#advertisement', '.ad-overlay', '#ad-overlay',
       '[class*="interstitial"]', '[id*="interstitial"]',
       '[class*="preroll"]', '[id*="preroll"]',
-      'video[src*="ad"]', 'video[class*="ad"]', 'video[id*="ad"]'
+      'video[src*="ad"]', 'video[class*="ad"]', 'video[id*="ad"]',
+      'iframe[src*="gamemonetize"]', 'div[class*="gamemonetize"]', '#gamemonetize-video'
     ];
     adSelectors.forEach(sel => {
       document.querySelectorAll(sel).forEach(el => {
@@ -640,6 +654,12 @@ const AD_BLOCKER_SCRIPT = `
     openConsole: function() {},
     onPauseGame: function() {},
     onResumeGame: function() {},
+    play: function() { return Promise.resolve(); },
+    start: function() { return Promise.resolve(); },
+    pause: function() { return Promise.resolve(); },
+    resume: function() { return Promise.resolve(); },
+    requestAd: function(callback) { callback && callback(); },
+    customVideoAd: function(functionFunc) { if (typeof functionFunc === 'function') functionFunc(); },
     adBreak: function(config) {
       // Handle adBreak API used by some games
       if (config && config.adBreakDone) config.adBreakDone();
@@ -695,7 +715,10 @@ const AD_BLOCKER_SCRIPT = `
   window.adBreak = window.sdk.adBreak;
   window.adConfig = window.sdk.adConfig;
   
-  const adDomains = ['imasdk.googleapis.com', 'pagead2.googlesyndication.com', 'doubleclick.net', 'googlesyndication.com', 'googleadservices.com'];
+  const adDomains = [
+    'imasdk.googleapis.com', 'pagead2.googlesyndication.com', 'doubleclick.net', 'googlesyndication.com', 
+    'googleadservices.com', 'api.gamemonetize.com', 'gdsdk.com', '/gdsdk/', 'gamemonetize.js'
+  ];
   
   const origFetch = window.fetch;
   window.fetch = function(url) {
@@ -966,7 +989,7 @@ const AD_BLOCKER_SCRIPT = `
   
   // CRITICAL: Block touch events at screen edges to allow native swipe gestures
   // This prevents the WebView from capturing swipe gestures at top/bottom
-  const EDGE_ZONE = window.innerHeight * 0.12; // 12% of screen height
+  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
   
   const blockEdgeTouches = (e) => {
     if (!e.touches || e.touches.length === 0) return;
@@ -1421,6 +1444,9 @@ const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) =
       ]}>
         <SwipeUpHand size={32} color="#ffffff" />
       </Animated.View>
+
+      {/* Transparent scroll zone indicator */}
+      <View style={welcomeStyles.scrollZoneIndicator} pointerEvents="none" />
     </View>
   );
 };
@@ -1435,6 +1461,19 @@ const welcomeStyles = StyleSheet.create({
     top: 0,
     left: 0,
     width: SCREEN_WIDTH,
+  },
+  scrollZoneIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_ZONE_HEIGHT,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)', // Semi-transparent purple
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(168, 85, 247, 0.3)',
+    zIndex: 1,
   },
   brandingContainer: {
     position: 'absolute',
@@ -1529,15 +1568,15 @@ const GameLoadingAnimation: React.FC = () => {
   const rotation1 = useRef(new Animated.Value(0)).current;
   const rotation2 = useRef(new Animated.Value(0)).current;
   const rotation3 = useRef(new Animated.Value(0)).current;
-  
+
   // Scale morphing
   const scale1 = useRef(new Animated.Value(1)).current;
   const scale2 = useRef(new Animated.Value(0.8)).current;
   const scale3 = useRef(new Animated.Value(0.6)).current;
-  
+
   // Glow pulse
   const glow = useRef(new Animated.Value(0.4)).current;
-  
+
   // Fade in
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -1671,7 +1710,7 @@ const GameLoadingAnimation: React.FC = () => {
     <Animated.View style={[loadingStyles.container, { opacity }]}>
       {/* Glow effect behind shapes */}
       <Animated.View style={[loadingStyles.glowOrb, { opacity: glow }]} />
-      
+
       {/* Outer hexagon */}
       <Animated.View style={[loadingStyles.shapeContainer, { transform: [{ rotate: spin1 }, { scale: scale1 }] }]}>
         <Svg width={120} height={120} viewBox="0 0 120 120">
@@ -1757,9 +1796,11 @@ const loadingStyles = StyleSheet.create({
 
 interface HomeScreenProps {
   isActive?: boolean;
+  onHomeDoubleTap?: () => void;
+  refreshTrigger?: number;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refreshTrigger = 0 }) => {
   const insets = useSafeAreaInsets();
   const { sharedGameId, clearSharedGame } = useDeepLink();
   const { user } = useAuth();
@@ -1781,21 +1822,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   // Track liked games and like counts
   const [likedGames, setLikedGames] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<{ [gameId: string]: number }>({});
-  
+
   // Track saved games (bookmarks) and counts
   const [savedGames, setSavedGames] = useState<Set<string>>(new Set());
   const [saveCounts, setSaveCounts] = useState<{ [gameId: string]: number }>({});
-  
+
   // Track share counts
   const [shareCounts, setShareCounts] = useState<{ [gameId: string]: number }>({});
-  
+
   // Cloud save - track loaded progress per game
   const loadedProgressRef = useRef<{ [gameId: string]: Record<string, string> }>({});
-  
+
   // Gamification - track play time for current game
   const gameStartTimeRef = useRef<number | null>(null);
   const lastTrackedGameRef = useRef<string | null>(null);
-  
+
   // Live session points counter (ticks up every 5 seconds)
   const [sessionPoints, setSessionPoints] = useState(0);
   const sessionPointsIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1821,7 +1862,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   // Handle opening leaderboard - submit current session points first
   const handleOpenLeaderboard = async (gameId: string, gameName: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     // Submit current session points to backend before showing leaderboard
     if (gameStartTimeRef.current && user && sessionPoints > 0) {
       const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
@@ -1835,7 +1876,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         }
       }
     }
-    
+
     setLeaderboardGameId(gameId);
     setLeaderboardGameName(gameName);
     setShowLeaderboard(true);
@@ -1899,7 +1940,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       }));
     }
   };
-  
+
   // Handle save/bookmark - calls API
   const handleSave = async (gameId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1994,12 +2035,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
           webView.injectJavaScript(PAUSE_SCRIPT);
         }
       });
-      
+
       // Record play time when leaving tab
       if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
         const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
         const gameId = lastTrackedGameRef.current;
-        
+
         if (playTimeSeconds >= 5) {
           console.log(`[Gamification] Tab unfocused - played ${gameId} for ${playTimeSeconds}s`);
           gamification.gamePlayed(gameId, playTimeSeconds).catch(e => {
@@ -2008,7 +2049,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         }
         gameStartTimeRef.current = null;
       }
-      
+
       // Pause session points interval when leaving tab
       if (sessionPointsIntervalRef.current) {
         clearInterval(sessionPointsIntervalRef.current);
@@ -2020,18 +2061,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       setScrollEnabled(false);
       isAnimating.current = false;
       translateY.setValue(0); // Reset any partial swipe animation
-      
+
       // Resume current game when coming back to the tab
       const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
       if (currItem && webViewRefs.current[currItem.id]) {
         webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
       }
-      
+
       // Restart play time tracking when coming back
       if (currItem?.game?.id) {
         gameStartTimeRef.current = Date.now();
         lastTrackedGameRef.current = currItem.game.id;
-        
+
         // Resume session points interval
         if (!sessionPointsIntervalRef.current) {
           sessionPointsIntervalRef.current = setInterval(() => {
@@ -2046,7 +2087,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   useEffect(() => {
     // Don't do anything if tab is not focused
     if (!isFocused) return;
-    
+
     const prevIdx = prevIndexRef.current;
     const currIdx = currentIndex;
 
@@ -2078,15 +2119,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
   useEffect(() => {
     const currentItem = currentIndex >= 0 ? feed[currentIndex] : null;
     const currentGameId = currentItem?.game?.id || null;
-    
+
     // If we switched away from a game, record the play time and save session points
     if (lastTrackedGameRef.current && lastTrackedGameRef.current !== currentGameId && gameStartTimeRef.current && user) {
       const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
       const gameId = lastTrackedGameRef.current;
-      
+
       // Save current session points for this game before switching
       gameSessionPointsRef.current[gameId] = sessionPoints;
-      
+
       // Only track if played for at least 5 seconds
       if (playTimeSeconds >= 5) {
         console.log(`[Gamification] Played ${gameId} for ${playTimeSeconds}s`);
@@ -2098,9 +2139,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
           console.log('[Gamification] Failed to record play:', e);
         });
       }
-      
+
       gameStartTimeRef.current = null;
-      
+
       // Clear session points interval when leaving game
       if (sessionPointsIntervalRef.current) {
         clearInterval(sessionPointsIntervalRef.current);
@@ -2112,16 +2153,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         periodicSyncIntervalRef.current = null;
       }
     }
-    
+
     // If we're now on a new game, start tracking
     if (currentGameId && currentGameId !== lastTrackedGameRef.current) {
       console.log(`[Gamification] Starting to track game: ${currentGameId}, user: ${user?.id || 'NO USER'}`);
       gameStartTimeRef.current = Date.now();
-      
+
       // Restore saved session points for this game, or start at 0
       const savedPoints = gameSessionPointsRef.current[currentGameId] || 0;
       setSessionPoints(savedPoints);
-      
+
       // Start interval to increment points every 5 seconds
       if (sessionPointsIntervalRef.current) {
         clearInterval(sessionPointsIntervalRef.current);
@@ -2137,7 +2178,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
           return newPoints;
         });
       }, 5000); // +1 point every 5 seconds
-      
+
       // Start periodic sync interval - sync to backend every 5 seconds
       if (periodicSyncIntervalRef.current) {
         clearInterval(periodicSyncIntervalRef.current);
@@ -2159,9 +2200,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         }
       }, 5000); // Sync every 5 seconds
     }
-    
+
     lastTrackedGameRef.current = currentGameId;
-    
+
     // Cleanup on unmount
     return () => {
       if (sessionPointsIntervalRef.current) {
@@ -2228,7 +2269,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
               setLikedGames(new Set(result.likedGameIds));
             }
           }).catch(() => { });
-          
+
           // Check which games user has saved (fire and forget)
           savedGamesApi.check(gameIds).then(result => {
             if (result.savedGameIds?.length > 0) {
@@ -2253,17 +2294,58 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
     init();
   }, []);
 
+  // Refresh feed function - reshuffles games and goes back to top
+  const refreshFeed = useCallback(async () => {
+    console.log('[HomeScreen] Refreshing feed...');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // If we have cached games, just reshuffle
+    if (allGamesRef.current.length > 0) {
+      feedCycleRef.current += 1;
+      const newFeed = createFeed(allGamesRef.current, feedCycleRef.current);
+      setFeed(newFeed);
+      setCurrentIndex(0);
+      translateY.setValue(0);
+      return;
+    }
+
+    // Otherwise fetch fresh
+    setLoading(true);
+    try {
+      const data = await gamesApi.list(50);
+      if (data.games?.length > 0) {
+        allGamesRef.current = data.games;
+        setFeed(createFeed(data.games));
+        setCurrentIndex(0);
+        translateY.setValue(0);
+      }
+    } catch (e: any) {
+      console.log('[HomeScreen] Refresh error:', e?.message || e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Handle refreshTrigger from parent (home button re-tap)
+  const lastRefreshTrigger = useRef(0);
+  useEffect(() => {
+    if (refreshTrigger > 0 && refreshTrigger !== lastRefreshTrigger.current) {
+      lastRefreshTrigger.current = refreshTrigger;
+      refreshFeed();
+    }
+  }, [refreshTrigger, refreshFeed]);
+
   // Handle deep link - navigate to shared game
   useEffect(() => {
     if (sharedGameId && feed.length > 0 && !loading) {
       console.log('[DeepLink] Looking for game:', sharedGameId);
-      
+
       // Find the game in the feed
-      const gameIndex = feed.findIndex(item => 
-        item.game?.id === sharedGameId || 
+      const gameIndex = feed.findIndex(item =>
+        item.game?.id === sharedGameId ||
         item.game?.id?.toLowerCase() === sharedGameId.toLowerCase()
       );
-      
+
       if (gameIndex !== -1) {
         console.log('[DeepLink] Found game at index:', gameIndex);
         setCurrentIndex(gameIndex);
@@ -2272,7 +2354,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         // Game not in current feed - try to fetch it and add to front
         console.log('[DeepLink] Game not in feed, fetching...');
         gamesApi.list(100).then(data => {
-          const game = data.games?.find((g: Game) => 
+          const game = data.games?.find((g: Game) =>
             g.id === sharedGameId || g.id?.toLowerCase() === sharedGameId.toLowerCase()
           );
           if (game) {
@@ -2588,7 +2670,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
                 onLoadEnd={async () => {
                   // Inject the game ready detection script
                   webViewRefs.current[item!.id]?.injectJavaScript(GAME_READY_SCRIPT);
-                  
+
                   // Load and inject cloud save for external games if user is logged in
                   if (isExternalGame(item!.game!) && user && item!.game?.id) {
                     try {
@@ -2719,9 +2801,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
         </Animated.View>
       ))}
 
-      {/* For You header */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <Text style={styles.forYouText}>For You</Text>
+      {/* For You header - tappable to refresh, swipes pass through around it */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
+        <TouchableOpacity
+          onPress={refreshFeed}
+          activeOpacity={0.7}
+          style={styles.forYouButton}
+        >
+          <Text style={styles.forYouText}>For You</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Scroll overlay - only visible when scroll mode is active */}
@@ -2749,10 +2837,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
           ]}
           pointerEvents="none"
         >
-          <View style={[
-            styles.hintGlow,
-            currentIndex !== -1 && styles.hintGlowDark
-          ]} />
+          {currentIndex !== -1 && (
+            <View style={[
+              styles.hintGlow,
+              styles.hintGlowDark
+            ]} />
+          )}
           <Text style={[
             styles.hintText,
             currentIndex !== -1 && styles.hintTextDark
@@ -2794,7 +2884,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true }) => {
       />
 
       {/* Onboarding Tooltip Walkthrough */}
-      <OnboardingOverlay onComplete={() => {}} />
+      <OnboardingOverlay onComplete={() => { }} />
     </View>
   );
 };
@@ -2810,12 +2900,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
-    zIndex: 20,
+    zIndex: 10000,
   },
   forYouText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+  },
+  forYouButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 6,
   },
   gameContainer: {
     position: 'absolute',
