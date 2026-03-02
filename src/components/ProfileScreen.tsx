@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  ScrollView,
   TouchableOpacity,
   Modal,
   Switch,
@@ -24,6 +24,7 @@ import { useAuthScreen } from '../../App';
 import { auth, savedGames as savedGamesApi, gamification } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
+import { RewardsScreen } from './RewardsScreen';
 import { Avatar } from './Avatar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -34,8 +35,9 @@ const GAMES_HOST = 'https://gametok-games.pages.dev';
 
 interface Game { id: string; name: string; thumbnail?: string; }
 interface GamificationStats {
-  points: { balance: number; lifetimeEarned: number };
+  points: { balance: number; lifetimeEarned: number; usdValue?: number };
   streak: { current: number; longest: number; lastClaimDate: string | null; multiplier: number };
+  level?: { current: number; xp: number; currentXp: number; xpForNextLevel: number; progress: number };
 }
 
 const getThumbnailUrl = (game: Game) => game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png`;
@@ -54,11 +56,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
   const lastFetchRef = useRef<number>(0);
-  
+
   const socialStats = {
     followers: user?.followers?.length || 0,
     following: user?.following?.length || 0,
@@ -121,7 +124,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@username</Text>
               <View style={{ width: 40 }} />
             </View>
-            
+
             {/* Preview Profile Info */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
               <View style={{ width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 20 }}>
@@ -132,7 +135,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 <Text style={{ color: colors.textSecondary, fontSize: 14 }}>Your bio goes here...</Text>
               </View>
             </View>
-            
+
             {/* Preview Stats */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
               <View style={{ alignItems: 'center' }}>
@@ -148,17 +151,17 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Likes</Text>
               </View>
             </View>
-            
+
             {/* Preview Saved Games Grid */}
             <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Saved Games</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
-              {[1,2,3,4,5,6].map(i => (
+              {[1, 2, 3, 4, 5, 6].map(i => (
                 <View key={i} style={{ width: TILE_SIZE, height: TILE_SIZE, backgroundColor: colors.surface, borderRadius: 4 }} />
               ))}
             </View>
           </View>
         </ScrollView>
-        
+
         {/* Auth Overlay */}
         <View style={StyleSheet.absoluteFill}>
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
@@ -180,7 +183,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#a855f7" />}
@@ -223,11 +226,15 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           <View style={{ marginBottom: 16 }}>
             <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{displayName || username}</Text>
             {bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{bio}</Text> : null}
-            
+
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
                 <FontAwesome5 name="coins" size={12} color="#ffd60a" />
                 <Text style={{ color: '#ffd60a', fontSize: 13, fontWeight: '700' }}>{formatNumber(stats?.points.balance || 0)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(168,85,247,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                <Ionicons name="trophy" size={12} color="#a855f7" />
+                <Text style={{ color: '#a855f7', fontSize: 13, fontWeight: '700' }}>Level {stats?.level?.current || 1}</Text>
               </View>
               {(stats?.streak.current || 0) > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(249,115,22,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
@@ -239,11 +246,45 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           </View>
 
           {/* Edit Profile Button */}
-          <TouchableOpacity 
-            style={{ backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: colors.border }} 
+          <TouchableOpacity
+            style={{ backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: colors.border }}
             onPress={() => setShowEditProfile(true)}
           >
             <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Edit Profile</Text>
+          </TouchableOpacity>
+
+          {/* Rewards Vault Entry Button */}
+          <TouchableOpacity
+            style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}
+            onPress={() => setShowRewards(true)}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={['#1a1a2e', '#16213e', '#0f3460']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,214,10,0.15)', justifyContent: 'center', alignItems: 'center' }}>
+                  <FontAwesome5 name="gift" size={20} color="#ffd60a" />
+                </View>
+                <View>
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Rewards Vault</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <Text style={{ color: '#ffd60a', fontSize: 13, fontWeight: '700' }}>
+                      {(stats?.points.balance || 0).toLocaleString()} Coins
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' }}>
+                      ≈ ${((stats?.points.usdValue !== undefined && stats.points.usdValue > 0) ? stats.points.usdValue : (stats?.points.balance || 0) / 5667).toFixed(2)} USD
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="chevron-forward" size={16} color="#fff" />
+              </View>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -253,7 +294,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <Ionicons name="bookmark" size={18} color={colors.text} />
             <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Saved Games</Text>
           </View>
-          
+
           {savedGamesList.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 60 }}>
               <Ionicons name="bookmark-outline" size={48} color={colors.textSecondary} />
@@ -275,6 +316,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
       <EditProfileModal visible={showEditProfile} onClose={() => setShowEditProfile(false)} />
 
+      {/* Rewards Full Screen Modal */}
+      <Modal visible={showRewards} animationType="slide" onRequestClose={() => setShowRewards(false)}>
+        <RewardsScreen isActive={showRewards} onClose={() => setShowRewards(false)} />
+      </Modal>
+
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
@@ -286,14 +332,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 <Ionicons name="person-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Edit Profile</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => { setShowSettings(false); setShowAddFriends(true); }}>
                 <Ionicons name="person-add-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Find Friends</Text>
               </TouchableOpacity>
 
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-              
+
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }}>
                 <Ionicons name={isDark ? "moon" : "sunny-outline"} size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Dark Mode</Text>
@@ -301,17 +347,17 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               </View>
 
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-              
+
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('mailto:gametokapp@gmail.com')}>
                 <Ionicons name="mail-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Contact Us</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}>
                 <Ionicons name="shield-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Privacy Policy</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}>
                 <Ionicons name="document-text-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Terms of Service</Text>
@@ -327,10 +373,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => {
                 Alert.alert('Delete Account', 'Are you sure? This cannot be undone.', [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete', style: 'destructive', onPress: async () => {
-                    try { await auth.deleteAccount(); setShowSettings(false); logout(); } 
-                    catch { Alert.alert('Error', 'Failed to delete account.'); }
-                  }}
+                  {
+                    text: 'Delete', style: 'destructive', onPress: async () => {
+                      try { await auth.deleteAccount(); setShowSettings(false); logout(); }
+                      catch { Alert.alert('Error', 'Failed to delete account.'); }
+                    }
+                  }
                 ]);
               }}>
                 <Ionicons name="trash-outline" size={22} color="#ef4444" />

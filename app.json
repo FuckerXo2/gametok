@@ -3,7 +3,7 @@
     "name": "GameTOK",
     "slug": "gametok",
     "scheme": "gametok",
-    "version": "1.2.6",
+    "version": "1.2.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.olasubomi.gametok",
-      "buildNumber": "36",
+      "buildNumber": "39",
       "associatedDomains": [
         "applinks:gametok-landing.pages.dev"
       ],
@@ -32,7 +32,12 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.olasubomi.gametok"
+      "package": "com.vogeza",
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "com.google.android.gms.permission.AD_ID"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -67,10 +72,15 @@
       [
         "react-native-google-mobile-ads",
         {
-          "androidAppId": "ca-app-pub-1961802731817431~XXXXXXXX",
+          "androidAppId": "ca-app-pub-1961802731817431~2296399651",
           "iosAppId": "ca-app-pub-1961802731817431~8301521567"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a8a4606e-1211-4011-ab35-08afb8194d9d"
+      }
+    }
   }
 }

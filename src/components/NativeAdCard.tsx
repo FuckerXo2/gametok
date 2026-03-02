@@ -8,7 +8,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isExpoGo, showInterstitial } from '../services/ads';
+import { isExpoGo } from '../services/ads';
 
 interface NativeAdCardProps {
   isActive?: boolean;
@@ -18,9 +18,6 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
 
   const handleAdPress = async () => {
-    if (!isExpoGo) {
-      await showInterstitial();
-    }
   };
 
   return (
@@ -32,9 +29,9 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
         <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
           <Text style={styles.sponsoredText}>Sponsored</Text>
         </View>
-        
-        <TouchableOpacity 
-          style={styles.mockAdContent} 
+
+        <TouchableOpacity
+          style={styles.mockAdContent}
           onPress={handleAdPress}
           activeOpacity={0.8}
         >
@@ -50,7 +47,7 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({ isActive }) => {
             <Text style={styles.mockAdNote}>[ Ads disabled in Expo Go ]</Text>
           )}
         </TouchableOpacity>
-        
+
         <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
           <View style={styles.adHeader}>
             <View style={styles.adIconPlaceholder}>

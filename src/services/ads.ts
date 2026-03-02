@@ -37,6 +37,8 @@ export const fetchRemoteConfig = async () => {
   return null;
 };
 
+import mobileAds from 'react-native-google-mobile-ads';
+
 // ============================================
 // MAIN INITIALIZATION
 // ============================================
@@ -62,8 +64,14 @@ export const initializeAds = async () => {
     console.log('[Ads] Remote config fetch timed out');
   }
 
-  // Google Mobile Ads initialization is handled by the NativeAdView component
-  // No SDK-level init needed here — native ads load on demand
+  // Explicitly initialize Google Mobile Ads SDK
+  // This is required for Native, Interstitial, and Rewarded ads to work consistently
+  try {
+    await mobileAds().initialize();
+    console.log('[Ads] Google Mobile Ads SDK initialized');
+  } catch (e) {
+    console.log('[Ads] Failed to initialize Google Mobile Ads SDK:', e);
+  }
 
   isInitialized = true;
   console.log('[Ads] Init complete');

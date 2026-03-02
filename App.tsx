@@ -10,8 +10,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
-import { ConnectScreen } from './src/components/ConnectScreen';
-import { RewardsScreen } from './src/components/RewardsScreen';
+import { ExploreScreen } from './src/components/ExploreScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -62,27 +61,22 @@ const MainApp = () => {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         {/* Home - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'home' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
+        <View style={[styles.screenContainer, { opacity: activeTab === 'home' ? 1 : 0, zIndex: activeTab === 'home' ? 1 : 0 }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
           <HomeScreen isActive={activeTab === 'home'} refreshTrigger={homeRefreshTrigger} />
         </View>
 
         {/* Explore (game discovery) - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'explore' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
-          <ConnectScreen />
-        </View>
-
-        {/* Rewards - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'rewards' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'rewards' ? 'auto' : 'none'}>
-          <RewardsScreen isActive={activeTab === 'rewards'} />
+        <View style={[styles.screenContainer, { opacity: activeTab === 'explore' ? 1 : 0, zIndex: activeTab === 'explore' ? 1 : 0 }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
+          <ExploreScreen />
         </View>
 
         {/* Connect (social + messages) - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'connect' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
+        <View style={[styles.screenContainer, { opacity: activeTab === 'connect' ? 1 : 0, zIndex: activeTab === 'connect' ? 1 : 0 }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
           <InboxScreen />
         </View>
 
         {/* Profile - always mounted */}
-        <View style={[styles.screenContainer, { display: activeTab === 'profile' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
+        <View style={[styles.screenContainer, { opacity: activeTab === 'profile' ? 1 : 0, zIndex: activeTab === 'profile' ? 1 : 0 }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
           <ProfileScreen isActive={activeTab === 'profile'} />
         </View>
       </View>
@@ -97,8 +91,8 @@ const AppContent = () => {
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [startWithLogin, setStartWithLogin] = useState(false);
-  const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
+  const notificationListener = useRef<any>(null);
+  const responseListener = useRef<any>(null);
 
   useEffect(() => {
     checkOnboarding();
@@ -121,10 +115,10 @@ const AppContent = () => {
     return () => {
       // Cleanup notification listeners
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, []);
@@ -143,7 +137,7 @@ const AppContent = () => {
 
       // Handle different notification types
       if (data.type === 'game') {
-        setSharedGameId(data.gameId);
+        setSharedGameId(data.gameId as string);
       } else if (data.type === 'message') {
         // Navigate to inbox
         // You can add a callback here to switch tabs

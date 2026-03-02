@@ -19,14 +19,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
     { name: 'explore', icon: 'compass-outline', iconActive: 'compass', label: 'Explore' },
     { name: 'connect', icon: 'people-outline', iconActive: 'people', label: 'Connect' },
-    { name: 'rewards', icon: 'gift-outline', iconActive: 'gift', label: 'Rewards' },
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
   ];
 
   return (
     <View style={[
-      styles.container, 
-      { 
+      styles.container,
+      {
         paddingBottom: insets.bottom || 8,
         backgroundColor: colors.background,
         borderTopColor: colors.border,
@@ -45,7 +44,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
             color={activeTab === tab.name ? colors.text : colors.textSecondary}
           />
           <Text style={[
-            styles.label, 
+            styles.label,
             { color: activeTab === tab.name ? colors.text : colors.textSecondary }
           ]}>
             {tab.label}
@@ -61,6 +60,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderTopWidth: 0.5,
     paddingTop: 8,
+    zIndex: 9999,
+    elevation: 9999,
   },
   tab: {
     flex: 1,

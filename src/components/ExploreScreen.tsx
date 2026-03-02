@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,9 +21,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { WebView } from 'react-native-webview';
+import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
 import { games } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen } from '../../App';
+import { isExpoGo } from '../services/ads';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FEATURED_CARD_WIDTH = SCREEN_WIDTH * 0.7;
@@ -58,6 +60,7 @@ interface GameItem {
   category?: string;
   plays?: number;
   embedUrl?: string;
+  _fakePlays?: number;
 }
 
 // Hero categories - big visual cards
@@ -84,6 +87,24 @@ const getGameUrl = (game: GameItem) => {
     return `${game.embedUrl}${sep}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
   }
   return `${GAMES_HOST}/${game.id}/`;
+};
+
+// Generate a consistent fake number for a game based on its ID
+const getFakePlayCount = (gameId: string) => {
+  let hash = 0;
+  for (let i = 0; i < gameId.length; i++) {
+    hash = ((hash << 5) - hash) + gameId.charCodeAt(i);
+    hash |= 0;
+  }
+  const randomCount = Math.abs(hash) % 1500000 + 10000; // Between 10K and ~1.5M
+  return randomCount;
+};
+
+// Helper function to turn a large number into a short string like 1.2M or 12.3K for the UI
+const formatNumber = (num: number): string => {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return num.toString();
 };
 
 // Ad blocker script for external games (same as HomeScreen)
@@ -213,12 +234,12 @@ const GameCard: React.FC<{
     )}
     <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.95)']} style={styles.gameCardOverlay}>
       <Text style={styles.gameCardName} numberOfLines={2}>{game.name}</Text>
-      {game.plays ? (
-        <View style={styles.playCountRow}>
-          <Ionicons name="play" size={10} color="rgba(255,255,255,0.8)" />
-          <Text style={styles.playCountText}>{(game.plays / 1000).toFixed(1)}K plays</Text>
-        </View>
-      ) : null}
+      <View style={styles.playCountRow}>
+        <Ionicons name="play" size={10} color="rgba(255,255,255,0.8)" />
+        <Text style={styles.playCountText}>
+          {formatNumber(game._fakePlays || getFakePlayCount(game.id))} plays
+        </Text>
+      </View>
     </LinearGradient>
   </TouchableOpacity>
 );
@@ -322,6 +343,54 @@ export const ExploreScreen: React.FC = () => {
   const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
 
+  // Interstitial Ad
+  const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
+  const [isAdLoaded, setIsAdLoaded] = useState(false);
+  const pendingCloseRef = useRef(false);
+
+  // Load interstitial ad
+  useEffect(() => {
+    if (isExpoGo) return; // Don't load real ads in Expo Go
+
+    const adUnitId = __DEV__ ? TestIds.INTERSTITIAL : 'ca-app-pub-1961802731817431/7682402362';
+    const interstitial = InterstitialAd.createForAdRequest(adUnitId, {
+      requestNonPersonalizedAdsOnly: true,
+    });
+
+    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
+      setIsAdLoaded(true);
+    });
+
+    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+      setIsAdLoaded(false);
+      // Close the game AFTER the ad is dismissed
+      if (pendingCloseRef.current) {
+        pendingCloseRef.current = false;
+        setPlayingGame(null);
+      }
+      interstitial.load(); // Load the next one
+    });
+
+    const unsubscribeError = interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
+      console.log('Interstitial Ad error: ', error);
+      setIsAdLoaded(false);
+      // If ad fails, close the game anyway
+      if (pendingCloseRef.current) {
+        pendingCloseRef.current = false;
+        setPlayingGame(null);
+      }
+    });
+
+    interstitial.load();
+    setInterstitialAd(interstitial);
+
+    return () => {
+      unsubscribeLoaded();
+      unsubscribeClosed();
+      unsubscribeError();
+    };
+  }, []);
+
   const loadData = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
     else setLoading(true);
@@ -331,17 +400,26 @@ export const ExploreScreen: React.FC = () => {
       const list: GameItem[] = (data.games || []).map((g: GameItem) => ({
         ...g,
         thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
+        _fakePlays: getFakePlayCount(g.id)
       }));
       setAllGames(list);
 
       // Sort for featured
       const byPlays = [...list].sort((a, b) => (b.plays || 0) - (a.plays || 0));
+
+      // Deterministic shuffle for "raged at" — reverse the sorted list and take from different positions
+      const ragedAt = [...list].sort((a, b) => {
+        const hashA = a.id.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0);
+        const hashB = b.id.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0);
+        return hashA - hashB;
+      });
+
       const shuffled = [...list].sort(() => Math.random() - 0.5);
 
-      // Featured categories
+      // Featured categories - each gets distinct games
       setFeaturedGames({
         trending: byPlays.slice(0, 20),
-        hot: byPlays.slice(0, 15),
+        hot: ragedAt.slice(0, 15),
         foryou: shuffled.slice(0, 20),
       });
 
@@ -403,6 +481,7 @@ export const ExploreScreen: React.FC = () => {
         const results: GameItem[] = (data.games || []).map((g: GameItem) => ({
           ...g,
           thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
+          _fakePlays: getFakePlayCount(g.id)
         }));
         setSearchResults(results);
       } catch (e) {
@@ -582,7 +661,19 @@ export const ExploreScreen: React.FC = () => {
           )}
           <TouchableOpacity
             style={[styles.gameCloseBtn, { top: insets.top + 10 }]}
-            onPress={() => setPlayingGame(null)}
+            onPress={() => {
+              // Show ad when closing game
+              if (isExpoGo) {
+                setPlayingGame(null);
+                alert('Mock Interstitial Ad: Sponsored Content');
+              } else if (isAdLoaded && interstitialAd) {
+                // Mark pending close — game closes AFTER ad is dismissed
+                pendingCloseRef.current = true;
+                interstitialAd.show();
+              } else {
+                setPlayingGame(null);
+              }
+            }}
           >
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>

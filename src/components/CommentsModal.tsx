@@ -62,7 +62,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const loadComments = async () => {
     setLoading(true);
     try {
-      const result = await commentsApi.get(gameId);
+      const result = await commentsApi.list(gameId);
       setCommentsList(result.comments || []);
     } catch (e) {
       console.error('Failed to load comments:', e);
@@ -78,9 +78,9 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setPosting(true);
     Keyboard.dismiss();
-    
+
     try {
-      const result = await commentsApi.add(gameId, newComment.trim());
+      const result = await commentsApi.create(gameId, newComment.trim());
       if (result.comment) {
         setCommentsList(prev => [result.comment, ...prev]);
       }
@@ -99,7 +99,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     const mins = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
-    
+
     if (mins < 1) return 'now';
     if (mins < 60) return `${mins}m`;
     if (hours < 24) return `${hours}h`;
@@ -155,12 +155,12 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView 
-        style={styles.overlay} 
+      <KeyboardAvoidingView
+        style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        
+
         <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -221,8 +221,8 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                   multiline
                   maxLength={500}
                 />
-                <TouchableOpacity 
-                  onPress={handlePost} 
+                <TouchableOpacity
+                  onPress={handlePost}
                   disabled={!newComment.trim() || posting}
                   style={styles.postBtn}
                 >
@@ -230,7 +230,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
                     <Text style={[
-                      styles.postText, 
+                      styles.postText,
                       { color: newComment.trim() ? colors.primary : colors.textSecondary }
                     ]}>
                       Post

@@ -106,33 +106,33 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
   const insets = useSafeAreaInsets();
   const { signup, login, loginWithOAuth, user, refreshUser } = useAuth();
   const { colors } = useTheme();
-  
+
   const [step, setStep] = useState<OnboardingStep>(skipIntro ? (startWithLogin ? 'credentials' : 'birthday') : 'welcome');
   const [isLogin, setIsLogin] = useState(startWithLogin);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
-  
+
   // Birthday
   const [birthMonth, setBirthMonth] = useState('');
   const [birthDay, setBirthDay] = useState('');
   const [birthYear, setBirthYear] = useState('');
-  
+
   // Credentials
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
+
   // Username
   const [username, setUsername] = useState('');
-  
+
   // Profile
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [avatar, setAvatar] = useState<string | null>(null);
-  
+
   // Interests
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-  
+
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Check Apple Sign-In availability and configure Google
@@ -142,7 +142,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       setIsAppleAvailable(available);
     };
     checkApple();
-    
+
     // Configure Google Sign-In
     GoogleSignin.configure({
       iosClientId: '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com',
@@ -160,7 +160,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      
+
       // Send to backend
       const result = await loginWithOAuth('apple', {
         identityToken: credential.identityToken,
@@ -168,11 +168,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
         fullName: credential.fullName,
         user: credential.user,
       });
-      
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
+
       // Check if this is a new user - if so, go through onboarding
-      if (result?.isNewUser) {
+      if ((result as any)?.isNewUser) {
         animateTransition('username');
       } else {
         onComplete();
@@ -194,13 +194,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     try {
       setLoading(true);
       setError('');
-      
+
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
-      
+
       if (response.type === 'success' && response.data) {
         const { idToken, user: googleUser } = response.data;
-        
+
         const result = await loginWithOAuth('google', {
           idToken,
           user: {
@@ -210,11 +210,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
             photo: googleUser.photo,
           },
         });
-        
+
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        
+
         // Check if this is a new user - if so, go through onboarding
-        if (result?.isNewUser) {
+        if ((result as any)?.isNewUser) {
           animateTransition('username');
         } else {
           onComplete();
@@ -246,12 +246,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     const month = parseInt(birthMonth);
     const day = parseInt(birthDay);
     const year = parseInt(birthYear);
-    
+
     if (!month || !day || !year || month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2020) {
       setError('Please enter a valid birthday');
       return false;
     }
-    
+
     const age = new Date().getFullYear() - year;
     if (age < 13) {
       setError('You must be at least 13 years old');
@@ -277,7 +277,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       setError('Password must be at least 6 characters');
       return;
     }
-    
+
     if (isLogin) {
       setLoading(true);
       try {
@@ -299,7 +299,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       setError('Username must be at least 3 characters');
       return;
     }
-    
+
     setLoading(true);
     setError('');
     try {
@@ -315,7 +315,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
 
   const toggleInterest = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedInterests(prev => 
+    setSelectedInterests(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
@@ -385,10 +385,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
 
       <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + 20 }]}>
         <Text style={styles.signupTitle}>Sign up for GameTOK</Text>
-        
+
         {/* Apple Sign-In - Required for iOS */}
         {isAppleAvailable && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.authOption, styles.appleButton]}
             onPress={handleAppleSignIn}
             disabled={loading || isAuthLoading}
@@ -399,22 +399,22 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
         )}
 
         {/* Google Sign-In */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.googleButtonModern}
           onPress={handleGoogleSignIn}
           disabled={loading || isAuthLoading}
         >
           <Svg width={18} height={18} viewBox="0 0 24 24" style={{ marginRight: 10 }}>
-            <Path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <Path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <Path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-            <Path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            <Path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+            <Path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <Path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+            <Path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
           </Svg>
           <Text style={styles.googleButtonText}>Continue with Google</Text>
         </TouchableOpacity>
 
         {/* Email/Phone option */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.authOption}
           onPress={() => { setIsLogin(false); animateTransition('birthday'); }}
           disabled={loading || isAuthLoading}
@@ -498,7 +498,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
         </View>
 
         <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.primaryButton, (!birthMonth || !birthDay || !birthYear) && styles.buttonDisabled]}
             onPress={handleBirthdayContinue}
             disabled={!birthMonth || !birthDay || !birthYear}
@@ -519,8 +519,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
   // CREDENTIALS SCREEN (email + password)
   const renderCredentials = () => (
     <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <TouchableOpacity 
-        style={styles.backButton} 
+      <TouchableOpacity
+        style={styles.backButton}
         onPress={() => animateTransition(isLogin ? 'welcome' : 'birthday')}
       >
         <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -577,7 +577,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
 
             <View style={styles.oauthIconsRow}>
               {isAppleAvailable && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.oauthIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                   onPress={handleAppleSignIn}
                   disabled={loading}
@@ -586,7 +586,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.oauthIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={handleGoogleSignIn}
                 disabled={loading}
@@ -599,7 +599,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       </ScrollView>
 
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.primaryButton, (!email || !password) && styles.buttonDisabled]}
           onPress={handleCredentialsContinue}
           disabled={!email || !password || loading}
@@ -648,7 +648,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       </ScrollView>
 
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.primaryButton, username.length < 3 && styles.buttonDisabled]}
           onPress={handleUsernameContinue}
           disabled={username.length < 3 || loading}
@@ -714,7 +714,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       </ScrollView>
 
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.primaryButton}
           onPress={handleProfileContinue}
         >
@@ -770,7 +770,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       </View>
 
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.primaryButton, selectedInterests.length < 3 && styles.buttonDisabled]}
           onPress={onComplete}
           disabled={selectedInterests.length < 3}
@@ -818,7 +818,7 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
   },
-  
+
   // Welcome
   background: {
     position: 'absolute',
@@ -921,7 +921,7 @@ const styles = StyleSheet.create({
     color: '#FF6B6B',
     fontWeight: '600',
   },
-  
+
   // Form screens
   backButton: {
     position: 'absolute',
@@ -951,7 +951,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
   },
-  
+
   // Birthday
   birthdayRow: {
     flexDirection: 'row',
@@ -970,7 +970,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     textAlign: 'center',
   },
-  
+
   // Inputs
   inputContainer: {
     flexDirection: 'row',
@@ -1003,7 +1003,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     marginTop: -8,
   },
-  
+
   // Profile
   profileScroll: {
     flexGrow: 1,
@@ -1060,7 +1060,7 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 16,
   },
-  
+
   // Bottom actions
   bottomActions: {
     paddingHorizontal: 24,
@@ -1090,7 +1090,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     textAlign: 'center',
   },
-  
+
   // Interests
   interestsHeader: {
     alignItems: 'center',

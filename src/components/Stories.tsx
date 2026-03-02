@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
   TouchableOpacity,
   Modal,
   Dimensions,
@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const STORIES = [
+const STORIES: { id: string; user: string; avatar: string; isAdd: boolean; hasStory: boolean; game?: string; score?: number }[] = [
   { id: 'add', user: 'Your story', avatar: '➕', isAdd: true, hasStory: false },
 ];
 
@@ -34,7 +34,7 @@ export const Stories: React.FC<StoriesProps> = ({ onStoryPress }) => {
     }
     setViewingStory(story);
     setProgress(0);
-    
+
     // Auto progress
     const interval = setInterval(() => {
       setProgress(p => {
@@ -50,15 +50,15 @@ export const Stories: React.FC<StoriesProps> = ({ onStoryPress }) => {
 
   return (
     <>
-      <ScrollView 
-        horizontal 
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.container}
         contentContainerStyle={styles.content}
       >
         {STORIES.map((story) => (
-          <TouchableOpacity 
-            key={story.id} 
+          <TouchableOpacity
+            key={story.id}
             style={styles.storyItem}
             onPress={() => handleStoryPress(story)}
             activeOpacity={0.8}

@@ -1,10 +1,10 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Dimensions, 
-  Text, 
-  TouchableOpacity, 
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  Text,
+  TouchableOpacity,
   Animated,
   ActivityIndicator,
   StatusBar,
@@ -27,12 +27,12 @@ const { WebViewScrollDisabler } = NativeModules;
 const SafeWebView: React.FC<any> = (props) => {
   const [hasError, setHasError] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  
+
   useEffect(() => {
     const timer = setTimeout(() => setIsReady(true), Platform.OS === 'ios' ? 100 : 0);
     return () => clearTimeout(timer);
   }, []);
-  
+
   if (hasError) {
     return (
       <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
@@ -41,7 +41,7 @@ const SafeWebView: React.FC<any> = (props) => {
       </View>
     );
   }
-  
+
   if (!isReady) {
     return (
       <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}>
@@ -49,7 +49,7 @@ const SafeWebView: React.FC<any> = (props) => {
       </View>
     );
   }
-  
+
   return (
     <WebView
       {...props}
@@ -77,14 +77,14 @@ const GAMES_WITH_OWN_PLAY_BUTTON: string[] = [
 
 const useScreenDimensions = () => {
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
-  
+
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       setDimensions(window);
     });
     return () => subscription?.remove();
   }, []);
-  
+
   return dimensions;
 };
 
@@ -106,11 +106,23 @@ interface GameCardProps {
   useExternalWebView?: boolean;
 }
 
-export const GameCard: React.FC<GameCardProps> = ({ 
-  game, 
-  gameUrl, 
-  isActive, 
-  isPreloading = false, 
+// Cache like state so it survives re-renders/remounts
+const likedGamesCache = new Map<string, { isLiked: boolean; likeCount: number }>();
+
+const getDeterministicCount = (id: string, min: number, max: number) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % (max - min) + min;
+};
+
+export const GameCard: React.FC<GameCardProps> = ({
+  game,
+  gameUrl,
+  isActive,
+  isPreloading = false,
   onPlayingChange,
   isScrollMode = false,
   useExternalWebView = false,
@@ -119,24 +131,25 @@ export const GameCard: React.FC<GameCardProps> = ({
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
   const { width: screenWidth, height: screenHeight } = useScreenDimensions();
-  
+
+  const cached = likedGamesCache.get(game.id);
   const [score, setScore] = useState(0);
-  const [isLiked, setIsLiked] = useState(false);
+  const [isLiked, setIsLiked] = useState(cached?.isLiked ?? false);
   const [isSaved, setIsSaved] = useState(false);
-  const [likeCount, setLikeCount] = useState(Math.floor(Math.random() * 500) + 50);
-  const [shareCount] = useState(Math.floor(Math.random() * 100) + 10);
+  const [likeCount, setLikeCount] = useState(cached?.likeCount ?? getDeterministicCount(game.id, 50, 550));
+  const [shareCount] = useState(getDeterministicCount(game.id + 's', 10, 110));
   const [gameLoaded, setGameLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showMultiplayer, setShowMultiplayer] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
-  
+
   const heartScale = useRef(new Animated.Value(1)).current;
   const scrollModeOpacity = useRef(new Animated.Value(0)).current;
-  
+
   const isMultiplayerGame = MULTIPLAYER_GAMES.includes(game.id);
   const isExternalGame = !!gameUrl.includes('gd_sdk_referrer_url');
   const hasOwnPlayButton = GAMES_WITH_OWN_PLAY_BUTTON.includes(game.id) || isExternalGame;
-  
+
   void colors;
   void insets;
 
@@ -214,11 +227,11 @@ export const GameCard: React.FC<GameCardProps> = ({
       if (data.type === 'gameOver') {
         setScore(data.score);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        if (data.score > 0) scores.submit(game.id, data.score).catch(() => {});
+        if (data.score > 0) scores.submit(game.id, data.score).catch(() => { });
       } else if (data.type === 'score') {
         setScore(data.score);
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [game.id]);
 
   const handlePlay = useCallback(() => {
@@ -234,14 +247,16 @@ export const GameCard: React.FC<GameCardProps> = ({
 
   const handleLike = useCallback(() => {
     const newLiked = !isLiked;
+    const newCount = newLiked ? likeCount + 1 : likeCount - 1;
     setIsLiked(newLiked);
-    setLikeCount(prev => newLiked ? prev + 1 : prev - 1);
+    setLikeCount(newCount);
+    likedGamesCache.set(game.id, { isLiked: newLiked, likeCount: newCount });
     Animated.sequence([
       Animated.spring(heartScale, { toValue: 1.4, useNativeDriver: true, speed: 50 }),
       Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, speed: 50 }),
     ]).start();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [isLiked, heartScale]);
+  }, [isLiked, likeCount, heartScale, game.id]);
 
   const handleShare = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -385,7 +400,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   return (
     <View style={[styles.container, { width: screenWidth, height: screenHeight }]}>
       <StatusBar hidden={false} barStyle="light-content" />
-      
+
       <View style={styles.gameArea}>
         <View style={styles.gameFrame}>
           {/* WebView - only render if NOT using external pool */}
@@ -432,7 +447,7 @@ export const GameCard: React.FC<GameCardProps> = ({
               />
             </View>
           )}
-          
+
           {/* Play button overlay */}
           {!isPlaying && !hasOwnPlayButton && (
             <TouchableOpacity style={styles.playOverlay} onPress={handlePlay} activeOpacity={0.9}>
@@ -442,19 +457,19 @@ export const GameCard: React.FC<GameCardProps> = ({
               </View>
             </TouchableOpacity>
           )}
-          
+
           {/* Transparent tap for games with own play button */}
           {!isPlaying && hasOwnPlayButton && (
             <TouchableOpacity style={styles.playOverlay} onPress={handlePlay} activeOpacity={1} />
           )}
-          
+
           {/* Loading indicator */}
           {!gameLoaded && isActive && !isPreloading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#fff" />
             </View>
           )}
-          
+
           {/* Score badge */}
           {isPlaying && score > 0 && (
             <View style={styles.scoreOverlay}>
@@ -462,15 +477,15 @@ export const GameCard: React.FC<GameCardProps> = ({
               <Text style={styles.scoreText}>{formatNumber(score)}</Text>
             </View>
           )}
-          
+
           {/* Side Actions */}
           <View style={styles.sideActions}>
             <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
               <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-                <Ionicons 
-                  name={isLiked ? "heart" : "heart-outline"} 
-                  size={32} 
-                  color={isLiked ? '#FF6B6B' : '#fff'} 
+                <Ionicons
+                  name={isLiked ? "heart" : "heart-outline"}
+                  size={32}
+                  color={isLiked ? '#FF6B6B' : '#fff'}
                   style={styles.iconShadow}
                 />
               </Animated.View>
@@ -483,16 +498,16 @@ export const GameCard: React.FC<GameCardProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleSave} activeOpacity={0.7}>
-              <Ionicons 
-                name={isSaved ? "bookmark" : "bookmark-outline"} 
-                size={30} 
-                color={isSaved ? '#FFD700' : '#fff'} 
+              <Ionicons
+                name={isSaved ? "bookmark" : "bookmark-outline"}
+                size={30}
+                color={isSaved ? '#FFD700' : '#fff'}
                 style={styles.iconShadow}
               />
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionBtn} 
+
+            <TouchableOpacity
+              style={styles.actionBtn}
               onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
               activeOpacity={0.7}
             >
@@ -517,10 +532,10 @@ export const GameCard: React.FC<GameCardProps> = ({
             )}
           </View>
         </View>
-        
+
         {/* Scroll mode dim overlay */}
-        <Animated.View 
-          style={[styles.scrollModeOverlay, { opacity: scrollModeOpacity }]} 
+        <Animated.View
+          style={[styles.scrollModeOverlay, { opacity: scrollModeOpacity }]}
           pointerEvents="none"
         />
       </View>
@@ -537,8 +552,6 @@ export const GameCard: React.FC<GameCardProps> = ({
         onClose={() => setShowShareSheet(false)}
         gameId={game.id}
         gameName={game.name}
-        gameIcon={game.icon}
-        gameColor={game.color}
         onSendToFriend={handleSendToFriend}
       />
     </View>

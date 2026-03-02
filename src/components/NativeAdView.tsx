@@ -1,18 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
   Image,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
+  Platform,
+  Dimensions,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Constants from "expo-constants";
 
 // Check if running in Expo Go
-const isExpoGo = Constants.appOwnership === 'expo' || (Constants.executionEnvironment as string) === 'expoGo';
+const isExpoGo =
+  Constants.appOwnership === "expo" ||
+  (Constants.executionEnvironment as string) === "expoGo";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
 // Import Google Mobile Ads native ad components (will be undefined in Expo Go)
 let GNativeAd: any;
@@ -23,7 +29,7 @@ let GNativeMediaView: any;
 let GTestIds: any;
 
 try {
-  const gmaModule = require('react-native-google-mobile-ads');
+  const gmaModule = require("react-native-google-mobile-ads");
   GNativeAd = gmaModule.NativeAd;
   GNativeAdView = gmaModule.NativeAdView;
   GNativeAsset = gmaModule.NativeAsset;
@@ -31,13 +37,16 @@ try {
   GNativeMediaView = gmaModule.NativeMediaView;
   GTestIds = gmaModule.TestIds;
 } catch (e) {
-  console.log('[Ad] Google Mobile Ads module not available');
+  console.log("[Ad] Google Mobile Ads module not available");
 }
 
-// TODO: Replace with your real native ad unit ID from AdMob
+// Ad unit IDs by platform
 const NATIVE_AD_UNIT_ID = __DEV__
-  ? GTestIds?.NATIVE || 'ca-app-pub-3940256099942544/3986624511' // Test ID
-  : 'ca-app-pub-1961802731817431/8986743812'; // Production ad unit ID
+  ? GTestIds?.NATIVE || "ca-app-pub-3940256099942544/3986624511" // Test ID
+  : Platform.select({
+    ios: "ca-app-pub-1961802731817431/9914305307",
+    android: "ca-app-pub-1961802731817431/4025723808",
+  }) || "ca-app-pub-1961802731817431/9914305307";
 
 interface NativeAdViewProps {
   contentHeight: number;
@@ -58,12 +67,14 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     if (!hasGMA) return;
 
     let destroyed = false;
+    let loadSuccess = false; // Fixes closure capturing adLoaded=false
 
     const loadAd = async () => {
       try {
-        console.log('[Ad] Creating Google native ad...');
+        console.log("[Ad] Creating Google native ad...");
         const ad = await GNativeAd.createForAdRequest(NATIVE_AD_UNIT_ID, {
           requestNonPersonalizedAdsOnly: false,
+          startVideoMuted: false, // Prevents video native ads from being automatically muted on start
         });
 
         if (destroyed) {
@@ -71,19 +82,23 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
           return;
         }
 
-        console.log('[Ad] Google native ad loaded:', ad.headline);
+        console.log("[Ad] Google native ad loaded:", ad.headline);
+        loadSuccess = true;
         setNativeAd(ad);
         setAdLoaded(true);
         setAdFailed(false);
       } catch (error: any) {
-        console.log('[Ad] Google native ad load failed:', error?.message || error);
-        if (!destroyed && retryCount < 2) {
-          console.log('[Ad] Retrying... (attempt', retryCount + 1, 'of 2)');
+        console.log(
+          "[Ad] Google native ad load failed:",
+          error?.message || error,
+        );
+        if (!destroyed && retryCount < 5) {
+          console.log("[Ad] Retrying... (attempt", retryCount + 1, "of 5)");
           setTimeout(() => {
-            if (!destroyed) setRetryCount(prev => prev + 1);
-          }, 3000);
+            if (!destroyed) setRetryCount((prev) => prev + 1);
+          }, 2000);
         } else if (!destroyed) {
-          console.log('[Ad] Max retries reached, showing fallback');
+          console.log("[Ad] Max retries reached, showing fallback");
           setAdFailed(true);
         }
       }
@@ -91,13 +106,13 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
 
     loadAd();
 
-    // Timeout after 15 seconds if no response
+    // Timeout after 30 seconds if no response
     const timeout = setTimeout(() => {
-      if (!adLoaded && !destroyed) {
-        console.log('[Ad] Native ad load timeout - no response after 15s');
+      if (!loadSuccess && !destroyed) {
+        console.log("[Ad] Native ad load timeout - no response after 30s");
         setAdFailed(true);
       }
-    }, 15000);
+    }, 30000);
 
     return () => {
       destroyed = true;
@@ -117,7 +132,7 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     return (
       <View style={[styles.container, { height: contentHeight }]}>
         <LinearGradient
-          colors={['#1a1a2e', '#16213e', '#0f0f23']}
+          colors={["#1a1a2e", "#16213e", "#0f0f23"]}
           style={styles.adContainer}
         >
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
@@ -126,14 +141,20 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
 
           <View style={styles.mockAdContent}>
             <View style={styles.mockAdImage}>
-              <Ionicons name="game-controller" size={80} color="rgba(99, 102, 241, 0.5)" />
+              <Ionicons
+                name="game-controller"
+                size={80}
+                color="rgba(99, 102, 241, 0.5)"
+              />
             </View>
             <Text style={styles.mockAdTitle}>Download Now!</Text>
             <Text style={styles.mockAdSubtitle}>The #1 Game of 2025</Text>
             <View style={styles.mockAdButton}>
               <Text style={styles.mockAdButtonText}>Install</Text>
             </View>
-            <Text style={styles.mockAdNote}>[ Test Ad - Real ads in production build ]</Text>
+            <Text style={styles.mockAdNote}>
+              [ Test Ad - Real ads in production build ]
+            </Text>
           </View>
 
           <View style={[styles.adInfo, { paddingBottom: insets.bottom + 90 }]}>
@@ -151,7 +172,11 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
             <View style={styles.actionBtn}>
               <View style={styles.actionIcon}>
-                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+                <Ionicons
+                  name="information-circle-outline"
+                  size={26}
+                  color="rgba(255,255,255,0.6)"
+                />
               </View>
               <Text style={styles.actionLabel}>Ad Info</Text>
             </View>
@@ -166,7 +191,7 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     return (
       <View style={[styles.container, { height: contentHeight }]}>
         <LinearGradient
-          colors={['#1a1a2e', '#16213e', '#0f0f23']}
+          colors={["#1a1a2e", "#16213e", "#0f0f23"]}
           style={styles.adContainer}
         >
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
@@ -175,7 +200,11 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
 
           <View style={styles.mockAdContent}>
             <View style={styles.mockAdImage}>
-              <Ionicons name="game-controller" size={80} color="rgba(99, 102, 241, 0.5)" />
+              <Ionicons
+                name="game-controller"
+                size={80}
+                color="rgba(99, 102, 241, 0.5)"
+              />
             </View>
             <Text style={styles.mockAdTitle}>GameTOK</Text>
             <Text style={styles.mockAdSubtitle}>Play unlimited games</Text>
@@ -199,7 +228,11 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
             <View style={styles.actionBtn}>
               <View style={styles.actionIcon}>
-                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+                <Ionicons
+                  name="information-circle-outline"
+                  size={26}
+                  color="rgba(255,255,255,0.6)"
+                />
               </View>
               <Text style={styles.actionLabel}>Ad Info</Text>
             </View>
@@ -214,7 +247,7 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     return (
       <View style={[styles.container, { height: contentHeight }]}>
         <LinearGradient
-          colors={['#1a1a2e', '#16213e', '#0f0f23']}
+          colors={["#1a1a2e", "#16213e", "#0f0f23"]}
           style={styles.adContainer}
         >
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
@@ -229,26 +262,34 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     );
   }
 
-  // Render Google native ad with custom layout
+  // Render Google native ad with fullscreen layout
   return (
     <View style={[styles.container, { height: contentHeight }]}>
       <GNativeAdView
         nativeAd={nativeAd}
-        style={[styles.container, { width: '100%', height: '100%' }]}
+        style={[styles.container, { width: "100%", height: "100%" }]}
       >
-        <View
-          style={[styles.adContainer, { backgroundColor: '#16213e' }]}
-        >
+        <View style={[styles.adContainer, { backgroundColor: "#000" }]}>
+          {/* Fullscreen media background */}
+          {GNativeMediaView && (
+            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+              <GNativeMediaView style={StyleSheet.absoluteFillObject} />
+            </View>
+          )}
+
+          {/* Sponsored badge */}
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
             <Text style={styles.sponsoredText}>Sponsored</Text>
           </View>
 
-          <View style={styles.nativeAdInner}>
-            {/* Media content (image/video) */}
-            {GNativeMediaView && (
-              <GNativeMediaView style={styles.nativeMediaView} />
-            )}
-
+          {/* Bottom overlay with gradient */}
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.7)", "rgba(0,0,0,0.95)"]}
+            style={[
+              styles.bottomOverlay,
+              { paddingBottom: insets.bottom + 100 },
+            ]}
+          >
             {/* Ad icon + headline */}
             <View style={styles.nativeAdInfo}>
               {nativeAd.icon && (
@@ -278,7 +319,7 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
             {/* Body text */}
             {nativeAd.body && (
               <GNativeAsset assetType={GNativeAssetType.BODY}>
-                <Text style={styles.nativeAdBody} numberOfLines={3}>
+                <Text style={styles.nativeAdBody} numberOfLines={2}>
                   {nativeAd.body}
                 </Text>
               </GNativeAsset>
@@ -290,12 +331,18 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Ionicons
                     key={star}
-                    name={star <= Math.round(nativeAd.starRating) ? 'star' : 'star-outline'}
+                    name={
+                      star <= Math.round(nativeAd.starRating)
+                        ? "star"
+                        : "star-outline"
+                    }
                     size={16}
                     color="#FFD700"
                   />
                 ))}
-                <Text style={styles.starRatingText}>{nativeAd.starRating.toFixed(1)}</Text>
+                <Text style={styles.starRatingText}>
+                  {nativeAd.starRating.toFixed(1)}
+                </Text>
               </View>
             )}
 
@@ -303,7 +350,9 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
             {nativeAd.callToAction && (
               <GNativeAsset assetType={GNativeAssetType.CALL_TO_ACTION}>
                 <View style={styles.nativeCtaButton}>
-                  <Text style={styles.nativeCtaText}>{nativeAd.callToAction}</Text>
+                  <Text style={styles.nativeCtaText}>
+                    {nativeAd.callToAction}
+                  </Text>
                 </View>
               </GNativeAsset>
             )}
@@ -323,12 +372,16 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
                 )}
               </View>
             )}
-          </View>
+          </LinearGradient>
 
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
             <View style={styles.actionBtn}>
               <View style={styles.actionIcon}>
-                <Ionicons name="information-circle-outline" size={26} color="rgba(255,255,255,0.6)" />
+                <Ionicons
+                  name="information-circle-outline"
+                  size={26}
+                  color="rgba(255,255,255,0.6)"
+                />
               </View>
               <Text style={styles.actionLabel}>Ad Info</Text>
             </View>
@@ -341,62 +394,79 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    backgroundColor: '#000',
+    width: "100%",
+    backgroundColor: "#000",
   },
   adContainer: {
     flex: 1,
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
-    color: 'rgba(255,255,255,0.5)',
+    color: "rgba(255,255,255,0.5)",
     marginTop: 12,
     fontSize: 14,
   },
   sponsoredBadge: {
-    position: 'absolute',
+    position: "absolute",
     left: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: "rgba(0,0,0,0.6)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 4,
     zIndex: 10,
   },
   sponsoredText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Google native ad styles
   nativeAdContainer: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 20,
     paddingTop: 80,
     paddingBottom: 120,
   },
   nativeAdInner: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 20,
     paddingTop: 80,
     paddingBottom: 120,
   },
+  bottomOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingLeft: 16,
+    paddingRight: 86, // 70 + 16 to keep text away from Ad Info button
+    paddingTop: 60,
+    justifyContent: "flex-end",
+  },
+  nativeMediaContainer: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#0a0a14",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingBottom: 80, // Offset it slightly upwards away from the bottom text
+  },
   nativeMediaView: {
-    width: '100%',
-    height: 220,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    width: SCREEN_WIDTH,
+    height: SCREEN_WIDTH, // Forces a clean 1:1 square instead of vertical stretch
   },
   nativeAdInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 12,
   },
   nativeAdIcon: {
@@ -404,125 +474,125 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 12,
     marginRight: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   nativeAdTextContainer: {
     flex: 1,
   },
   nativeAdHeadline: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: "700",
+    color: "#fff",
     marginBottom: 4,
   },
   nativeAdAdvertiser: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    color: "rgba(255,255,255,0.6)",
   },
   nativeAdBody: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    color: "rgba(255,255,255,0.7)",
     lineHeight: 20,
     marginBottom: 16,
   },
   starRatingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 16,
   },
   starRatingText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: "rgba(255,255,255,0.7)",
     fontSize: 13,
     marginLeft: 8,
   },
   nativeCtaButton: {
-    backgroundColor: '#FF8E53',
+    backgroundColor: "#FF8E53",
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 12,
   },
   nativeCtaText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   storeRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     gap: 16,
   },
   storeText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    color: "rgba(255,255,255,0.5)",
   },
   priceText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    color: "rgba(255,255,255,0.5)",
   },
   // Shared styles
   mockAdContent: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 40,
   },
   mockAdImage: {
     width: 160,
     height: 160,
     borderRadius: 20,
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 24,
   },
   mockAdTitle: {
     fontSize: 28,
-    fontWeight: '800',
-    color: '#fff',
+    fontWeight: "800",
+    color: "#fff",
     marginBottom: 8,
   },
   mockAdSubtitle: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.7)',
+    color: "rgba(255,255,255,0.7)",
     marginBottom: 24,
   },
   mockAdButton: {
-    backgroundColor: '#FF8E53',
+    backgroundColor: "#FF8E53",
     paddingHorizontal: 48,
     paddingVertical: 14,
     borderRadius: 12,
     marginBottom: 20,
   },
   mockAdButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   mockAdNote: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.3)',
-    textAlign: 'center',
+    color: "rgba(255,255,255,0.3)",
+    textAlign: "center",
   },
   adInfo: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 70,
     paddingHorizontal: 16,
   },
   adHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   adIconPlaceholder: {
     width: 44,
     height: 44,
     borderRadius: 10,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(99, 102, 241, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
   },
   adTitleContainer: {
@@ -530,32 +600,32 @@ const styles = StyleSheet.create({
   },
   adHeadline: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: "700",
+    color: "#fff",
   },
   adSubtitle: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    color: "rgba(255,255,255,0.6)",
     marginTop: 2,
   },
   sideActions: {
-    position: 'absolute',
+    position: "absolute",
     right: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   actionBtn: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   actionIcon: {
     width: 48,
     height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   actionLabel: {
-    color: 'rgba(255,255,255,0.6)',
+    color: "rgba(255,255,255,0.6)",
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 2,
   },
 });

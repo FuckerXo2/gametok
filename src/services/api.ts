@@ -34,10 +34,10 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
     ...options,
     headers: await headers(),
   });
-  
+
   // Get response text first to handle non-JSON responses
   const text = await response.text();
-  
+
   let data;
   try {
     data = JSON.parse(text);
@@ -45,11 +45,13 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
     console.error('[API] Invalid JSON response:', text.substring(0, 200));
     throw new Error('Server returned invalid response');
   }
-  
+
   if (!response.ok) {
-    throw new Error(data.error || 'Request failed');
+    const error: any = new Error(data.error || 'Request failed');
+    error.status = response.status;
+    throw error;
   }
-  
+
   return data;
 };
 
@@ -63,7 +65,7 @@ export const auth = {
     await setToken(data.token);
     return data;
   },
-  
+
   login: async (username: string, password: string) => {
     const data = await request('/auth/login', {
       method: 'POST',
@@ -72,7 +74,7 @@ export const auth = {
     await setToken(data.token);
     return data;
   },
-  
+
   oauth: async (provider: 'apple' | 'google', oauthData: any) => {
     const data = await request('/auth/oauth', {
       method: 'POST',
@@ -81,18 +83,18 @@ export const auth = {
     await setToken(data.token);
     return data;
   },
-  
+
   logout: async () => {
     try {
       await request('/auth/logout', { method: 'POST' });
-    } catch (e) {}
+    } catch (e) { }
     await setToken(null);
   },
-  
+
   me: async () => {
     return request('/auth/me');
   },
-  
+
   deleteAccount: async () => {
     await request('/auth/delete-account', { method: 'DELETE' });
     await setToken(null);
@@ -105,34 +107,34 @@ export const users = {
   get: async (userId: string) => {
     return request(`/users/${userId}`);
   },
-  
+
   update: async (userId: string, data: { displayName?: string; bio?: string; avatar?: string }) => {
     return request(`/users/${userId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
-  
+
   follow: async (userId: string) => {
     return request(`/users/${userId}/follow`, { method: 'POST' });
   },
-  
+
   followers: async (userId: string) => {
     return request(`/users/${userId}/followers`);
   },
-  
+
   pendingRequests: async (userId: string) => {
     return request(`/users/${userId}/pending-requests`);
   },
-  
+
   pendingCount: async (userId: string) => {
     return request(`/users/${userId}/pending-count`);
   },
-  
+
   following: async (userId: string) => {
     return request(`/users/${userId}/following`);
   },
-  
+
   search: async (query: string) => {
     return request(`/users/search/${encodeURIComponent(query)}`);
   },
@@ -143,15 +145,15 @@ export const games = {
   list: async (limit = 10, offset = 0) => {
     return request(`/games?limit=${limit}&offset=${offset}`);
   },
-  
+
   search: async (query: string, limit = 50) => {
     return request(`/games/search?q=${encodeURIComponent(query)}&limit=${limit}`);
   },
-  
+
   get: async (gameId: string) => {
     return request(`/games/${gameId}`);
   },
-  
+
   recordPlay: async (gameId: string) => {
     return request(`/games/${gameId}/play`, { method: 'POST' });
   },
@@ -165,11 +167,11 @@ export const scores = {
       body: JSON.stringify({ gameId, score }),
     });
   },
-  
+
   leaderboard: async (gameId: string, type: 'global' | 'friends' = 'global', limit = 10) => {
     return request(`/scores/leaderboard/${gameId}?type=${type}&limit=${limit}`);
   },
-  
+
   userScores: async (userId: string, limit = 20) => {
     return request(`/scores/user/${userId}?limit=${limit}`);
   },
@@ -183,14 +185,14 @@ export const likes = {
       body: JSON.stringify({ gameId }),
     });
   },
-  
+
   check: async (gameIds: string[]) => {
     return request('/likes/check', {
       method: 'POST',
       body: JSON.stringify({ gameIds }),
     });
   },
-  
+
   userLikes: async (userId: string) => {
     return request(`/likes/user/${userId}`);
   },
@@ -204,14 +206,14 @@ export const savedGames = {
       body: JSON.stringify({ gameId }),
     });
   },
-  
+
   check: async (gameIds: string[]) => {
     return request('/saved-games/check', {
       method: 'POST',
       body: JSON.stringify({ gameIds }),
     });
   },
-  
+
   userSaved: async (userId: string) => {
     return request(`/saved-games/user/${userId}`);
   },
@@ -222,7 +224,7 @@ export const gameProgress = {
   get: async (gameId: string) => {
     return request(`/games/${gameId}/progress`);
   },
-  
+
   save: async (gameId: string, storageData: Record<string, string>) => {
     return request(`/games/${gameId}/progress`, {
       method: 'POST',
@@ -246,18 +248,18 @@ export const stories = {
   list: async () => {
     return request('/stories');
   },
-  
+
   create: async (mediaUrl: string, mediaType: 'image' | 'video' = 'image', caption?: string) => {
     return request('/stories', {
       method: 'POST',
       body: JSON.stringify({ mediaUrl, mediaType, caption }),
     });
   },
-  
+
   view: async (storyId: string) => {
     return request(`/stories/${storyId}/view`, { method: 'POST' });
   },
-  
+
   delete: async (storyId: string) => {
     return request(`/stories/${storyId}`, { method: 'DELETE' });
   },
@@ -268,18 +270,18 @@ export const messages = {
   getConversations: async () => {
     return request('/conversations');
   },
-  
+
   getConversation: async (userId: string) => {
     return request(`/conversations/${userId}`);
   },
-  
+
   send: async (data: { conversationId?: string; recipientId?: string; text?: string; gameShare?: { gameId: string } }) => {
     return request('/messages', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  
+
   markRead: async (messageId: string) => {
     return request(`/messages/${messageId}/read`, { method: 'POST' });
   },
@@ -290,18 +292,18 @@ export const comments = {
   list: async (gameId: string, limit = 50) => {
     return request(`/comments/${gameId}?limit=${limit}`);
   },
-  
+
   create: async (gameId: string, text: string) => {
     return request('/comments', {
       method: 'POST',
       body: JSON.stringify({ gameId, text }),
     });
   },
-  
+
   like: async (commentId: string) => {
     return request(`/comments/${commentId}/like`, { method: 'POST' });
   },
-  
+
   delete: async (commentId: string) => {
     return request(`/comments/${commentId}`, { method: 'DELETE' });
   },
@@ -315,18 +317,18 @@ export const moderation = {
       body: JSON.stringify({ userId, reason, details, contentType, contentId }),
     });
   },
-  
+
   block: async (userId: string) => {
     return request('/block', {
       method: 'POST',
       body: JSON.stringify({ userId }),
     });
   },
-  
+
   unblock: async (userId: string) => {
     return request(`/block/${userId}`, { method: 'DELETE' });
   },
-  
+
   getBlockedUsers: async () => {
     return request('/blocked');
   },
@@ -338,12 +340,17 @@ export const gamification = {
   getStats: async () => {
     return request('/gamification/stats');
   },
-  
+
   // Claim daily login bonus
   claimDaily: async () => {
     return request('/gamification/daily-claim', { method: 'POST' });
   },
-  
+
+  // Claim reward for watching an ad
+  claimAdReward: async () => {
+    return request('/gamification/ad-reward', { method: 'POST' });
+  },
+
   // Record game played (awards points/XP)
   gamePlayed: async (gameId: string, playTimeSeconds?: number) => {
     return request('/gamification/game-played', {
@@ -351,47 +358,47 @@ export const gamification = {
       body: JSON.stringify({ gameId, playTimeSeconds }),
     });
   },
-  
+
   // Get daily challenges
   getChallenges: async () => {
     return request('/gamification/challenges');
   },
-  
+
   // Claim challenge reward
   claimChallenge: async (challengeId: string) => {
     return request(`/gamification/challenges/${challengeId}/claim`, { method: 'POST' });
   },
-  
+
   // Get all achievements
   getAchievements: async () => {
     return request('/gamification/achievements');
   },
-  
+
   // Get rewards shop
   getRewards: async () => {
     return request('/gamification/rewards');
   },
-  
+
   // Claim a reward
   claimReward: async (rewardId: string) => {
     return request(`/gamification/rewards/${rewardId}/claim`, { method: 'POST' });
   },
-  
+
   // Get user's claimed rewards
   getMyRewards: async () => {
     return request('/gamification/my-rewards');
   },
-  
+
   // Get points transaction history
   getTransactions: async (limit = 50) => {
     return request(`/gamification/transactions?limit=${limit}`);
   },
-  
+
   // Get leaderboard
   getLeaderboard: async (type: 'points' | 'level' | 'streak' = 'points', limit = 50) => {
     return request(`/gamification/leaderboard?type=${type}&limit=${limit}`);
   },
-  
+
   // Get per-game leaderboard
   getGameLeaderboard: async (gameId: string, limit = 50) => {
     return request(`/gamification/leaderboard/${gameId}?limit=${limit}`);

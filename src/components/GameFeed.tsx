@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { 
-  View, 
-  FlatList, 
-  StyleSheet, 
+import {
+  View,
+  FlatList,
+  StyleSheet,
   Dimensions,
   ViewToken,
   Text,
@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './GameCard';
 import { WebViewPool, WebViewPoolHandle } from './WebViewPool';
 import { games as gamesApi } from '../services/api';
-import { initializeAds, getAdFrequency, showInterstitial, loadInterstitial } from '../services/ads';
+import { initializeAds, getAdFrequency } from '../services/ads';
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 const SCROLL_ZONE_HEIGHT = 0.25; // Bottom 25% of screen
@@ -46,7 +46,7 @@ export const GameFeed: React.FC = () => {
   const insets = useSafeAreaInsets();
   const screenHeight = Dimensions.get('window').height;
   const scrollZoneHeight = screenHeight * SCROLL_ZONE_HEIGHT;
-  
+
   const [games, setGames] = useState<Game[]>(FALLBACK_GAMES);
   const [feedData, setFeedData] = useState<FeedItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -63,12 +63,8 @@ export const GameFeed: React.FC = () => {
   const goToNext = useCallback(async () => {
     const nextIndex = activeIndexRef.current + 1;
     if (nextIndex < feedData.length) {
-      // Track games and show interstitial every N games
       gamesPlayedRef.current += 1;
-      if (gamesPlayedRef.current % getAdFrequency() === 0) {
-        await showInterstitial();
-      }
-      
+
       flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -99,7 +95,7 @@ export const GameFeed: React.FC = () => {
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
-    
+
     if (webViewPoolRef.current && feedData.length > 0) {
       // Preload current + 3 ahead
       for (let i = 0; i <= 3; i++) {
@@ -109,7 +105,7 @@ export const GameFeed: React.FC = () => {
           webViewPoolRef.current.preloadGame(item.uniqueId, item.gameUrl);
         }
       }
-      
+
       const currentItem = feedData[activeIndex];
       if (currentItem) {
         webViewPoolRef.current.setActiveGame(currentItem.uniqueId);
@@ -120,7 +116,6 @@ export const GameFeed: React.FC = () => {
   useEffect(() => {
     initializeAds().then((success) => {
       setAdsInitialized(success);
-      if (success) loadInterstitial(); // Preload first interstitial
     });
   }, []);
 
@@ -152,7 +147,7 @@ export const GameFeed: React.FC = () => {
     const feed: FeedItem[] = [];
     for (let i = 0; i < count; i++) {
       const game = games[(startIndex + i) % games.length];
-      const gameUrl = game.embedUrl 
+      const gameUrl = game.embedUrl
         ? `${game.embedUrl}?gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`
         : `${GAMES_HOST}/${game.id}/`;
       feed.push({ ...game, uniqueId: `${game.id}-${startIndex + i}-${Date.now()}`, gameUrl });
@@ -208,7 +203,7 @@ export const GameFeed: React.FC = () => {
     <View style={styles.container}>
       {/* WebView Pool - games render here */}
       <WebViewPool ref={webViewPoolRef} isScrollMode={false} />
-      
+
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerTitle}>For You</Text>
@@ -238,8 +233,8 @@ export const GameFeed: React.FC = () => {
       />
 
       {/* Bottom 25% scroll zone - swipe here to navigate */}
-      <View 
-        style={[styles.scrollZone, { height: scrollZoneHeight }]} 
+      <View
+        style={[styles.scrollZone, { height: scrollZoneHeight }]}
         {...scrollPanResponder.panHandlers}
       />
     </View>

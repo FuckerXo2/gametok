@@ -12,6 +12,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -38,9 +40,9 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
       return null;
     }
 
-    // Get push token WITHOUT EAS project ID
-    // This works for bare workflow (Xcode builds)
-    const token = await Notifications.getExpoPushTokenAsync();
+    // Get push token - must pass projectId for dev/Xcode builds
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 'a8a4606e-1211-4011-ab35-08afb8194d9d';
+    const token = await Notifications.getExpoPushTokenAsync({ projectId });
     console.log('[Notifications] Push token:', token.data);
 
     // Configure Android channel
@@ -121,7 +123,7 @@ export const scheduleLocalNotification = async (
       data,
       sound: true,
     },
-    trigger: { seconds },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds },
   });
 };
 

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, getToken } from '../services/api';
 import { registerForPushNotifications, savePushToken, removePushToken } from '../services/notifications';
 
@@ -32,23 +33,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshUser = async () => {
-    try {
-      const token = await getToken();
-      console.log('[Auth] Checking stored token:', token ? 'exists' : 'none');
-      if (token) {
+    const token = await getToken();
+    console.log('[Auth] Checking stored token:', token ? 'exists' : 'none');
+
+    // Immediately restore cached user to prevent "flickering" logout on slow connections
+    const cachedUser = await AsyncStorage.getItem('authUser');
+    if (cachedUser) {
+      try {
+        setUser(JSON.parse(cachedUser));
+      } catch (e) {
+        console.error('[Auth] Failed to parse cached user:', e);
+      }
+    }
+
+    if (!token) {
+      console.log('[Auth] No token stored');
+      setUser(null);
+      await AsyncStorage.removeItem('authUser');
+      return;
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
         const data = await auth.me();
         console.log('[Auth] Token valid, user:', data.user?.username);
         setUser(data.user);
-      } else {
-        console.log('[Auth] No token stored');
-        setUser(null);
+        await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
+        return; // Success — done
+      } catch (e: any) {
+        const status = e?.status || e?.response?.status;
+        if (status === 401 || status === 403) {
+          // Token is genuinely invalid — this is the only case we should log out
+          console.log('[Auth] Token rejected by server (', status, '), logging out');
+          await auth.logout();
+          setUser(null);
+          await AsyncStorage.removeItem('authUser');
+          return;
+        }
+        // Network error, server error, timeout — retry
+        console.log(`[Auth] Attempt ${attempt}/3 failed (${e.message}), ${attempt < 3 ? 'retrying...' : 'giving up but keeping session'}`);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, attempt * 1500));
+        }
       }
-    } catch (e: any) {
-      // Token invalid or user doesn't exist - clear token
-      console.log('[Auth] Token invalid or expired:', e.message);
-      await auth.logout();
-      setUser(null);
     }
+    // All 3 retries failed with non-auth errors — keep the token, don't log out
+    console.log('[Auth] All retries failed but token preserved — user stays logged in');
   };
 
   useEffect(() => {
@@ -64,7 +94,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.login(username, password);
     console.log('[Auth] Login successful, token saved');
     setUser(data.user);
-    
+    await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
+
     // Register for push notifications
     const pushToken = await registerForPushNotifications();
     if (pushToken) {
@@ -80,7 +111,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.signup(username, password, displayName, email);
     console.log('[Auth] Signup successful, token saved');
     setUser(data.user);
-    
+    await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
+
     // Register for push notifications
     const pushToken = await registerForPushNotifications();
     if (pushToken) {
@@ -96,7 +128,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data = await auth.oauth(provider, oauthData);
     console.log('[Auth] OAuth successful, token saved');
     setUser(data.user);
-    
+    await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
+
     // Register for push notifications
     const pushToken = await registerForPushNotifications();
     if (pushToken) {
@@ -105,7 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await savePushToken(pushToken, authToken);
       }
     }
-    
+
     return data;
   };
 
@@ -115,9 +148,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (authToken) {
       await removePushToken(authToken);
     }
-    
+
     await auth.logout();
     setUser(null);
+    await AsyncStorage.removeItem('authUser');
   };
 
   return (

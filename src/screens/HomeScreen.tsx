@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator, AppState } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -19,7 +19,7 @@ import NativeAdView from '../components/NativeAdView';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { useDeepLink } from '../../App';
 import { useAuth } from '../context/AuthContext';
-import adBlockList from '../data/adBlockList.json';
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
@@ -32,6 +32,7 @@ interface Game {
   id: string;
   name: string;
   embedUrl?: string;
+  thumbnail?: string;
   likes?: number;
 }
 
@@ -50,10 +51,46 @@ const getGameUrl = (game: Game) => {
   return `${GAMES_HOST}/${game.id}/`;
 };
 
+const getThumbnailUrl = (game: Game) => {
+  if (game.thumbnail) {
+    return game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`;
+  }
+  return `${GAMES_HOST}/thumbnails/${game.id}.png`;
+};
+
 const isExternalGame = (game: Game) => !!game.embedUrl;
 
-// Load ad domains from curated EasyList-based blocklist
-const AD_DOMAINS: string[] = adBlockList.domains;
+// Domains to block at request level
+const AD_DOMAINS = [
+  'imasdk.googleapis.com',
+  'pagead2.googlesyndication.com',
+  'doubleclick.net',
+  'googlesyndication.com',
+  'googleadservices.com',
+  'adservice.google',
+  'googleads.g.doubleclick.net',
+  'www.googletagservices.com',
+  'securepubads.g.doubleclick.net',
+  'tpc.googlesyndication.com',
+  'ad.doubleclick.net',
+  'amazon-adsystem.com',
+  'a-mo.net',
+  'applovin.com',
+  'criteo.com',
+  'pubmatic.com',
+  'rubiconproject.com',
+  'openx.net',
+  'smartadserver.com',
+  'casalemedia.com',
+  // Only specific ad endpoints, do NOT block the main game host domains
+  'api.gamemonetize.com',
+  'api.gamemonetize.co',
+  'gamemonetize.com/gamemonetize.js',
+  'html5.gamedistribution.com/rvv1/gdsdk/gdsdk.js',
+  'gamedistribution.com/rvv1/',
+  'gdsdk.com',
+  'adinplay.com',
+];
 
 // Check if URL should be blocked - uses Set for O(1) lookup on exact matches
 // and falls back to substring matching for partial domain matches
@@ -663,8 +700,10 @@ const AD_BLOCKER_SCRIPT = `
   window.adBreak = window.sdk.adBreak;
   window.adConfig = window.sdk.adConfig;
   
-  // Comprehensive ad domain list from EasyList (injected from React Native)
-  const adDomains = ${JSON.stringify(AD_DOMAINS)};
+  const adDomains = [
+    'imasdk.googleapis.com', 'pagead2.googlesyndication.com', 'doubleclick.net', 'googlesyndication.com', 
+    'googleadservices.com', 'api.gamemonetize.com', 'gdsdk.com', '/gdsdk/', 'gamemonetize.js'
+  ];
   
   // Block ad requests at fetch level
   const origFetch = window.fetch;
@@ -953,8 +992,7 @@ const AD_BLOCKER_SCRIPT = `
   
   // CRITICAL: Block touch events at screen edges to allow native swipe gestures
   // This prevents the WebView from capturing swipe gestures at top/bottom
-  // NOTE: We only use event listeners, NOT div blockers - native gesture zones handle swipes
-  const EDGE_ZONE = window.innerHeight * 0.12; // 12% of screen height
+  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
   
   const blockEdgeTouches = (e) => {
     if (!e.touches || e.touches.length === 0) return;
@@ -1742,20 +1780,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
   const [loading, setLoading] = useState(true);
 
-  // Force gesture zone refresh every 60 seconds to prevent gesture handler from becoming unresponsive
-  const [gestureKey, setGestureKey] = useState(0);
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setGestureKey(k => k + 1);
-    }, 60000); // Refresh every 60 seconds
-    return () => clearInterval(interval);
-  }, []);
   const [scrollEnabled, setScrollEnabled] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const swipeHintOpacity = useRef(new Animated.Value(0)).current;
+  const [gestureKey, setGestureKey] = useState(0);
 
   // Track which games have finished loading (ready to play)
   const [readyGames, setReadyGames] = useState<Set<string>>(new Set());
+
+
 
   // Store original games for infinite loop
   const allGamesRef = useRef<Game[]>([]);
@@ -1964,6 +1997,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const currentIndexRef = useRef(0);
   const feedRef = useRef<FeedItem[]>([]);
   const translateY = useRef(new Animated.Value(0)).current;
+
+  // Listen for AppState changes to unlock broken gestures
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'background' || state === 'inactive') {
+        if (!isAnimating.current) {
+          translateY.setValue(0);
+        }
+        setScrollEnabled(false);
+      }
+    });
+    return () => sub.remove();
+  }, [translateY, isFocused]);
   const isAnimating = useRef(false);
   const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
   const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
@@ -2362,7 +2408,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       setCurrentIndex(newIndex);
       translateY.setValue(0);
       isAnimating.current = false;
-      // Keep scrollEnabled true - only disable on tap
+
+      // Force gesture zones to remount to prevent RNGH dropping bindings after scrolling
+      setGestureKey(prev => prev + 1);
     });
   };
 
@@ -2421,12 +2469,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   }, []);
 
   // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
-  // The gesture only activates after 25px of vertical movement, allowing taps to pass through
-  // Using Gesture.Pan() directly without useMemo - gestures are lightweight and this avoids stale closure issues
   const bottomPanGesture = Gesture.Pan()
-    .activeOffsetY([-25, 25]) // Only activate after 25px vertical movement
-    .failOffsetX([-20, 20]) // Fail if horizontal movement is too large
-    .minDistance(25) // Require minimum drag distance
+    .activeOffsetY([-25, 25])
+    .failOffsetX([-20, 20])
+    .minDistance(25)
     .onStart(() => {
       'worklet';
       runOnJS(handleGestureStart)();
@@ -2505,6 +2551,57 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           }).start();
         }
       },
+      onPanResponderTerminate: () => {
+        if (isAnimating.current) return;
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      }
+    })
+  ).current;
+
+  // Full-screen pan responder for Welcome and Ad screens
+  // Allows the entire screen to be scrollable but passes taps through
+  const fullScreenPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () => false, // Let taps pass through to buttons
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        return Math.abs(gesture.dy) > 15; // Take over aggressively in capture phase if vertical swipe
+      },
+      onStartShouldSetPanResponder: () => false, // Let taps pass through to buttons
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        return Math.abs(gesture.dy) > 15; // Only take over if it's a clear vertical swipe
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!isAnimating.current) {
+          translateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (isAnimating.current) return;
+
+        const idx = currentIndexRef.current;
+        const total = feedRef.current.length;
+
+        if (gestureState.dy < -SWIPE_THRESHOLD && idx < total - 1) {
+          animateToIndex(idx + 1);
+        } else if (gestureState.dy > SWIPE_THRESHOLD && idx > -1) {
+          animateToIndex(idx - 1);
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (isAnimating.current) return;
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      }
     })
   ).current;
 
@@ -2548,6 +2645,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   if (feed.length === 0) return null;
 
+  const isCurrentAd = currentIndex > -1 && feed[currentIndex] && feed[currentIndex].isAd;
+
   return (
     <View style={styles.container}>
       {visibleItems.map(({ item, position, isWelcome }) => (
@@ -2566,85 +2665,102 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         >
           {isWelcome ? (
             // Welcome screen
-            <WelcomeScreen contentHeight={contentHeight} />
+            <GestureDetector gesture={bottomPanGesture}>
+              <View style={{ flex: 1 }} collapsable={false}>
+                <WelcomeScreen contentHeight={contentHeight} />
+              </View>
+            </GestureDetector>
           ) : item!.isAd ? (
             // Native Ad
-            <NativeAdView contentHeight={contentHeight} />
+            <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1 }}>
+              <NativeAdView contentHeight={contentHeight} />
+            </Animated.View>
           ) : (
             // Game screen
             <>
-              <WebView
-                ref={(ref) => { webViewRefs.current[item!.id] = ref; }}
-                source={{ uri: getGameUrl(item!.game!) }}
-                style={styles.webview}
-                javaScriptEnabled
-                domStorageEnabled
-                cacheEnabled={true}
-                allowsInlineMediaPlayback
-                mediaPlaybackRequiresUserAction={false}
-                scrollEnabled={false}
-                bounces={false}
-                overScrollMode="never"
-                nestedScrollEnabled={false}
-                thirdPartyCookiesEnabled={false}
-                sharedCookiesEnabled={false}
-                injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT : EDGE_BLOCK_SCRIPT}
-                onMessage={async (event) => {
-                  try {
-                    const data = JSON.parse(event.nativeEvent.data);
-                    if (data.type === 'GAME_READY') {
-                      // Game is actually ready to play
-                      setReadyGames(prev => new Set(prev).add(item!.id));
-                    } else if (data.type === 'CLOUD_SAVE' && user) {
-                      // Save game progress to server
-                      try {
-                        await gameProgress.save(data.gameId, data.storageData);
-                        console.log('[CloudSave] Saved progress for', data.gameId);
-                      } catch (e) {
-                        console.log('[CloudSave] Failed to save:', e);
-                      }
-                    }
-                  } catch (e) {
-                    // Ignore non-JSON messages
-                  }
-                }}
-                javaScriptCanOpenWindowsAutomatically={false}
-                setSupportMultipleWindows={false}
-                onLoadEnd={async () => {
-                  // Inject the game ready detection script
-                  webViewRefs.current[item!.id]?.injectJavaScript(GAME_READY_SCRIPT);
-
-                  // Load and inject cloud save for external games if user is logged in
-                  if (isExternalGame(item!.game!) && user && item!.game?.id) {
+              {position === 0 || position === 1 ? (
+                <WebView
+                  ref={(ref) => { webViewRefs.current[item!.id] = ref; }}
+                  source={{ uri: getGameUrl(item!.game!) }}
+                  style={styles.webview}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  cacheEnabled={true}
+                  allowsInlineMediaPlayback
+                  mediaPlaybackRequiresUserAction={false}
+                  scrollEnabled={false}
+                  bounces={false}
+                  overScrollMode="never"
+                  nestedScrollEnabled={false}
+                  thirdPartyCookiesEnabled={false}
+                  sharedCookiesEnabled={false}
+                  injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT : EDGE_BLOCK_SCRIPT}
+                  onMessage={async (event) => {
                     try {
-                      // Check if we already loaded progress for this game
-                      if (!loadedProgressRef.current[item!.game!.id]) {
-                        const result = await gameProgress.get(item!.game!.id);
-                        loadedProgressRef.current[item!.game!.id] = result.storageData || {};
+                      const data = JSON.parse(event.nativeEvent.data);
+                      if (data.type === 'GAME_READY') {
+                        // Game is actually ready to play
+                        setReadyGames(prev => new Set(prev).add(item!.id));
+                      } else if (data.type === 'CLOUD_SAVE' && user) {
+                        // Save game progress to server
+                        try {
+                          await gameProgress.save(data.gameId, data.storageData);
+                          console.log('[CloudSave] Saved progress for', data.gameId);
+                        } catch (e) {
+                          console.log('[CloudSave] Failed to save:', e);
+                        }
                       }
-                      const savedData = loadedProgressRef.current[item!.game!.id];
-                      webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, savedData));
                     } catch (e) {
-                      // Still inject cloud save even if loading fails
-                      webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, {}));
+                      // Ignore non-JSON messages
                     }
-                  }
-                }}
-                onLoad={() => {
-                  // Auto-pause if not the current game OR if on welcome screen
-                  const shouldPause = position !== 0 || currentIndex === -1;
-                  if (shouldPause && webViewRefs.current[item!.id]) {
-                    webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
-                  }
-                }}
-                onShouldStartLoadWithRequest={(request) => {
-                  if (isExternalGame(item!.game!)) {
-                    const blocked = shouldBlockRequest(request.url);
-                    return !blocked;
-                  }
-                  return true;
-                }}
-              />
+                  }}
+                  javaScriptCanOpenWindowsAutomatically={false}
+                  setSupportMultipleWindows={false}
+                  onLoadEnd={async () => {
+                    // Inject the game ready detection script
+                    webViewRefs.current[item!.id]?.injectJavaScript(GAME_READY_SCRIPT);
+
+                    // Load and inject cloud save for external games if user is logged in
+                    if (isExternalGame(item!.game!) && user && item!.game?.id) {
+                      try {
+                        // Check if we already loaded progress for this game
+                        if (!loadedProgressRef.current[item!.game!.id]) {
+                          const result = await gameProgress.get(item!.game!.id);
+                          loadedProgressRef.current[item!.game!.id] = result.storageData || {};
+                        }
+                        const savedData = loadedProgressRef.current[item!.game!.id];
+                        webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, savedData));
+                      } catch (e) {
+                        // Still inject cloud save even if loading fails
+                        webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, {}));
+                      }
+                    }
+                  }}
+                  onLoad={() => {
+                    // Auto-pause if not the current game OR if on welcome screen
+                    const shouldPause = position !== 0 || currentIndex === -1;
+                    if (shouldPause && webViewRefs.current[item!.id]) {
+                      webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
+                    }
+                  }}
+                  onShouldStartLoadWithRequest={(request) => {
+                    if (isExternalGame(item!.game!)) {
+                      const blocked = shouldBlockRequest(request.url);
+                      return !blocked;
+                    }
+                    return true;
+                  }}
+                />
+              ) : (
+                <View style={[styles.webview, { backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Image
+                    source={{ uri: getThumbnailUrl(item!.game!) }}
+                    style={{ width: '100%', height: '100%', opacity: 0.4 }}
+                    resizeMode="cover"
+                  />
+                  <Ionicons name="game-controller" size={64} color="#666" style={{ position: 'absolute' }} />
+                </View>
+              )}
 
               {/* Native gesture zones (GestureDetector) handle edge swipes */}
               {/* No need for additional edge blockers inside WebView container */}
@@ -2762,11 +2878,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       )}
 
       <GestureDetector gesture={topPanGesture}>
-        <View key={`top-zone-${gestureKey}`} style={styles.topZone} pointerEvents="box-only" collapsable={false} />
+        <View key={`top-zone-${gestureKey}`} style={styles.topZone} pointerEvents={isCurrentAd ? 'none' : 'box-only'} collapsable={false} />
       </GestureDetector>
 
       <GestureDetector gesture={bottomPanGesture}>
-        <View key={`bottom-zone-${gestureKey}`} style={styles.bottomZone} pointerEvents="box-only" collapsable={false} />
+        <View key={`bottom-zone-${gestureKey}`} style={styles.bottomZone} pointerEvents={isCurrentAd ? 'none' : 'box-only'} collapsable={false} />
       </GestureDetector>
 
       {/* Swipe hint - permanent on welcome, on-touch for games */}

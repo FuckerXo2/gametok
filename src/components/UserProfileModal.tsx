@@ -3,6 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
+  Image,
   TouchableOpacity,
   Modal,
   ScrollView,
@@ -13,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,7 +46,16 @@ interface ChatMessage {
   text: string;
   isMe: boolean;
   createdAt: string;
+  gameShare?: {
+    id: string;
+    name: string;
+    thumbnail?: string;
+    icon?: string;
+    color?: string;
+  };
 }
+
+const GAMES_HOST = 'https://gametok-games.pages.dev';
 
 const SUGGESTED_FRIENDS: any[] = [];
 
@@ -55,14 +66,33 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  
+  const [userStats, setUserStats] = useState<{ followers: number; following: number; level: number; streak: number } | null>(null);
+
   // Update isAdded when user changes or modal opens
   React.useEffect(() => {
     if (user) {
       setIsAdded(user.isFriend);
-      setIsMutual(false); // Reset mutual status when user changes
+      setIsMutual(false);
     }
   }, [user?.id, user?.isFriend, visible]);
+
+  // Fetch real user stats when modal opens
+  React.useEffect(() => {
+    if (visible && user?.id) {
+      setUserStats(null);
+      users.get(user.id).then((res: any) => {
+        if (res?.stats) {
+          setUserStats({
+            followers: res.stats.followers || 0,
+            following: res.stats.following || 0,
+            level: res.stats.level || 1,
+            streak: res.stats.streak || 0,
+          });
+        }
+      }).catch(() => { });
+    }
+  }, [visible, user?.id]);
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
@@ -79,9 +109,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
       `Are you sure you want to block @${user?.username}? They won't be able to message you or see your profile.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Block', 
-          style: 'destructive', 
+        {
+          text: 'Block',
+          style: 'destructive',
           onPress: async () => {
             try {
               await moderation.block(user!.id);
@@ -147,11 +177,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
   const sendMessage = async () => {
     if (!messageText.trim() || sendingMessage) return;
-    
+
     setSendingMessage(true);
     const text = messageText.trim();
     setMessageText('');
-    
+
     try {
       const data = await messagesApi.send({
         recipientId: user.id,
@@ -170,7 +200,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   if (showChat) {
     return (
       <Modal visible={visible} animationType="slide" onRequestClose={closeChat}>
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={[styles.chatContainer, { backgroundColor: colors.background }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
@@ -201,16 +231,68 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               keyExtractor={(item) => item.id}
               style={styles.chatMessages}
               contentContainerStyle={styles.chatMessagesContent}
-              renderItem={({ item }) => (
-                <View style={[
-                  item.isMe ? styles.sentBubble : styles.receivedBubble,
-                  { backgroundColor: item.isMe ? colors.primary : colors.surface }
-                ]}>
-                  <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
-                    {item.text}
-                  </Text>
-                </View>
-              )}
+              renderItem={({ item }) => {
+                const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
+                const hasGameShare = !!(item as any).gameShare;
+                const gameShare = (item as any).gameShare;
+                const thumbUri = gameShare?.thumbnail
+                  ? (gameShare.thumbnail.startsWith('http') ? gameShare.thumbnail : `${GAMES_HOST}${gameShare.thumbnail}`)
+                  : null;
+
+                if (hasGameShare) {
+                  return (
+                    <View style={[
+                      { maxWidth: '70%', marginBottom: 10 },
+                      item.isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
+                    ]}>
+                      <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: gameShare.color || '#333' }}>
+                        {thumbUri ? (
+                          <Image
+                            source={{ uri: thumbUri }}
+                            style={{ width: '100%', aspectRatio: 1, backgroundColor: gameShare.color || '#333' } as any}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={{ width: '100%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: gameShare.color || '#333' }}>
+                            <Ionicons name="game-controller" size={40} color="rgba(255,255,255,0.5)" />
+                          </View>
+                        )}
+                        <View style={{
+                          position: 'absolute', bottom: 0, left: 0, right: 0,
+                          paddingHorizontal: 12, paddingVertical: 10,
+                          backgroundColor: 'rgba(0,0,0,0.55)',
+                        }}>
+                          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
+                            {gameShare.name}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                            <Ionicons name="play-circle" size={14} color="rgba(255,255,255,0.9)" />
+                            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, marginLeft: 4, fontWeight: '500' }}>
+                              Tap to play
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                      {cleanText ? (
+                        <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>
+                          {cleanText}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                }
+
+                return (
+                  <View style={[
+                    item.isMe ? styles.sentBubble : styles.receivedBubble,
+                    { backgroundColor: item.isMe ? colors.primary : colors.surface }
+                  ]}>
+                    <Text style={[styles.bubbleText, { color: item.isMe ? '#fff' : colors.text }]}>
+                      {cleanText}
+                    </Text>
+                  </View>
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
                   <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
@@ -234,7 +316,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 returnKeyType="send"
               />
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.sendBtn, { backgroundColor: colors.primary }]}
               onPress={sendMessage}
               disabled={!messageText.trim() || sendingMessage}
@@ -250,101 +332,98 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   // Profile Modal
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: isDark ? '#1a1a1a' : '#f0f0f0' }]}>
-        <View style={styles.headerSection}>
-          {/* Back button outside ImageBackground for reliable touch */}
-          <View style={[styles.absoluteTopButtons, { paddingTop: insets.top }]}>
-            <TouchableOpacity 
-              style={styles.topBtn} 
-              onPress={onClose}
-              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chevron-back" size={28} color="#fff" />
-            </TouchableOpacity>
-            <View style={styles.topRight}>
-              <TouchableOpacity style={styles.topBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="share-outline" size={24} color="#fff" />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+          {/* Header */}
+          <View style={{ paddingHorizontal: 16, paddingTop: insets.top + 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={onClose}>
+                <Ionicons name="chevron-back" size={24} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.topBtn} onPress={showOptions} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@{user.username}</Text>
+              <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={showOptions}>
+                <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Profile Info Row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              <Avatar uri={user.avatar} size={86} />
+
+              <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{userStats?.followers ?? '—'}</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Followers</Text>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{userStats?.following ?? '—'}</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Following</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Name & Bio */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{user.displayName || user.username}</Text>
+              {user.bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{user.bio}</Text> : (
+                <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4 }}>🎮 GameTok Player</Text>
+              )}
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                  <Ionicons name="trophy" size={12} color="#ffd60a" />
+                  <Text style={{ color: '#ffd60a', fontSize: 13, fontWeight: '700' }}>Level {userStats?.level ?? 1}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(249,115,22,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                  <Ionicons name="flame" size={14} color="#f97316" />
+                  <Text style={{ color: '#f97316', fontSize: 13, fontWeight: '600' }}>{userStats?.streak ?? 0} day streak</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: isAdded ? colors.surface : '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: isAdded ? 1 : 0, borderColor: colors.border }}
+                onPress={handleAdd}
+                disabled={isToggling}
+              >
+                {isToggling ? (
+                  <ActivityIndicator size="small" color={isAdded ? colors.text : '#fff'} />
+                ) : (
+                  <>
+                    <Ionicons name={isAdded ? "checkmark" : "person-add"} size={16} color={isAdded ? colors.text : '#fff'} />
+                    <Text style={{ color: isAdded ? colors.text : '#fff', fontSize: 14, fontWeight: '600' }}>
+                      {isAdded ? (isMutual ? 'Friends' : 'Following') : 'Follow'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}
+                onPress={openChat}
+              >
+                <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Message</Text>
               </TouchableOpacity>
             </View>
           </View>
-          
-          <ImageBackground
-            source={{ uri: 'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=800' }}
-            style={[styles.coverImage, { paddingTop: insets.top + 60 }]}
-            resizeMode="cover"
-          >
-            <View style={styles.profileOverlay}>
-              <View style={styles.avatarContainer}>
-                <Avatar uri={user.avatar} size={64} style={styles.avatar} />
-                {user.isOnline && <View style={styles.onlineIndicator} />}
-              </View>
-              
-              <View style={styles.userInfo}>
-                <Text style={styles.username}>{user.displayName || user.username}</Text>
-                <Text style={styles.statusText}>{user.status}</Text>
-              </View>
 
-              {user.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
-
-              <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                  style={[styles.addButtonSmall, isAdded && styles.addedButton]} 
-                  onPress={handleAdd}
-                  disabled={isToggling}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  {isToggling ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name={isAdded ? "checkmark" : "person-add"} size={18} color="#fff" />
-                      <Text style={styles.addButtonText}>{isAdded ? (isMutual ? 'Friends' : 'Requested') : 'Add'}</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.chatBtn} 
-                  onPress={openChat}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="chatbubble" size={16} color="#fff" />
-                  <Text style={styles.chatBtnText}>Chat</Text>
-                </TouchableOpacity>
-              </View>
+          {/* Saved Games Section */}
+          <View style={{ marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
+              <Ionicons name="grid-outline" size={18} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>Games</Text>
             </View>
-          </ImageBackground>
-        </View>
-
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Find Friends</Text>
-          
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendsScroll}>
-            {SUGGESTED_FRIENDS.map((friend) => (
-              <View key={friend.id} style={[styles.friendCard, { backgroundColor: colors.background }]}>
-                <TouchableOpacity style={styles.dismissBtn}>
-                  <Ionicons name="close" size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-                <View style={styles.friendAvatarContainer}>
-                  <Avatar uri={friend.avatar} size={56} />
-                  {friend.online && <View style={styles.friendOnlineDot} />}
-                </View>
-                <Text style={[styles.friendName, { color: colors.text }]} numberOfLines={1}>{friend.name}</Text>
-                <Text style={[styles.friendStatus, { color: colors.textSecondary }]}>{friend.status}</Text>
-                <TouchableOpacity style={[styles.friendAddBtn, { borderColor: colors.border }]}>
-                  <Ionicons name="person-add-outline" size={16} color={colors.primary} />
-                  <Text style={[styles.friendAddBtnText, { color: colors.primary }]}>Add</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={{ height: 100 }} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, paddingTop: 2 }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => (
+                <View key={i} style={{ width: (Dimensions.get('window').width - 4) / 3, aspectRatio: 1, backgroundColor: colors.surface }} />
+              ))}
+            </View>
+          </View>
         </ScrollView>
       </View>
-      
+
       {/* Report Modal */}
       <ReportModal
         visible={showReportModal}
@@ -361,16 +440,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 const styles = StyleSheet.create({
   container: { flex: 1 },
   headerSection: { height: 380 },
-  absoluteTopButtons: { 
-    position: 'absolute', 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    paddingHorizontal: 16, 
-    paddingTop: 8, 
-    zIndex: 100 
+  absoluteTopButtons: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    zIndex: 100
   },
   coverImage: { flex: 1, justifyContent: 'flex-end' },
   topButtons: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, zIndex: 10 },

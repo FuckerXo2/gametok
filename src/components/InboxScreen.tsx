@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
   TouchableOpacity,
   Modal,
   TextInput,
@@ -74,16 +74,16 @@ export const InboxScreen: React.FC = () => {
   const { colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
-  
+
   // Tab state
   const [activeTab, setActiveTab] = useState<'activity' | 'messages'>('activity');
-  
+
   // Activity state
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<UserItem[]>([]);
   const [livePlayers, setLivePlayers] = useState<LivePlayer[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(true);
-  
+
   // Messages state
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(true);
@@ -91,22 +91,22 @@ export const InboxScreen: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
-  
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UserItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  
+
   // Profile modal
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
   const [showUserProfile, setShowUserProfile] = useState(false);
-  
+
   // Pending requests
   const [pendingCount, setPendingCount] = useState(0);
-  
+
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Stories state
   const [storyUsers, setStoryUsers] = useState<any[]>([]);
   const [showStoryViewer, setShowStoryViewer] = useState(false);
@@ -147,11 +147,11 @@ export const InboxScreen: React.FC = () => {
     try {
       const gamesData = await gamesApi.list(20, 0);
       const gamesList = gamesData.games || [];
-      
+
       // Get global activity to find recent players
       const activityData = await feed.global(30);
       const recentPlayers: LivePlayer[] = [];
-      
+
       (activityData.activity || []).forEach((item: ActivityItem) => {
         if (item.type === 'playing' || item.game) {
           const game = item.game || gamesList[Math.floor(Math.random() * gamesList.length)];
@@ -171,7 +171,7 @@ export const InboxScreen: React.FC = () => {
           }
         }
       });
-      
+
       setLivePlayers(recentPlayers.slice(0, 4));
     } catch (e) {
       console.log('Live players fetch error:', e);
@@ -200,7 +200,7 @@ export const InboxScreen: React.FC = () => {
     try {
       const data = await users.pendingCount(user.id);
       setPendingCount(data.count || 0);
-    } catch (e) {}
+    } catch (e) { }
   }, [isAuthenticated, user?.id]);
 
   // Fetch stories
@@ -272,7 +272,7 @@ export const InboxScreen: React.FC = () => {
       try {
         const data = await users.search(searchQuery);
         setSearchResults(data.users || []);
-      } catch (e) {}
+      } catch (e) { }
       setSearching(false);
     }, 300);
     return () => clearTimeout(timeout);
@@ -297,7 +297,7 @@ export const InboxScreen: React.FC = () => {
     try {
       const data = await messagesApi.getConversation(conversation.user.id);
       setChatMessages(data.messages || []);
-    } catch (e) {}
+    } catch (e) { }
     setLoadingChat(false);
   };
 
@@ -322,10 +322,10 @@ export const InboxScreen: React.FC = () => {
     try {
       await users.follow(userId);
       // Update UI
-      setSuggestedUsers(prev => prev.map(u => 
+      setSuggestedUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, isFollowing: true } : u
       ));
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const formatTime = (dateStr: string) => {
@@ -378,7 +378,7 @@ export const InboxScreen: React.FC = () => {
       </View>
 
       {/* Search Bar */}
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.searchBar, { backgroundColor: colors.surface }]}
         onPress={() => setShowSearch(true)}
       >
@@ -388,7 +388,7 @@ export const InboxScreen: React.FC = () => {
 
       {/* Tabs */}
       <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'activity' && styles.tabActive]}
           onPress={() => setActiveTab('activity')}
         >
@@ -397,7 +397,7 @@ export const InboxScreen: React.FC = () => {
           </Text>
           {activeTab === 'activity' && <View style={[styles.tabIndicator, { backgroundColor: colors.primary }]} />}
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'messages' && styles.tabActive]}
           onPress={() => setActiveTab('messages')}
         >
@@ -429,13 +429,13 @@ export const InboxScreen: React.FC = () => {
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.liveScroll}>
                     {livePlayers.map((player, i) => (
-                      <TouchableOpacity 
-                        key={`${player.user.id}-${i}`} 
+                      <TouchableOpacity
+                        key={`${player.user.id}-${i}`}
                         style={[styles.liveCard, { backgroundColor: colors.surface }]}
                         onPress={() => openUserProfile(player.user)}
                       >
-                        <Image 
-                          source={{ uri: player.game.thumbnail }} 
+                        <Image
+                          source={{ uri: player.game.thumbnail }}
                           style={styles.liveGameBg}
                           blurRadius={3}
                         />
@@ -474,7 +474,7 @@ export const InboxScreen: React.FC = () => {
                         <Text style={[styles.suggestedUsername, { color: colors.textSecondary }]} numberOfLines={1}>
                           @{person.username}
                         </Text>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={[styles.followBtn, person.isFollowing && styles.followingBtn]}
                           onPress={() => followUser(person.id)}
                         >
@@ -502,9 +502,9 @@ export const InboxScreen: React.FC = () => {
           ) : (
             <>
               {/* Stories Row */}
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.storiesRow}
               >
                 {/* Add Story */}
@@ -521,9 +521,9 @@ export const InboxScreen: React.FC = () => {
 
                 {/* Real stories from API */}
                 {storyUsers.map((storyUser, index) => (
-                  <TouchableOpacity 
-                    key={storyUser.user.id} 
-                    style={styles.storyItem} 
+                  <TouchableOpacity
+                    key={storyUser.user.id}
+                    style={styles.storyItem}
                     onPress={() => openStory(index)}
                   >
                     <LinearGradient
@@ -561,7 +561,7 @@ export const InboxScreen: React.FC = () => {
                 <View style={styles.inboxSectionContent}>
                   <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>New followers</Text>
                   <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {activity.filter(a => a.type === 'follow').length > 0 
+                    {activity.filter(a => a.type === 'follow').length > 0
                       ? `${activity.filter(a => a.type === 'follow')[0]?.user?.username || 'Someone'} started following you`
                       : 'See your new followers here'}
                   </Text>
@@ -608,8 +608,8 @@ export const InboxScreen: React.FC = () => {
               {conversations.length > 0 && (
                 <View style={{ marginTop: 8 }}>
                   {conversations.map((chat) => (
-                    <TouchableOpacity 
-                      key={chat.id} 
+                    <TouchableOpacity
+                      key={chat.id}
                       style={[styles.chatItem, { borderBottomColor: colors.border }]}
                       onPress={() => openChat(chat)}
                     >
@@ -680,7 +680,7 @@ export const InboxScreen: React.FC = () => {
               )}
             </View>
           </View>
-          
+
           {searching ? (
             <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
           ) : searchQuery.length < 2 ? (
@@ -702,7 +702,7 @@ export const InboxScreen: React.FC = () => {
               data={searchResults}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.searchResult, { borderBottomColor: colors.border }]}
                   onPress={() => { setShowSearch(false); openUserProfile(item); }}
                 >
@@ -731,7 +731,7 @@ export const InboxScreen: React.FC = () => {
               <TouchableOpacity onPress={() => setSelectedChat(null)}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.chatModalUser}
                 onPress={() => openUserProfile(selectedChat.user)}
               >
@@ -742,7 +742,7 @@ export const InboxScreen: React.FC = () => {
               </TouchableOpacity>
               <View style={{ width: 24 }} />
             </View>
-            
+
             {loadingChat ? (
               <ActivityIndicator style={{ flex: 1 }} color={colors.primary} />
             ) : (
@@ -751,17 +751,68 @@ export const InboxScreen: React.FC = () => {
                 keyExtractor={(item) => item.id}
                 style={styles.chatMessagesList}
                 contentContainerStyle={{ padding: 16 }}
-                renderItem={({ item }) => (
-                  <View style={[
-                    styles.messageBubble,
-                    item.isMe ? styles.myMessage : styles.theirMessage,
-                    { backgroundColor: item.isMe ? colors.primary : colors.surface }
-                  ]}>
-                    <Text style={[styles.messageText, { color: item.isMe ? '#fff' : colors.text }]}>
-                      {item.text}
-                    </Text>
-                  </View>
-                )}
+                renderItem={({ item }) => {
+                  const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
+                  const hasGameShare = !!item.gameShare;
+                  const thumbUri = item.gameShare?.thumbnail
+                    ? (item.gameShare.thumbnail.startsWith('http') ? item.gameShare.thumbnail : `${GAMES_HOST}${item.gameShare.thumbnail}`)
+                    : null;
+
+                  if (hasGameShare) {
+                    return (
+                      <View style={[
+                        { maxWidth: '70%', marginBottom: 10 },
+                        item.isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
+                      ]}>
+                        <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}>
+                          {thumbUri ? (
+                            <Image
+                              source={{ uri: thumbUri }}
+                              style={{ width: '100%', aspectRatio: 1, backgroundColor: item.gameShare.color || '#333' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={{ width: '100%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: item.gameShare.color || '#333' }}>
+                              <Ionicons name="game-controller" size={40} color="rgba(255,255,255,0.5)" />
+                            </View>
+                          )}
+                          <View style={{
+                            position: 'absolute', bottom: 0, left: 0, right: 0,
+                            paddingHorizontal: 12, paddingVertical: 10,
+                            backgroundColor: 'rgba(0,0,0,0.55)',
+                          }}>
+                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
+                              {item.gameShare.name}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                              <Ionicons name="play-circle" size={14} color="rgba(255,255,255,0.9)" />
+                              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, marginLeft: 4, fontWeight: '500' }}>
+                                Tap to play
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                        {cleanText ? (
+                          <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>
+                            {cleanText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <View style={[
+                      styles.messageBubble,
+                      item.isMe ? styles.myMessage : styles.theirMessage,
+                      { backgroundColor: item.isMe ? colors.primary : colors.surface }
+                    ]}>
+                      <Text style={[styles.messageText, { color: item.isMe ? '#fff' : colors.text }]}>
+                        {cleanText}
+                      </Text>
+                    </View>
+                  );
+                }}
                 ListEmptyComponent={
                   <View style={styles.emptyChatHint}>
                     <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
@@ -771,7 +822,7 @@ export const InboxScreen: React.FC = () => {
                 }
               />
             )}
-            
+
             <View style={[styles.chatInputArea, { paddingBottom: insets.bottom || 16, borderTopColor: colors.border }]}>
               <View style={[styles.chatInputBox, { backgroundColor: colors.surface }]}>
                 <TextInput
@@ -783,7 +834,7 @@ export const InboxScreen: React.FC = () => {
                   onSubmitEditing={sendMessage}
                 />
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.sendBtn, { backgroundColor: messageText.trim() ? colors.primary : colors.surface }]}
                 onPress={sendMessage}
                 disabled={!messageText.trim()}

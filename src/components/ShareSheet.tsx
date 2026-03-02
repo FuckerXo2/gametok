@@ -104,7 +104,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     setSending(true);
     try {
       await Promise.all(
-        Array.from(selectedFriends).map(friendId => 
+        Array.from(selectedFriends).map(friendId =>
           onSendToFriend?.(friendId, gameId)
         )
       );
@@ -117,12 +117,13 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const getShareUrl = () => `https://gametok-landing.pages.dev/game.html?id=${gameId}`;
-  const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮 ${getShareUrl()}`;
+  const getThumbnailUrl = () => `https://gametok-games.pages.dev/thumbnails/${gameId}.png`;
+  const getShareUrl = () => `https://gametok-landing.pages.dev/game.html?id=${gameId}&name=${encodeURIComponent(gameName)}&img=${encodeURIComponent(getThumbnailUrl())}`;
+  const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮\n${getShareUrl()}`;
 
   const handleExternalShare = async (optionId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     const shareUrl = getShareUrl();
     const shareMessage = getShareMessage();
 
@@ -133,18 +134,22 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
         setCopiedLink(true);
         setTimeout(() => setCopiedLink(false), 2000);
         break;
-      case 'snapchat':
-        Linking.openURL(`snapchat://`);
+      case 'snapchat': {
+        // Snapchat doesn't support text via URL scheme - use system share
+        Share.share({ message: shareMessage });
         break;
+      }
       case 'whatsapp':
         Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`);
         break;
       case 'sms':
         Linking.openURL(`sms:&body=${encodeURIComponent(shareMessage)}`);
         break;
-      case 'instagram':
-        Linking.openURL('instagram://app');
+      case 'instagram': {
+        // Instagram doesn't support text sharing via URL scheme - use system share
+        Share.share({ message: shareMessage });
         break;
+      }
       case 'more':
         Share.share({ message: shareMessage });
         break;
@@ -155,7 +160,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     ({ item }: { item: Friend }) => {
       const isSelected = selectedFriends.has(item.id);
       const isSent = sentTo.has(item.id);
-      
+
       return (
         <TouchableOpacity
           style={styles.friendItem}
@@ -184,13 +189,13 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
               </View>
             )}
           </View>
-          <Text 
+          <Text
             style={[
-              styles.friendName, 
-              { color: colors.text }, 
+              styles.friendName,
+              { color: colors.text },
               isSent && styles.friendNameSent,
               isSelected && !isSent && styles.friendNameSelected
-            ]} 
+            ]}
             numberOfLines={1}
           >
             {item.displayName || item.username}
@@ -233,7 +238,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        
+
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 16, backgroundColor: colors.surface }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -271,7 +276,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           {/* Send Button */}
           {hasSelection && (
             <View style={styles.sendSection}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.islandPill, { backgroundColor: colors.background }]}
                 onPress={handleSend}
                 disabled={sending}
