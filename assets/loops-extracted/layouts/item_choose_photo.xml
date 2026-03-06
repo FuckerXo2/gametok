@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <RelativeLayout android:id="@id/content_layout" android:paddingTop="2.0dp" android:paddingBottom="2.0dp" android:layout_width="120.0dp" android:layout_height="120.0dp" android:paddingStart="2.0dp" android:paddingEnd="2.0dp">
+        <RelativeLayout android:id="@id/image_layout" android:background="@color/dj_photo_select_color" android:paddingTop="4.0dp" android:paddingBottom="4.0dp" android:layout_width="match_parent" android:layout_height="match_parent" android:paddingStart="4.0dp" android:paddingEnd="4.0dp">
+            <mozat.mchatcore.ui.widget.RectImageView android:id="@id/ablumPhotoItem" android:background="#eeeeee" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="@null" />
+            <ImageView android:id="@id/select_status" android:layout_width="wrap_content" android:layout_height="wrap_content" android:src="@drawable/ic_photo_selected" android:layout_alignParentRight="true" android:contentDescription="@null" android:layout_alignParentEnd="true" />
+        </RelativeLayout>
+    </RelativeLayout>
+</RelativeLayout>

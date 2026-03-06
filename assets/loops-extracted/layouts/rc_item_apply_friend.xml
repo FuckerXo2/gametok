@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:background="#f5f6f9" android:layout_width="match_parent" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <TextView android:textSize="12.0dp" android:textColor="#3b3b3b" android:gravity="center_vertical" android:id="@id/tv_time" android:background="#f5f6f9" android:visibility="gone" android:layout_width="match_parent" android:layout_height="32.0dp" android:paddingStart="12.0dp" />
+    <androidx.constraintlayout.widget.ConstraintLayout android:background="#ffffff" android:paddingTop="8.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="16.0dp">
+        <ImageView android:id="@id/iv_head" android:layout_width="40.0dp" android:layout_height="40.0dp" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" />
+        <TextView android:textSize="17.0dp" android:textColor="#111f2c" android:id="@id/tv_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginLeft="10.0dp" android:maxLength="16" app:layout_constraintStart_toEndOf="@id/iv_head" app:layout_constraintTop_toTopOf="@id/iv_head" />
+        <TextView android:textSize="14.0dp" android:textColor="#a0a5ab" android:id="@id/tv_content" android:layout_width="0.0dp" android:layout_height="wrap_content" android:layout_marginEnd="20.0dp" app:layout_constraintEnd_toStartOf="@id/ll_btn" app:layout_constraintStart_toStartOf="@id/tv_title" app:layout_constraintTop_toBottomOf="@id/tv_title" />
+        <LinearLayout android:orientation="horizontal" android:id="@id/ll_btn" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12.0dp" android:layout_marginEnd="16.0dp" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintTop_toTopOf="parent">
+            <TextView android:textSize="13.0dp" android:textColor="#ababab" android:gravity="center" android:id="@id/tv_result" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rc_passed" />
+            <TextView android:textSize="13.0dp" android:textColor="#111f2c" android:gravity="center" android:id="@id/tv_reject" android:background="@drawable/rc_apply_reject_bg" android:paddingLeft="6.0dp" android:paddingRight="6.0dp" android:layout_width="wrap_content" android:layout_height="24.0dp" android:text="@string/rc_reject" />
+            <TextView android:textSize="13.0dp" android:textColor="#ffffff" android:gravity="center" android:id="@id/tv_accept" android:background="@drawable/rc_apply_accept_bg" android:paddingLeft="6.0dp" android:paddingRight="6.0dp" android:layout_width="wrap_content" android:layout_height="24.0dp" android:text="@string/rc_accept" android:layout_marginStart="7.0dp" />
+        </LinearLayout>
+        <View android:background="#e3e5e6" android:layout_width="0.0dp" android:layout_height="1.0px" android:layout_marginTop="8.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toEndOf="@id/iv_head" app:layout_constraintTop_toBottomOf="@id/tv_content" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>

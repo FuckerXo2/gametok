@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout android:id="@id/root" android:background="@color/color_splash" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:fresco="http://schemas.android.com/apk/res-auto">
+    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/img_adv" android:layout_width="220.0dp" android:layout_height="0.0dp" android:layout_marginBottom="160.0dp" fresco:layout_constraintBottom_toBottomOf="parent" fresco:layout_constraintDimensionRatio="400:300" fresco:layout_constraintEnd_toEndOf="parent" fresco:layout_constraintStart_toStartOf="parent" fresco:layout_constraintTop_toTopOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>

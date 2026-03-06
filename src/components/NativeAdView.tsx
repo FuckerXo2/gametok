@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   nativeCtaButton: {
-    backgroundColor: "#FF8E53",
+    backgroundColor: "#a855f7",
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 12,

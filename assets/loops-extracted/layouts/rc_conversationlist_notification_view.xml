@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:gravity="center_vertical" android:orientation="horizontal" android:id="@id/rc_conversationlist_notification" android:background="@drawable/rc_bg_coversation_list_notification" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/rc_margin_size_16" android:layout_marginStart="@dimen/rc_margin_size_16" android:layout_marginEnd="@dimen/rc_margin_size_16"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <ImageView android:id="@id/iv_notification_icon" android:layout_width="36.0dp" android:layout_height="36.0dp" android:layout_marginTop="14.0dp" android:layout_marginBottom="14.0dp" android:src="@drawable/rc_conversaton_list_notification" android:layout_marginStart="14.0dp" />
+    <TextView android:textSize="@dimen/rc_margin_size_12" android:id="@id/tv_notification_content" android:layout_width="0.0dp" android:layout_height="wrap_content" android:text="@string/permission_notification" android:layout_weight="1.0" android:fontFamily="@font/font_normal" android:layout_marginStart="10.0dp" />
+    <TextView android:textSize="@dimen/rc_margin_size_12" android:textStyle="bold" android:textColor="#00be6d" android:id="@id/tv_notification_allow" android:padding="12.0dp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/allow" android:fontFamily="@font/font_bold" />
+</LinearLayout>

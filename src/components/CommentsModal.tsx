@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { comments as commentsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { Avatar } from './Avatar';
 
 interface Comment {
   id: string;
@@ -113,11 +114,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
         {item.avatar ? (
           <Image source={{ uri: item.avatar }} style={styles.avatar} />
         ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
-            <Text style={[styles.avatarText, { color: colors.text }]}>
-              {(item.displayName || item.username).charAt(0).toUpperCase()}
-            </Text>
-          </View>
+          <Avatar uri={item.avatar} userId={item.userId} size={40} />
         )}
         <View style={styles.commentContent}>
           <View style={styles.commentHeader}>
@@ -205,11 +202,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                 {user.avatar ? (
                   <Image source={{ uri: user.avatar }} style={styles.inputAvatar} />
                 ) : (
-                  <View style={[styles.inputAvatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
-                    <Text style={[styles.avatarTextSmall, { color: colors.text }]}>
-                      {(user.displayName || user.username || 'U').charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  <Avatar uri={user.avatar} userId={user.id} size={32} />
                 )}
                 <TextInput
                   ref={inputRef}

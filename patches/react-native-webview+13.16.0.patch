@@ -1,0 +1,116 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+index 0287e1c..85adb4d 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -36,11 +36,61 @@ import android.webkit.CookieManager;
+ import android.webkit.CookieSyncManager;
+ 
+ import java.util.concurrent.atomic.AtomicReference;
++import java.util.Arrays;
++import java.util.HashSet;
++import java.util.Set;
++import java.io.ByteArrayInputStream;
+ 
+ public class RNCWebViewClient extends WebViewClient {
+     private static String TAG = "RNCWebViewClient";
+     protected static final int SHOULD_OVERRIDE_URL_LOADING_TIMEOUT = 250;
+ 
++    // === NATIVE AD BLOCKER ===
++    private static final Set<String> BLOCKED_DOMAINS = new HashSet<>(Arrays.asList(
++        "doubleclick.net", "googlesyndication.com", "googleadservices.com",
++        "imasdk.googleapis.com", "googletagservices.com", "tpc.googlesyndication.com",
++        "pagead2.googlesyndication.com", "securepubads.g.doubleclick.net",
++        "googleads.g.doubleclick.net", "ad.doubleclick.net",
++        "amazon-adsystem.com", "criteo.com", "pubmatic.com",
++        "rubiconproject.com", "openx.net", "smartadserver.com",
++        "casalemedia.com", "adinplay.com", "gdsdk.com", "a-mo.net", "applovin.com"
++    ));
++
++    private static final String[] BLOCKED_PATTERNS = {
++        "gamemonetize.com/gamemonetize.js", "api.gamemonetize.com", "api.gamemonetize.co",
++        "gamedistribution.com/rvv1/", "html5.gamedistribution.com"
++    };
++
++    private static final WebResourceResponse EMPTY_RESPONSE = new WebResourceResponse(
++        "text/plain", "UTF-8", new ByteArrayInputStream("".getBytes())
++    );
++
++    private boolean isAdUrl(String url) {
++        if (url == null) return false;
++        String lowerUrl = url.toLowerCase();
++        // Check blocked domains
++        for (String domain : BLOCKED_DOMAINS) {
++            if (lowerUrl.contains(domain)) return true;
++        }
++        // Check blocked URL patterns
++        for (String pattern : BLOCKED_PATTERNS) {
++            if (lowerUrl.contains(pattern)) return true;
++        }
++        return false;
++    }
++
++    @Override
++    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
++        String url = request.getUrl().toString();
++        if (isAdUrl(url)) {
++            Log.d(TAG, "[AdBlocker] Blocked: " + url);
++            return EMPTY_RESPONSE;
++        }
++        return super.shouldInterceptRequest(view, request);
++    }
++    // === END NATIVE AD BLOCKER ===
++
++
+     protected boolean mLastLoadFailed = false;
+     protected RNCWebView.ProgressChangedFilter progressChangedFilter = null;
+     protected @Nullable RNCBasicAuthCredential basicAuthCredential = null;
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+index 7f5c24d..ca09033 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+@@ -469,6 +469,45 @@ - (WKWebViewConfiguration *)setUpWkWebViewConfig
+   }
+   wkWebViewConfig.userContentController = [WKUserContentController new];
+ 
++  // === NATIVE AD BLOCKER via WKContentRuleList ===
++  // Blocks ad requests at the WebKit engine level (like Safari Content Blocker)
++  static WKContentRuleList *cachedAdBlockRules = nil;
++  static dispatch_once_t onceToken;
++  dispatch_once(&onceToken, ^{
++    NSString *rules = @"["
++      // Block known ad domains
++      "{\"trigger\":{\"url-filter\":\".*\",\"if-domain\":[\"doubleclick.net\",\"googlesyndication.com\",\"googleadservices.com\",\"imasdk.googleapis.com\",\"googletagservices.com\",\"securepubads.g.doubleclick.net\",\"tpc.googlesyndication.com\",\"amazon-adsystem.com\",\"criteo.com\",\"pubmatic.com\",\"rubiconproject.com\",\"openx.net\",\"smartadserver.com\",\"casalemedia.com\",\"adinplay.com\",\"gdsdk.com\",\"a-mo.net\",\"applovin.com\"]},\"action\":{\"type\":\"block\"}},"
++      // Block ad-related URL patterns
++      "{\"trigger\":{\"url-filter\":\"pagead2\\\\.googlesyndication\\\\.com\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"googleads\\\\.g\\\\.doubleclick\\\\.net\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"ad\\\\.doubleclick\\\\.net\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"api\\\\.gamemonetize\\\\.com\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"api\\\\.gamemonetize\\\\.co\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"gamemonetize\\\\.com/gamemonetize\\\\.js\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"gamedistribution\\\\.com/rvv1/\"},\"action\":{\"type\":\"block\"}},"
++      "{\"trigger\":{\"url-filter\":\"html5\\\\.gamedistribution\\\\.com.*gdsdk\"},\"action\":{\"type\":\"block\"}},"
++      // Hide common ad container elements via CSS
++      "{\"trigger\":{\"url-filter\":\".*\"},\"action\":{\"type\":\"css-display-none\",\"selector\":\".gdsdk-overlay, .gdsdk-container, #gdsdk-container, .gamemonetize-overlay, #gamemonetize-overlay, .sdk-container, #sdk_mpu, #sdk-banner, .adsbygoogle, ins.adsbygoogle, .ad-container, .ad-overlay, .interstitial-ad, .preroll-ad, #cmpbox, #cmpbox2, .qc-cmp-ui-container, .fc-consent-root, #onetrust-banner-sdk, #onetrust-consent-sdk, div[id*='google_ads'], div[class*='ad-wrap'], div[class*='ad_wrap'], iframe[src*='doubleclick'], iframe[src*='googlesyndication']\"}}"
++      "]";
++
++    [WKContentRuleListStore.defaultStore compileContentRuleListForIdentifier:@"GameTokAdBlocker"
++      encodedContentRuleList:rules
++      completionHandler:^(WKContentRuleList *ruleList, NSError *error) {
++        if (ruleList) {
++          cachedAdBlockRules = ruleList;
++          NSLog(@"[AdBlocker] Native content rules compiled successfully");
++        } else {
++          NSLog(@"[AdBlocker] Failed to compile rules: %@", error);
++        }
++      }];
++  });
++
++  // Apply cached rules if available
++  if (cachedAdBlockRules) {
++    [wkWebViewConfig.userContentController addContentRuleList:cachedAdBlockRules];
++  }
++  // === END NATIVE AD BLOCKER ===
++
+ #if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000 /* iOS 13 */
+   if (@available(iOS 13.0, *)) {
+     WKWebpagePreferences *pagePrefs = [[WKWebpagePreferences alloc]init];

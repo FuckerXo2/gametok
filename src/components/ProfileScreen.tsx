@@ -26,6 +26,7 @@ import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { RewardsScreen } from './RewardsScreen';
 import { Avatar } from './Avatar';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 2;
@@ -228,18 +229,18 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             {bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{bio}</Text> : null}
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                <FontAwesome5 name="coins" size={12} color="#ffd60a" />
-                <Text style={{ color: '#ffd60a', fontSize: 13, fontWeight: '700' }}>{formatNumber(stats?.points.balance || 0)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.coinGold + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 16, height: 16 }} />
+                <Text style={{ color: LoopsColors.coinGold, fontSize: 13, fontWeight: '700' }}>{formatNumber(stats?.points.balance || 0)}</Text>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(168,85,247,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                <Ionicons name="trophy" size={12} color="#a855f7" />
-                <Text style={{ color: '#a855f7', fontSize: 13, fontWeight: '700' }}>Level {stats?.level?.current || 1}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.color6 + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                <Ionicons name="trophy" size={12} color={LoopsColors.color6} />
+                <Text style={{ color: LoopsColors.color6, fontSize: 13, fontWeight: '700' }}>Level {stats?.level?.current || 1}</Text>
               </View>
               {(stats?.streak.current || 0) > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(249,115,22,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                  <Ionicons name="flame" size={14} color="#f97316" />
-                  <Text style={{ color: '#f97316', fontSize: 13, fontWeight: '600' }}>{stats?.streak.current} day streak</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: LoopsColors.color2 + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                  <Ionicons name="flame" size={14} color={LoopsColors.color2} />
+                  <Text style={{ color: LoopsColors.color2, fontSize: 13, fontWeight: '600' }}>{stats?.streak.current} day streak</Text>
                 </View>
               )}
             </View>
@@ -266,23 +267,23 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,214,10,0.15)', justifyContent: 'center', alignItems: 'center' }}>
-                  <FontAwesome5 name="gift" size={20} color="#ffd60a" />
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: LoopsColors.coinGold + '26', justifyContent: 'center', alignItems: 'center' }}>
+                  <FontAwesome5 name="gift" size={20} color={LoopsColors.coinGold} />
                 </View>
                 <View>
-                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Rewards Vault</Text>
+                  <Text style={{ color: LoopsColors.white, fontSize: 15, fontWeight: '800' }}>Rewards Vault</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                    <Text style={{ color: '#ffd60a', fontSize: 13, fontWeight: '700' }}>
+                    <Text style={{ color: LoopsColors.coinGold, fontSize: 13, fontWeight: '700' }}>
                       {(stats?.points.balance || 0).toLocaleString()} Coins
                     </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' }}>
+                    <Text style={{ color: LoopsColors.white50, fontSize: 12, fontWeight: '600' }}>
                       ≈ ${((stats?.points.usdValue !== undefined && stats.points.usdValue > 0) ? stats.points.usdValue : (stats?.points.balance || 0) / 5667).toFixed(2)} USD
                     </Text>
                   </View>
                 </View>
               </View>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' }}>
-                <Ionicons name="chevron-forward" size={16} color="#fff" />
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: LoopsColors.white10, justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="chevron-forward" size={16} color={LoopsColors.white} />
               </View>
             </LinearGradient>
           </TouchableOpacity>

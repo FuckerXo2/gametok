@@ -146,6 +146,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     // Configure Google Sign-In
     GoogleSignin.configure({
       iosClientId: '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com',
+      webClientId: '690098564284-9j4fj28fiqimjg8c20mn2vtjg6b70qr7.apps.googleusercontent.com',
     });
   }, []);
 
@@ -171,8 +172,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Check if this is a new user - if so, go through onboarding
-      if ((result as any)?.isNewUser) {
+      console.log('[OAuth] Apple result:', result);
+      console.log('[OAuth] isNewUser:', result?.isNewUser);
+
+      // Check if this is a new user OR if user doesn't have a username yet
+      if (result?.isNewUser || !result?.user?.username) {
         animateTransition('username');
       } else {
         onComplete();
@@ -213,8 +217,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-        // Check if this is a new user - if so, go through onboarding
-        if ((result as any)?.isNewUser) {
+        console.log('[OAuth] Google result:', result);
+        console.log('[OAuth] isNewUser:', result?.isNewUser);
+
+        // Check if this is a new user OR if user doesn't have a username yet
+        if (result?.isNewUser || !result?.user?.username) {
           animateTransition('username');
         } else {
           onComplete();
@@ -239,6 +246,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
       Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
       Animated.timing(fadeAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
+    setError(''); // Clear any errors when transitioning
     setTimeout(() => setStep(nextStep), 150);
   };
 
@@ -303,11 +311,20 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     setLoading(true);
     setError('');
     try {
-      await signup(username.trim(), password, username.trim(), email.trim());
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      animateTransition('profile');
+      // If user already exists (OAuth), just update their username
+      if (user) {
+        await users.update(user.id, { username: username.trim() });
+        await refreshUser();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        animateTransition('profile');
+      } else {
+        // Regular signup flow
+        await signup(username.trim(), password, username.trim(), email.trim());
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        animateTransition('profile');
+      }
     } catch (e: any) {
-      setError(e.message || 'Signup failed');
+      setError(e.message || 'Failed to set username');
     } finally {
       setLoading(false);
     }

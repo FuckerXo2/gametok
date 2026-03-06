@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:gravity="center_vertical" android:orientation="horizontal" android:background="@drawable/bg_round_8_white" android:padding="10.0dp" android:layout_width="match_parent" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/ic_icon" android:layout_width="46.0dp" android:layout_height="46.0dp" android:scaleType="fitXY" app:placeholderImage="@drawable/ic_home_spin_1" app:placeholderImageScaleType="fitXY" />
+    <TextView android:textSize="14.0sp" android:textColor="@color/Black" android:ellipsize="end" android:id="@id/tv_content" android:layout_width="0.0dp" android:layout_height="wrap_content" android:text="@string/no_content" android:maxLines="3" android:layout_weight="1.0" android:paddingStart="12.0dp" android:paddingEnd="12.0dp" />
+    <TextView android:textSize="13.0dp" android:textStyle="bold" android:textColor="@color/Black" android:gravity="center" android:id="@id/tv_action" android:background="@drawable/bg_me_buy_coins" android:paddingTop="6.0dp" android:paddingBottom="6.0dp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/spin_action_go" android:paddingStart="20.0dp" android:paddingEnd="20.0dp" />
+</LinearLayout>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout android:layout_width="match_parent" android:layout_height="112.0dp"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/img_avatar" android:layout_width="80.0dp" android:layout_height="80.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:roundAsCircle="true" />
+    <ImageView android:id="@id/img_selected" android:background="@drawable/bg_avatar_selected_1" android:layout_width="80.0dp" android:layout_height="80.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" />
+    <ImageView android:id="@id/img_checked" android:visibility="visible" android:layout_width="wrap_content" android:layout_height="wrap_content" android:src="@drawable/ic_check_circle_4" app:layout_constraintEnd_toEndOf="@id/img_selected" app:layout_constraintTop_toTopOf="@id/img_selected" />
+</androidx.constraintlayout.widget.ConstraintLayout>

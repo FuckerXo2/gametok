@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <io.rong.imkit.usermanage.component.HeadComponent android:id="@id/rc_head_component" android:layout_width="match_parent" android:layout_height="@dimen/rc_title_bar_height" app:head_right_text="@string/rc_dialog_ok" app:head_title_text="@string/rc_my_nickname_in_group" />
+    <LinearLayout android:orientation="horizontal" android:background="@android:color/white" android:padding="16.0dp" android:layout_width="match_parent" android:layout_height="wrap_content">
+        <TextView android:textSize="16.0sp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rc_nickname_label" />
+        <EditText android:textSize="16.0sp" android:id="@id/group_Nickname_input" android:background="@drawable/rc_ext_panel_editbox_background" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/rc_nickname_hint" android:maxLength="64" android:layout_marginStart="8.0dp" style="@style/EditTextStyle.Alignment" />
+    </LinearLayout>
+    <TextView android:textSize="14.0sp" android:textColor="@android:color/darker_gray" android:id="@id/description" android:padding="16.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/rc_nickname_description" />
+</LinearLayout>

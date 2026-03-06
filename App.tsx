@@ -1,11 +1,12 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Linking } from 'react-native';
+import { StyleSheet, View, Linking, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import { useFonts } from 'expo-font';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { InboxScreen } from './src/components/InboxScreen';
@@ -154,12 +155,18 @@ const AppContent = () => {
     }
   }, [isAuthenticated]);
 
+  // Re-check onboarding when user logs out
+  useEffect(() => {
+    if (!isAuthenticated && !authLoading) {
+      // Force re-check by resetting state first
+      setShowOnboarding(null);
+      checkOnboarding();
+    }
+  }, [isAuthenticated, authLoading]);
+
   const checkOnboarding = async () => {
-    // We bypass the initial onboarding screen block entirely so EVERY user 
-    // lands on the HomeScreen immediately, mimicking TikTok.
-    // They will only see the Onboarding/Login flow when they try to interact 
-    // with gated features (which triggers showAuthScreen).
-    setShowOnboarding(false);
+    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+    setShowOnboarding(!hasSeenOnboarding);
   };
 
   // Handle deep links
@@ -199,16 +206,23 @@ const AppContent = () => {
     setShowOnboarding(false);
   };
 
-  // Still loading auth or onboarding check
+  // Still loading auth or onboarding check - brief moment after splash
   if (showOnboarding === null || authLoading) {
-    return <View style={{ flex: 1, backgroundColor: '#000' }} />;
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
   }
 
   // User hasn't seen onboarding yet - show intro slides
   if (showOnboarding) {
     return (
       <View style={{ flex: 1 }}>
-        <OnboardingFlow onComplete={handleOnboardingComplete} isAuthLoading={false} />
+        <OnboardingFlow
+          onComplete={handleOnboardingComplete}
+          isAuthLoading={false}
+        />
       </View>
     );
   }
@@ -245,10 +259,27 @@ const AppContent = () => {
 
 export default function App() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+  
+  // Load Graphik fonts
+  const [fontsLoaded] = useFonts({
+    'Graphik-Regular': require('./assets/fonts/graphik_arabic.otf'),
+    'Graphik-Medium': require('./assets/fonts/graphik_arabic_medium.otf'),
+    'Graphik-SemiBold': require('./assets/fonts/graphik_arabic_semibold.otf'),
+    'Graphik-Bold': require('./assets/fonts/graphik_arabic_bold.otf'),
+  });
 
   // AnimatedSplash renders FIRST, before any providers
   if (showAnimatedSplash) {
     return <AnimatedSplash onAnimationComplete={() => setShowAnimatedSplash(false)} />;
+  }
+  
+  // Wait for fonts to load
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
   }
 
   return (

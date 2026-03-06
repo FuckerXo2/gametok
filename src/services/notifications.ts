@@ -109,24 +109,6 @@ export const addNotificationReceivedListener = (
   return Notifications.addNotificationReceivedListener(callback);
 };
 
-// Schedule local notification (for testing)
-export const scheduleLocalNotification = async (
-  title: string,
-  body: string,
-  data?: any,
-  seconds: number = 5
-): Promise<void> => {
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      data,
-      sound: true,
-    },
-    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds },
-  });
-};
-
 // Clear all notifications
 export const clearAllNotifications = async (): Promise<void> => {
   await Notifications.dismissAllNotificationsAsync();

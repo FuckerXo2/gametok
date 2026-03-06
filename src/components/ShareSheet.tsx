@@ -18,6 +18,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { users } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { Avatar } from './Avatar';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 
 const AVATAR_SIZE = 60;
 
@@ -172,11 +174,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             {item.avatar ? (
               <Image source={{ uri: item.avatar }} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
-                <Text style={[styles.avatarText, { color: colors.text }]}>
-                  {(item.displayName || item.username).charAt(0).toUpperCase()}
-                </Text>
-              </View>
+              <Avatar uri={item.avatar} userId={item.id} size={40} />
             )}
             {isSelected && !isSent && (
               <View style={[styles.selectedBadge, { borderColor: colors.surface }]}>
@@ -245,7 +243,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
             <View style={styles.headerSpacer} />
             <Text style={[styles.title, { color: colors.text }]}>Send to</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.text} />
+              <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 24, height: 24, tintColor: colors.text }} />
             </TouchableOpacity>
           </View>
 

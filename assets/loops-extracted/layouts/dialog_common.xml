@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout android:gravity="center" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <LinearLayout android:layout_gravity="center" android:orientation="vertical" android:id="@id/content_layout" android:background="@drawable/bg_common_dialog" android:paddingTop="10.0dp" android:layout_width="300.0dp" android:layout_height="wrap_content">
+        <LinearLayout android:gravity="center" android:orientation="vertical" android:id="@id/content_wrap" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_weight="1.0">
+            <TextView android:textSize="17.0dp" android:textStyle="bold" android:gravity="center" android:layout_gravity="center" android:id="@id/title" android:layout_width="260.0dp" android:layout_height="wrap_content" android:layout_marginTop="10.0dp" android:text="title" android:fontFamily="@font/font_normal" />
+            <TextView android:textColor="@color/main_text_color" android:gravity="start" android:layout_gravity="center" android:id="@id/content" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10.0dp" android:layout_marginBottom="20.0dp" android:layout_weight="1.0" android:fontFamily="@font/font_normal" android:layout_marginStart="20.0dp" android:layout_marginEnd="20.0dp" style="@style/body_1" />
+        </LinearLayout>
+        <View android:id="@id/bottom_divider" android:background="@color/color_1A000000" android:visibility="visible" android:layout_width="match_parent" android:layout_height="1.0px" />
+        <LinearLayout android:layout_gravity="bottom" android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="48.0dp">
+            <TextView android:textSize="17.0dp" android:textColor="@color/main_text_color" android:gravity="center" android:id="@id/full_button" android:visibility="visible" android:layout_width="match_parent" android:layout_height="match_parent" android:text="@string/ok" android:fontFamily="@font/font_normal" />
+            <TextView android:textSize="17.0dp" android:textColor="@color/main_text_color" android:gravity="center" android:id="@id/left_button" android:visibility="visible" android:layout_width="0.0dp" android:layout_height="match_parent" android:text="@string/cancel" android:layout_weight="1.0" android:fontFamily="@font/font_normal" />
+            <View android:id="@id/diver" android:background="@color/color_1A000000" android:visibility="visible" android:layout_width="2.0px" android:layout_height="match_parent" />
+            <TextView android:textSize="17.0dp" android:textColor="@color/color_FF5151" android:gravity="center" android:id="@id/right_button" android:layout_width="0.0dp" android:layout_height="match_parent" android:text="@string/send" android:layout_weight="1.0" android:fontFamily="@font/font_normal" />
+        </LinearLayout>
+    </LinearLayout>
+    <ImageView android:layout_gravity="center_horizontal" android:id="@id/icon_title" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:src="@drawable/bg_top_title_unlocked" />
+</FrameLayout>

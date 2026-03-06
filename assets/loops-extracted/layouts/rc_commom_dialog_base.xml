@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <LinearLayout android:orientation="vertical" android:background="@drawable/common_dialog_bg" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginLeft="48.0dp" android:layout_marginRight="48.0dp" android:minHeight="134.0dp">
+        <RelativeLayout android:gravity="center" android:orientation="vertical" android:id="@id/dialog_content_container" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="90.0dp">
+            <TextView android:textSize="22.0dp" android:textColor="#333333" android:gravity="center" android:id="@id/dialog_tv_title" android:background="@drawable/common_dialog_bg" android:paddingTop="@dimen/rc_margin_size_16" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="@dimen/rc_margin_size_12" android:paddingEnd="@dimen/rc_margin_size_12" />
+            <TextView android:textSize="18.0dp" android:textColor="#333333" android:gravity="center" android:id="@id/dialog_tv_content" android:paddingTop="@dimen/rc_margin_size_20" android:paddingBottom="@dimen/rc_margin_size_20" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_below="@id/dialog_tv_title" android:paddingStart="@dimen/rc_margin_size_12" android:paddingEnd="@dimen/rc_margin_size_12" />
+        </RelativeLayout>
+        <View android:background="#e5e5e5" android:layout_width="match_parent" android:layout_height="1.0dp" />
+        <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="@dimen/common_dialog_button_height">
+            <Button android:textSize="18.0dp" android:textColor="#333333" android:id="@id/dialog_btn_negative" android:background="@drawable/common_dialog_negative_seletor" android:layout_width="0.0dp" android:layout_height="match_parent" android:text="@string/rc_cancel" android:layout_weight="1.0" />
+            <View android:id="@id/dialog_v_btn_separate" android:background="#e5e5e5" android:layout_width="1.0dp" android:layout_height="match_parent" />
+            <Button android:textSize="18.0dp" android:textColor="#368ae8" android:id="@id/dialog_btn_positive" android:background="@drawable/common_dialog_positive_seletor" android:layout_width="0.0dp" android:layout_height="match_parent" android:text="@string/rc_confirm" android:layout_weight="1.0" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

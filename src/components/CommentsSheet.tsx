@@ -20,6 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { comments as commentsApi, moderation } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
+import { Avatar } from './Avatar';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.65;
@@ -350,15 +352,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
       activeOpacity={0.8}
     >
       {/* Avatar */}
-      <View style={styles.avatar}>
-        {item.avatarUrl ? (
-          <Image source={{ uri: item.avatarUrl }} style={styles.avatarImage} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>{item.username[0]?.toUpperCase()}</Text>
-          </View>
-        )}
-      </View>
+      <Avatar uri={item.avatarUrl} userId={item.userId} size={32} />
       
       {/* Content */}
       <View style={styles.commentContent}>
@@ -388,7 +382,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
         <Ionicons 
           name={item.liked ? 'heart' : 'heart-outline'} 
           size={16} 
-          color={item.liked ? '#ff2d55' : '#888'} 
+          color={item.liked ? LoopsColors.mainPink : LoopsColors.mainGray} 
         />
         {item.likes > 0 && (
           <Text style={[styles.likeCount, item.liked && styles.likeCountActive]}>
@@ -437,7 +431,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{formatCount(totalCount)} comments</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#fff" />
+              <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 24, height: 24, tintColor: LoopsColors.white }} />
             </TouchableOpacity>
           </View>
           
@@ -487,7 +481,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
               <View style={styles.inputRow}>
                 {/* User avatar */}
                 <View style={styles.inputAvatar}>
-                  <Ionicons name="person" size={16} color="#666" />
+                  <Ionicons name="person" size={16} color={LoopsColors.mainDeepGrey} />
                 </View>
                 
                 {/* Text input */}
@@ -495,7 +489,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                   ref={inputRef}
                   style={styles.input}
                   placeholder="Add comment..."
-                  placeholderTextColor="#666"
+                  placeholderTextColor={LoopsColors.mainDeepGrey}
                   value={commentText}
                   onChangeText={setCommentText}
                   multiline
@@ -508,7 +502,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                     style={styles.sendButton}
                     onPress={handleSend}
                   >
-                    <Ionicons name="arrow-up" size={20} color="#fff" />
+                    <Ionicons name="arrow-up" size={20} color={LoopsColors.white} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -540,7 +534,7 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
   sheet: {
-    backgroundColor: '#121212',
+    backgroundColor: LoopsColors.darkerBlack,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
     zIndex: 10,
@@ -552,7 +546,7 @@ const styles = StyleSheet.create({
   handle: {
     width: 36,
     height: 4,
-    backgroundColor: '#444',
+    backgroundColor: LoopsColors.mainDeepGrey,
     borderRadius: 2,
   },
   header: {
@@ -562,10 +556,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: '#333',
+    borderBottomColor: LoopsColors.darkGrey,
   },
   headerTitle: {
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -597,12 +591,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#333',
+    backgroundColor: LoopsColors.darkGrey,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -610,13 +604,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   username: {
-    color: '#888',
+    color: LoopsColors.mainGray,
     fontSize: 13,
     fontWeight: '500',
     marginBottom: 2,
   },
   commentText: {
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 15,
     lineHeight: 20,
   },
@@ -626,14 +620,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   timeText: {
-    color: '#666',
+    color: LoopsColors.mainDeepGrey,
     fontSize: 12,
   },
   replyButton: {
     marginLeft: 16,
   },
   replyText: {
-    color: '#666',
+    color: LoopsColors.mainDeepGrey,
     fontSize: 12,
     fontWeight: '500',
   },
@@ -645,11 +639,11 @@ const styles = StyleSheet.create({
   replyLine: {
     width: 24,
     height: 1,
-    backgroundColor: '#444',
+    backgroundColor: LoopsColors.mainDeepGrey,
     marginRight: 8,
   },
   viewRepliesText: {
-    color: '#666',
+    color: LoopsColors.mainDeepGrey,
     fontSize: 12,
     fontWeight: '500',
   },
@@ -658,12 +652,12 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   likeCount: {
-    color: '#666',
+    color: LoopsColors.mainDeepGrey,
     fontSize: 11,
     marginTop: 2,
   },
   likeCountActive: {
-    color: '#888',
+    color: LoopsColors.mainGray,
   },
   emojiBar: {
     flexDirection: 'row',
@@ -671,7 +665,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderTopWidth: 0.5,
-    borderTopColor: '#333',
+    borderTopColor: LoopsColors.darkGrey,
   },
   emojiButton: {
     padding: 4,
@@ -683,8 +677,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     borderTopWidth: 0.5,
-    borderTopColor: '#333',
-    backgroundColor: '#121212',
+    borderTopColor: LoopsColors.darkGrey,
+    backgroundColor: LoopsColors.darkerBlack,
   },
   inputRow: {
     flexDirection: 'row',
@@ -694,18 +688,18 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#333',
+    backgroundColor: LoopsColors.darkGrey,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   input: {
     flex: 1,
-    backgroundColor: '#2a2a2a',
+    backgroundColor: LoopsColors.mainDark,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 15,
     maxHeight: 100,
   },
@@ -713,7 +707,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#fe2c55',
+    backgroundColor: LoopsColors.mainPink,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -723,12 +717,12 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   emptyText: {
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 16,
     fontWeight: '500',
   },
   emptySubtext: {
-    color: '#666',
+    color: LoopsColors.mainDeepGrey,
     fontSize: 14,
     marginTop: 4,
   },

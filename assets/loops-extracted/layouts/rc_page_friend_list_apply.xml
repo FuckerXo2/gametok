@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:background="#f5f6f9" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <io.rong.imkit.usermanage.component.HeadComponent android:id="@id/tb_bar" android:layout_width="match_parent" android:layout_height="44.0dp" app:head_title_text="@string/rc_new_friends" />
+    <io.rong.imkit.usermanage.component.ListComponent android:id="@id/rc_list_component" android:layout_width="match_parent" android:layout_height="match_parent" />
+</LinearLayout>

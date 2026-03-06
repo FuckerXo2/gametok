@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <io.rong.imkit.usermanage.component.HeadComponent android:id="@id/rc_head_component" android:layout_width="match_parent" android:layout_height="@dimen/rc_title_bar_height" app:head_title_text="@string/rc_user_profile" />
+    <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/user_info_container" android:background="#ffffff" android:layout_width="match_parent" android:layout_height="82.0dp" android:layout_marginTop="12.0dp">
+        <ImageView android:id="@id/user_portrait" android:layout_width="60.0dp" android:layout_height="60.0dp" android:layout_marginStart="15.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" />
+        <TextView android:textSize="17.0dp" android:textColor="#111f2c" android:ellipsize="end" android:id="@id/tv_display_name" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" android:maxLength="16" android:layout_marginStart="17.0dp" app:layout_constraintBottom_toTopOf="@id/tv_nickname" app:layout_constraintStart_toEndOf="@id/user_portrait" app:layout_constraintTop_toTopOf="@id/user_portrait" />
+        <TextView android:textSize="11.0dp" android:textColor="#a0a5ab" android:ellipsize="end" android:id="@id/tv_nickname" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" app:layout_constraintBottom_toBottomOf="@id/user_portrait" app:layout_constraintStart_toStartOf="@id/tv_display_name" app:layout_constraintTop_toBottomOf="@id/tv_display_name" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+    <LinearLayout android:orientation="vertical" android:id="@id/ll_friend_actions" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent">
+        <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/nickname_container" android:background="#ffffff" android:layout_width="match_parent" android:layout_height="44.0dp" android:layout_marginTop="10.0dp" android:paddingStart="@dimen/rc_margin_size_15">
+            <TextView android:textSize="16.0dp" android:textColor="#111f2c" android:id="@id/remark_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rc_remark" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" />
+            <ImageView android:id="@id/icon_arrow" android:layout_width="16.0dp" android:layout_height="16.0dp" android:src="@drawable/rc_right_arrow" android:layout_marginEnd="15.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintTop_toTopOf="parent" />
+            <View android:background="#e3e5e6" android:layout_width="match_parent" android:layout_height="1.0px" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="@id/remark_label" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        <Button android:textColor="#ffffff" android:id="@id/btn_start_chat" android:background="@drawable/rc_profile_btn_contact_blue_selector" android:layout_marginTop="80.0dp" android:text="@string/rc_start_chat" style="@style/rc_profile_user_detail_btn" />
+        <Button android:textColor="#111f2c" android:id="@id/btn_start_audio" android:background="@drawable/rc_profile_btn_contact_white_selector" android:visibility="gone" android:text="@string/rc_start_audio" style="@style/rc_profile_user_detail_btn" />
+        <Button android:textColor="#111f2c" android:id="@id/btn_start_video" android:background="@drawable/rc_profile_btn_contact_white_selector" android:visibility="gone" android:text="@string/rc_start_video" style="@style/rc_profile_user_detail_btn" />
+        <Button android:textColor="#ff0000" android:id="@id/btn_delete_user" android:background="@drawable/rc_profile_btn_contact_white_selector" android:text="@string/rc_delete_friend" style="@style/rc_profile_user_detail_btn" />
+    </LinearLayout>
+    <LinearLayout android:orientation="vertical" android:id="@id/ll_no_friend_actions" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent">
+        <Button android:textColor="#ffffff" android:id="@id/btn_add_friend" android:background="@drawable/rc_profile_btn_contact_blue_selector" android:layout_marginTop="80.0dp" android:text="@string/rc_add_as_friend" style="@style/rc_profile_user_detail_btn" />
+    </LinearLayout>
+</LinearLayout>

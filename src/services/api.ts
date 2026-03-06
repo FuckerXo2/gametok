@@ -108,7 +108,7 @@ export const users = {
     return request(`/users/${userId}`);
   },
 
-  update: async (userId: string, data: { displayName?: string; bio?: string; avatar?: string }) => {
+  update: async (userId: string, data: { username?: string; displayName?: string; bio?: string; avatar?: string }) => {
     return request(`/users/${userId}`, {
       method: 'PUT',
       body: JSON.stringify(data),

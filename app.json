@@ -3,7 +3,7 @@
     "name": "GameTOK",
     "slug": "gametok",
     "scheme": "gametok",
-    "version": "1.2.9",
+    "version": "1.3.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,10 +15,16 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "fonts": [
+      "./assets/fonts/graphik_arabic.otf",
+      "./assets/fonts/graphik_arabic_bold.otf",
+      "./assets/fonts/graphik_arabic_medium.otf",
+      "./assets/fonts/graphik_arabic_semibold.otf"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.olasubomi.gametok",
-      "buildNumber": "39",
+      "buildNumber": "42",
       "associatedDomains": [
         "applinks:gametok-landing.pages.dev"
       ],
@@ -37,7 +43,8 @@
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO",
         "com.google.android.gms.permission.AD_ID"
-      ]
+      ],
+      "versionCode": 42
     },
     "web": {
       "favicon": "./assets/favicon.png"

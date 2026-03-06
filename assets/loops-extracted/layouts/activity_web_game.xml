@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout android:id="@id/root" android:fitsSystemWindows="false" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <FrameLayout android:id="@id/web_view_root" android:layout_width="match_parent" android:layout_height="match_parent" />
+    <FrameLayout android:id="@id/loading_mask" android:background="#ffffff" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent">
+        <LinearLayout android:gravity="center" android:layout_gravity="center" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content">
+            <com.facebook.drawee.view.SimpleDraweeView android:layout_gravity="center" android:id="@id/game_icon" android:layout_width="80.0dp" android:layout_height="80.0dp" app:placeholderImage="@drawable/ic_game_comingsoon" />
+            <TextView android:textSize="16.0sp" android:textColor="@color/t1" android:gravity="center_horizontal" android:id="@id/game_name" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_name" android:lineSpacingExtra="44.5sp" />
+            <TextView android:textSize="14.0sp" android:textColor="@color/ic1" android:gravity="center_horizontal" android:id="@id/game_size" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/game_size" />
+            <mozat.mchatcore.ui.widget.HorizontalProgressBarWithNumber android:id="@id/progress" android:layout_width="240.0dp" android:layout_height="wrap_content" android:layout_marginTop="50.0dp" android:progress="0" app:progress_reached_bar_height="4.0dp" app:progress_reached_color="#ec2c7a" app:progress_text_color="#ec2c7a" app:progress_unreached_color="#e1e4ec" />
+            <TextView android:textSize="14.0sp" android:textColor="@color/ic1" android:id="@id/game_unpack_tv" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10.0dp" android:text="@string/game_unpack_str" />
+        </LinearLayout>
+    </FrameLayout>
+    <ImageView android:layout_gravity="right" android:id="@id/close" android:layout_width="36.0dp" android:layout_height="36.0dp" android:layout_margin="15.0dp" android:src="@drawable/close_big" />
+</FrameLayout>

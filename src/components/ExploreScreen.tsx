@@ -26,29 +26,31 @@ import { games } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen } from '../../App';
 import { isExpoGo } from '../services/ads';
+import { GameLoadingScreen } from './GameLoadingScreen';
+import { LoopsBadges, LoopsIcons, BadgeSizes } from '../constants/LoopsBadges';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const FEATURED_CARD_WIDTH = SCREEN_WIDTH * 0.7;
-const GENRE_CARD_WIDTH = (SCREEN_WIDTH - 48) / 2;
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
-// Theme colors
+// Theme colors matching the new design (clean, modern)
 const themes = {
   light: {
     bg: '#ffffff',
     text: '#000000',
-    textSecondary: 'rgba(0,0,0,0.5)',
-    searchBg: 'rgba(0,0,0,0.05)',
-    genreBg: 'rgba(0,0,0,0.05)',
-    genreBorder: 'rgba(0,0,0,0.1)',
+    textSecondary: '#666666',
+    searchBg: '#f2f2f2',
+    cardBg: '#f2f2f2',
+    border: '#eeeeee',
+    green: '#22c55e', // Like the green color in screenshot
   },
   dark: {
-    bg: '#0a0a0f',
+    bg: '#000000',
     text: '#ffffff',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    searchBg: 'rgba(255,255,255,0.08)',
-    genreBg: 'rgba(255,255,255,0.05)',
-    genreBorder: 'rgba(255,255,255,0.1)',
+    textSecondary: '#a1a1aa',
+    searchBg: '#1f2937',
+    cardBg: '#1f2937',
+    border: '#333333',
+    green: '#22c55e',
   },
 };
 
@@ -63,20 +65,13 @@ interface GameItem {
   _fakePlays?: number;
 }
 
-// Hero categories - big visual cards
-const HERO_CATEGORIES = [
-  { id: 'trending', name: '#ViralGames', icon: 'flame', gradient: ['#FF0050', '#00F2FE'] },
-  { id: 'hot', name: '#MostRagedAt', icon: 'flash', gradient: ['#FF416C', '#FF4B2B'] },
-  { id: 'foryou', name: '#ForYouPage', icon: 'heart', gradient: ['#8A2387', '#E94057'] },
-];
-
-// Hashtag rows (formerly genres)
-const HASHTAG_ROWS = [
-  { id: 'puzzle', name: '#BrainTeasers', icon: 'extension-puzzle', gradient: ['#667eea', '#764ba2'] },
-  { id: 'arcade', name: '#ArcadeClassics', icon: 'game-controller', gradient: ['#f093fb', '#f5576c'] },
-  { id: 'action', name: '#ActionPacked', icon: 'flash', gradient: ['#4facfe', '#00f2fe'] },
-  { id: 'racing', name: '#Speedrun', icon: 'car-sport', gradient: ['#43e97b', '#38f9d7'] },
-  { id: 'hypercasual', name: '#Hypercasual', icon: 'happy', gradient: ['#a8edea', '#fed6e3'] },
+// Mock Friends Data
+const MOCK_FRIENDS = [
+  { id: '1', name: 'Mark Jay', avatar: 'https://i.pravatar.cc/150?img=33', tag: '🕹️ Habhab', isOnline: false },
+  { id: '2', name: 'Fofas', avatar: 'https://i.pravatar.cc/150?img=53', isOnline: true },
+  { id: '3', name: 'Abusoud', avatar: 'https://i.pravatar.cc/150?img=47', isOnline: false },
+  { id: '4', name: 'Rewa', avatar: 'https://i.pravatar.cc/150?img=68', isOnline: false },
+  { id: '5', name: 'Alex', avatar: 'https://i.pravatar.cc/150?img=11', isOnline: true },
 ];
 
 const isExternalGame = (game: GameItem) => !!game.embedUrl;
@@ -86,6 +81,7 @@ const getGameUrl = (game: GameItem) => {
     const sep = game.embedUrl.includes('?') ? '&' : '?';
     return `${game.embedUrl}${sep}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
   }
+  // Make sure we correctly construct local Game URLs
   return `${GAMES_HOST}/${game.id}/`;
 };
 
@@ -96,18 +92,10 @@ const getFakePlayCount = (gameId: string) => {
     hash = ((hash << 5) - hash) + gameId.charCodeAt(i);
     hash |= 0;
   }
-  const randomCount = Math.abs(hash) % 1500000 + 10000; // Between 10K and ~1.5M
-  return randomCount;
+  return Math.abs(hash) % 1500000 + 10000;
 };
 
-// Helper function to turn a large number into a short string like 1.2M or 12.3K for the UI
-const formatNumber = (num: number): string => {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
-};
-
-// Ad blocker script for external games (same as HomeScreen)
+// Ad blocker script from previous codebase
 const AD_BLOCKER_SCRIPT = `
 (function() {
   window.alert = function() {};
@@ -149,7 +137,6 @@ const AD_BLOCKER_SCRIPT = `
   };
   window.gdsdk = window.sdk;
   
-  // Remove ad elements
   const removeAds = () => {
     const selectors = [
       'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', '[class*="ad-"]', '[id*="ad-"]',
@@ -171,7 +158,6 @@ const AD_BLOCKER_SCRIPT = `
   setTimeout(removeAds, 500);
   setTimeout(removeAds, 1000);
   
-  // Fullscreen CSS
   const style = document.createElement('style');
   style.textContent = \`
     html, body { margin:0!important; padding:0!important; width:100%!important; height:100%!important; overflow:hidden!important; }
@@ -188,132 +174,237 @@ const AD_BLOCKER_SCRIPT = `
 true;
 `;
 
-// Hero Card - massive vertical cards for top trending
-const HeroCard: React.FC<{
-  category: typeof HERO_CATEGORIES[0];
-  games: GameItem[];
-  onPress: () => void;
-}> = ({ category, games, onPress }) => {
-  const thumbnail = games[0]?.thumbnail;
+// Inject blurred game thumbnail as CSS background inside WebView
+const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
+(function() {
+  if (window._blurBgActive) return;
+  window._blurBgActive = true;
+  var thumbUrl = '${thumbnailUrl}';
+  var fallback = '${fallbackColor}';
+  var applyBg = function() {
+    var s = document.getElementById('_gt_blur_bg');
+    if (s) s.remove();
+    s = document.createElement('style');
+    s.id = '_gt_blur_bg';
+    s.textContent = [
+      'html, body { background: ' + fallback + ' !important; background-color: ' + fallback + ' !important; margin:0; padding:0; }',
+      'body::before {',
+      '  content: "";',
+      '  position: fixed;',
+      '  top: -20px; left: -20px; right: -20px; bottom: -20px;',
+      '  background: url(' + thumbUrl + ') center/cover no-repeat;',
+      '  filter: blur(30px);',
+      '  -webkit-filter: blur(30px);',
+      '  opacity: 0.5;',
+      '  z-index: -1;',
+      '  pointer-events: none;',
+      '}',
+    ].join('\\n');
+    if (document.head) document.head.appendChild(s);
+    if (document.documentElement) document.documentElement.style.setProperty('background', fallback, 'important');
+    if (document.body) document.body.style.setProperty('background', 'transparent', 'important');
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyBg);
+  } else {
+    applyBg();
+  }
+  setInterval(applyBg, 1500);
+})();
+true;
+`;
+
+
+// Intelligent game ready detection script
+const GAME_READY_SCRIPT = `
+  (function () {
+    if (window._gameReadyDetectorActive) return;
+    window._gameReadyDetectorActive = true;
+
+    let gameReady = false;
+    let rafCount = 0;
+    let canvasFound = false;
+    const startTime = Date.now();
+
+    let notifyAttempts = 0;
+    const notifyReady = () => {
+      if (gameReady) return;
+      notifyAttempts++;
+      
+      // Minimum 2.5 seconds before we can mark as ready to let their loaders finish
+      if (Date.now() - startTime < 2500) {
+        setTimeout(notifyReady, 2500 - (Date.now() - startTime));
+        return;
+      }
+      
+      try {
+        if (typeof window.ReactNativeWebView !== 'undefined' && typeof window.ReactNativeWebView.postMessage === 'function') {
+          gameReady = true;
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'GAME_READY' }));
+        } else {
+          // React Native bridge isn't here yet, retry shortly. 
+          // Stop retrying if we've tried for roughly 15 seconds.
+          if (notifyAttempts < 60) {
+              setTimeout(notifyReady, 250);
+          } else {
+              gameReady = true; // Give up and force unblock UI
+          }
+        }
+      } catch (e) {
+        // Fallback if accessing window.ReactNativeWebView throws cross-origin or sandbox errors
+        if (notifyAttempts < 60) {
+            setTimeout(notifyReady, 250);
+        } else {
+            gameReady = true;
+        }
+      }
+    };
+
+    const origRAF = window.requestAnimationFrame;
+    window.requestAnimationFrame = function (cb) {
+      rafCount++;
+      if (rafCount >= 20 && !gameReady) notifyReady();
+      return origRAF.call(window, cb);
+    };
+
+    const checkCanvas = () => {
+    if (canvasFound) return;
+    const canvases = document.querySelectorAll('canvas');
+    for (const canvas of canvases) {
+      if (canvas.width > 50 && canvas.height > 50) {
+        const style = window.getComputedStyle(canvas);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+          canvasFound = true;
+          // Canvas exists. Wait 1.5 seconds for it to render fully.
+          setTimeout(() => { if (!gameReady) notifyReady(); }, 1500);
+          break;
+        }
+      }
+    }
+  };
+
+    const checkEngines = () => {
+      if (window.unityInstance || window.Phaser?.GAMES?.[0]?.isRunning || window.PIXI?.Application || window.cr_getC2Runtime || window.C3 || window.gdjs?.runtimeGame) {
+        notifyReady(); return true;
+      }
+      return false;
+    };
+
+    const origGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type) {
+    if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
+      canvasFound = true;
+      setTimeout(() => { if (!gameReady) notifyReady(); }, 2000);
+    }
+    return origGetContext.apply(this, arguments);
+  };
+
+    window._gameReadyInterval = setInterval(() => {
+    if (gameReady) {
+      clearInterval(window._gameReadyInterval);
+      window._gameReadyInterval = null;
+      return;
+    }
+    checkCanvas();
+    checkEngines();
+    if (Date.now() - startTime > 3000 && rafCount > 60) notifyReady();
+  }, 200);
+
+    setTimeout(() => {
+      if (!gameReady) notifyReady();
+      if (window._gameReadyInterval) clearInterval(window._gameReadyInterval);
+    }, 15000);
+  })();
+true;
+`;
+
+// Shared UI Components
+const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; theme: any }> = ({ title, onChevronPress, theme }) => (
+  <TouchableOpacity style={styles.sectionHeader} onPress={onChevronPress} activeOpacity={0.7} disabled={!onChevronPress}>
+    <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
+    {onChevronPress && (
+      <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} style={{ marginTop: 2 }} />
+    )}
+  </TouchableOpacity>
+);
+
+const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any }> = ({ friend, isAdd, theme }) => {
+  if (isAdd) {
+    return (
+      <TouchableOpacity style={styles.friendCard}>
+        <View style={[styles.friendAvatarContainer, { backgroundColor: theme.searchBg }]}>
+          <Ionicons name="person-add-outline" size={24} color={theme.text} />
+        </View>
+        <Text style={[styles.friendName, { color: theme.text }]}>Add</Text>
+      </TouchableOpacity>
+    );
+  }
+
   return (
-    <TouchableOpacity style={styles.heroCard} onPress={onPress} activeOpacity={0.95}>
-      {thumbnail ? (
-        <Image source={{ uri: thumbnail }} style={styles.heroBg} />
-      ) : (
-        <LinearGradient colors={category.gradient as [string, string]} style={styles.heroBg} />
-      )}
-      <LinearGradient colors={['transparent', 'transparent', 'rgba(0,0,0,0.95)']} style={styles.heroGradient}>
-        <View style={styles.heroTopBadge}>
-          <Ionicons name={category.icon as any} size={14} color="#fff" />
-          <Text style={styles.heroTopBadgeText}>Top {games.length}</Text>
-        </View>
-        <View style={styles.heroContent}>
-          <Text style={styles.heroName}>{category.name}</Text>
-          {games[0] && (
-            <Text style={styles.heroSubText}>Featuring: {games[0].name}</Text>
-          )}
-        </View>
-      </LinearGradient>
+    <TouchableOpacity style={styles.friendCard}>
+      <View>
+        <Image source={{ uri: friend.avatar }} style={styles.friendAvatar} />
+        {friend.isOnline && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
+      </View>
+      <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.name}</Text>
+      {friend.tag && <Text style={[styles.friendTag, { color: theme.textSecondary }]} numberOfLines={1}>{friend.tag}</Text>}
     </TouchableOpacity>
   );
 };
 
-// Game Card - modern vertical style
-const GameCard: React.FC<{
-  game: GameItem;
-  onPress: () => void;
-  large?: boolean;
-}> = ({ game, onPress, large }) => (
-  <TouchableOpacity style={[styles.gameCard, large && styles.gameCardLarge]} onPress={onPress} activeOpacity={0.9}>
-    {game.thumbnail ? (
-      <Image source={{ uri: game.thumbnail }} style={styles.gameCardImg} />
-    ) : (
-      <LinearGradient colors={[game.color || '#a855f7', '#1a1a2e']} style={styles.gameCardImg}>
-        <Ionicons name="game-controller" size={28} color="rgba(255,255,255,0.4)" />
-      </LinearGradient>
-    )}
-    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.95)']} style={styles.gameCardOverlay}>
-      <Text style={styles.gameCardName} numberOfLines={2}>{game.name}</Text>
-      <View style={styles.playCountRow}>
-        <Ionicons name="play" size={10} color="rgba(255,255,255,0.8)" />
-        <Text style={styles.playCountText}>
-          {formatNumber(game._fakePlays || getFakePlayCount(game.id))} plays
-        </Text>
-      </View>
-    </LinearGradient>
+// 1:1 Square Card for "Continue"
+const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1' }> = ({ game, onPress, theme, badge }) => (
+  <TouchableOpacity style={styles.squareGameCard} onPress={onPress} activeOpacity={0.8}>
+    <View style={[styles.squareGameImgContainer, { backgroundColor: theme.cardBg }]}>
+      {game.thumbnail ? (
+        <Image source={{ uri: game.thumbnail }} style={styles.squareGameImg} />
+      ) : (
+        <Ionicons name="game-controller" size={32} color={theme.textSecondary} />
+      )}
+      {badge && (
+        <Image
+          source={LoopsBadges[badge]}
+          style={{
+            position: 'absolute',
+            top: badge === 'top1' ? 6 : 8,
+            right: badge === 'top1' ? 6 : 8,
+            width: badge === 'top1' ? BadgeSizes.top1.width : BadgeSizes.hot.width,
+            height: badge === 'top1' ? BadgeSizes.top1.height : BadgeSizes.hot.height,
+          }}
+          resizeMode="contain"
+        />
+      )}
+    </View>
+    <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
   </TouchableOpacity>
 );
 
-// Hashtag Row - horizontally scrolling list of games mapping to a category
-const HashtagRow: React.FC<{
-  hashtag: typeof HASHTAG_ROWS[0];
-  games: GameItem[];
-  theme: any;
-  onPlayGame: (game: GameItem) => void;
-  onViewAll: () => void;
-}> = ({ hashtag, games, theme, onPlayGame, onViewAll }) => {
-  if (!games || games.length === 0) return null;
-  return (
-    <View style={styles.hashtagSection}>
-      <View style={styles.hashtagHeader}>
-        <View style={styles.hashtagTitleRow}>
-          <Ionicons name={hashtag.icon as any} size={20} color={hashtag.gradient[0]} />
-          <Text style={[styles.hashtagTitle, { color: theme.text }]}>{hashtag.name}</Text>
-        </View>
-        <TouchableOpacity onPress={onViewAll}>
-          <Text style={[styles.viewAllText, { color: theme.textSecondary }]}>View All</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hashtagScroll}>
-        {games.slice(0, 10).map(g => (
-          <GameCard key={g.id} game={g} onPress={() => onPlayGame(g)} />
-        ))}
-      </ScrollView>
-    </View>
-  );
-};
-
-// Category Modal
-const CategoryModal: React.FC<{
-  visible: boolean;
-  title: string;
-  icon: string;
-  gradient?: [string, string];
-  games: GameItem[];
-  onClose: () => void;
-  onPlayGame: (game: GameItem) => void;
-}> = ({ visible, title, icon, gradient, games, onClose, onPlayGame }) => {
-  const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
-
-  return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <View style={[styles.modalContainer, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
-        <LinearGradient colors={gradient || ['#667eea', '#764ba2']} style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-            <Ionicons name="close" size={28} color="#fff" />
-          </TouchableOpacity>
-          <View style={styles.modalHeaderContent}>
-            <Ionicons name={icon as any} size={32} color="#fff" />
-            <Text style={styles.modalTitle}>{title}</Text>
-            <Text style={styles.modalSubtitle}>{games.length} games</Text>
-          </View>
-        </LinearGradient>
-
-        <FlatList
-          data={games}
-          numColumns={3}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.modalGrid}
-          renderItem={({ item }) => (
-            <GameCard game={item} onPress={() => onPlayGame(item)} />
-          )}
+// 16:9 Rectangular Card for "Recommended"
+const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1' }> = ({ game, onPress, theme, badge }) => (
+  <TouchableOpacity style={styles.rectGameCard} onPress={onPress} activeOpacity={0.8}>
+    <View style={[styles.rectGameImgContainer, { backgroundColor: theme.cardBg }]}>
+      {game.thumbnail ? (
+        <Image source={{ uri: game.thumbnail }} style={styles.rectGameImg} />
+      ) : (
+        <Ionicons name="game-controller" size={32} color={theme.textSecondary} />
+      )}
+      {badge && (
+        <Image
+          source={LoopsBadges[badge]}
+          style={{
+            position: 'absolute',
+            top: badge === 'top1' ? 6 : 8,
+            right: badge === 'top1' ? 6 : 8,
+            width: badge === 'top1' ? BadgeSizes.top1.width : BadgeSizes.hot.width,
+            height: badge === 'top1' ? BadgeSizes.top1.height : BadgeSizes.hot.height,
+          }}
+          resizeMode="contain"
         />
-      </View>
-    </Modal>
-  );
-};
+      )}
+    </View>
+    <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
+  </TouchableOpacity>
+);
 
 export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -328,17 +419,9 @@ export const ExploreScreen: React.FC = () => {
 
   const [allGames, setAllGames] = useState<GameItem[]>([]);
   const [featuredGames, setFeaturedGames] = useState<Record<string, GameItem[]>>({});
-  const [genreGames, setGenreGames] = useState<Record<string, GameItem[]>>({});
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalData, setModalData] = useState<{
-    title: string;
-    icon: string;
-    gradient?: [string, string];
-    games: GameItem[];
-  } | null>(null);
 
   const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
@@ -348,33 +431,25 @@ export const ExploreScreen: React.FC = () => {
   const [isAdLoaded, setIsAdLoaded] = useState(false);
   const pendingCloseRef = useRef(false);
 
-  // Load interstitial ad
   useEffect(() => {
-    if (isExpoGo) return; // Don't load real ads in Expo Go
+    if (isExpoGo) return;
 
     const adUnitId = __DEV__ ? TestIds.INTERSTITIAL : 'ca-app-pub-1961802731817431/7682402362';
     const interstitial = InterstitialAd.createForAdRequest(adUnitId, {
       requestNonPersonalizedAdsOnly: true,
     });
 
-    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
-      setIsAdLoaded(true);
-    });
-
+    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => setIsAdLoaded(true));
     const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
       setIsAdLoaded(false);
-      // Close the game AFTER the ad is dismissed
       if (pendingCloseRef.current) {
         pendingCloseRef.current = false;
         setPlayingGame(null);
       }
-      interstitial.load(); // Load the next one
+      interstitial.load();
     });
-
     const unsubscribeError = interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
-      console.log('Interstitial Ad error: ', error);
       setIsAdLoaded(false);
-      // If ad fails, close the game anyway
       if (pendingCloseRef.current) {
         pendingCloseRef.current = false;
         setPlayingGame(null);
@@ -404,33 +479,23 @@ export const ExploreScreen: React.FC = () => {
       }));
       setAllGames(list);
 
-      // Sort for featured
-      const byPlays = [...list].sort((a, b) => (b.plays || 0) - (a.plays || 0));
-
-      // Deterministic shuffle for "raged at" — reverse the sorted list and take from different positions
-      const ragedAt = [...list].sort((a, b) => {
-        const hashA = a.id.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0);
-        const hashB = b.id.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0);
-        return hashA - hashB;
-      });
+      // We'll organize them into various categories based on genre or mock metrics
+      const getCategoryList = (catName: string) => {
+        return list.filter(g => g.category?.toLowerCase().includes(catName.toLowerCase()));
+      };
 
       const shuffled = [...list].sort(() => Math.random() - 0.5);
 
-      // Featured categories - each gets distinct games
       setFeaturedGames({
-        trending: byPlays.slice(0, 20),
-        hot: ragedAt.slice(0, 15),
-        foryou: shuffled.slice(0, 20),
+        continue: shuffled.slice(0, 10),
+        recommended: [...list].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 15),
+        hot: shuffled.slice(10, 25),
+        action: getCategoryList('action').slice(0, 15),
+        puzzle: getCategoryList('puzzle').slice(0, 15),
+        racing: getCategoryList('racing').slice(0, 15),
+        arcade: getCategoryList('arcade').slice(0, 15),
+        new: shuffled.slice(25, 40),
       });
-
-      // Genre categories
-      const byGenre: Record<string, GameItem[]> = {};
-      list.forEach(g => {
-        const cat = (g.category || 'arcade').toLowerCase();
-        if (!byGenre[cat]) byGenre[cat] = [];
-        byGenre[cat].push(g);
-      });
-      setGenreGames(byGenre);
     } catch (e) {
       console.log('Load error:', e);
     } finally {
@@ -441,19 +506,66 @@ export const ExploreScreen: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Search logic
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (searchQuery.length > 2) {
+      setIsSearching(true);
+      timeout = setTimeout(async () => {
+        try {
+          const res = await games.search(searchQuery);
+          let results = (res.games || []).map((g: GameItem) => ({
+            ...g,
+            thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
+          }));
+          setSearchResults(results);
+        } catch (e) {
+          // Fallback
+          const q = searchQuery.toLowerCase();
+          setSearchResults(allGames.filter(g => g.name.toLowerCase().includes(q)));
+        }
+        setIsSearching(false);
+      }, 300);
+    } else {
+      setSearchResults([]);
+      setIsSearching(false);
+    }
+    return () => clearTimeout(timeout);
+  }, [searchQuery, allGames]);
+
+  // Hard safety net: if onLoadEnd never fires (network issues, etc), force-dismiss after 15s
+  useEffect(() => {
+    let safetyTimeout: NodeJS.Timeout;
+    if (playingGame && !gameLoaded) {
+      safetyTimeout = setTimeout(() => {
+        setGameLoaded(true);
+      }, 15000);
+    }
+    return () => clearTimeout(safetyTimeout);
+  }, [playingGame, gameLoaded]);
+
+  const webViewRef = useRef<WebView>(null);
+
+  const playGame = (game: GameItem) => {
+    setPlayingGame(game);
+    setGameLoaded(false);
+  };
+
+  const isSearchActive = searchQuery.length >= 2;
+
   // Auth gate
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
-        <LinearGradient colors={['#7c3aed', '#a855f7']} style={styles.header}>
-          <Text style={styles.headerTitle}>EXPLORE</Text>
-        </LinearGradient>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Explore</Text>
+        </View>
         <View style={StyleSheet.absoluteFill}>
-          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={80} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={styles.authGate}>
-            <Ionicons name="compass" size={64} color="rgba(255,255,255,0.3)" />
-            <Text style={styles.authTitle}>Discover Games</Text>
-            <Text style={styles.authSubtitle}>Sign up to explore thousands of games and find your favorites</Text>
+            <Ionicons name="game-controller" size={64} color={theme.textSecondary} />
+            <Text style={[styles.authTitle, { color: theme.text }]}>Discover Games</Text>
+            <Text style={[styles.authSubtitle, { color: theme.textSecondary }]}>Sign up to explore thousands of games and find your favorites</Text>
             <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen}>
               <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.authBtnGradient}>
                 <Text style={styles.authBtnText}>Sign Up</Text>
@@ -468,79 +580,29 @@ export const ExploreScreen: React.FC = () => {
     );
   }
 
-  // Search - uses server-side search for full database access
-  useEffect(() => {
-    if (searchQuery.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setIsSearching(true);
-    const timeout = setTimeout(async () => {
-      try {
-        const data = await games.search(searchQuery, 50);
-        const results: GameItem[] = (data.games || []).map((g: GameItem) => ({
-          ...g,
-          thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
-          _fakePlays: getFakePlayCount(g.id)
-        }));
-        setSearchResults(results);
-      } catch (e) {
-        console.log('Search error:', e);
-        // Fallback to local search if API fails
-        const q = searchQuery.toLowerCase();
-        const results = allGames.filter(g =>
-          g.name.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q)
-        );
-        setSearchResults(results);
-      }
-      setIsSearching(false);
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [searchQuery, allGames]);
-
-  const openFeatured = (cat: typeof HERO_CATEGORIES[0]) => {
-    setModalData({
-      title: cat.name,
-      icon: cat.icon,
-      gradient: cat.gradient as [string, string],
-      games: featuredGames[cat.id] || [],
-    });
-    setModalVisible(true);
-  };
-
-  const openHashtag = (hashtag: typeof HASHTAG_ROWS[0]) => {
-    setModalData({
-      title: hashtag.name,
-      icon: hashtag.icon,
-      gradient: hashtag.gradient as [string, string],
-      games: genreGames[hashtag.id] || [],
-    });
-    setModalVisible(true);
-  };
-
-  const playGame = (game: GameItem) => {
-    setModalVisible(false);
-    setPlayingGame(game);
-    setGameLoaded(false);
-  };
-
-  const isSearchActive = searchQuery.length >= 2;
-
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
-      {/* Transparent Dark Header */}
+      {/* App Header (Like the Screenshot) */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Discover</Text>
-        <Ionicons name="scan-outline" size={24} color={theme.text} />
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Explore</Text>
+        <View style={styles.headerIcons}>
+          {/* Wheel/Roulette icon */}
+          <TouchableOpacity style={styles.iconBtn}>
+            <Ionicons name="aperture" size={26} color={theme.green} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn}>
+            <Ionicons name="notifications-outline" size={26} color={theme.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search Bar */}
-      <View style={[styles.searchWrap, { backgroundColor: theme.bg }]}>
+      <View style={styles.searchWrap}>
         <View style={[styles.searchBar, { backgroundColor: theme.searchBg }]}>
-          <Ionicons name="search" size={20} color={theme.textSecondary} />
+          <Image source={LoopsIcons.search} style={{ width: 20, height: 20, tintColor: theme.textSecondary }} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search games..."
+            placeholder="Search games or friends"
             placeholderTextColor={theme.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -556,11 +618,12 @@ export const ExploreScreen: React.FC = () => {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color="#a855f7" size="large" />
+        <ActivityIndicator style={{ marginTop: 60 }} color={theme.green} size="large" />
       ) : isSearchActive ? (
+        // Search Results State
         <ScrollView contentContainerStyle={styles.searchResultsGrid}>
           {isSearching ? (
-            <ActivityIndicator color="#a855f7" style={{ marginTop: 40 }} />
+            <ActivityIndicator color={theme.green} style={{ marginTop: 40 }} />
           ) : searchResults.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="search-outline" size={48} color={theme.textSecondary} />
@@ -568,106 +631,169 @@ export const ExploreScreen: React.FC = () => {
             </View>
           ) : (
             searchResults.map(g => (
-              <GameCard key={g.id} game={g} onPress={() => playGame(g)} />
+              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} />
             ))
           )}
         </ScrollView>
       ) : (
+        // Main Explore Stream
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor="#a855f7" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor={theme.green} />}
         >
-          {/* Hero Trends Carousel */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.heroRow}
-            snapToInterval={SCREEN_WIDTH * 0.85 + 14}
-            decelerationRate="fast"
-          >
-            {HERO_CATEGORIES.map(cat => (
-              <HeroCard
-                key={cat.id}
-                category={cat}
-                games={featuredGames[cat.id] || []}
-                onPress={() => openFeatured(cat)}
-              />
+          {/* Friends Section */}
+          <SectionHeader title="Friends" onChevronPress={() => { }} theme={theme} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            <FriendCard isAdd theme={theme} />
+            {MOCK_FRIENDS.map(f => (
+              <FriendCard key={f.id} friend={f} theme={theme} />
             ))}
           </ScrollView>
 
-          {/* Dynamic Hashtag Rows */}
-          {HASHTAG_ROWS.map(hashtag => (
-            <HashtagRow
-              key={hashtag.id}
-              hashtag={hashtag}
-              games={genreGames[hashtag.id] || []}
-              theme={theme}
-              onPlayGame={playGame}
-              onViewAll={() => openHashtag(hashtag)}
-            />
-          ))}
+          {/* Continue Playing */}
+          <SectionHeader title="Continue" onChevronPress={() => { }} theme={theme} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {(featuredGames.continue || []).map(g => (
+              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} />
+            ))}
+          </ScrollView>
 
-          {/* Discover More Grid */}
-          <View style={[styles.hashtagSection, { marginTop: 10 }]}>
-            <View style={styles.hashtagHeader}>
-              <Text style={[styles.hashtagTitle, { color: theme.text }]}>#DiscoverMore</Text>
-            </View>
-            <View style={styles.gamesGrid}>
-              {allGames.slice(0, 30).map(g => (
-                <GameCard key={g.id} game={g} onPress={() => playGame(g)} large={true} />
-              ))}
-            </View>
-          </View>
+          {/* Recommended For You */}
+          <SectionHeader title="Recommended For You" onChevronPress={() => { }} theme={theme} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {(featuredGames.recommended || []).map((g, idx) => (
+              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'like'} />
+            ))}
+          </ScrollView>
+
+          {/* Hot Games */}
+          <SectionHeader title="Hot Games" onChevronPress={() => { }} theme={theme} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {(featuredGames.hot || []).map((g, idx) => (
+              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'hot'} />
+            ))}
+          </ScrollView>
+
+          {/* Action & Adventure */}
+          {featuredGames.action?.length > 0 && (
+            <>
+              <SectionHeader title="Action & Adventure" onChevronPress={() => { }} theme={theme} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {(featuredGames.action || []).map((g, idx) => (
+                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* Brain Teasers */}
+          {featuredGames.puzzle?.length > 0 && (
+            <>
+              <SectionHeader title="Brain Teasers" onChevronPress={() => { }} theme={theme} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {(featuredGames.puzzle || []).map((g, idx) => (
+                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* Racing & Driving */}
+          {featuredGames.racing?.length > 0 && (
+            <>
+              <SectionHeader title="Racing & Driving" onChevronPress={() => { }} theme={theme} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {(featuredGames.racing || []).map((g, idx) => (
+                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* Arcade Classics */}
+          {featuredGames.arcade?.length > 0 && (
+            <>
+              <SectionHeader title="Arcade Classics" onChevronPress={() => { }} theme={theme} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {(featuredGames.arcade || []).map((g, idx) => (
+                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* New Releases */}
+          <SectionHeader title="New Releases" onChevronPress={() => { }} theme={theme} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {(featuredGames.new || []).map((g, idx) => (
+              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'new'} />
+            ))}
+          </ScrollView>
+
         </ScrollView>
       )}
 
-      {/* Category Modal */}
-      {modalData && (
-        <CategoryModal
-          visible={modalVisible}
-          title={modalData.title}
-          icon={modalData.icon}
-          gradient={modalData.gradient}
-          games={modalData.games}
-          onClose={() => setModalVisible(false)}
-          onPlayGame={playGame}
-        />
-      )}
-
-      {/* Game Modal - with ad blocker for external games */}
+      {/* Game Modal */}
       <Modal visible={!!playingGame} animationType="slide" presentationStyle="fullScreen">
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={{ flex: 1, backgroundColor: playingGame?.color || '#1a1a2e' }}>
           <StatusBar hidden />
+
           {playingGame && (
             <WebView
               source={{ uri: getGameUrl(playingGame) }}
-              style={{ flex: 1 }}
+              style={{ flex: 1, backgroundColor: 'transparent' }}
+              // @ts-ignore
+              opaque={false}
+              backgroundColor="transparent"
               scrollEnabled={false}
               bounces={false}
-              onLoadEnd={() => setGameLoaded(true)}
+              onLoadEnd={() => {
+                // Inject blurred thumbnail bg after page fully loads (backup)
+                const thumbUrl = playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`;
+                const fallback = playingGame?.color || '#1a1a2e';
+                webViewRef.current?.injectJavaScript(`
+                  document.documentElement.style.setProperty('background', '${fallback}', 'important');
+                  document.body.style.setProperty('background', 'transparent', 'important');
+                  if(!document.getElementById('_gt_blur_bg')){
+                    var s=document.createElement('style');s.id='_gt_blur_bg';
+                    s.textContent='body::before{content:"";position:fixed;top:-20px;left:-20px;right:-20px;bottom:-20px;background:url(${thumbUrl}) center/cover no-repeat;filter:blur(30px);-webkit-filter:blur(30px);opacity:0.5;z-index:-1;pointer-events:none;}';
+                    document.head.appendChild(s);
+                  }
+                  true;
+                `);
+
+                // Page has fully loaded. Wait 3s for the game to render,
+                // then dismiss the loading screen. Simple & reliable.
+                setTimeout(() => setGameLoaded(true), 3000);
+              }}
               javaScriptEnabled
               domStorageEnabled
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
               injectedJavaScriptBeforeContentLoaded={isExternalGame(playingGame) ? AD_BLOCKER_SCRIPT : undefined}
+              injectedJavaScript={createBlurBgScript(playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`, playingGame?.color || '#1a1a2e')}
+              ref={webViewRef}
             />
           )}
+
           {!gameLoaded && playingGame && (
-            <View style={[StyleSheet.absoluteFill, styles.gameLoading, { backgroundColor: playingGame.color || '#a855f7' }]}>
-              <ActivityIndicator size="large" color="#fff" />
-              <Text style={styles.gameLoadingText}>Loading {playingGame.name}...</Text>
+            <View style={[StyleSheet.absoluteFill, { zIndex: 10 }]}>
+              <GameLoadingScreen
+                gameName={playingGame.name}
+                gameThumbnail={playingGame.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame.id}.png`}
+                progress={75}
+              />
             </View>
           )}
+
           <TouchableOpacity
-            style={[styles.gameCloseBtn, { top: insets.top + 10 }]}
+            style={[styles.gameCloseBtn, { top: insets.top + 10, zIndex: 20 }]}
             onPress={() => {
-              // Show ad when closing game
               if (isExpoGo) {
                 setPlayingGame(null);
                 alert('Mock Interstitial Ad: Sponsored Content');
               } else if (isAdLoaded && interstitialAd) {
-                // Mark pending close — game closes AFTER ad is dismissed
                 pendingCloseRef.current = true;
                 interstitialAd.show();
               } else {
@@ -689,8 +815,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingTop: 12,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -698,10 +823,18 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  iconBtn: {
+    padding: 4,
   },
   searchWrap: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 16,
   },
   searchBar: {
@@ -711,157 +844,117 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 48,
     gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
   },
-  heroRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 14,
-  },
-  heroCard: {
-    width: SCREEN_WIDTH * 0.85,
-    height: SCREEN_WIDTH * 1.1,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginRight: 14,
-    backgroundColor: '#1a1a2e',
-  },
-  heroBg: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.8,
-  },
-  heroGradient: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
-    padding: 20,
-  },
-  heroTopBadge: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 6,
-  },
-  heroTopBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  heroContent: {
-    marginTop: 'auto',
-  },
-  heroName: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#fff',
-    marginBottom: 4,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  heroSubText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '600',
-  },
-  hashtagSection: {
-    marginTop: 20,
-  },
-  hashtagHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    marginTop: 24,
     marginBottom: 12,
   },
-  hashtagTitleRow: {
-    flexDirection: 'row',
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginRight: 4,
+  },
+  horizontalScroll: {
+    paddingHorizontal: 20,
+    gap: 16,
+  },
+
+  // Friends List Styles
+  friendCard: {
     alignItems: 'center',
-    gap: 6,
+    width: 72,
+    marginRight: 4,
   },
-  hashtagTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#fff',
+  friendAvatarContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  viewAllText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+  friendAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginBottom: 8,
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    right: 0,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+  },
+  friendName: {
+    fontSize: 13,
     fontWeight: '600',
+    textAlign: 'center',
   },
-  hashtagScroll: {
-    paddingHorizontal: 16,
-    gap: 12,
+  friendTag: {
+    fontSize: 11,
+    marginTop: 2,
   },
-  gamesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  gameCard: {
+
+  // Game Card Styles
+  squareGameCard: {
     width: 120,
-    height: 180,
+  },
+  squareGameImgContainer: {
+    width: 120,
+    height: 120,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#1a1a2e',
-    marginRight: 12,
-  },
-  gameCardLarge: {
-    width: (SCREEN_WIDTH - 44) / 2,
-    height: 220,
-    marginRight: 0,
-  },
-  gameCardImg: {
-    width: '100%',
-    height: '100%',
+    marginBottom: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  gameCardOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    padding: 12,
+  squareGameImg: {
+    width: '100%',
+    height: '100%',
+  },
+  rectGameCard: {
+    width: 200,
+  },
+  rectGameImgContainer: {
+    width: 200,
+    height: 112, // 16:9 ratio
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rectGameImg: {
+    width: '100%',
+    height: '100%',
   },
   gameCardName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textAlign: 'center',
   },
-  playCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  playCountText: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '600',
-  },
+
   searchResultsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 16,
-    gap: 10,
+    gap: 16,
+    justifyContent: 'flex-start',
   },
   empty: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 80,
     width: SCREEN_WIDTH,
@@ -869,45 +962,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     marginTop: 12,
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-    paddingTop: 16,
-  },
-  modalClose: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalHeaderContent: {
-    alignItems: 'center',
-    paddingTop: 20,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#fff',
-    marginTop: 10,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 4,
-  },
-  modalGrid: {
-    padding: 16,
-    gap: 10,
   },
   gameLoading: {
     justifyContent: 'center',
@@ -929,6 +983,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  // Auth Gate
   authGate: {
     flex: 1,
     justifyContent: 'center',
@@ -939,13 +995,11 @@ const styles = StyleSheet.create({
   authTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#fff',
     marginTop: 20,
     textAlign: 'center',
   },
   authSubtitle: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 22,
@@ -965,7 +1019,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   authLogin: {
-    color: 'rgba(255,255,255,0.6)',
+    color: '#a1a1aa',
     fontSize: 14,
     marginTop: 16,
   },

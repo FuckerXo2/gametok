@@ -8,6 +8,7 @@ import {
   Easing,
   TouchableOpacity,
   Dimensions,
+  Image,
 } from 'react-native';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -127,8 +128,8 @@ export const RewardPopup: React.FC<RewardPopupProps> = ({
           </Animated.View>
 
           {/* Close button */}
-          <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
-            <Ionicons name="close" size={24} color="rgba(255,255,255,0.5)" />
+          <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 24, height: 24, tintColor: 'rgba(255,255,255,0.5)' }} />
           </TouchableOpacity>
 
           {/* Coin icon */}

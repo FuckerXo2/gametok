@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -51,7 +53,7 @@ const getAchievementIcon = (iconName: string): { name: string; family: 'ionicons
 };
 
 const AchievementIcon: React.FC<{ icon: string; size?: number; color?: string }> = ({ 
-  icon, size = 28, color = '#fff' 
+  icon, size = 28, color = LoopsColors.white 
 }) => {
   const iconData = getAchievementIcon(icon);
   if (iconData.family === 'material') {
@@ -72,14 +74,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <LinearGradient
-          colors={['#1a1a2e', '#0f0f23']}
+          colors={[LoopsColors.darkerBlack, '#0f0f23']}
           style={StyleSheet.absoluteFill}
         />
         
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <Ionicons name="close" size={28} color="#fff" />
+            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 28, height: 28, tintColor: LoopsColors.white }} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Achievements</Text>
           <View style={styles.headerRight}>
@@ -91,7 +93,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
         <View style={styles.progressBarWrap}>
           <View style={styles.progressBarBg}>
             <LinearGradient
-              colors={['#a855f7', '#6366f1']}
+              colors={[LoopsColors.color6, LoopsColors.color5]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={[styles.progressBarFill, { 
@@ -118,11 +120,11 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                 <AchievementIcon 
                   icon={achievement.icon} 
                   size={28} 
-                  color={achievement.unlocked ? '#a855f7' : 'rgba(255,255,255,0.3)'} 
+                  color={achievement.unlocked ? LoopsColors.color6 : LoopsColors.white30} 
                 />
                 {achievement.unlocked && (
                   <View style={styles.checkBadge}>
-                    <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                    <Ionicons name="checkmark-circle" size={20} color={LoopsColors.mainGreen} />
                   </View>
                 )}
               </View>
@@ -141,7 +143,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
               
               <View style={styles.rewardBadge}>
                 <Text style={styles.rewardText}>+{achievement.reward_points}</Text>
-                <FontAwesome5 name="coins" size={12} color="#ffd60a" />
+                <FontAwesome5 name="coins" size={12} color={LoopsColors.coinGold} />
               </View>
             </View>
           ))}
@@ -176,7 +178,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -185,7 +187,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   progressText: {
-    color: '#a855f7',
+    color: LoopsColors.color6,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -213,7 +215,7 @@ const styles = StyleSheet.create({
   achievementRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: LoopsColors.darkerBlack,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -225,15 +227,15 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: LoopsColors.white10,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
   },
   iconWrapUnlocked: {
-    backgroundColor: 'rgba(168,85,247,0.2)',
+    backgroundColor: LoopsColors.color6 + '33',
     borderWidth: 2,
-    borderColor: '#a855f7',
+    borderColor: LoopsColors.color6,
   },
   checkBadge: {
     position: 'absolute',
@@ -245,16 +247,16 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   achievementName: {
-    color: '#fff',
+    color: LoopsColors.white,
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 4,
   },
   textLocked: {
-    color: 'rgba(255,255,255,0.6)',
+    color: LoopsColors.white60,
   },
   achievementDesc: {
-    color: 'rgba(255,255,255,0.5)',
+    color: LoopsColors.white50,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -262,13 +264,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255,214,10,0.15)',
+    backgroundColor: LoopsColors.coinGold + '26',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
   },
   rewardText: {
-    color: '#ffd60a',
+    color: LoopsColors.coinGold,
     fontSize: 13,
     fontWeight: '700',
   },

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <io.rong.imkit.usermanage.component.HeadComponent android:id="@id/rc_head_component" android:layout_width="match_parent" android:layout_height="@dimen/rc_title_bar_height" app:head_title_text="@string/rc_add_friend" />
+    <io.rong.imkit.usermanage.component.SearchComponent android:id="@id/rc_search_component" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <FrameLayout android:background="#f5f6f9" android:layout_width="match_parent" android:layout_height="match_parent">
+        <TextView android:textSize="18.0dp" android:textColor="#a0a5ab" android:layout_gravity="center_horizontal" android:id="@id/tv_hint" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="200.0dp" android:text="@string/rc_user_does_not_exist" />
+    </FrameLayout>
+</LinearLayout>

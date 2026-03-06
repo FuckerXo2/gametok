@@ -66,7 +66,7 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
         {/* Header */}
         <View style={[styles.header, { top: insets.top + 10 }]}>
           <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={28} color="#fff" />
+            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.findContactsBtn}>

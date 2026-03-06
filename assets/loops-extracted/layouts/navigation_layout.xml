@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout android:background="#210a4b" android:layout_width="match_parent" android:layout_height="65.0dp"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <androidx.appcompat.widget.LinearLayoutCompat android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent">
+        <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/live_layout" style="@style/nav_container_style">
+            <androidx.appcompat.widget.AppCompatImageView android:id="@id/indictor_home" android:visibility="visible" android:layout_width="match_parent" android:layout_height="wrap_content" android:scaleType="fitXY" app:layout_constraintTop_toTopOf="parent" />
+            <androidx.appcompat.widget.LinearLayoutCompat android:layout_width="match_parent" android:layout_height="match_parent" style="@style/nav_container_style">
+                <com.facebook.drawee.view.SimpleDraweeView android:id="@id/live_icon" style="@style/home_nav_icon_style" />
+                <TextView android:id="@id/live_tv" android:text="@string/navigation_home" style="@style/nav_item_text_style" />
+            </androidx.appcompat.widget.LinearLayoutCompat>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/discover_layout" style="@style/nav_container_style">
+            <androidx.appcompat.widget.AppCompatImageView android:id="@id/indictor_explore" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:scaleType="fitXY" app:layout_constraintTop_toTopOf="parent" />
+            <androidx.constraintlayout.widget.ConstraintLayout android:layout_width="match_parent" android:layout_height="match_parent">
+                <View android:id="@id/anchor_explore" android:background="@color/transparent" android:layout_width="1.0dp" android:layout_height="1.0dp" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" />
+                <com.facebook.drawee.view.SimpleDraweeView android:id="@id/discover_icon" app:layout_constraintBottom_toTopOf="@id/discover_tv" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:layout_constraintVertical_chainStyle="packed" style="@style/home_nav_icon_style" />
+                <androidx.appcompat.widget.AppCompatTextView android:id="@id/discover_tv" android:text="@string/explore_title" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/discover_icon" style="@style/nav_item_text_style" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        <androidx.constraintlayout.widget.ConstraintLayout style="@style/nav_container_style">
+            <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/go_swipe_game" android:layout_width="match_parent" android:layout_height="match_parent">
+                <androidx.appcompat.widget.AppCompatImageView android:id="@id/iv_swipe_game" android:layout_width="28.0dp" android:layout_height="28.0dp" android:src="@drawable/bg_home_swipe_state" app:layout_constraintBottom_toTopOf="@id/tv_swipe_game" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:layout_constraintVertical_chainStyle="packed" />
+                <androidx.appcompat.widget.AppCompatTextView android:id="@id/tv_swipe_game" android:layout_marginBottom="4.0dp" android:text="@string/main_play" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/iv_swipe_game" style="@style/nav_item_text_style" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/messages_layout" style="@style/nav_container_style">
+            <androidx.appcompat.widget.AppCompatImageView android:id="@id/indictor_message" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7.0dp" android:scaleType="fitXY" app:layout_constraintTop_toTopOf="parent" />
+            <androidx.constraintlayout.widget.ConstraintLayout android:layout_width="match_parent" android:layout_height="match_parent">
+                <com.facebook.drawee.view.SimpleDraweeView android:id="@id/message_icon" app:layout_constraintBottom_toTopOf="@id/message_tv" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:layout_constraintVertical_chainStyle="packed" style="@style/home_nav_icon_style" />
+                <androidx.appcompat.widget.AppCompatTextView android:id="@id/message_tv" android:text="@string/messages_str" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/message_icon" style="@style/nav_item_text_style" />
+                <androidx.appcompat.widget.AppCompatTextView android:textSize="10.0sp" android:textColor="#ffffff" android:gravity="center" android:id="@id/message_badge" android:background="@drawable/bg_badge" android:layout_width="wrap_content" android:layout_height="13.0dp" android:layout_marginTop="5.0dp" android:minWidth="13.0dp" android:includeFontPadding="false" android:paddingStart="3.0dp" android:paddingEnd="3.0dp" android:layout_marginStart="17.0dp" app:layout_constraintStart_toStartOf="@id/message_icon" app:layout_constraintTop_toTopOf="parent" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/me_layout" style="@style/nav_container_style">
+            <androidx.appcompat.widget.AppCompatImageView android:id="@id/indictor_me" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7.0dp" android:scaleType="fitXY" app:layout_constraintTop_toTopOf="parent" />
+            <androidx.constraintlayout.widget.ConstraintLayout android:layout_width="match_parent" android:layout_height="match_parent">
+                <com.facebook.drawee.view.SimpleDraweeView android:id="@id/me_icon" app:layout_constraintBottom_toTopOf="@id/me_tv" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:layout_constraintVertical_chainStyle="packed" style="@style/home_nav_me" />
+                <androidx.appcompat.widget.AppCompatTextView android:id="@id/me_tv" android:text="@string/profile_account" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/me_icon" style="@style/nav_item_text_style" />
+                <androidx.appcompat.widget.AppCompatTextView android:textSize="9.0sp" android:textColor="#ffffff" android:gravity="center" android:id="@id/me_badge" android:background="@drawable/bg_badge" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="12.0dp" android:minWidth="11.0dp" android:includeFontPadding="false" android:paddingStart="2.0dp" android:paddingEnd="3.0dp" android:layout_marginStart="20.0dp" app:layout_constraintBottom_toTopOf="@id/me_icon" app:layout_constraintStart_toStartOf="@id/me_icon" app:layout_constraintTop_toTopOf="@id/me_icon" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </androidx.appcompat.widget.LinearLayoutCompat>
+</androidx.constraintlayout.widget.ConstraintLayout>

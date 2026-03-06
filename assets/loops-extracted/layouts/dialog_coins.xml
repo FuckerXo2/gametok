@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:background="@drawable/bg_shape_white_top_r20" android:paddingTop="20.0dp" android:layout_width="match_parent" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <RelativeLayout android:paddingLeft="24.0dp" android:paddingRight="24.0dp" android:paddingBottom="24.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="24.0dp">
+        <TextView android:textSize="18.0sp" android:textStyle="bold" android:textColor="@color/Black" android:id="@id/tv_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/profile_buy_coins" android:layout_centerHorizontal="true" />
+        <ImageView android:id="@id/img_close" android:background="?selectableItemBackgroundBorderless" android:layout_width="22.0dp" android:layout_height="22.0dp" android:src="@drawable/ic_close_1" android:layout_alignParentEnd="true" />
+    </RelativeLayout>
+    <LinearLayout android:gravity="start" android:orientation="horizontal" android:paddingLeft="24.0dp" android:paddingRight="24.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12.0dp" android:paddingHorizontal="24.0dp">
+        <TextView android:textSize="16.0sp" android:textColor="@color/Black" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/coins_balance" />
+        <ImageView android:layout_gravity="center" android:layout_width="18.0dp" android:layout_height="18.0dp" android:src="@drawable/ic_coins_new" android:layout_marginStart="4.0dp" />
+        <TextView android:textSize="16.0sp" android:textStyle="bold" android:textColor="@color/Black" android:id="@id/tv_coins" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4.0dp" />
+    </LinearLayout>
+    <androidx.recyclerview.widget.RecyclerView android:id="@id/recycler_view" android:paddingTop="8.0dp" android:paddingBottom="8.0dp" android:scrollbars="vertical" android:clipToPadding="false" android:layout_width="match_parent" android:layout_height="0.0dp" android:layout_marginLeft="12.0dp" android:layout_marginRight="12.0dp" android:layout_marginBottom="15.0dp" android:layout_weight="1.0" android:overScrollMode="ifContentScrolls" android:layout_marginHorizontal="12.0dp" android:paddingVertical="8.0dp" />
+    <Button android:textSize="16.0sp" android:textStyle="bold" android:textColor="@android:color/black" android:id="@id/btn_top_up" android:background="@drawable/btn_top_up_background" android:visibility="visible" android:layout_width="match_parent" android:layout_height="48.0dp" android:layout_marginLeft="24.0dp" android:layout_marginRight="24.0dp" android:layout_marginBottom="65.0dp" android:text="@string/profile_buy_coins" android:elevation="0.0dp" android:stateListAnimator="@null" android:layout_marginHorizontal="24.0dp" />
+</LinearLayout>

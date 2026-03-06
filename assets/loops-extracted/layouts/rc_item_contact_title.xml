@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="horizontal" android:background="#ebebeb" android:layout_width="match_parent" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <TextView android:textColor="#999999" android:id="@id/tv_catalog_letter" android:background="#fff5f6f9" android:paddingTop="@dimen/rc_margin_size_4" android:paddingBottom="@dimen/rc_margin_size_4" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="A" android:paddingStart="@dimen/rc_margin_size_12" style="@style/TextStyle.Alignment" />
+</LinearLayout>

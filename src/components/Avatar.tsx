@@ -1,49 +1,42 @@
 import React from 'react';
-import { View, Image, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Image, StyleSheet, ViewStyle } from 'react-native';
+
+// Single 3D default avatar
+const DEFAULT_AVATAR = require('../../assets/ui/avatars/avatar_1.webp');
 
 interface AvatarProps {
   uri?: string | null;
+  userId?: string; // Kept for API compatibility but not used
   size?: number;
-  style?: any;
+  style?: ViewStyle;
 }
 
-export const Avatar: React.FC<AvatarProps> = ({ uri, size = 48, style }) => {
-  const hasImage = uri && uri.startsWith('http');
-  
+/**
+ * Avatar component with 3D default avatar
+ */
+export const Avatar: React.FC<AvatarProps> = ({ uri, size = 40, style }) => {
+  const avatarStyle = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+  };
+
   return (
-    <View style={[
-      styles.container, 
-      { width: size, height: size, borderRadius: size / 2 },
-      style
-    ]}>
-      {hasImage ? (
-        <Image 
-          source={{ uri }} 
-          style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
-        />
-      ) : (
-        <LinearGradient
-          colors={['#c7c7cc', '#8e8e93']}
-          style={[styles.placeholder, { width: size, height: size, borderRadius: size / 2 }]}
-        >
-          <Ionicons name="person" size={size * 0.55} color="#fff" />
-        </LinearGradient>
-      )}
+    <View style={[avatarStyle, styles.container, style]}>
+      <Image
+        source={uri ? { uri } : DEFAULT_AVATAR}
+        style={[avatarStyle, styles.image]}
+        defaultSource={DEFAULT_AVATAR}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    overflow: 'hidden',
+    backgroundColor: '#e0e0e0',
   },
   image: {
-    resizeMode: 'cover',
-  },
-  placeholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'transparent',
   },
 });

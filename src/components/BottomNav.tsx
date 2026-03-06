@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 
 type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
@@ -14,6 +16,7 @@ interface BottomNavProps {
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
 
   const tabs: { name: TabName; icon: string; iconActive: string; label: string }[] = [
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
@@ -38,11 +41,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
           onPress={() => onTabPress(tab.name)}
           activeOpacity={0.7}
         >
-          <Ionicons
-            name={(activeTab === tab.name ? tab.iconActive : tab.icon) as any}
-            size={24}
-            color={activeTab === tab.name ? colors.text : colors.textSecondary}
-          />
+          {tab.name === 'profile' ? (
+            <View style={styles.avatarContainer}>
+              <Avatar
+                uri={user?.avatar}
+                size={24}
+                style={[
+                  styles.avatar,
+                  activeTab === 'profile' && { borderColor: colors.text, borderWidth: 2 }
+                ]}
+              />
+            </View>
+          ) : (
+            <Ionicons
+              name={(activeTab === tab.name ? tab.iconActive : tab.icon) as any}
+              size={24}
+              color={activeTab === tab.name ? colors.text : colors.textSecondary}
+            />
+          )}
           <Text style={[
             styles.label,
             { color: activeTab === tab.name ? colors.text : colors.textSecondary }
@@ -72,5 +88,14 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     marginTop: 2,
+  },
+  avatarContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatar: {
+    borderRadius: 12,
   },
 });

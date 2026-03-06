@@ -212,7 +212,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
             <Text style={styles.timestamp}>{formatTime(currentStory.createdAt)}</Text>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Ionicons name="close" size={28} color="#fff" />
+            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
           </TouchableOpacity>
         </View>
 

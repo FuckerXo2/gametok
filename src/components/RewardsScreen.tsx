@@ -10,6 +10,7 @@ import {
   Animated,
   Alert,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
@@ -23,6 +24,8 @@ import { gamification } from '../services/api';
 import { RewardPopup } from './RewardPopup';
 import { useAuthScreen } from '../../App';
 import { AchievementsModal } from './AchievementsModal';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
+import { FontStyles } from '../constants/LoopsFonts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -101,7 +104,7 @@ const HeroCard: React.FC<{
   return (
     <View style={styles.heroCard}>
       <LinearGradient
-        colors={['#1a1a2e', '#16213e', '#0f3460']}
+        colors={[LoopsColors.color1, LoopsColors.color3, LoopsColors.color4]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroGradient}
@@ -110,7 +113,7 @@ const HeroCard: React.FC<{
           style={[styles.shimmer, { transform: [{ translateX: shimmerTranslate }] }]}
         >
           <LinearGradient
-            colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent']}
+            colors={['transparent', LoopsColors.white05, 'transparent']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -120,12 +123,12 @@ const HeroCard: React.FC<{
         <View style={styles.heroMain}>
           <Text style={styles.heroLabel}>TOTAL COINS</Text>
           {loading ? (
-            <ActivityIndicator color="#ffd60a" size="large" />
+            <ActivityIndicator color={LoopsColors.coinGold} size="large" />
           ) : (
             <>
               <View style={styles.balanceRow}>
                 <View style={styles.bigCoinIcon}>
-                  <FontAwesome5 name="coins" size={32} color="#ffd60a" />
+                  <Image source={require('../../assets/ui/coins/coins_small_1.png')} style={{ width: 40, height: 40 }} />
                 </View>
                 <Text style={styles.balanceValue}>{balance.toLocaleString()}</Text>
               </View>
@@ -138,7 +141,7 @@ const HeroCard: React.FC<{
         {streak > 0 && (
           <View style={styles.streakSection}>
             <Animated.View style={[styles.streakBadge, { transform: [{ scale: pulseAnim }] }]}>
-              <Ionicons name="flame" size={22} color="#f97316" />
+              <Ionicons name="flame" size={22} color={LoopsColors.color2} />
               <Text style={styles.streakNum}>{streak}</Text>
             </Animated.View>
             <Text style={styles.streakLabel}>Day Streak</Text>
@@ -171,7 +174,7 @@ const getChallengeIcon = (iconName: string): { name: string; family: 'ionicons' 
   return iconMap[iconName] || { name: 'game-controller', family: 'ionicons' };
 };
 
-const ChallengeIconComponent: React.FC<{ icon: string; size?: number; color?: string }> = ({ icon, size = 20, color = '#fff' }) => {
+const ChallengeIconComponent: React.FC<{ icon: string; size?: number; color?: string }> = ({ icon, size = 20, color = LoopsColors.white }) => {
   const iconData = getChallengeIcon(icon);
   if (iconData.family === 'material') {
     return <MaterialCommunityIcons name={iconData.name as any} size={size} color={color} />;
@@ -198,8 +201,8 @@ const DailyMissions: React.FC<{
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(168,85,247,0.2)' }]}>
-            <MaterialCommunityIcons name="target" size={18} color="#a855f7" />
+          <View style={[styles.sectionIconWrap, { backgroundColor: LoopsColors.color6 + '33' }]}>
+            <MaterialCommunityIcons name="target" size={18} color={LoopsColors.color6} />
           </View>
           <View>
             <Text style={styles.sectionTitle}>Daily Missions</Text>
@@ -215,7 +218,7 @@ const DailyMissions: React.FC<{
 
       {loading ? (
         <View style={styles.loadingBox}>
-          <ActivityIndicator color="#a855f7" />
+          <ActivityIndicator color={LoopsColors.color6} />
         </View>
       ) : (
         <View style={styles.missionsGrid}>
@@ -238,11 +241,11 @@ const DailyMissions: React.FC<{
               >
                 <View style={styles.missionTop}>
                   <View style={[styles.missionIconWrap, isComplete && styles.missionIconComplete]}>
-                    <ChallengeIconComponent icon={challenge.icon} size={18} color={isComplete ? '#ffd60a' : '#a855f7'} />
+                    <ChallengeIconComponent icon={challenge.icon} size={18} color={isComplete ? LoopsColors.coinGold : LoopsColors.color6} />
                   </View>
                   <View style={styles.missionReward}>
                     <Text style={styles.missionRewardText}>+{challenge.reward_points}</Text>
-                    <FontAwesome5 name="coins" size={10} color="#ffd60a" />
+                    <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 12, height: 12 }} />
                   </View>
                 </View>
 
@@ -250,7 +253,7 @@ const DailyMissions: React.FC<{
 
                 <View style={styles.missionProgressBar}>
                   <LinearGradient
-                    colors={isClaimed ? ['#22c55e', '#16a34a'] : isComplete ? ['#ffd60a', '#f59e0b'] : ['#a855f7', '#6366f1']}
+                    colors={isClaimed ? [LoopsColors.mainGreen, LoopsColors.successDark] : isComplete ? [LoopsColors.coinGold, LoopsColors.warningDark] : [LoopsColors.color6, LoopsColors.color7]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={[styles.missionProgressFill, { width: `${progress * 100}%` }]}
@@ -268,7 +271,7 @@ const DailyMissions: React.FC<{
                 )}
                 {claimingId === challenge.id && (
                   <View style={styles.claimOverlay}>
-                    <ActivityIndicator color="#fff" size="small" />
+                    <ActivityIndicator color={LoopsColors.white} size="small" />
                   </View>
                 )}
               </TouchableOpacity>
@@ -297,7 +300,7 @@ const getAchievementIcon = (iconName: string): { name: string; family: 'ionicons
   return iconMap[iconName] || { name: 'ribbon', family: 'ionicons' };
 };
 
-const AchievementIconComponent: React.FC<{ icon: string; size?: number; color?: string }> = ({ icon, size = 24, color = '#fff' }) => {
+const AchievementIconComponent: React.FC<{ icon: string; size?: number; color?: string }> = ({ icon, size = 24, color = LoopsColors.white }) => {
   const iconData = getAchievementIcon(icon);
   if (iconData.family === 'material') {
     return <MaterialCommunityIcons name={iconData.name as any} size={size} color={color} />;
@@ -325,8 +328,8 @@ const AchievementsShowcase: React.FC<{
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
-            <Ionicons name="trophy" size={18} color="#f59e0b" />
+          <View style={[styles.sectionIconWrap, { backgroundColor: LoopsColors.warningDark + '33' }]}>
+            <Ionicons name="trophy" size={18} color={LoopsColors.warningDark} />
           </View>
           <View>
             <Text style={styles.sectionTitle}>Achievements</Text>
@@ -335,7 +338,7 @@ const AchievementsShowcase: React.FC<{
         </View>
         <TouchableOpacity style={styles.seeAllBtn} onPress={onSeeAll}>
           <Text style={styles.seeAllText}>See All</Text>
-          <Ionicons name="chevron-forward" size={16} color="#a855f7" />
+          <Ionicons name="chevron-forward" size={16} color={LoopsColors.color6} />
         </TouchableOpacity>
       </View>
 
@@ -355,18 +358,18 @@ const AchievementsShowcase: React.FC<{
               <AchievementIconComponent
                 icon={achievement.icon}
                 size={24}
-                color={achievement.unlocked ? '#a855f7' : 'rgba(255,255,255,0.4)'}
+                color={achievement.unlocked ? LoopsColors.color6 : LoopsColors.white40}
               />
               {achievement.unlocked && (
                 <View style={styles.achievementCheck}>
-                  <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+                  <Ionicons name="checkmark-circle" size={18} color={LoopsColors.mainGreen} />
                 </View>
               )}
             </View>
             <Text style={styles.achievementName} numberOfLines={2}>{achievement.name}</Text>
             <View style={styles.achievementReward}>
               <Text style={styles.achievementRewardText}>+{achievement.reward_points}</Text>
-              <FontAwesome5 name="coins" size={9} color="#ffd60a" />
+              <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 11, height: 11 }} />
             </View>
             {!achievement.unlocked && <View style={styles.lockedOverlay} />}
           </TouchableOpacity>
@@ -393,11 +396,11 @@ const RewardsMarketplace: React.FC<{
 
   const getCategoryGradient = (category: string): [string, string] => {
     switch (category) {
-      case 'giftcard': return ['#f59e0b', '#d97706'];
-      case 'badge': return ['#a855f7', '#7c3aed'];
-      case 'boost': return ['#06b6d4', '#0891b2'];
-      case 'cosmetic': return ['#ec4899', '#db2777'];
-      default: return ['#6366f1', '#4f46e5'];
+      case 'giftcard': return [LoopsColors.warningDark, LoopsColors.warning];
+      case 'badge': return [LoopsColors.color6, LoopsColors.color8];
+      case 'boost': return [LoopsColors.mainBlue, LoopsColors.color9];
+      case 'cosmetic': return [LoopsColors.mainPink, LoopsColors.color10];
+      default: return [LoopsColors.color7, LoopsColors.color11];
     }
   };
 
@@ -415,8 +418,8 @@ const RewardsMarketplace: React.FC<{
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <View style={[styles.sectionIconWrap, { backgroundColor: 'rgba(34,197,94,0.2)' }]}>
-            <Ionicons name="storefront" size={18} color="#22c55e" />
+          <View style={[styles.sectionIconWrap, { backgroundColor: LoopsColors.mainGreen + '33' }]}>
+            <Ionicons name="storefront" size={18} color={LoopsColors.mainGreen} />
           </View>
           <View>
             <Text style={styles.sectionTitle}>Rewards Shop</Text>
@@ -424,7 +427,7 @@ const RewardsMarketplace: React.FC<{
           </View>
         </View>
         <View style={styles.balancePill}>
-          <FontAwesome5 name="coins" size={12} color="#ffd60a" />
+          <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 14, height: 14 }} />
           <Text style={styles.balancePillText}>{balance.toLocaleString()}</Text>
         </View>
       </View>
@@ -446,14 +449,14 @@ const RewardsMarketplace: React.FC<{
                 colors={getCategoryGradient(reward.category)}
                 style={styles.rewardIconBg}
               >
-                <Ionicons name={iconData.name as any} size={24} color="#fff" />
+                <Ionicons name={iconData.name as any} size={24} color={LoopsColors.white} />
               </LinearGradient>
 
               <Text style={styles.rewardName} numberOfLines={2}>{reward.name}</Text>
               <Text style={styles.rewardDesc} numberOfLines={1}>{reward.description}</Text>
 
               <View style={[styles.rewardCostBadge, canAfford && styles.rewardCostAfford]}>
-                <FontAwesome5 name="coins" size={12} color={canAfford ? '#22c55e' : 'rgba(255,255,255,0.5)'} />
+                <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 14, height: 14, tintColor: canAfford ? LoopsColors.mainGreen : LoopsColors.white50 }} />
                 <Text style={[styles.rewardCostText, canAfford && styles.rewardCostTextAfford]}>
                   {reward.cost.toLocaleString()}
                 </Text>
@@ -723,7 +726,7 @@ export const RewardsScreen: React.FC<{ isActive?: boolean; onClose?: () => void 
       <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
       <Text style={styles.authTitle}>Sign up to continue</Text>
       <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen} activeOpacity={0.8}>
-        <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.authBtnGradient}>
+        <LinearGradient colors={[LoopsColors.color6, LoopsColors.color8]} style={styles.authBtnGradient}>
           <Text style={styles.authBtnText}>Sign Up</Text>
         </LinearGradient>
       </TouchableOpacity>
@@ -742,11 +745,11 @@ export const RewardsScreen: React.FC<{ isActive?: boolean; onClose?: () => void 
   ] as Challenge[];
 
   return (
-    <View style={[styles.container, { backgroundColor: '#0a0a0f' }]}>
+    <View style={[styles.container, { backgroundColor: LoopsColors.bgDark }]}>
       {onClose && (
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, zIndex: 10, alignSelf: 'flex-end', position: 'absolute' }}>
-          <TouchableOpacity onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' }}>
-            <Ionicons name="close" size={24} color="#fff" />
+          <TouchableOpacity onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: LoopsColors.white20, justifyContent: 'center', alignItems: 'center' }}>
+            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 24, height: 24, tintColor: LoopsColors.white }} />
           </TouchableOpacity>
         </View>
       )}
@@ -778,10 +781,10 @@ export const RewardsScreen: React.FC<{ isActive?: boolean; onClose?: () => void 
               disabled={adWatchCount >= 3}
               activeOpacity={0.8}
             >
-              <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.adWatchGradient}>
+              <LinearGradient colors={[LoopsColors.color6, LoopsColors.color8]} style={styles.adWatchGradient}>
                 <View style={styles.adWatchContent}>
                   <View style={styles.adWatchIconContainer}>
-                    <Ionicons name="play-circle" size={28} color="#fff" />
+                    <Ionicons name="play-circle" size={28} color={LoopsColors.white} />
                   </View>
                   <View style={styles.adWatchTextContainer}>
                     <Text style={styles.adWatchTitle}>Watch Ad for Coins</Text>
@@ -789,7 +792,7 @@ export const RewardsScreen: React.FC<{ isActive?: boolean; onClose?: () => void 
                       {3 - adWatchCount} left today • +1,000 coins each
                     </Text>
                   </View>
-                  <FontAwesome5 name="coins" size={20} color="#ffd60a" />
+                  <Image source={require('../../assets/ui/coins/coins_small_1.png')} style={{ width: 24, height: 24 }} />
                 </View>
               </LinearGradient>
             </TouchableOpacity>
@@ -845,68 +848,68 @@ const styles = StyleSheet.create({
   heroGradient: { padding: 24, paddingBottom: 20 },
   shimmer: { position: 'absolute', top: 0, bottom: 0, width: 100 },
   heroMain: { alignItems: 'center', marginBottom: 16 },
-  heroLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600', letterSpacing: 2, marginBottom: 8 },
+  heroLabel: { ...FontStyles.label, color: LoopsColors.white50, fontSize: 12, letterSpacing: 2, marginBottom: 8 },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bigCoinIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,214,10,0.15)', justifyContent: 'center', alignItems: 'center' },
-  balanceValue: { color: '#ffd60a', fontSize: 48, fontWeight: '800' },
-  usdValue: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 4 },
+  bigCoinIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: LoopsColors.coinGold + '26', justifyContent: 'center', alignItems: 'center' },
+  balanceValue: { ...FontStyles.h1, color: LoopsColors.coinGold, fontSize: 48 },
+  usdValue: { ...FontStyles.bodySmall, color: LoopsColors.white50, marginTop: 4 },
 
   // Streak section
   streakSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  streakNum: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  streakLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
-  multiplierPill: { backgroundColor: 'rgba(245,158,11,0.3)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  multiplierText: { color: '#fbbf24', fontSize: 10, fontWeight: '700' },
+  streakNum: { ...FontStyles.h4, color: LoopsColors.white },
+  streakLabel: { ...FontStyles.bodySmall, color: LoopsColors.white60, fontSize: 13 },
+  multiplierPill: { backgroundColor: LoopsColors.warningDark + '4D', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  multiplierText: { ...FontStyles.caption, color: LoopsColors.warning, fontWeight: '700' },
 
   // Sections
   section: { marginTop: 24, paddingHorizontal: 16 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   sectionIconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  sectionSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 },
+  sectionTitle: { ...FontStyles.h4, color: LoopsColors.white },
+  sectionSub: { ...FontStyles.caption, color: LoopsColors.white50, marginTop: 2 },
   seeAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  seeAllText: { color: '#a855f7', fontSize: 13, fontWeight: '600' },
+  seeAllText: { ...FontStyles.label, color: LoopsColors.color6, fontSize: 13 },
 
   // Missions
-  missionProgress: { backgroundColor: 'rgba(168,85,247,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  missionProgressText: { color: '#a855f7', fontSize: 13, fontWeight: '700' },
+  missionProgress: { backgroundColor: LoopsColors.color6 + '33', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  missionProgressText: { ...FontStyles.label, color: LoopsColors.color6, fontSize: 13 },
   loadingBox: { height: 150, justifyContent: 'center', alignItems: 'center' },
   missionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   missionCard: {
     width: (SCREEN_WIDTH - 42) / 3,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: LoopsColors.color1,
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  missionCardComplete: { borderColor: '#ffd60a', backgroundColor: 'rgba(255,214,10,0.1)' },
+  missionCardComplete: { borderColor: LoopsColors.coinGold, backgroundColor: LoopsColors.coinGold + '1A' },
   missionCardClaimed: { opacity: 0.6 },
   missionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  missionIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center' },
-  missionIconComplete: { backgroundColor: 'rgba(255,214,10,0.3)' },
+  missionIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: LoopsColors.color6 + '33', justifyContent: 'center', alignItems: 'center' },
+  missionIconComplete: { backgroundColor: LoopsColors.coinGold + '4D' },
   missionReward: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  missionRewardText: { color: '#ffd60a', fontSize: 11, fontWeight: '700' },
-  missionTitle: { color: '#fff', fontSize: 11, fontWeight: '600', marginBottom: 8, height: 28 },
-  missionProgressBar: { height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
+  missionRewardText: { ...FontStyles.caption, color: LoopsColors.coinGold, fontWeight: '700' },
+  missionTitle: { ...FontStyles.label, color: LoopsColors.white, fontSize: 11, marginBottom: 8, height: 28 },
+  missionProgressBar: { height: 4, backgroundColor: LoopsColors.white10, borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
   missionProgressFill: { height: '100%', borderRadius: 2 },
-  missionProgressText2: { color: 'rgba(255,255,255,0.5)', fontSize: 10, textAlign: 'center' },
+  missionProgressText2: { ...FontStyles.caption, color: LoopsColors.white50, textAlign: 'center' },
   claimOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,214,10,0.9)',
+    backgroundColor: LoopsColors.coinGold + 'E6',
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center'
   },
-  claimOverlayText: { color: '#000', fontSize: 10, fontWeight: '800' },
+  claimOverlayText: { color: LoopsColors.black, fontSize: 10, fontWeight: '800' },
 
   // Achievements
   achievementsScroll: { paddingRight: 16 },
   achievementCard: {
     width: 90,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: LoopsColors.color1,
     borderRadius: 16,
     padding: 12,
     marginRight: 10,
@@ -917,67 +920,67 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: LoopsColors.white10,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
-  achievementIconUnlocked: { backgroundColor: 'rgba(168,85,247,0.3)', borderWidth: 2, borderColor: '#a855f7' },
+  achievementIconUnlocked: { backgroundColor: LoopsColors.color6 + '4D', borderWidth: 2, borderColor: LoopsColors.color6 },
   achievementCheck: { position: 'absolute', bottom: -2, right: -2 },
-  achievementName: { color: '#fff', fontSize: 11, textAlign: 'center', fontWeight: '600', marginBottom: 6, height: 28 },
+  achievementName: { color: LoopsColors.white, fontSize: 11, textAlign: 'center', fontWeight: '600', marginBottom: 6, height: 28 },
   achievementReward: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  achievementRewardText: { color: '#ffd60a', fontSize: 11, fontWeight: '700' },
+  achievementRewardText: { color: LoopsColors.coinGold, fontSize: 11, fontWeight: '700' },
   lockedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: LoopsColors.black40,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
   // Rewards
-  balancePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
-  balancePillText: { color: '#ffd60a', fontSize: 14, fontWeight: '700' },
+  balancePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.coinGold + '26', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  balancePillText: { color: LoopsColors.coinGold, fontSize: 14, fontWeight: '700' },
   rewardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   rewardCard: {
     width: (SCREEN_WIDTH - 44) / 2,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: LoopsColors.color1,
     borderRadius: 20,
     padding: 16,
     alignItems: 'center',
   },
   rewardCardDim: { opacity: 0.6 },
   rewardIconBg: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  rewardName: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: 4, height: 36 },
-  rewardDesc: { color: 'rgba(255,255,255,0.5)', fontSize: 11, textAlign: 'center', marginBottom: 12 },
-  rewardCostBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  rewardCostAfford: { backgroundColor: 'rgba(34,197,94,0.2)' },
-  rewardCostText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700' },
-  rewardCostTextAfford: { color: '#22c55e' },
-  soldOutBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: '#ef4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  soldOutText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  rewardName: { color: LoopsColors.white, fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: 4, height: 36 },
+  rewardDesc: { color: LoopsColors.white50, fontSize: 11, textAlign: 'center', marginBottom: 12 },
+  rewardCostBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.white10, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  rewardCostAfford: { backgroundColor: LoopsColors.mainGreen + '33' },
+  rewardCostText: { color: LoopsColors.white70, fontSize: 14, fontWeight: '700' },
+  rewardCostTextAfford: { color: LoopsColors.mainGreen },
+  soldOutBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: LoopsColors.error, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  soldOutText: { color: LoopsColors.white, fontSize: 9, fontWeight: '800' },
   needMoreBadge: { position: 'absolute', bottom: 8, left: 8, right: 8 },
-  needMoreText: { color: 'rgba(255,255,255,0.4)', fontSize: 9, textAlign: 'center' },
+  needMoreText: { color: LoopsColors.white40, fontSize: 9, textAlign: 'center' },
 
   // Not logged in
   notLoggedIn: { flex: 1 },
   notLoggedInContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  notLoggedInIconWrap: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(168,85,247,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
-  notLoggedInTitle: { color: '#fff', fontSize: 28, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
-  notLoggedInSub: { color: 'rgba(255,255,255,0.6)', fontSize: 16, textAlign: 'center', lineHeight: 24 },
+  notLoggedInIconWrap: { width: 100, height: 100, borderRadius: 50, backgroundColor: LoopsColors.color6 + '26', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  notLoggedInTitle: { color: LoopsColors.white, fontSize: 28, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
+  notLoggedInSub: { color: LoopsColors.white60, fontSize: 16, textAlign: 'center', lineHeight: 24 },
   previewRewards: { flexDirection: 'row', gap: 16, marginTop: 32 },
-  previewIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  previewIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: LoopsColors.white10, justifyContent: 'center', alignItems: 'center' },
   signUpBtn: { marginTop: 24, width: '100%', maxWidth: 280, borderRadius: 16, overflow: 'hidden' },
   signUpGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
-  signUpText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  signUpText: { color: LoopsColors.white, fontSize: 17, fontWeight: '700' },
 
   // Auth overlay - minimal
   authOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
-  authTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 },
+  authTitle: { color: LoopsColors.white, fontSize: 20, fontWeight: '700', marginBottom: 20 },
   authBtn: { width: 200, borderRadius: 25, overflow: 'hidden' },
   authBtnGradient: { paddingVertical: 14, alignItems: 'center' },
-  authBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  authLoginText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 16 },
+  authBtnText: { color: LoopsColors.white, fontSize: 16, fontWeight: '700' },
+  authLoginText: { color: LoopsColors.white50, fontSize: 14, marginTop: 16 },
 
   // Ad Watch
   adWatchRow: { borderRadius: 16, overflow: 'hidden' as const },
@@ -986,6 +989,6 @@ const styles = StyleSheet.create({
   adWatchContent: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const },
   adWatchIconContainer: { marginRight: 12 },
   adWatchTextContainer: { flex: 1, marginRight: 16 },
-  adWatchTitle: { fontSize: 16, fontWeight: '800' as const, color: '#fff', marginBottom: 2 },
-  adWatchSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: '600' as const },
+  adWatchTitle: { fontSize: 16, fontWeight: '800' as const, color: LoopsColors.white, marginBottom: 2 },
+  adWatchSubtitle: { fontSize: 12, color: LoopsColors.white80, fontWeight: '600' as const },
 });

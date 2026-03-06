@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:background="@drawable/bg_common_white_16" android:paddingTop="12.0dp" android:paddingBottom="12.0dp" android:layout_width="match_parent" android:layout_height="420.0dp" android:paddingStart="40.0dp" android:paddingEnd="40.0dp" android:layout_marginStart="24.0dp" android:layout_marginEnd="24.0dp"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <ImageView android:layout_gravity="end" android:id="@id/close_button" android:layout_width="24.0dp" android:layout_height="24.0dp" android:layout_marginBottom="16.0dp" android:src="@drawable/s_delete" />
+    <FrameLayout android:layout_gravity="center_horizontal" android:layout_width="190.0dp" android:layout_height="120.0dp" android:layout_marginBottom="20.0dp">
+        <ImageView android:id="@id/reward_card_image" android:background="@drawable/ic_giftcard_shadow" android:padding="10.0dp" android:layout_width="190.0dp" android:layout_height="120.0dp" />
+        <TextView android:textSize="32.0sp" android:textStyle="bold" android:textColor="#066c51" android:gravity="center" android:id="@id/product_name" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent" android:text="@string/prize_money_100" android:layout_marginStart="12.0dp" android:layout_marginEnd="12.0dp" />
+    </FrameLayout>
+    <TextView android:textSize="18.0sp" android:textStyle="bold" android:textColor="@android:color/black" android:gravity="center" android:id="@id/reward_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16.0dp" android:layout_marginBottom="12.0dp" android:text="@string/get_your_gift_card" />
+    <TextView android:textSize="17.0sp" android:textColor="@android:color/black" android:gravity="center" android:id="@id/reward_description" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8.0dp" android:text="@string/complete_task_in_24" android:lineSpacingExtra="4.0dp" />
+</LinearLayout>

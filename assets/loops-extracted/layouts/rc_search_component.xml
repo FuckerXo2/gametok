@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout android:background="@color/rc_white_color" android:paddingLeft="@dimen/rc_margin_size_12" android:paddingRight="@dimen/rc_margin_size_12" android:layout_width="match_parent" android:layout_height="@dimen/rc_title_bar_height"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <FrameLayout android:gravity="center_vertical" android:layout_gravity="center_vertical" android:id="@id/fl_search" android:background="@drawable/rc_search_bg" android:paddingLeft="@dimen/rc_margin_size_8" android:paddingRight="@dimen/rc_margin_size_8" android:layout_width="match_parent" android:layout_height="32.0dp">
+        <LinearLayout android:layout_gravity="center" android:orientation="horizontal" android:id="@id/layout_search" android:layout_width="wrap_content" android:layout_height="wrap_content">
+            <ImageView android:layout_gravity="center_vertical" android:id="@id/iv_search_icon" android:layout_width="24.0dp" android:layout_height="24.0dp" android:src="@drawable/rc_search_gray" />
+            <EditText android:textSize="16.0sp" android:layout_gravity="center_vertical" android:id="@id/et_search" android:background="@null" android:layout_width="wrap_content" android:layout_height="wrap_content" android:hint="@string/rc_search" android:singleLine="true" android:inputType="text" android:imeOptions="actionSearch" android:layout_marginStart="8.0dp" />
+        </LinearLayout>
+        <ImageView android:layout_gravity="right|center" android:id="@id/iv_clear" android:padding="4.0dp" android:visibility="gone" android:layout_width="24.0dp" android:layout_height="24.0dp" android:src="@drawable/rc_close" />
+    </FrameLayout>
+</FrameLayout>

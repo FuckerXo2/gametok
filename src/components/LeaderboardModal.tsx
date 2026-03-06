@@ -17,6 +17,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { gamification } from '../services/api';
+import { LoopsColors, SemanticColors, LoopsGradients } from '../constants/LoopsColors';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.75;
@@ -48,11 +49,11 @@ interface LeaderboardModalProps {
 }
 
 const TIERS = [
-  { name: 'Champion', color: '#a855f7', icon: 'crown', minRank: 1, maxRank: 1 },
-  { name: 'Diamond', color: '#3b82f6', icon: 'gem', minRank: 2, maxRank: 3 },
-  { name: 'Gold', color: '#eab308', icon: 'star', minRank: 4, maxRank: 10 },
-  { name: 'Silver', color: '#94a3b8', icon: 'medal', minRank: 11, maxRank: 25 },
-  { name: 'Bronze', color: '#f97316', icon: 'award', minRank: 26, maxRank: Infinity },
+  { name: 'Champion', color: LoopsColors.color6, icon: 'crown', minRank: 1, maxRank: 1 }, // Purple
+  { name: 'Diamond', color: LoopsColors.color5, icon: 'gem', minRank: 2, maxRank: 3 }, // Blue
+  { name: 'Gold', color: LoopsColors.gold, icon: 'star', minRank: 4, maxRank: 10 }, // Gold
+  { name: 'Silver', color: LoopsColors.mainGray, icon: 'medal', minRank: 11, maxRank: 25 }, // Silver
+  { name: 'Bronze', color: LoopsColors.color1, icon: 'award', minRank: 26, maxRank: Infinity }, // Orange
 ];
 
 const getTier = (rank: number) => TIERS.find(t => rank >= t.minRank && rank <= t.maxRank) || TIERS[4];
@@ -166,15 +167,29 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     const tier = getTier(player.rank);
     const isMe = player.isCurrentUser;
     
-    return (
-      <View key={player.userId} style={[styles.playerRow, isMe && styles.playerRowMe]}>
+    // Use Loops rank badges for top 3
+    const getRankBadge = () => {
+      if (player.rank === 1) {
+        return <Image source={require('../../assets/ui/ranks/leadboard_default_1.png')} style={{ width: 32, height: 32 }} />;
+      } else if (player.rank === 2) {
+        return <Image source={require('../../assets/ui/ranks/leadboard_default_2.png')} style={{ width: 32, height: 32 }} />;
+      } else if (player.rank === 3) {
+        return <Image source={require('../../assets/ui/ranks/leadboard_default_3.png')} style={{ width: 32, height: 32 }} />;
+      }
+      return (
         <View style={[styles.rankBadge, { backgroundColor: tier.color + '30' }]}>
           <Text style={[styles.rankText, { color: tier.color }]}>{player.rank}</Text>
         </View>
+      );
+    };
+    
+    return (
+      <View key={player.userId} style={[styles.playerRow, isMe && styles.playerRowMe]}>
+        {getRankBadge()}
         
         <Image
           source={player.avatar ? { uri: player.avatar } : require('../../assets/icon.png')}
-          style={[styles.avatar, isMe && { borderColor: '#22c55e', borderWidth: 2 }]}
+          style={[styles.avatar, isMe && { borderColor: LoopsColors.mainGreen, borderWidth: 2 }]}
         />
         
         <View style={styles.playerInfo}>
@@ -195,7 +210,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         </View>
         
         <View style={styles.pointsWrap}>
-          <FontAwesome5 name="coins" size={12} color="#ffd60a" />
+          <FontAwesome5 name="coins" size={12} color={LoopsColors.coinGold} />
           <Text style={styles.pointsText}>{formatPoints(player.points)}</Text>
         </View>
       </View>
@@ -212,7 +227,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         </Animated.View>
 
         <Animated.View style={[styles.sheet, { transform: [{ translateY }], paddingBottom: insets.bottom }]}>
-          <LinearGradient colors={['#1a1a2e', '#16213e', '#0f3460']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={[LoopsColors.darkerBlack, '#16213e', '#0f3460']} style={StyleSheet.absoluteFill} />
           
           <View style={styles.handleArea} {...panResponder.panHandlers}>
             <View style={styles.handle} />
@@ -221,11 +236,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Ionicons name="trophy" size={22} color="#ffd60a" />
+              <Ionicons name="trophy" size={22} color={LoopsColors.coinGold} />
               <Text style={styles.headerTitle}>Leaderboard</Text>
             </View>
             <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color="rgba(255,255,255,0.6)" />
+              <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 24, height: 24, tintColor: 'rgba(255,255,255,0.6)' }} />
             </TouchableOpacity>
           </View>
           
@@ -250,7 +265,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
               <View style={styles.myRankRight}>
                 <Text style={styles.myRankNum}>#{currentUserEntry.rank}</Text>
                 <View style={styles.myRankPoints}>
-                  <FontAwesome5 name="coins" size={12} color="#ffd60a" />
+                  <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 14, height: 14 }} />
                   <Text style={styles.myRankPointsText}>{formatPoints(currentUserEntry.points)}</Text>
                 </View>
               </View>
@@ -259,7 +274,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#a855f7" />
+              <ActivityIndicator size="large" color={LoopsColors.color6} />
             </View>
           ) : mergedLeaderboard.length === 0 ? (
             <View style={styles.emptyWrap}>
@@ -288,46 +303,46 @@ const styles = StyleSheet.create({
   
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 4 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: LoopsColors.white },
   closeBtn: { padding: 4 },
   
-  gameName: { fontSize: 14, color: 'rgba(255,255,255,0.6)', paddingHorizontal: 16, marginBottom: 12 },
+  gameName: { fontSize: 14, color: LoopsColors.white60, paddingHorizontal: 16, marginBottom: 12 },
   
-  myRankCard: { marginHorizontal: 16, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  myRankCard: { marginHorizontal: 16, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: LoopsColors.white10 },
   myRankLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  myRankLabel: { fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 0.5 },
-  myRankTier: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  myRankLabel: { fontSize: 10, color: LoopsColors.white50, textTransform: 'uppercase', letterSpacing: 0.5 },
+  myRankTier: { fontSize: 14, fontWeight: '700', color: LoopsColors.white },
   myRankRight: { alignItems: 'flex-end' },
-  myRankNum: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  myRankNum: { fontSize: 18, fontWeight: '800', color: LoopsColors.white },
   myRankPoints: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
-  myRankPointsText: { fontSize: 12, fontWeight: '600', color: '#ffd60a' },
+  myRankPointsText: { fontSize: 12, fontWeight: '600', color: LoopsColors.coinGold },
   
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  emptyText: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  emptySubtext: { fontSize: 13, color: 'rgba(255,255,255,0.5)' },
+  emptyText: { fontSize: 16, fontWeight: '600', color: LoopsColors.white },
+  emptySubtext: { fontSize: 13, color: LoopsColors.white50 },
   
   list: { flex: 1, paddingHorizontal: 12 },
   
-  playerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginBottom: 6 },
-  playerRowMe: { backgroundColor: 'rgba(34,197,94,0.12)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)' },
+  playerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: LoopsColors.white + '0A', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, marginBottom: 6 },
+  playerRowMe: { backgroundColor: LoopsColors.mainGreen + '1F', borderWidth: 1, borderColor: LoopsColors.mainGreen + '40' },
   
   rankBadge: { width: 26, height: 26, borderRadius: 6, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   rankText: { fontSize: 12, fontWeight: '700' },
   
-  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', marginRight: 8 },
+  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: LoopsColors.white10, marginRight: 8 },
   
   playerInfo: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  playerName: { fontSize: 13, fontWeight: '600', color: '#fff', flexShrink: 1 },
-  playerNameMe: { color: '#22c55e' },
-  youBadge: { backgroundColor: '#22c55e', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
-  youText: { fontSize: 8, fontWeight: '800', color: '#fff' },
+  playerName: { fontSize: 13, fontWeight: '600', color: LoopsColors.white, flexShrink: 1 },
+  playerNameMe: { color: LoopsColors.mainGreen },
+  youBadge: { backgroundColor: LoopsColors.mainGreen, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
+  youText: { fontSize: 8, fontWeight: '800', color: LoopsColors.white },
   tierRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
   tierLabel: { fontSize: 10, fontWeight: '600' },
   
   pointsWrap: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  pointsText: { fontSize: 13, fontWeight: '700', color: '#ffd60a' },
+  pointsText: { fontSize: 13, fontWeight: '700', color: LoopsColors.coinGold },
 });
 
 export default LeaderboardModal;

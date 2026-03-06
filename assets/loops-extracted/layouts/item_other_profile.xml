@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout android:layout_width="64.0dp" android:layout_height="wrap_content" android:layout_marginStart="18.0dp"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/img_avatar" android:background="@drawable/shape_circle" android:padding="1.5dp" android:layout_width="64.0dp" android:layout_height="64.0dp" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:placeholderImage="@drawable/lobah_default_avatar" app:roundAsCircle="true" />
+    <TextView android:textSize="13.0sp" android:ellipsize="end" android:gravity="center" android:id="@id/tv_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8.0dp" android:maxLines="1" android:fontFamily="@font/font_normal" app:layout_constraintTop_toBottomOf="@id/img_avatar" />
+    <ImageView android:id="@id/img_online" android:layout_width="wrap_content" android:layout_height="wrap_content" android:src="@drawable/ic_online" app:layout_constraintBottom_toBottomOf="@id/img_avatar" app:layout_constraintEnd_toEndOf="@id/img_avatar" />
+</androidx.constraintlayout.widget.ConstraintLayout>

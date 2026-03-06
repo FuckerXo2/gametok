@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout android:layout_width="26.0dp" android:layout_height="35.0dp" android:layout_marginEnd="8.0dp"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/img_avatar" android:layout_width="26.0dp" android:layout_height="26.0dp" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:roundAsCircle="true" />
+    <ImageView android:id="@id/img_check_bg" android:visibility="gone" android:layout_width="26.0dp" android:layout_height="26.0dp" android:src="@drawable/bg_circle_pink_stoke" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" />
+    <ImageView android:id="@id/img_check_ico" android:visibility="gone" android:layout_width="12.0dp" android:layout_height="12.0dp" android:src="@drawable/checed_circle_23" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintTop_toTopOf="parent" />
+    <TextView android:textSize="6.0sp" android:textColor="@color/ffffff" android:ellipsize="end" android:gravity="start" android:id="@id/tv_nick_name" android:layout_width="26.0dp" android:layout_height="wrap_content" android:lines="1" android:textDirection="locale" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/img_avatar" />
+</androidx.constraintlayout.widget.ConstraintLayout>

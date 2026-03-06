@@ -262,7 +262,7 @@ const CategoryModal: React.FC<{
       <View style={[styles.modalContainer, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
         <LinearGradient colors={gradient || ['#667eea', '#764ba2']} style={styles.modalHeader}>
           <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-            <Ionicons name="close" size={28} color="#fff" />
+            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
           </TouchableOpacity>
           <View style={styles.modalHeaderContent}>
             <Ionicons name={icon as any} size={32} color="#fff" />

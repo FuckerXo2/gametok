@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <androidx.constraintlayout.widget.ConstraintLayout android:id="@id/item_container" android:layout_width="match_parent" android:layout_height="40.0dp" android:layout_marginTop="16.0dp" android:paddingStart="16.0dp" android:paddingEnd="16.0dp" android:layout_marginStart="20.0dp" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent">
+        <com.facebook.drawee.view.SimpleDraweeView android:id="@id/iv_icon" android:layout_width="24.0dp" android:layout_height="24.0dp" app:layout_constraintBottom_toBottomOf="@id/tv_select_game_column" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="@id/tv_select_game_column" />
+        <TextView android:textSize="14.0sp" android:textColor="#000000" android:gravity="center" android:id="@id/tv_select_game_column" android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFamily="@font/font_bold" android:layout_marginStart="6.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintStart_toEndOf="@id/iv_icon" app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>
