@@ -1,10 +1,19 @@
-import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Image } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, TouchableOpacity, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { Avatar } from './Avatar';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+  withTiming,
+  interpolateColor
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
@@ -13,9 +22,93 @@ interface BottomNavProps {
   onTabPress: (tab: TabName) => void;
 }
 
+const AnimatedTab = ({
+  tab,
+  isActive,
+  onPress,
+  colors,
+  user
+}: {
+  tab: any;
+  isActive: boolean;
+  onPress: () => void;
+  colors: any;
+  user: any;
+}) => {
+  const scale = useSharedValue(isActive ? 1.15 : 1);
+  const translateY = useSharedValue(isActive ? -4 : 0);
+  const opacity = useSharedValue(isActive ? 1 : 0.6);
+
+  useEffect(() => {
+    scale.value = withSpring(isActive ? 1.15 : 1, { damping: 12, stiffness: 150 });
+    translateY.value = withSpring(isActive ? -4 : 0, { damping: 12, stiffness: 150 });
+    opacity.value = withTiming(isActive ? 1 : 0.6, { duration: 200 });
+  }, [isActive]);
+
+  const animatedIconStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: translateY.value },
+      { scale: scale.value }
+    ],
+  }));
+
+  const animatedTextStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: isActive ? 1.05 : 1 }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withTiming(0.85, { duration: 100 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(isActive ? 1.15 : 1, { damping: 10, stiffness: 250 });
+  };
+
+  const handlePress = () => {
+    if (!isActive) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress();
+    }
+  };
+
+  return (
+    <Pressable
+      style={styles.tab}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={handlePress}
+    >
+      <Animated.View style={[styles.iconContainer, animatedIconStyle]}>
+        {tab.name === 'profile' ? (
+          <View style={[styles.avatarContainer, isActive && { borderColor: colors.primary, borderWidth: 2 }]}>
+            <Avatar
+              uri={user?.avatar}
+              size={24}
+            />
+          </View>
+        ) : (
+          <Ionicons
+            name={isActive ? tab.iconActive : tab.icon}
+            size={24}
+            color={isActive ? colors.primary : colors.textSecondary}
+          />
+        )}
+      </Animated.View>
+      <Animated.Text style={[
+        styles.label,
+        animatedTextStyle,
+        { color: isActive ? colors.primary : colors.textSecondary }
+      ]}>
+        {tab.label}
+      </Animated.Text>
+    </Pressable>
+  );
+};
+
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { user } = useAuth();
 
   const tabs: { name: TabName; icon: string; iconActive: string; label: string }[] = [
@@ -35,37 +128,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
       }
     ]}>
       {tabs.map((tab) => (
-        <TouchableOpacity
+        <AnimatedTab
           key={tab.name}
-          style={styles.tab}
+          tab={tab}
+          isActive={activeTab === tab.name}
           onPress={() => onTabPress(tab.name)}
-          activeOpacity={0.7}
-        >
-          {tab.name === 'profile' ? (
-            <View style={styles.avatarContainer}>
-              <Avatar
-                uri={user?.avatar}
-                size={24}
-                style={[
-                  styles.avatar,
-                  activeTab === 'profile' && { borderColor: colors.text, borderWidth: 2 }
-                ]}
-              />
-            </View>
-          ) : (
-            <Ionicons
-              name={(activeTab === tab.name ? tab.iconActive : tab.icon) as any}
-              size={24}
-              color={activeTab === tab.name ? colors.text : colors.textSecondary}
-            />
-          )}
-          <Text style={[
-            styles.label,
-            { color: activeTab === tab.name ? colors.text : colors.textSecondary }
-          ]}>
-            {tab.label}
-          </Text>
-        </TouchableOpacity>
+          colors={colors}
+          user={user}
+        />
       ))}
     </View>
   );
@@ -85,17 +155,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 4,
   },
+  iconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   label: {
     fontSize: 10,
-    marginTop: 2,
+    marginTop: 4,
+    fontWeight: '600',
   },
   avatarContainer: {
-    width: 24,
-    height: 24,
+    width: 26,
+    height: 26,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  avatar: {
-    borderRadius: 12,
+    borderRadius: 13,
+    overflow: 'hidden',
   },
 });

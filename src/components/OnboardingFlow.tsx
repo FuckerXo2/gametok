@@ -453,7 +453,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         user: credential.user,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (result?.isNewUser || !result?.user?.username) {
+      if ((result as any)?.isNewUser || !(result as any)?.user?.username) {
         goTo('username');
       } else {
         onComplete();
@@ -480,7 +480,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           user: { id: googleUser.id, email: googleUser.email, name: googleUser.name, photo: googleUser.photo },
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        if (result?.isNewUser || !result?.user?.username) {
+        if ((result as any)?.isNewUser || !(result as any)?.user?.username) {
           goTo('username');
         } else {
           onComplete();

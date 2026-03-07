@@ -8,6 +8,7 @@ import {
   Share,
   Dimensions,
   ScrollView,
+  Image,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,18 +58,18 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
       onRequestClose={onClose}
     >
       <BlurView intensity={80} tint="dark" style={styles.container}>
-        <TouchableOpacity 
-          style={StyleSheet.absoluteFill} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
           onPress={onClose}
         />
-        
+
         {/* Header */}
         <View style={[styles.header, { top: insets.top + 10 }]}>
           <TouchableOpacity onPress={onClose}>
             <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.findContactsBtn}>
             <Ionicons name="people" size={18} color="#fff" />
             <Text style={styles.findContactsText}>Find Contacts</Text>
@@ -107,8 +108,8 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
 
         {/* Share Options */}
         <View style={[styles.shareOptions, { paddingBottom: insets.bottom + 20 }]}>
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.shareScroll}
           >

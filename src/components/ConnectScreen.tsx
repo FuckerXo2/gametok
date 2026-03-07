@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
@@ -15,7 +15,10 @@ import {
   StatusBar,
   FlatList,
   useColorScheme,
+  Pressable,
 } from 'react-native';
+import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -168,15 +171,40 @@ const AD_BLOCKER_SCRIPT = `
 true;
 `;
 
+// Animated wrapper for press physics + staggered entrance
+const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: React.ReactNode; style?: any }> = ({ onPress, index = 0, children, style }) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  const handlePressIn = () => { scale.value = withSpring(0.96, { damping: 12, stiffness: 200 }); };
+  const handlePressOut = () => { scale.value = withSpring(1, { damping: 10, stiffness: 250 }); };
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  }
+
+  return (
+    <Animated.View
+      entering={FadeInUp.delay(Math.min((index) * 60, 400)).springify().damping(18)}
+      style={[style, animatedStyle]}
+    >
+      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handlePress}>
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+};
+
 // Featured Card - big card with thumbnail and gradient
 const FeaturedCard: React.FC<{
   category: typeof FEATURED_CATEGORIES[0];
   games: GameItem[];
   onPress: () => void;
-}> = ({ category, games, onPress }) => {
+  index?: number;
+}> = ({ category, games, onPress, index }) => {
   const thumbnail = games[0]?.thumbnail;
   return (
-    <TouchableOpacity style={styles.featuredCard} onPress={onPress} activeOpacity={0.9}>
+    <AnimatedCard style={styles.featuredCard} onPress={onPress} index={index}>
       <LinearGradient colors={category.gradient as [string, string]} style={styles.featuredGradient}>
         {thumbnail && (
           <Image source={{ uri: thumbnail }} style={styles.featuredBg} blurRadius={2} />
@@ -189,7 +217,7 @@ const FeaturedCard: React.FC<{
           <Text style={styles.featuredCount}>{games.length} games</Text>
         </View>
       </LinearGradient>
-    </TouchableOpacity>
+    </AnimatedCard>
   );
 };
 
@@ -198,12 +226,13 @@ const GenreCard: React.FC<{
   genre: typeof GENRE_CATEGORIES[0];
   games: GameItem[];
   onPress: () => void;
-}> = ({ genre, games, onPress }) => {
+  index?: number;
+}> = ({ genre, games, onPress, index }) => {
   // Get up to 4 thumbnails for the grid
   const thumbnails = games.slice(0, 4).map(g => g.thumbnail).filter(Boolean);
-  
+
   return (
-    <TouchableOpacity style={styles.genreCard} onPress={onPress} activeOpacity={0.9}>
+    <AnimatedCard style={styles.genreCard} onPress={onPress} index={index}>
       <LinearGradient colors={genre.gradient as [string, string]} style={styles.genreGradient}>
         {/* Thumbnail grid background */}
         {thumbnails.length > 0 && (
@@ -220,7 +249,7 @@ const GenreCard: React.FC<{
           <Text style={styles.genreCount}>{games.length} games</Text>
         </View>
       </LinearGradient>
-    </TouchableOpacity>
+    </AnimatedCard>
   );
 };
 
@@ -228,8 +257,9 @@ const GenreCard: React.FC<{
 const GameCard: React.FC<{
   game: GameItem;
   onPress: () => void;
-}> = ({ game, onPress }) => (
-  <TouchableOpacity style={styles.gameCard} onPress={onPress} activeOpacity={0.9}>
+  index?: number;
+}> = ({ game, onPress, index }) => (
+  <AnimatedCard style={styles.gameCard} onPress={onPress} index={index}>
     {game.thumbnail ? (
       <Image source={{ uri: game.thumbnail }} style={styles.gameCardImg} />
     ) : (
@@ -240,7 +270,7 @@ const GameCard: React.FC<{
     <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.gameCardOverlay}>
       <Text style={styles.gameCardName} numberOfLines={2}>{game.name}</Text>
     </LinearGradient>
-  </TouchableOpacity>
+  </AnimatedCard>
 );
 
 // Category Modal
@@ -256,7 +286,7 @@ const CategoryModal: React.FC<{
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
-  
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <View style={[styles.modalContainer, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
@@ -270,14 +300,14 @@ const CategoryModal: React.FC<{
             <Text style={styles.modalSubtitle}>{games.length} games</Text>
           </View>
         </LinearGradient>
-        
+
         <FlatList
           data={games}
           numColumns={3}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.modalGrid}
-          renderItem={({ item }) => (
-            <GameCard game={item} onPress={() => onPlayGame(item)} />
+          renderItem={({ item, index }) => (
+            <GameCard game={item} index={index} onPress={() => onPlayGame(item)} />
           )}
         />
       </View>
@@ -291,17 +321,17 @@ export const ConnectScreen: React.FC = () => {
   const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
   const { isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GameItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  
+
   const [allGames, setAllGames] = useState<GameItem[]>([]);
   const [featuredGames, setFeaturedGames] = useState<Record<string, GameItem[]>>({});
   const [genreGames, setGenreGames] = useState<Record<string, GameItem[]>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const [modalVisible, setModalVisible] = useState(false);
   const [modalData, setModalData] = useState<{
     title: string;
@@ -309,14 +339,14 @@ export const ConnectScreen: React.FC = () => {
     gradient?: [string, string];
     games: GameItem[];
   } | null>(null);
-  
+
   const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
 
   const loadData = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
     else setLoading(true);
-    
+
     try {
       const data = await games.list(100, 0);
       const list: GameItem[] = (data.games || []).map((g: GameItem) => ({
@@ -324,18 +354,18 @@ export const ConnectScreen: React.FC = () => {
         thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
       }));
       setAllGames(list);
-      
+
       // Sort for featured
       const byPlays = [...list].sort((a, b) => (b.plays || 0) - (a.plays || 0));
       const shuffled = [...list].sort(() => Math.random() - 0.5);
-      
+
       // Featured categories
       setFeaturedGames({
         trending: byPlays.slice(0, 20),
         hot: byPlays.slice(0, 15),
         foryou: shuffled.slice(0, 20),
       });
-      
+
       // Genre categories
       const byGenre: Record<string, GameItem[]> = {};
       list.forEach(g => {
@@ -400,7 +430,7 @@ export const ConnectScreen: React.FC = () => {
         console.log('Search error:', e);
         // Fallback to local search if API fails
         const q = searchQuery.toLowerCase();
-        const results = allGames.filter(g => 
+        const results = allGames.filter(g =>
           g.name.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q)
         );
         setSearchResults(results);
@@ -478,8 +508,8 @@ export const ConnectScreen: React.FC = () => {
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No games found</Text>
             </View>
           ) : (
-            searchResults.map(g => (
-              <GameCard key={g.id} game={g} onPress={() => playGame(g)} />
+            searchResults.map((g, idx) => (
+              <GameCard key={g.id} game={g} index={idx} onPress={() => playGame(g)} />
             ))
           )}
         </ScrollView>
@@ -490,15 +520,16 @@ export const ConnectScreen: React.FC = () => {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor="#a855f7" />}
         >
           {/* Featured Categories - Big Cards */}
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.featuredRow}
           >
-            {FEATURED_CATEGORIES.map(cat => (
+            {FEATURED_CATEGORIES.map((cat, idx) => (
               <FeaturedCard
                 key={cat.id}
                 category={cat}
+                index={idx}
                 games={featuredGames[cat.id] || []}
                 onPress={() => openFeatured(cat)}
               />
@@ -509,10 +540,11 @@ export const ConnectScreen: React.FC = () => {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Categories</Text>
             <View style={styles.genreGrid}>
-              {GENRE_CATEGORIES.filter(g => (genreGames[g.id]?.length || 0) > 0).map(genre => (
+              {GENRE_CATEGORIES.filter(g => (genreGames[g.id]?.length || 0) > 0).map((genre, idx) => (
                 <GenreCard
                   key={genre.id}
                   genre={genre}
+                  index={idx}
                   games={genreGames[genre.id] || []}
                   onPress={() => openGenre(genre)}
                 />
@@ -524,8 +556,8 @@ export const ConnectScreen: React.FC = () => {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Games</Text>
             <View style={styles.gamesGrid}>
-              {allGames.slice(0, 30).map(g => (
-                <GameCard key={g.id} game={g} onPress={() => playGame(g)} />
+              {allGames.slice(0, 30).map((g, idx) => (
+                <GameCard key={g.id} game={g} index={idx} onPress={() => playGame(g)} />
               ))}
             </View>
           </View>
@@ -569,7 +601,7 @@ export const ConnectScreen: React.FC = () => {
               <Text style={styles.gameLoadingText}>Loading {playingGame.name}...</Text>
             </View>
           )}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.gameCloseBtn, { top: insets.top + 10 }]}
             onPress={() => setPlayingGame(null)}
           >

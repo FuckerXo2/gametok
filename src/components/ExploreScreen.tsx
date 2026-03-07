@@ -15,7 +15,10 @@ import {
   StatusBar,
   FlatList,
   useColorScheme,
+  Pressable,
 } from 'react-native';
+import Animated, { FadeInRight, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -317,42 +320,79 @@ true;
 `;
 
 // Shared UI Components
-const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; theme: any }> = ({ title, onChevronPress, theme }) => (
-  <TouchableOpacity style={styles.sectionHeader} onPress={onChevronPress} activeOpacity={0.7} disabled={!onChevronPress}>
-    <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
-    {onChevronPress && (
-      <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} style={{ marginTop: 2 }} />
-    )}
-  </TouchableOpacity>
-);
+const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; theme: any }> = ({ title, onChevronPress, theme }) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void; onlineUsers?: string[] }> = ({ friend, isAdd, theme, onPress, onlineUsers }) => {
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        style={styles.sectionHeader}
+        onPress={onChevronPress}
+        onPressIn={() => { if (onChevronPress) scale.value = withSpring(0.96, { damping: 12 }) }}
+        onPressOut={() => { if (onChevronPress) scale.value = withSpring(1, { damping: 10 }) }}
+        disabled={!onChevronPress}
+      >
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
+        {onChevronPress && (
+          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} style={{ marginTop: 2 }} />
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+};
+
+const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void; onlineUsers?: string[]; index?: number }> = ({ friend, isAdd, theme, onPress, onlineUsers, index = 0 }) => {
   if (isAdd) {
     return (
-      <TouchableOpacity style={styles.friendCard} onPress={onPress}>
+      <AnimatedCard onPress={onPress || (() => { })} index={index} style={styles.friendCard}>
         <View style={[styles.friendAvatarContainer, { backgroundColor: theme.searchBg }]}>
           <Ionicons name="person-add-outline" size={24} color={theme.text} />
         </View>
         <Text style={[styles.friendName, { color: theme.text }]}>Add</Text>
-      </TouchableOpacity>
+      </AnimatedCard>
     );
   }
 
   return (
-    <TouchableOpacity style={styles.friendCard} onPress={onPress}>
+    <AnimatedCard onPress={onPress || (() => { })} index={index} style={styles.friendCard}>
       <View>
         <Avatar uri={friend.avatar} size={64} style={styles.friendAvatar} />
         {onlineUsers?.includes(friend.id) && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
       </View>
       <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.displayName || friend.username}</Text>
       {friend.tag && <Text style={[styles.friendTag, { color: theme.textSecondary }]} numberOfLines={1}>{friend.tag}</Text>}
-    </TouchableOpacity>
+    </AnimatedCard>
+  );
+};
+
+// Animated wrapper for press physics + staggered entrance
+const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: React.ReactNode; style?: any }> = ({ onPress, index = 0, children, style }) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  const handlePressIn = () => { scale.value = withSpring(0.96, { damping: 12, stiffness: 200 }); };
+  const handlePressOut = () => { scale.value = withSpring(1, { damping: 10, stiffness: 250 }); };
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  }
+
+  return (
+    <Animated.View
+      entering={FadeInRight.delay(Math.min((index) * 60, 400)).springify().damping(18)}
+      style={[style, animatedStyle]}
+    >
+      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handlePress}>
+        {children}
+      </Pressable>
+    </Animated.View>
   );
 };
 
 // 1:1 Square Card for "Continue"
-const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1' }> = ({ game, onPress, theme, badge }) => (
-  <TouchableOpacity style={styles.squareGameCard} onPress={onPress} activeOpacity={0.8}>
+const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = ({ game, onPress, theme, badge, index }) => (
+  <AnimatedCard onPress={onPress} index={index} style={styles.squareGameCard}>
     <View style={[styles.squareGameImgContainer, { backgroundColor: theme.cardBg }]}>
       {game.thumbnail ? (
         <Image source={{ uri: game.thumbnail }} style={styles.squareGameImg} />
@@ -374,12 +414,12 @@ const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any
       )}
     </View>
     <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
-  </TouchableOpacity>
+  </AnimatedCard>
 );
 
 // 16:9 Rectangular Card for "Recommended"
-const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1' }> = ({ game, onPress, theme, badge }) => (
-  <TouchableOpacity style={styles.rectGameCard} onPress={onPress} activeOpacity={0.8}>
+const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = ({ game, onPress, theme, badge, index }) => (
+  <AnimatedCard onPress={onPress} index={index} style={styles.rectGameCard}>
     <View style={[styles.rectGameImgContainer, { backgroundColor: theme.cardBg }]}>
       {game.thumbnail ? (
         <Image source={{ uri: game.thumbnail }} style={styles.rectGameImg} />
@@ -401,7 +441,7 @@ const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; 
       )}
     </View>
     <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
-  </TouchableOpacity>
+  </AnimatedCard>
 );
 
 export const ExploreScreen: React.FC = () => {
@@ -701,13 +741,13 @@ export const ExploreScreen: React.FC = () => {
           <SectionHeader title="Friends" onChevronPress={() => { }} theme={theme} />
           {friends.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-              <FriendCard isAdd theme={theme} onPress={() => setShowFindFriends(true)} />
+              <FriendCard isAdd theme={theme} onPress={() => setShowFindFriends(true)} index={0} />
               {[...friends].sort((a, b) => {
                 const aOnline = onlineUsers.includes(a.id) ? 1 : 0;
                 const bOnline = onlineUsers.includes(b.id) ? 1 : 0;
                 return bOnline - aOnline; // online first
-              }).map(f => (
-                <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} onlineUsers={onlineUsers} />
+              }).map((f, idx) => (
+                <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} onlineUsers={onlineUsers} index={idx + 1} />
               ))}
             </ScrollView>
           ) : (
@@ -731,8 +771,8 @@ export const ExploreScreen: React.FC = () => {
           {/* Continue Playing */}
           <SectionHeader title="Continue" onChevronPress={() => { }} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {(featuredGames.continue || []).map(g => (
-              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} />
+            {(featuredGames.continue || []).map((g, idx) => (
+              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} index={idx} />
             ))}
           </ScrollView>
 
@@ -740,7 +780,7 @@ export const ExploreScreen: React.FC = () => {
           <SectionHeader title="Recommended For You" onChevronPress={() => setCategoryModal({ title: "Recommended For You", category: "recommended" })} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {(featuredGames.recommended || []).map((g, idx) => (
-              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'like'} />
+              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'like'} index={idx} />
             ))}
           </ScrollView>
 
@@ -748,7 +788,7 @@ export const ExploreScreen: React.FC = () => {
           <SectionHeader title="Hot Games" onChevronPress={() => setCategoryModal({ title: "Hot Games", category: "hot" })} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {(featuredGames.hot || []).map((g, idx) => (
-              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'hot'} />
+              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'hot'} index={idx} />
             ))}
           </ScrollView>
 
@@ -758,7 +798,7 @@ export const ExploreScreen: React.FC = () => {
               <SectionHeader title="Action & Adventure" onChevronPress={() => setCategoryModal({ title: "Action & Adventure", category: "action" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.action || []).map((g, idx) => (
-                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
                 ))}
               </ScrollView>
             </>
@@ -770,7 +810,7 @@ export const ExploreScreen: React.FC = () => {
               <SectionHeader title="Brain Teasers" onChevronPress={() => setCategoryModal({ title: "Brain Teasers", category: "puzzle" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.puzzle || []).map((g, idx) => (
-                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
                 ))}
               </ScrollView>
             </>
@@ -782,7 +822,7 @@ export const ExploreScreen: React.FC = () => {
               <SectionHeader title="Racing & Driving" onChevronPress={() => setCategoryModal({ title: "Racing & Driving", category: "racing" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.racing || []).map((g, idx) => (
-                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
                 ))}
               </ScrollView>
             </>
@@ -794,7 +834,7 @@ export const ExploreScreen: React.FC = () => {
               <SectionHeader title="Arcade Classics" onChevronPress={() => setCategoryModal({ title: "Arcade Classics", category: "arcade" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.arcade || []).map((g, idx) => (
-                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
+                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
                 ))}
               </ScrollView>
             </>
@@ -804,7 +844,7 @@ export const ExploreScreen: React.FC = () => {
           <SectionHeader title="New Releases" onChevronPress={() => setCategoryModal({ title: "New Releases", category: "new" })} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {(featuredGames.new || []).map((g, idx) => (
-              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'new'} />
+              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'new'} index={idx} />
             ))}
           </ScrollView>
 
