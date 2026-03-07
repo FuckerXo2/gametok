@@ -242,10 +242,12 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 8,
         marginRight: 10,
+        backgroundColor: '#a855f7',
     },
     actionButtonText: {
         fontSize: 13,
         fontWeight: '600',
+        color: '#ffffff',
     },
     centerContainer: {
         flex: 1,

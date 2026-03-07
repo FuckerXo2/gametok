@@ -541,7 +541,7 @@ export const ExploreScreen: React.FC = () => {
         try {
           const [resGames, resUsers] = await Promise.all([
             games.search(searchQuery).catch(() => ({ games: [] })),
-            users.search(searchQuery).catch(() => [])
+            users.search(searchQuery).catch(() => ({ users: [] }))
           ]);
 
           let gameResults = (resGames.games || []).map((g: GameItem) => ({
@@ -549,7 +549,8 @@ export const ExploreScreen: React.FC = () => {
             thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
           }));
           setSearchGames(gameResults);
-          setSearchUsers(Array.isArray(resUsers) ? resUsers : []);
+          const userResults = resUsers?.users || resUsers;
+          setSearchUsers(Array.isArray(userResults) ? userResults : []);
         } catch (e) {
           // Fallback
           const q = searchQuery.toLowerCase();
@@ -699,7 +700,11 @@ export const ExploreScreen: React.FC = () => {
           {friends.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
               <FriendCard isAdd theme={theme} onPress={() => setShowFindFriends(true)} />
-              {friends.map(f => (
+              {[...friends].sort((a, b) => {
+                const aOnline = onlineUsers.includes(a.id) ? 1 : 0;
+                const bOnline = onlineUsers.includes(b.id) ? 1 : 0;
+                return bOnline - aOnline; // online first
+              }).map(f => (
                 <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} onlineUsers={onlineUsers} />
               ))}
             </ScrollView>
