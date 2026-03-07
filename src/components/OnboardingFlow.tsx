@@ -657,7 +657,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   // ═══════════════════════════════════════
   const renderGenres = () => (
     <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: insets.top + 10 }]} onPress={() => goTo('welcome')}>
+      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('welcome')}>
         <Ionicons name="arrow-back" size={24} color={colors.text} />
       </TouchableOpacity>
 
@@ -706,7 +706,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const renderCredentials = () => (
     <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} key={stepKey}>
       <TouchableOpacity
-        style={[styles.backButton, { top: insets.top + 10 }]}
+        style={[styles.backButton, { top: 8 }]}
         onPress={() => goTo(isLogin ? 'welcome' : 'genres')}
       >
         <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -794,7 +794,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   // ═══════════════════════════════════════
   const renderUsername = () => (
     <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: insets.top + 10 }]} onPress={() => goTo('credentials')}>
+      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('credentials')}>
         <Ionicons name="arrow-back" size={24} color={colors.text} />
       </TouchableOpacity>
 
@@ -978,7 +978,7 @@ const styles = StyleSheet.create({
 
   // Form screens
   backButton: { position: 'absolute', left: 12, zIndex: 10, padding: 10, width: 44, height: 44, justifyContent: 'center' as const, alignItems: 'center' as const },
-  formContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 90 },
+  formContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
   stepTitle: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 8 },
   stepSubtitle: { fontSize: 15, color: 'rgba(255,255,255,0.6)', marginBottom: 24 },
   errorText: { color: '#FF6B6B', fontSize: 14, marginBottom: 16 },
