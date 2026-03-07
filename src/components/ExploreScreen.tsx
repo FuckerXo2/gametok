@@ -432,7 +432,7 @@ export const ExploreScreen: React.FC = () => {
     if (isAuthenticated && user?.id) {
       try {
         const res = await users.following(user.id);
-        setFriends(res.following || []);
+        setFriends(Array.isArray(res) ? res : []);
       } catch (e) {
         console.log('Friends error', e);
       }
