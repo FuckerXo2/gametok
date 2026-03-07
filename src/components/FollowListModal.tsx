@@ -75,28 +75,18 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     const renderItem = ({ item }: { item: UserItem }) => (
         <TouchableOpacity
             style={styles.userRow}
-            onPress={() => {
-                if (onUserPress) {
-                    onUserPress(item);
-                }
-            }}
-            disabled={!onUserPress}
+            onPress={() => onUserPress && onUserPress(item)}
+            activeOpacity={0.7}
         >
             <Avatar uri={item.avatar} size={54} />
             <View style={styles.userInfo}>
-                <Text style={styles.username} numberOfLines={1}>
+                <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
                     {item.username}
                 </Text>
-                <Text style={styles.displayName} numberOfLines={1}>
+                <Text style={[styles.displayName, { color: colors.textSecondary }]} numberOfLines={1}>
                     {item.displayName || item.username}
                 </Text>
             </View>
-            <TouchableOpacity style={styles.actionButton}>
-                <Text style={styles.actionButtonText}>Message</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButtonSmall}>
-                <Ionicons name={activeTab === 'followers' ? "close" : "ellipsis-horizontal"} size={18} color="#888" />
-            </TouchableOpacity>
         </TouchableOpacity>
     );
 

@@ -582,8 +582,8 @@ export const ExploreScreen: React.FC = () => {
       timeout = setTimeout(async () => {
         try {
           const [resGames, resUsers] = await Promise.all([
-            games.search(searchQuery).catch(() => ({ games: [] })),
-            users.search(searchQuery).catch(() => ({ users: [] }))
+            games.search(searchQuery).catch((e) => { console.log('Games search error', e); return { games: [] }; }),
+            users.search(searchQuery).catch((e) => { console.log('Users search error', e); return { users: [] }; })
           ]);
 
           let gameResults = (resGames.games || []).map((g: GameItem) => ({
