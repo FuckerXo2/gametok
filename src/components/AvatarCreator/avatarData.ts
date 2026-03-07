@@ -26,14 +26,14 @@ const medium_short = require('../../../assets/ui/avatars/creator/medium_short.pn
 
 // Medium-dark skin tone
 const medDark_afro = require('../../../assets/ui/avatars/creator/medDark_afro.png');
-// const medDark_braids = require('../../../assets/ui/avatars/creator/medDark_braids.png');
-// const medDark_fade = require('../../../assets/ui/avatars/creator/medDark_fade.png');
-// const medDark_locs = require('../../../assets/ui/avatars/creator/medDark_locs.png');
-// const medDark_curly = require('../../../assets/ui/avatars/creator/medDark_curly.png');
-// const medDark_bob = require('../../../assets/ui/avatars/creator/medDark_bob.png');
+const medDark_braids = require('../../../assets/ui/avatars/creator/medDark_braids.png');
+const medDark_fade = require('../../../assets/ui/avatars/creator/medDark_fade.png');
+const medDark_locs = require('../../../assets/ui/avatars/creator/medDark_locs.png');
+const medDark_curly = require('../../../assets/ui/avatars/creator/medDark_curly.png');
+const medDark_bob = require('../../../assets/ui/avatars/creator/medDark_bob.png');
 
 // Dark skin tone
-// const dark_afro = require('../../../assets/ui/avatars/creator/dark_afro.png');
+const dark_afro = require('../../../assets/ui/avatars/creator/dark_afro.png');
 // const dark_braids = require('../../../assets/ui/avatars/creator/dark_braids.png');
 // const dark_buzz = require('../../../assets/ui/avatars/creator/dark_buzz.png');
 // const dark_locs = require('../../../assets/ui/avatars/creator/dark_locs.png');
@@ -71,14 +71,14 @@ export const AVATAR_OPTIONS: AvatarOption[] = [
 
     // Medium-dark skin tone
     { id: 'medDark_afro', skinTone: 'medium-dark', hairStyle: 'afro', label: 'Afro', image: medDark_afro },
-    // { id: 'medDark_braids', skinTone: 'medium-dark', hairStyle: 'braids', label: 'Braids', image: medDark_braids },
-    // { id: 'medDark_fade',   skinTone: 'medium-dark', hairStyle: 'fade',   label: 'Fade',   image: medDark_fade },
-    // { id: 'medDark_locs',   skinTone: 'medium-dark', hairStyle: 'locs',   label: 'Locs',   image: medDark_locs },
-    // { id: 'medDark_curly',  skinTone: 'medium-dark', hairStyle: 'curly',  label: 'Curly',  image: medDark_curly },
-    // { id: 'medDark_bob',    skinTone: 'medium-dark', hairStyle: 'bob',    label: 'Bob',    image: medDark_bob },
+    { id: 'medDark_braids', skinTone: 'medium-dark', hairStyle: 'braids', label: 'Braids', image: medDark_braids },
+    { id: 'medDark_fade', skinTone: 'medium-dark', hairStyle: 'fade', label: 'Fade', image: medDark_fade },
+    { id: 'medDark_locs', skinTone: 'medium-dark', hairStyle: 'locs', label: 'Locs', image: medDark_locs },
+    { id: 'medDark_curly', skinTone: 'medium-dark', hairStyle: 'curly', label: 'Curly', image: medDark_curly },
+    { id: 'medDark_bob', skinTone: 'medium-dark', hairStyle: 'bob', label: 'Bob', image: medDark_bob },
 
     // Dark skin tone
-    // { id: 'dark_afro',   skinTone: 'dark', hairStyle: 'afro',   label: 'Afro',     image: dark_afro },
+    { id: 'dark_afro', skinTone: 'dark', hairStyle: 'afro', label: 'Afro', image: dark_afro },
     // { id: 'dark_braids', skinTone: 'dark', hairStyle: 'braids', label: 'Braids',   image: dark_braids },
     // { id: 'dark_buzz',   skinTone: 'dark', hairStyle: 'buzz',   label: 'Buzz Cut', image: dark_buzz },
     // { id: 'dark_locs',   skinTone: 'dark', hairStyle: 'locs',   label: 'Locs',     image: dark_locs },
