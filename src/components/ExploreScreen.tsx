@@ -25,6 +25,7 @@ import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile
 import { games, users } from '../services/api';
 import { FindFriendsModal } from './FindFriendsModal';
 import { UserProfileModal } from './UserProfileModal';
+import { Avatar } from './Avatar';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen } from '../../App';
 import { isExpoGo } from '../services/ads';
@@ -338,7 +339,7 @@ const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?
   return (
     <TouchableOpacity style={styles.friendCard} onPress={onPress}>
       <View>
-        <Image source={{ uri: friend.avatar }} style={styles.friendAvatar} />
+        <Avatar uri={friend.avatar} size={styles.friendAvatar.width} style={styles.friendAvatar} />
         {friend.isOnline && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
       </View>
       <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.displayName || friend.username}</Text>
