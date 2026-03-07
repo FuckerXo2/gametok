@@ -959,7 +959,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22c55e',
+    backgroundColor: '#a855f7',
   },
   liveScroll: {
     paddingHorizontal: 16,
@@ -983,7 +983,7 @@ const styles = StyleSheet.create({
   liveAvatar: {
     marginBottom: 8,
     borderWidth: 2,
-    borderColor: '#22c55e',
+    borderColor: '#a855f7',
   },
   liveUsername: {
     color: '#fff',

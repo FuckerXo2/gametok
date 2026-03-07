@@ -10,16 +10,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { users } from '../services/api';
-import { uploadImage } from '../services/cloudinary';
 import { Avatar } from './Avatar';
+import { AvatarCreatorModal, AvatarConfig, getAvatarById } from './AvatarCreator';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -30,12 +29,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { user, refreshUser } = useAuth();
-  
+
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar || '');
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
+  const [localAvatarImage, setLocalAvatarImage] = useState<any>(null);
+  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
 
   // Reset form when modal opens
   React.useEffect(() => {
@@ -43,12 +44,13 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
       setDisplayName(user.displayName || '');
       setBio(user.bio || '');
       setAvatarUrl(user.avatar || '');
+      setLocalAvatarImage(null);
     }
   }, [visible, user]);
 
   const handleSave = async () => {
     if (!user) return;
-    
+
     setIsSaving(true);
     try {
       const result = await users.update(user.id, {
@@ -67,42 +69,41 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
     }
   };
 
-  const handleChangeAvatar = async () => {
-    // Request permission
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to your photos to change your profile picture.');
-      return;
+  const handleAvatarCreated = (config: AvatarConfig, imageSource: any) => {
+    setAvatarConfig(config);
+    setLocalAvatarImage(imageSource);
+    setAvatarUrl(`avatar-creator://${config.avatarId}?bg=${encodeURIComponent(config.backgroundColor)}`);
+    setShowAvatarCreator(false);
+  };
+
+  // Determine what avatar to show in the preview
+  const renderAvatarPreview = () => {
+    if (localAvatarImage && avatarConfig) {
+      return (
+        <View style={styles.avatarWrapper}>
+          <View style={[styles.creatorAvatarPreview, { backgroundColor: avatarConfig.backgroundColor }]}>
+            <Image source={localAvatarImage} style={styles.creatorAvatarImage} />
+          </View>
+          <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
+            <Ionicons name="sparkles" size={16} color="#fff" />
+          </View>
+        </View>
+      );
     }
 
-    // Pick image
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled) return;
-
-    // Upload to Cloudinary
-    setIsUploading(true);
-    try {
-      console.log('[EditProfile] Uploading image:', result.assets[0].uri);
-      const imageUrl = await uploadImage(result.assets[0].uri);
-      console.log('[EditProfile] Upload success, URL:', imageUrl);
-      setAvatarUrl(imageUrl);
-    } catch (error) {
-      console.log('[EditProfile] Upload failed:', error);
-      Alert.alert('Upload failed', 'Could not upload image. Please try again.');
-    } finally {
-      setIsUploading(false);
-    }
+    return (
+      <View style={styles.avatarWrapper}>
+        <Avatar uri={avatarUrl || null} size={96} />
+        <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
+          <Ionicons name="sparkles" size={16} color="#fff" />
+        </View>
+      </View>
+    );
   };
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
@@ -112,7 +113,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
             <Text style={[styles.headerBtnText, { color: colors.text }]}>Cancel</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
-          <TouchableOpacity onPress={handleSave} style={styles.headerBtn} disabled={isSaving || isUploading}>
+          <TouchableOpacity onPress={handleSave} style={styles.headerBtn} disabled={isSaving}>
             <Text style={[styles.headerBtnText, { color: colors.primary }]}>
               {isSaving ? 'Saving...' : 'Save'}
             </Text>
@@ -120,24 +121,18 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Avatar */}
+          {/* Avatar Section */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity style={styles.avatarWrapper} onPress={handleChangeAvatar} disabled={isUploading}>
-              <Avatar uri={avatarUrl || null} size={96} />
-              {isUploading ? (
-                <View style={[styles.uploadingOverlay]}>
-                  <ActivityIndicator color="#fff" />
-                </View>
-              ) : (
-                <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
-                  <Ionicons name="camera" size={16} color="#fff" />
-                </View>
-              )}
+            <TouchableOpacity onPress={() => setShowAvatarCreator(true)}>
+              {renderAvatarPreview()}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleChangeAvatar} disabled={isUploading}>
-              <Text style={[styles.changePhotoText, { color: colors.primary }]}>
-                {isUploading ? 'Uploading...' : 'Change Photo'}
-              </Text>
+
+            <TouchableOpacity
+              style={[styles.createAvatarBtn, { backgroundColor: colors.primary }]}
+              onPress={() => setShowAvatarCreator(true)}
+            >
+              <Ionicons name="sparkles" size={16} color="#fff" />
+              <Text style={styles.createAvatarText}>Create Avatar</Text>
             </TouchableOpacity>
           </View>
 
@@ -172,6 +167,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
           <View style={{ height: 100 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Avatar Creator Modal */}
+      <AvatarCreatorModal
+        visible={showAvatarCreator}
+        onClose={() => setShowAvatarCreator(false)}
+        onSave={handleAvatarCreated}
+        initialConfig={avatarConfig || undefined}
+      />
     </Modal>
   );
 };
@@ -192,30 +195,44 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 20 },
   avatarSection: { alignItems: 'center', marginBottom: 32 },
   avatarWrapper: { position: 'relative', marginBottom: 12 },
-  editBadge: { 
-    position: 'absolute', 
-    bottom: 0, 
-    right: 0, 
-    width: 32, 
-    height: 32, 
-    borderRadius: 16, 
-    justifyContent: 'center', 
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#000',
   },
-  uploadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  creatorAvatarPreview: {
+    width: 96,
+    height: 96,
     borderRadius: 48,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+    overflow: 'hidden',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  changePhotoText: { fontSize: 15, fontWeight: '600' },
+  creatorAvatarImage: {
+    width: 96,
+    height: 96,
+    resizeMode: 'cover',
+  },
+  createAvatarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 22,
+    gap: 6,
+  },
+  createAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
   section: { marginBottom: 28 },
   sectionTitle: { fontSize: 15, fontWeight: '600', marginBottom: 12 },
   input: {

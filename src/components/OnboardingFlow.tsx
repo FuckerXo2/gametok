@@ -22,13 +22,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle, Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
+
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
-import { uploadImage } from '../services/cloudinary';
+import { AvatarCreatorModal, AvatarConfig, getAvatarById } from './AvatarCreator';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -337,30 +337,16 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     );
   };
 
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
+  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
+  const [localAvatarImage, setLocalAvatarImage] = useState<any>(null);
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      // Upload to Cloudinary
-      setIsUploadingAvatar(true);
-      try {
-        const imageUrl = await uploadImage(result.assets[0].uri);
-        setAvatar(imageUrl);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch (error) {
-        console.log('Upload failed:', error);
-        Alert.alert('Upload failed', 'Could not upload image. Please try again.');
-      } finally {
-        setIsUploadingAvatar(false);
-      }
-    }
+  const handleAvatarCreated = (config: AvatarConfig, imageSource: any) => {
+    setAvatarConfig(config);
+    setLocalAvatarImage(imageSource);
+    setAvatar(`avatar-creator://${config.avatarId}?bg=${encodeURIComponent(config.backgroundColor)}`);
+    setShowAvatarCreator(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleProfileContinue = async () => {
@@ -687,23 +673,28 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
     <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={styles.profileScroll} keyboardShouldPersistTaps="handled">
         <Text style={[styles.stepTitle, { color: colors.text, textAlign: 'center' }]}>Set up your profile</Text>
-        <Text style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>Add a photo and tell us about yourself</Text>
+        <Text style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>Create your avatar and tell us about yourself</Text>
 
-        <TouchableOpacity style={styles.avatarPicker} onPress={pickImage} disabled={isUploadingAvatar}>
-          {isUploadingAvatar ? (
-            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <ActivityIndicator size="large" color="#FF8E53" />
+        <TouchableOpacity style={styles.avatarPicker} onPress={() => setShowAvatarCreator(true)}>
+          {localAvatarImage && avatarConfig ? (
+            <View style={[styles.avatarImage, { backgroundColor: avatarConfig.backgroundColor, overflow: 'hidden' }]}>
+              <Image source={localAvatarImage} style={styles.avatarImage} />
             </View>
-          ) : avatar ? (
-            <Image source={{ uri: avatar }} style={styles.avatarImage} />
           ) : (
             <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="camera" size={32} color={colors.textSecondary} />
+              <Ionicons name="sparkles" size={32} color={colors.textSecondary} />
             </View>
           )}
           <View style={[styles.avatarBadge, { backgroundColor: '#FF8E53' }]}>
             <Ionicons name="add" size={16} color="#fff" />
           </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.createAvatarBtnOnboarding}
+          onPress={() => setShowAvatarCreator(true)}
+        >
+          <Text style={styles.createAvatarTextOnboarding}>✨ Create Your Avatar</Text>
         </TouchableOpacity>
 
         <View style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -748,6 +739,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete, isAu
           <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip for now</Text>
         </TouchableOpacity>
       </View>
+
+      <AvatarCreatorModal
+        visible={showAvatarCreator}
+        onClose={() => setShowAvatarCreator(false)}
+        onSave={handleAvatarCreated}
+        initialConfig={avatarConfig || undefined}
+      />
     </KeyboardAvoidingView>
   );
 
@@ -1061,6 +1059,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#000',
+  },
+  createAvatarBtnOnboarding: {
+    marginBottom: 24,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,142,83,0.15)',
+  },
+  createAvatarTextOnboarding: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF8E53',
+    textAlign: 'center',
   },
   bioContainer: {
     height: 100,

@@ -22,7 +22,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { WebView } from 'react-native-webview';
 import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
-import { games } from '../services/api';
+import { games, users } from '../services/api';
+import { FindFriendsModal } from './FindFriendsModal';
+import { UserProfileModal } from './UserProfileModal';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen } from '../../App';
 import { isExpoGo } from '../services/ads';
@@ -41,7 +43,7 @@ const themes = {
     searchBg: '#f2f2f2',
     cardBg: '#f2f2f2',
     border: '#eeeeee',
-    green: '#22c55e', // Like the green color in screenshot
+    primary: '#a855f7', // Brand purple
   },
   dark: {
     bg: '#000000',
@@ -50,7 +52,7 @@ const themes = {
     searchBg: '#1f2937',
     cardBg: '#1f2937',
     border: '#333333',
-    green: '#22c55e',
+    primary: '#a855f7',
   },
 };
 
@@ -65,14 +67,7 @@ interface GameItem {
   _fakePlays?: number;
 }
 
-// Mock Friends Data
-const MOCK_FRIENDS = [
-  { id: '1', name: 'Mark Jay', avatar: 'https://i.pravatar.cc/150?img=33', tag: '🕹️ Habhab', isOnline: false },
-  { id: '2', name: 'Fofas', avatar: 'https://i.pravatar.cc/150?img=53', isOnline: true },
-  { id: '3', name: 'Abusoud', avatar: 'https://i.pravatar.cc/150?img=47', isOnline: false },
-  { id: '4', name: 'Rewa', avatar: 'https://i.pravatar.cc/150?img=68', isOnline: false },
-  { id: '5', name: 'Alex', avatar: 'https://i.pravatar.cc/150?img=11', isOnline: true },
-];
+// No more MOCK_FRIENDS
 
 const isExternalGame = (game: GameItem) => !!game.embedUrl;
 
@@ -328,10 +323,10 @@ const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; them
   </TouchableOpacity>
 );
 
-const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any }> = ({ friend, isAdd, theme }) => {
+const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void }> = ({ friend, isAdd, theme, onPress }) => {
   if (isAdd) {
     return (
-      <TouchableOpacity style={styles.friendCard}>
+      <TouchableOpacity style={styles.friendCard} onPress={onPress}>
         <View style={[styles.friendAvatarContainer, { backgroundColor: theme.searchBg }]}>
           <Ionicons name="person-add-outline" size={24} color={theme.text} />
         </View>
@@ -341,12 +336,12 @@ const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any }> = ({ f
   }
 
   return (
-    <TouchableOpacity style={styles.friendCard}>
+    <TouchableOpacity style={styles.friendCard} onPress={onPress}>
       <View>
         <Image source={{ uri: friend.avatar }} style={styles.friendAvatar} />
         {friend.isOnline && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
       </View>
-      <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.name}</Text>
+      <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.displayName || friend.username}</Text>
       {friend.tag && <Text style={[styles.friendTag, { color: theme.textSecondary }]} numberOfLines={1}>{friend.tag}</Text>}
     </TouchableOpacity>
   );
@@ -410,12 +405,13 @@ export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GameItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
 
   const [allGames, setAllGames] = useState<GameItem[]>([]);
   const [featuredGames, setFeaturedGames] = useState<Record<string, GameItem[]>>({});
@@ -425,6 +421,27 @@ export const ExploreScreen: React.FC = () => {
 
   const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
+
+  const [showFindFriends, setShowFindFriends] = useState(false);
+  const [showUserProfile, setShowUserProfile] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+
+  const [friends, setFriends] = useState<any[]>([]);
+
+  const loadFriends = useCallback(async () => {
+    if (isAuthenticated && user?.id) {
+      try {
+        const res = await users.following(user.id);
+        setFriends(res.following || []);
+      } catch (e) {
+        console.log('Friends error', e);
+      }
+    } else {
+      setFriends([]);
+    }
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => { loadFriends(); }, [loadFriends]);
 
   // Interstitial Ad
   const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
@@ -502,7 +519,9 @@ export const ExploreScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+
+    if (refresh) loadFriends();
+  }, [loadFriends]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -588,7 +607,7 @@ export const ExploreScreen: React.FC = () => {
         <View style={styles.headerIcons}>
           {/* Wheel/Roulette icon */}
           <TouchableOpacity style={styles.iconBtn}>
-            <Ionicons name="aperture" size={26} color={theme.green} />
+            <Ionicons name="aperture" size={26} color={theme.primary} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn}>
             <Ionicons name="notifications-outline" size={26} color={theme.text} />
@@ -601,6 +620,7 @@ export const ExploreScreen: React.FC = () => {
         <View style={[styles.searchBar, { backgroundColor: theme.searchBg }]}>
           <Image source={LoopsIcons.search} style={{ width: 20, height: 20, tintColor: theme.textSecondary }} />
           <TextInput
+            ref={searchInputRef}
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search games or friends"
             placeholderTextColor={theme.textSecondary}
@@ -618,12 +638,12 @@ export const ExploreScreen: React.FC = () => {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color={theme.green} size="large" />
+        <ActivityIndicator style={{ marginTop: 60 }} color={theme.primary} size="large" />
       ) : isSearchActive ? (
         // Search Results State
         <ScrollView contentContainerStyle={styles.searchResultsGrid}>
           {isSearching ? (
-            <ActivityIndicator color={theme.green} style={{ marginTop: 40 }} />
+            <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
           ) : searchResults.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="search-outline" size={48} color={theme.textSecondary} />
@@ -640,16 +660,34 @@ export const ExploreScreen: React.FC = () => {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor={theme.green} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor={theme.primary} />}
         >
           {/* Friends Section */}
           <SectionHeader title="Friends" onChevronPress={() => { }} theme={theme} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            <FriendCard isAdd theme={theme} />
-            {MOCK_FRIENDS.map(f => (
-              <FriendCard key={f.id} friend={f} theme={theme} />
-            ))}
-          </ScrollView>
+          {friends.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+              <FriendCard isAdd theme={theme} onPress={() => setShowFindFriends(true)} />
+              {friends.map(f => (
+                <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} />
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={[styles.emptyFriendsCard, { backgroundColor: theme.cardBg }]}>
+              <View style={[styles.emptyFriendsIconBg, { backgroundColor: theme.bg }]}>
+                <Ionicons name="game-controller-outline" size={28} color={theme.textSecondary} />
+              </View>
+              <View style={styles.emptyFriendsTextContainer}>
+                <Text style={[styles.emptyFriendsTitle, { color: theme.text }]}>It's quiet here...</Text>
+                <Text style={[styles.emptyFriendsSub, { color: theme.textSecondary }]}>Add friends to see what they're playing!</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.emptyFriendsBtn, { backgroundColor: theme.primary }]}
+                onPress={() => setShowFindFriends(true)}
+              >
+                <Text style={styles.emptyFriendsBtnText}>Find</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Continue Playing */}
           <SectionHeader title="Continue" onChevronPress={() => { }} theme={theme} />
@@ -805,6 +843,31 @@ export const ExploreScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </Modal>
+      <FindFriendsModal
+        visible={showFindFriends}
+        onClose={() => {
+          setShowFindFriends(false);
+          loadFriends();
+        }}
+        onOpenProfile={(user) => {
+          setSelectedUser(user);
+          setShowUserProfile(true);
+        }}
+      />
+
+      {/* User Profile Modal */}
+      <UserProfileModal
+        visible={showUserProfile}
+        onClose={() => setShowUserProfile(false)}
+        user={selectedUser ? {
+          id: selectedUser.id,
+          username: selectedUser.username,
+          avatar: selectedUser.avatar || null,
+          status: 'GAMETOK USER',
+          isOnline: false,
+          isFriend: false,
+        } : null}
+      />
     </View>
   );
 };
@@ -894,13 +957,54 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#22c55e',
+    backgroundColor: '#a855f7',
     borderWidth: 2,
   },
   friendName: {
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
+  },
+
+  // Empty Friends State
+  emptyFriendsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginHorizontal: 20,
+    borderRadius: 16,
+    gap: 16,
+  },
+  emptyFriendsIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyFriendsTextContainer: {
+    flex: 1,
+  },
+  emptyFriendsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  emptyFriendsSub: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  emptyFriendsBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyFriendsBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   friendTag: {
     fontSize: 11,

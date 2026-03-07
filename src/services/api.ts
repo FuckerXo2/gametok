@@ -138,6 +138,9 @@ export const users = {
   search: async (query: string) => {
     return request(`/users/search/${encodeURIComponent(query)}`);
   },
+  recommended: async () => {
+    return request(`/users/recommended`);
+  }
 };
 
 // Games API

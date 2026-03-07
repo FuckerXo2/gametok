@@ -78,7 +78,7 @@ const ScoreCompetitionGame: React.FC<ScoreCompetitionProps> = ({
         onGameFinished();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const formatTime = (seconds: number) => {
@@ -91,21 +91,21 @@ const ScoreCompetitionGame: React.FC<ScoreCompetitionProps> = ({
   if (gameEnded && opponentFinished) {
     return (
       <View style={styles.resultContainer}>
-        <View style={[styles.resultIcon, { backgroundColor: iWon ? '#22c55e' : isDraw ? '#f59e0b' : '#ef4444' }]}>
-          <Ionicons 
-            name={iWon ? 'trophy' : isDraw ? 'remove' : 'close'} 
-            size={48} 
-            color="#fff" 
+        <View style={[styles.resultIcon, { backgroundColor: iWon ? '#a855f7' : isDraw ? '#FFC107' : '#ef4444' }]}>
+          <Ionicons
+            name={iWon ? 'trophy' : isDraw ? 'remove' : 'close'}
+            size={48}
+            color="#fff"
           />
         </View>
         <Text style={[styles.resultTitle, { color: colors.text }]}>
           {iWon ? 'You Won!' : isDraw ? "It's a Draw!" : 'You Lost'}
         </Text>
-        
+
         <View style={styles.finalScores}>
           <View style={styles.finalScoreBox}>
             <Text style={[styles.finalScoreLabel, { color: colors.textSecondary }]}>Your Score</Text>
-            <Text style={[styles.finalScoreValue, { color: '#22c55e' }]}>{myScore}</Text>
+            <Text style={[styles.finalScoreValue, { color: '#a855f7' }]}>{myScore}</Text>
           </View>
           <Text style={[styles.vsText, { color: colors.textSecondary }]}>vs</Text>
           <View style={styles.finalScoreBox}>
@@ -123,9 +123,9 @@ const ScoreCompetitionGame: React.FC<ScoreCompetitionProps> = ({
       <View style={[styles.scoreHeader, { backgroundColor: colors.surface }]}>
         <View style={styles.scoreBox}>
           <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>You</Text>
-          <Text style={[styles.scoreValue, { color: '#22c55e' }]}>{myScore}</Text>
+          <Text style={[styles.scoreValue, { color: '#a855f7' }]}>{myScore}</Text>
         </View>
-        
+
         {gameState.timeLimit && (
           <View style={styles.timerBox}>
             <Ionicons name="time-outline" size={20} color={timeLeft < 10 ? '#ef4444' : colors.text} />
@@ -134,7 +134,7 @@ const ScoreCompetitionGame: React.FC<ScoreCompetitionProps> = ({
             </Text>
           </View>
         )}
-        
+
         <View style={styles.scoreBox}>
           <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>Opponent</Text>
           <Text style={[styles.scoreValue, { color: '#ef4444' }]}>
@@ -151,7 +151,7 @@ const ScoreCompetitionGame: React.FC<ScoreCompetitionProps> = ({
             <Text style={[styles.loadingText, { color: colors.text }]}>Loading {gameName}...</Text>
           </View>
         )}
-        
+
         <WebView
           ref={webViewRef}
           source={{ uri: gameUrl }}

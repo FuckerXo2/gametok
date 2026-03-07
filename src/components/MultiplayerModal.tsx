@@ -103,8 +103,8 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
     if (gameOver) {
       setModalState('finished');
       Haptics.notificationAsync(
-        gameOver.winner === user?.id 
-          ? Haptics.NotificationFeedbackType.Success 
+        gameOver.winner === user?.id
+          ? Haptics.NotificationFeedbackType.Success
           : Haptics.NotificationFeedbackType.Error
       );
     }
@@ -147,7 +147,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
       await Share.share({
         message: `Join my ${gameName} game on GameTok! Room code: ${roomCode}`,
       });
-    } catch (e) {}
+    } catch (e) { }
   }, [gameName, roomCode]);
 
   const handleMove = useCallback((move: any) => {
@@ -221,7 +221,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
         <Text style={[styles.playersSectionTitle, { color: colors.textSecondary }]}>
           Players ({room?.players.length || 0}/{room?.maxPlayers || 2})
         </Text>
-        
+
         {room?.players.map((player, index) => (
           <View key={player.id} style={[styles.playerRow, { backgroundColor: colors.surface }]}>
             <Avatar uri={null} size={44} />
@@ -229,12 +229,12 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
               <Text style={[styles.playerName, { color: colors.text }]}>
                 {player.id === user?.id ? 'You' : `Player ${index + 1}`}
               </Text>
-              <Text style={[styles.playerStatus, { color: player.ready ? '#22c55e' : colors.textSecondary }]}>
+              <Text style={[styles.playerStatus, { color: player.ready ? '#a855f7' : colors.textSecondary }]}>
                 {player.ready ? 'Ready' : 'Not Ready'}
               </Text>
             </View>
             {player.ready && (
-              <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
+              <Ionicons name="checkmark-circle" size={24} color="#a855f7" />
             )}
           </View>
         ))}
@@ -253,7 +253,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
 
       {room?.players.length === room?.maxPlayers && (
         <TouchableOpacity style={styles.readyBtn} onPress={handleReady} activeOpacity={0.8}>
-          <LinearGradient colors={['#22c55e', '#16a34a']} style={styles.readyBtnGradient}>
+          <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.readyBtnGradient}>
             <Text style={styles.readyBtnText}>I'm Ready!</Text>
           </LinearGradient>
         </TouchableOpacity>
@@ -271,9 +271,9 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
       <Text style={[styles.matchmakingSubtitle, { color: colors.textSecondary }]}>
         Looking for players in your skill range
       </Text>
-      
-      <TouchableOpacity 
-        style={[styles.cancelBtn, { borderColor: colors.border }]} 
+
+      <TouchableOpacity
+        style={[styles.cancelBtn, { borderColor: colors.border }]}
         onPress={handleClose}
         activeOpacity={0.8}
       >
@@ -343,7 +343,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
     if (gameId === 'chess') {
       return (
         <View style={styles.gameContainer}>
-          <View style={[styles.turnIndicator, { backgroundColor: isMyTurn ? '#22c55e' : colors.surface }]}>
+          <View style={[styles.turnIndicator, { backgroundColor: isMyTurn ? '#a855f7' : colors.surface }]}>
             <Text style={styles.turnText}>
               {isMyTurn ? "Your Turn" : "Opponent's Turn"}
             </Text>
@@ -362,7 +362,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
     return (
       <View style={styles.gameContainer}>
         {/* Turn indicator */}
-        <View style={[styles.turnIndicator, { backgroundColor: isMyTurn ? '#22c55e' : colors.surface }]}>
+        <View style={[styles.turnIndicator, { backgroundColor: isMyTurn ? '#a855f7' : colors.surface }]}>
           <Text style={styles.turnText}>
             {isMyTurn ? "Your Turn" : "Opponent's Turn"}
           </Text>
@@ -387,28 +387,28 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
 
     return (
       <View style={styles.finishedContainer}>
-        <View style={[styles.resultIcon, { backgroundColor: didWin ? '#22c55e' : isDraw ? '#f59e0b' : '#ef4444' }]}>
-          <Ionicons 
-            name={didWin ? 'trophy' : isDraw ? 'remove' : 'close'} 
-            size={48} 
-            color="#fff" 
+        <View style={[styles.resultIcon, { backgroundColor: didWin ? '#a855f7' : isDraw ? '#FFC107' : '#ef4444' }]}>
+          <Ionicons
+            name={didWin ? 'trophy' : isDraw ? 'remove' : 'close'}
+            size={48}
+            color="#fff"
           />
         </View>
-        
+
         <Text style={[styles.resultTitle, { color: colors.text }]}>
           {didWin ? 'You Won!' : isDraw ? "It's a Draw!" : 'You Lost'}
         </Text>
-        
+
         <Text style={[styles.resultSubtitle, { color: colors.textSecondary }]}>
-          {gameOver?.reason === 'opponent_left' ? 'Opponent left the game' : 
-           didWin ? 'Great game!' : isDraw ? 'Well played!' : 'Better luck next time!'}
+          {gameOver?.reason === 'opponent_left' ? 'Opponent left the game' :
+            didWin ? 'Great game!' : isDraw ? 'Well played!' : 'Better luck next time!'}
         </Text>
 
         {gameOver?.finalScores && (
           <View style={styles.finalScoresRow}>
             <View style={styles.finalScoreItem}>
               <Text style={[styles.finalScoreLabel, { color: colors.textSecondary }]}>You</Text>
-              <Text style={[styles.finalScoreValue, { color: '#22c55e' }]}>
+              <Text style={[styles.finalScoreValue, { color: '#a855f7' }]}>
                 {gameOver.finalScores[user?.id || ''] || 0}
               </Text>
             </View>
@@ -430,8 +430,8 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.exitBtn, { borderColor: colors.border }]} 
+          <TouchableOpacity
+            style={[styles.exitBtn, { borderColor: colors.border }]}
             onPress={handleClose}
             activeOpacity={0.8}
           >

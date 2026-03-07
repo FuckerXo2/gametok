@@ -39,7 +39,7 @@ export const RewardPopup: React.FC<RewardPopupProps> = ({
   useEffect(() => {
     if (visible) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
+
       // Reset animations
       scaleAnim.setValue(0);
       coinScaleAnim.setValue(0);
@@ -110,13 +110,13 @@ export const RewardPopup: React.FC<RewardPopupProps> = ({
     <Modal visible={visible} transparent animationType="none">
       <View style={styles.overlay}>
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
-        
+
         <Animated.View style={[styles.popup, { transform: [{ scale: scaleAnim }] }]}>
           <LinearGradient
             colors={['#1a1a2e', '#16213e', '#0f3460']}
             style={StyleSheet.absoluteFill}
           />
-          
+
           {/* Shimmer effect */}
           <Animated.View style={[styles.shimmer, { transform: [{ translateX: shimmerTranslate }] }]}>
             <LinearGradient
@@ -135,11 +135,11 @@ export const RewardPopup: React.FC<RewardPopupProps> = ({
           {/* Coin icon */}
           <Animated.View style={[
             styles.coinContainer,
-            { 
+            {
               transform: [
                 { scale: coinScaleAnim },
                 { rotate: coinRotate }
-              ] 
+              ]
             }
           ]}>
             <LinearGradient
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   plus: {
-    color: '#22c55e',
+    color: '#a855f7',
     fontSize: 32,
     fontWeight: '800',
     marginRight: 4,

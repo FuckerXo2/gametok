@@ -54,12 +54,12 @@ const RockPaperScissorsGame: React.FC<RPSGameProps> = ({
     if (myChoice) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setSelected(choice);
-    
+
     Animated.sequence([
       Animated.timing(scaleAnim, { toValue: 1.2, duration: 100, useNativeDriver: true }),
       Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
-    
+
     onMove({ choice });
   };
 
@@ -80,7 +80,7 @@ const RockPaperScissorsGame: React.FC<RPSGameProps> = ({
       <View style={styles.scoresRow}>
         <View style={styles.scoreBox}>
           <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>You</Text>
-          <Text style={[styles.scoreValue, { color: '#22c55e' }]}>{gameState.scores[myId] || 0}</Text>
+          <Text style={[styles.scoreValue, { color: '#a855f7' }]}>{gameState.scores[myId] || 0}</Text>
         </View>
         <View style={styles.roundBox}>
           <Text style={[styles.roundLabel, { color: colors.textSecondary }]}>Round</Text>
@@ -96,8 +96,8 @@ const RockPaperScissorsGame: React.FC<RPSGameProps> = ({
       {showResult && bothChose && (
         <View style={styles.resultContainer}>
           <View style={styles.choicesReveal}>
-            <View style={[styles.revealBox, { backgroundColor: '#22c55e20' }]}>
-              <Ionicons name={CHOICES.find(c => c.id === myChoice)?.icon as any} size={40} color="#22c55e" />
+            <View style={[styles.revealBox, { backgroundColor: '#a855f720' }]}>
+              <Ionicons name={CHOICES.find(c => c.id === myChoice)?.icon as any} size={40} color="#a855f7" />
             </View>
             <Text style={[styles.vsText, { color: colors.text }]}>VS</Text>
             <View style={[styles.revealBox, { backgroundColor: '#ef444420' }]}>
@@ -128,13 +128,13 @@ const RockPaperScissorsGame: React.FC<RPSGameProps> = ({
                 disabled={!!myChoice}
                 activeOpacity={0.7}
               >
-                <Ionicons 
-                  name={choice.icon as any} 
-                  size={48} 
-                  color={selected === choice.id ? '#667eea' : colors.text} 
+                <Ionicons
+                  name={choice.icon as any}
+                  size={48}
+                  color={selected === choice.id ? '#667eea' : colors.text}
                 />
                 <Text style={[
-                  styles.choiceLabel, 
+                  styles.choiceLabel,
                   { color: selected === choice.id ? '#667eea' : colors.text }
                 ]}>
                   {choice.label}

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
   TouchableOpacity,
   TextInput,
   FlatList,
@@ -83,20 +83,20 @@ const ActivityCard: React.FC<{
         <View style={[styles.activityCardBg, { backgroundColor: item.game.color || '#a855f7' }]} />
       )}
       <LinearGradient colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']} style={styles.activityCardGradient} />
-      
+
       <TouchableOpacity style={styles.activityUserRow} onPress={onUserPress} activeOpacity={0.8}>
         <Avatar uri={item.user.avatar} size={28} />
         <Text style={styles.activityUsername} numberOfLines={1}>{item.user.displayName || item.user.username}</Text>
         {isRecent && <View style={styles.liveDot} />}
       </TouchableOpacity>
-      
+
       {item.score > 0 && (
         <View style={styles.scoreBadge}>
           <Ionicons name="trophy" size={10} color="#ffd60a" />
           <Text style={styles.scoreText}>{item.score.toLocaleString()}</Text>
         </View>
       )}
-      
+
       <Text style={styles.activityGameName} numberOfLines={1}>{item.game.name}</Text>
     </TouchableOpacity>
   );
@@ -108,7 +108,7 @@ export const DiscoverScreen: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
   const gameWebViewRef = useRef<WebView>(null);
-  
+
   const [activeTab, setActiveTab] = useState<'trending' | 'following'>('trending');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
@@ -119,23 +119,23 @@ export const DiscoverScreen: React.FC = () => {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  
+
   const [globalActivity, setGlobalActivity] = useState<ActivityItem[]>([]);
   const [friendsActivity, setFriendsActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const [playingGame, setPlayingGame] = useState<PlayingGame | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
 
   const fetchActivity = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
-    
+
     try {
       const globalData = await feed.global(20);
       setGlobalActivity(globalData.activity || []);
-      
+
       if (isAuthenticated) {
         const friendsData = await feed.activity(20);
         setFriendsActivity(friendsData.activity || []);
@@ -310,7 +310,7 @@ export const DiscoverScreen: React.FC = () => {
 
       {showRequests && (
         <View style={StyleSheet.absoluteFill}>
-          <FriendRequestsScreen visible={showRequests} onClose={() => { setShowRequests(false); fetchPendingCount(); }} onOpenChat={() => {}} />
+          <FriendRequestsScreen visible={showRequests} onClose={() => { setShowRequests(false); fetchPendingCount(); }} onOpenChat={() => { }} />
         </View>
       )}
 
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   activityCardGradient: { ...StyleSheet.absoluteFillObject },
   activityUserRow: { flexDirection: 'row', alignItems: 'center', gap: 6, position: 'absolute', top: 8, left: 8, right: 8 },
   activityUsername: { color: '#fff', fontSize: 11, fontWeight: '600', flex: 1 },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#a855f7' },
   scoreBadge: { position: 'absolute', bottom: 28, left: 8, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   scoreText: { color: '#fff', fontSize: 10, fontWeight: '600' },
   activityGameName: { position: 'absolute', bottom: 8, left: 8, right: 8, color: '#fff', fontSize: 12, fontWeight: '700' },
