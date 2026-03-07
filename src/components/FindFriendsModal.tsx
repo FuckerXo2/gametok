@@ -6,10 +6,10 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     FlatList,
-    Modal,
     SafeAreaView,
     useColorScheme,
 } from 'react-native';
+import { SlideRightModal } from './SlideRightModal';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import { users } from '../services/api';
@@ -108,12 +108,12 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
     };
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <SlideRightModal visible={visible} onClose={onClose}>
             <SafeAreaView style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
                 {/* Header */}
                 <View style={[styles.header, { borderBottomColor: theme.border }]}>
                     <TouchableOpacity onPress={onClose} style={styles.backBtn}>
-                        <Ionicons name="chevron-down" size={28} color={theme.text} />
+                        <Ionicons name="chevron-back" size={28} color={theme.text} />
                     </TouchableOpacity>
                     <Text style={[styles.headerTitle, { color: theme.text }]}>Find Friends</Text>
                     <View style={styles.backBtn} />
@@ -203,7 +203,7 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
                     )}
                 </View>
             </SafeAreaView>
-        </Modal>
+        </SlideRightModal>
     );
 };
 

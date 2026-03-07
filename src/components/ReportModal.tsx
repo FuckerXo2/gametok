@@ -3,12 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
   TextInput,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SlideRightModal } from './SlideRightModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { moderation } from '../services/api';
@@ -87,17 +87,18 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+    <SlideRightModal visible={visible} onClose={handleClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.dismiss} onPress={handleClose} activeOpacity={1} />
         <View style={[styles.container, { backgroundColor: colors.surface }]}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={handleClose}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </TouchableOpacity>
             <Text style={[styles.title, { color: colors.text }]}>
               {showBlockOption ? 'Block User?' : `Report @${username}`}
             </Text>
-            <TouchableOpacity onPress={handleClose}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
+            <View style={{ width: 24 }} />
           </View>
 
           {showBlockOption ? (
@@ -184,7 +185,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           )}
         </View>
       </View>
-    </Modal>
+    </SlideRightModal>
   );
 };
 

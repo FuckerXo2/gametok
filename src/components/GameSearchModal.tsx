@@ -6,8 +6,8 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Modal,
 } from 'react-native';
+import { SlideRightModal } from './SlideRightModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -32,10 +32,10 @@ interface GameSearchModalProps {
   onSelectGame: (gameId: string) => void;
 }
 
-export const GameSearchModal: React.FC<GameSearchModalProps> = ({ 
-  visible, 
+export const GameSearchModal: React.FC<GameSearchModalProps> = ({
+  visible,
   onClose,
-  onSelectGame 
+  onSelectGame
 }) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -52,12 +52,12 @@ export const GameSearchModal: React.FC<GameSearchModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <SlideRightModal visible={visible} onClose={onClose}>
       <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Ionicons name="close" size={28} color={colors.text} />
+            <Ionicons name="chevron-back" size={28} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Games</Text>
           <View style={{ width: 28 }} />
@@ -87,7 +87,7 @@ export const GameSearchModal: React.FC<GameSearchModalProps> = ({
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Categories</Text>
               <View style={styles.categoriesGrid}>
                 {CATEGORIES.map((cat) => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     key={cat.id}
                     style={[styles.categoryCard, { backgroundColor: colors.surface }]}
                   >
@@ -107,7 +107,7 @@ export const GameSearchModal: React.FC<GameSearchModalProps> = ({
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               {searchQuery.length > 0 ? 'Results' : 'All Games'}
             </Text>
-            
+
             {filteredGames.length === 0 ? (
               <Text style={[styles.noResults, { color: colors.textSecondary }]}>
                 No games found for "{searchQuery}"
@@ -128,7 +128,7 @@ export const GameSearchModal: React.FC<GameSearchModalProps> = ({
                       {game.plays} plays
                     </Text>
                   </View>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.playBtn, { backgroundColor: colors.primary }]}
                     onPress={() => handleSelectGame(game.id)}
                   >
@@ -142,7 +142,7 @@ export const GameSearchModal: React.FC<GameSearchModalProps> = ({
           <View style={{ height: 100 }} />
         </ScrollView>
       </View>
-    </Modal>
+    </SlideRightModal>
   );
 };
 

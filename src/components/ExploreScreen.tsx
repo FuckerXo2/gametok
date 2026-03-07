@@ -26,6 +26,7 @@ import { games, users } from '../services/api';
 import { FindFriendsModal } from './FindFriendsModal';
 import { UserProfileModal } from './UserProfileModal';
 import { Avatar } from './Avatar';
+import { CategoryModal } from './CategoryModal';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useAuthScreen } from '../../App';
@@ -428,6 +429,7 @@ export const ExploreScreen: React.FC = () => {
   const [showFindFriends, setShowFindFriends] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [categoryModal, setCategoryModal] = useState<{ title: string; category: string } | null>(null);
 
   const [friends, setFriends] = useState<any[]>([]);
 
@@ -735,7 +737,7 @@ export const ExploreScreen: React.FC = () => {
           </ScrollView>
 
           {/* Recommended For You */}
-          <SectionHeader title="Recommended For You" onChevronPress={() => { }} theme={theme} />
+          <SectionHeader title="Recommended For You" onChevronPress={() => setCategoryModal({ title: "Recommended For You", category: "recommended" })} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {(featuredGames.recommended || []).map((g, idx) => (
               <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'like'} />
@@ -743,7 +745,7 @@ export const ExploreScreen: React.FC = () => {
           </ScrollView>
 
           {/* Hot Games */}
-          <SectionHeader title="Hot Games" onChevronPress={() => { }} theme={theme} />
+          <SectionHeader title="Hot Games" onChevronPress={() => setCategoryModal({ title: "Hot Games", category: "hot" })} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {(featuredGames.hot || []).map((g, idx) => (
               <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'hot'} />
@@ -753,7 +755,7 @@ export const ExploreScreen: React.FC = () => {
           {/* Action & Adventure */}
           {featuredGames.action?.length > 0 && (
             <>
-              <SectionHeader title="Action & Adventure" onChevronPress={() => { }} theme={theme} />
+              <SectionHeader title="Action & Adventure" onChevronPress={() => setCategoryModal({ title: "Action & Adventure", category: "action" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.action || []).map((g, idx) => (
                   <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
@@ -765,7 +767,7 @@ export const ExploreScreen: React.FC = () => {
           {/* Brain Teasers */}
           {featuredGames.puzzle?.length > 0 && (
             <>
-              <SectionHeader title="Brain Teasers" onChevronPress={() => { }} theme={theme} />
+              <SectionHeader title="Brain Teasers" onChevronPress={() => setCategoryModal({ title: "Brain Teasers", category: "puzzle" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.puzzle || []).map((g, idx) => (
                   <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
@@ -777,7 +779,7 @@ export const ExploreScreen: React.FC = () => {
           {/* Racing & Driving */}
           {featuredGames.racing?.length > 0 && (
             <>
-              <SectionHeader title="Racing & Driving" onChevronPress={() => { }} theme={theme} />
+              <SectionHeader title="Racing & Driving" onChevronPress={() => setCategoryModal({ title: "Racing & Driving", category: "racing" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.racing || []).map((g, idx) => (
                   <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
@@ -789,7 +791,7 @@ export const ExploreScreen: React.FC = () => {
           {/* Arcade Classics */}
           {featuredGames.arcade?.length > 0 && (
             <>
-              <SectionHeader title="Arcade Classics" onChevronPress={() => { }} theme={theme} />
+              <SectionHeader title="Arcade Classics" onChevronPress={() => setCategoryModal({ title: "Arcade Classics", category: "arcade" })} theme={theme} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {(featuredGames.arcade || []).map((g, idx) => (
                   <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} />
@@ -799,7 +801,7 @@ export const ExploreScreen: React.FC = () => {
           )}
 
           {/* New Releases */}
-          <SectionHeader title="New Releases" onChevronPress={() => { }} theme={theme} />
+          <SectionHeader title="New Releases" onChevronPress={() => setCategoryModal({ title: "New Releases", category: "new" })} theme={theme} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
             {(featuredGames.new || []).map((g, idx) => (
               <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'new'} />
@@ -904,6 +906,14 @@ export const ExploreScreen: React.FC = () => {
           isOnline: false,
           isFriend: false,
         } : null}
+      />
+
+      <CategoryModal
+        visible={!!categoryModal}
+        onClose={() => setCategoryModal(null)}
+        title={categoryModal?.title || ''}
+        games={categoryModal ? featuredGames[categoryModal.category] || [] : []}
+        onPlayGame={playGame}
       />
     </View>
   );

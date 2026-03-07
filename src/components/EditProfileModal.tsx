@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Modal,
   TextInput,
   ScrollView,
   KeyboardAvoidingView,
@@ -12,6 +11,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
+import { SlideRightModal } from './SlideRightModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -102,7 +102,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <SlideRightModal visible={visible} onClose={onClose}>
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -110,7 +110,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
-            <Text style={[styles.headerBtnText, { color: colors.text }]}>Cancel</Text>
+            <Ionicons name="chevron-back" size={28} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
           <TouchableOpacity onPress={handleSave} style={styles.headerBtn} disabled={isSaving}>
@@ -175,7 +175,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
         onSave={handleAvatarCreated}
         initialConfig={avatarConfig || undefined}
       />
-    </Modal>
+    </SlideRightModal>
   );
 };
 

@@ -3,12 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
   ScrollView,
   Dimensions,
   Image,
 } from 'react-native';
+import { SlideRightModal } from './SlideRightModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -52,8 +52,8 @@ const getAchievementIcon = (iconName: string): { name: string; family: 'ionicons
   return iconMap[iconName] || { name: 'ribbon', family: 'ionicons' };
 };
 
-const AchievementIcon: React.FC<{ icon: string; size?: number; color?: string }> = ({ 
-  icon, size = 28, color = LoopsColors.white 
+const AchievementIcon: React.FC<{ icon: string; size?: number; color?: string }> = ({
+  icon, size = 28, color = LoopsColors.white
 }) => {
   const iconData = getAchievementIcon(icon);
   if (iconData.family === 'material') {
@@ -71,13 +71,13 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   const unlockedCount = achievements.filter(a => a.unlocked).length;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <SlideRightModal visible={visible} onClose={onClose}>
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <LinearGradient
           colors={[LoopsColors.darkerBlack, '#0f0f23']}
           style={StyleSheet.absoluteFill}
         />
-        
+
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
@@ -96,31 +96,31 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
               colors={[LoopsColors.color6, LoopsColors.color5]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={[styles.progressBarFill, { 
-                width: `${(unlockedCount / Math.max(achievements.length, 1)) * 100}%` 
+              style={[styles.progressBarFill, {
+                width: `${(unlockedCount / Math.max(achievements.length, 1)) * 100}%`
               }]}
             />
           </View>
         </View>
 
-        <ScrollView 
+        <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           {achievements.map((achievement) => (
-            <View 
-              key={achievement.id} 
+            <View
+              key={achievement.id}
               style={[styles.achievementRow, !achievement.unlocked && styles.achievementLocked]}
             >
               <View style={[
-                styles.iconWrap, 
+                styles.iconWrap,
                 achievement.unlocked && styles.iconWrapUnlocked
               ]}>
-                <AchievementIcon 
-                  icon={achievement.icon} 
-                  size={28} 
-                  color={achievement.unlocked ? LoopsColors.color6 : LoopsColors.white30} 
+                <AchievementIcon
+                  icon={achievement.icon}
+                  size={28}
+                  color={achievement.unlocked ? LoopsColors.color6 : LoopsColors.white30}
                 />
                 {achievement.unlocked && (
                   <View style={styles.checkBadge}>
@@ -128,7 +128,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   </View>
                 )}
               </View>
-              
+
               <View style={styles.achievementInfo}>
                 <Text style={[
                   styles.achievementName,
@@ -140,14 +140,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   {achievement.description || 'Complete this achievement to earn rewards'}
                 </Text>
               </View>
-              
+
               <View style={styles.rewardBadge}>
                 <Text style={styles.rewardText}>+{achievement.reward_points}</Text>
                 <FontAwesome5 name="coins" size={12} color={LoopsColors.coinGold} />
               </View>
             </View>
           ))}
-          
+
           {achievements.length === 0 && (
             <View style={styles.emptyState}>
               <Ionicons name="trophy-outline" size={64} color="rgba(255,255,255,0.2)" />
@@ -156,7 +156,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
           )}
         </ScrollView>
       </View>
-    </Modal>
+    </SlideRightModal>
   );
 };
 

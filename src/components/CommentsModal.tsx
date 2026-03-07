@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
   FlatList,
   Image,
@@ -13,6 +12,7 @@ import {
   ActivityIndicator,
   Keyboard,
 } from 'react-native';
+import { SlideRightModal } from './SlideRightModal';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -151,7 +151,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   }, [visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <SlideRightModal visible={visible} onClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -161,13 +161,12 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
         <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.handle} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtnHeader}>
+              <Ionicons name="chevron-back" size={28} color={colors.text} />
+            </TouchableOpacity>
             <Text style={[styles.title, { color: colors.text }]}>
               {commentsList.length} {commentsList.length === 1 ? 'comment' : 'comments'}
             </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
           </View>
 
           {/* Comments List */}
@@ -239,7 +238,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
           </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </SlideRightModal>
   );
 };
 
@@ -266,22 +265,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: '#3A3A3C',
   },
-  handle: {
-    width: 36,
-    height: 4,
-    backgroundColor: '#5A5A5E',
-    borderRadius: 2,
-    marginBottom: 12,
-  },
   title: {
     fontSize: 15,
     fontWeight: '600',
     color: '#fff',
   },
-  closeBtn: {
+  closeBtnHeader: {
     position: 'absolute',
-    right: 16,
-    top: 20,
+    left: 16,
+    top: 10,
   },
   listContainer: {
     flex: 1,
