@@ -27,6 +27,7 @@ import { FindFriendsModal } from './FindFriendsModal';
 import { UserProfileModal } from './UserProfileModal';
 import { Avatar } from './Avatar';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useAuthScreen } from '../../App';
 import { isExpoGo } from '../services/ads';
 import { GameLoadingScreen } from './GameLoadingScreen';
@@ -324,7 +325,7 @@ const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; them
   </TouchableOpacity>
 );
 
-const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void }> = ({ friend, isAdd, theme, onPress }) => {
+const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void; onlineUsers?: string[] }> = ({ friend, isAdd, theme, onPress, onlineUsers }) => {
   if (isAdd) {
     return (
       <TouchableOpacity style={styles.friendCard} onPress={onPress}>
@@ -339,8 +340,8 @@ const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?
   return (
     <TouchableOpacity style={styles.friendCard} onPress={onPress}>
       <View>
-        <Avatar uri={friend.avatar} size={styles.friendAvatar.width} style={styles.friendAvatar} />
-        {friend.isOnline && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
+        <Avatar uri={friend.avatar} size={64} style={styles.friendAvatar} />
+        {onlineUsers?.includes(friend.id) && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
       </View>
       <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.displayName || friend.username}</Text>
       {friend.tag && <Text style={[styles.friendTag, { color: theme.textSecondary }]} numberOfLines={1}>{friend.tag}</Text>}
@@ -408,9 +409,10 @@ export const ExploreScreen: React.FC = () => {
   const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { onlineUsers } = useSocket();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<GameItem[]>([]);
+
   const [isSearching, setIsSearching] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
@@ -429,11 +431,15 @@ export const ExploreScreen: React.FC = () => {
 
   const [friends, setFriends] = useState<any[]>([]);
 
+  const [searchGames, setSearchGames] = useState<GameItem[]>([]);
+  const [searchUsers, setSearchUsers] = useState<any[]>([]);
+
   const loadFriends = useCallback(async () => {
     if (isAuthenticated && user?.id) {
       try {
         const res = await users.following(user.id);
-        setFriends(Array.isArray(res) ? res : []);
+        const list = Array.isArray(res) ? res : [];
+        setFriends(list);
       } catch (e) {
         console.log('Friends error', e);
       }
@@ -533,21 +539,28 @@ export const ExploreScreen: React.FC = () => {
       setIsSearching(true);
       timeout = setTimeout(async () => {
         try {
-          const res = await games.search(searchQuery);
-          let results = (res.games || []).map((g: GameItem) => ({
+          const [resGames, resUsers] = await Promise.all([
+            games.search(searchQuery).catch(() => ({ games: [] })),
+            users.search(searchQuery).catch(() => [])
+          ]);
+
+          let gameResults = (resGames.games || []).map((g: GameItem) => ({
             ...g,
             thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
           }));
-          setSearchResults(results);
+          setSearchGames(gameResults);
+          setSearchUsers(Array.isArray(resUsers) ? resUsers : []);
         } catch (e) {
           // Fallback
           const q = searchQuery.toLowerCase();
-          setSearchResults(allGames.filter(g => g.name.toLowerCase().includes(q)));
+          setSearchGames(allGames.filter(g => g.name.toLowerCase().includes(q)));
+          setSearchUsers([]);
         }
         setIsSearching(false);
       }, 300);
     } else {
-      setSearchResults([]);
+      setSearchGames([]);
+      setSearchUsers([]);
       setIsSearching(false);
     }
     return () => clearTimeout(timeout);
@@ -642,18 +655,36 @@ export const ExploreScreen: React.FC = () => {
         <ActivityIndicator style={{ marginTop: 60 }} color={theme.primary} size="large" />
       ) : isSearchActive ? (
         // Search Results State
-        <ScrollView contentContainerStyle={styles.searchResultsGrid}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
           {isSearching ? (
             <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
-          ) : searchResults.length === 0 ? (
+          ) : searchGames.length === 0 && searchUsers.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="search-outline" size={48} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No games found</Text>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No results found</Text>
             </View>
           ) : (
-            searchResults.map(g => (
-              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} />
-            ))
+            <>
+              {searchUsers.length > 0 && (
+                <View style={{ marginBottom: 20 }}>
+                  <SectionHeader title="People" theme={theme} />
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                    {searchUsers.map(u => (
+                      <FriendCard key={u.id} friend={u} theme={theme} onPress={() => { setSelectedUser(u); setShowUserProfile(true); }} onlineUsers={onlineUsers} />
+                    ))}      </ScrollView>
+                </View>
+              )}
+              {searchGames.length > 0 && (
+                <View style={{ marginBottom: 20 }}>
+                  <SectionHeader title="Games" theme={theme} />
+                  <View style={styles.searchResultsGrid}>
+                    {searchGames.map(g => (
+                      <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} />
+                    ))}
+                  </View>
+                </View>
+              )}
+            </>
           )}
         </ScrollView>
       ) : (
@@ -669,7 +700,7 @@ export const ExploreScreen: React.FC = () => {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
               <FriendCard isAdd theme={theme} onPress={() => setShowFindFriends(true)} />
               {friends.map(f => (
-                <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} />
+                <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} onlineUsers={onlineUsers} />
               ))}
             </ScrollView>
           ) : (
@@ -958,7 +989,7 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#a855f7',
+    backgroundColor: '#22c55e',
     borderWidth: 2,
   },
   friendName: {

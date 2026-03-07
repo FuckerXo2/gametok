@@ -22,6 +22,8 @@ import { useTheme } from '../context/ThemeContext';
 import { messages as messagesApi, users, moderation } from '../services/api';
 import { Avatar } from './Avatar';
 import { ReportModal } from './ReportModal';
+import { FollowListModal } from './FollowListModal';
+import { SlideRightModal } from './SlideRightModal';
 
 interface UserProfile {
   id: string;
@@ -67,12 +69,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [showChat, setShowChat] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [userStats, setUserStats] = useState<{ followers: number; following: number; level: number; streak: number } | null>(null);
+  const [userGames, setUserGames] = useState<any[]>([]);
+  const [loadingGames, setLoadingGames] = useState(false);
+  const [loadingFollow, setLoadingFollow] = useState(true);
+  const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
+  const [nestedUser, setNestedUser] = useState<any>(null);
 
   // Update isAdded when user changes or modal opens
   React.useEffect(() => {
     if (user) {
       setIsAdded(user.isFriend);
       setIsMutual(false);
+      setLoadingFollow(true);
     }
   }, [user?.id, user?.isFriend, visible]);
 
@@ -89,7 +97,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             streak: res.stats.streak || 0,
           });
         }
-      }).catch(() => { });
+        // Update follow status from backend
+        if (res?.isFollowing !== undefined) {
+          setIsAdded(res.isFollowing);
+          setIsMutual(res.isMutual || false);
+        }
+      }).catch(() => { }).finally(() => setLoadingFollow(false));
+
+      setLoadingGames(true);
+      import('../services/api').then(({ likes }) => {
+        likes.userLikes(user.id).then((res: any) => {
+          if (res?.games) {
+            setUserGames(res.games);
+          }
+        }).catch(() => { }).finally(() => setLoadingGames(false));
+      });
     }
   }, [visible, user?.id]);
 
@@ -127,15 +149,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   };
 
   const showOptions = () => {
-    Alert.alert(
-      'Options',
-      '',
-      [
-        { text: 'Report User', onPress: handleReport },
-        { text: 'Block User', style: 'destructive', onPress: handleBlock },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    const options: any = [
+      { text: 'Report User', onPress: handleReport },
+      { text: 'Block User', style: 'destructive', onPress: handleBlock },
+    ];
+
+    if (isAdded) {
+      options.unshift({
+        text: `Unfollow @${user?.username}`,
+        style: 'destructive',
+        onPress: handleAdd
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Options', '', options);
   };
 
   if (!user) return null;
@@ -147,6 +176,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
       const result = await users.follow(user.id);
       setIsAdded(result.following);
       setIsMutual(result.isMutual || false);
+
+      // Update follower count visually
+      if (userStats) {
+        // If we just followed them (and weren't before), add 1. If we unfollowed, subtract 1.
+        if (result.following && !isAdded) {
+          setUserStats({ ...userStats, followers: userStats.followers + 1 });
+        } else if (!result.following && isAdded) {
+          setUserStats({ ...userStats, followers: Math.max(0, userStats.followers - 1) });
+        }
+      }
+
       // Notify parent component of the change
       onFriendStatusChange?.(user.id, result.following);
     } catch (error) {
@@ -329,9 +369,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     );
   }
 
-  // Profile Modal
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <SlideRightModal visible={visible} onClose={onClose}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
           {/* Header */}
@@ -351,14 +390,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               <Avatar uri={user.avatar} size={86} />
 
               <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>
-                <View style={{ alignItems: 'center' }}>
+                <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
                   <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{userStats?.followers ?? '—'}</Text>
                   <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Followers</Text>
-                </View>
-                <View style={{ alignItems: 'center' }}>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
                   <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{userStats?.following ?? '—'}</Text>
                   <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Following</Text>
-                </View>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -382,44 +421,100 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             </View>
 
             {/* Action Buttons */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-              <TouchableOpacity
-                style={{ flex: 1, backgroundColor: isAdded ? colors.surface : '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: isAdded ? 1 : 0, borderColor: colors.border }}
-                onPress={handleAdd}
-                disabled={isToggling}
-              >
-                {isToggling ? (
-                  <ActivityIndicator size="small" color={isAdded ? colors.text : '#fff'} />
-                ) : (
-                  <>
-                    <Ionicons name={isAdded ? "checkmark" : "person-add"} size={16} color={isAdded ? colors.text : '#fff'} />
-                    <Text style={{ color: isAdded ? colors.text : '#fff', fontSize: 14, fontWeight: '600' }}>
-                      {isAdded ? (isMutual ? 'Friends' : 'Following') : 'Follow'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}
-                onPress={openChat}
-              >
-                <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Message</Text>
-              </TouchableOpacity>
-            </View>
+            {loadingFollow ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                </View>
+              </View>
+            ) : isAdded ? (
+              /* When following: show Challenge + Message */
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                  onPress={() => {
+                    // TODO: implement challenge flow
+                    Alert.alert('Challenge', `Challenge @${user.username} to a game!`);
+                  }}
+                >
+                  <Ionicons name="game-controller" size={16} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Challenge</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}
+                  onPress={openChat}
+                >
+                  <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
+                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              /* When not following: show Follow + Message */
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                  onPress={handleAdd}
+                  disabled={isToggling}
+                >
+                  {isToggling ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="person-add" size={16} color="#fff" />
+                      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Follow</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}
+                  onPress={openChat}
+                >
+                  <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
+                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {/* Saved Games Section */}
           <View style={{ marginTop: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
-              <Ionicons name="grid-outline" size={18} color={colors.text} />
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>Games</Text>
+              <Ionicons name="heart" size={18} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>Liked Games</Text>
             </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, paddingTop: 2 }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => (
-                <View key={i} style={{ width: (Dimensions.get('window').width - 4) / 3, aspectRatio: 1, backgroundColor: colors.surface }} />
-              ))}
-            </View>
+
+            {loadingGames ? (
+              <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
+            ) : userGames.length > 0 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, paddingTop: 2 }}>
+                {userGames.map(game => {
+                  const thumbUri = game.thumbnail
+                    ? (game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`)
+                    : null;
+                  return (
+                    <TouchableOpacity
+                      key={game.id}
+                      style={{ width: (Dimensions.get('window').width - 4) / 3, aspectRatio: 1, backgroundColor: game.color || colors.surface }}
+                    >
+                      {thumbUri ? (
+                        <Image source={{ uri: thumbUri }} style={{ width: '100%', height: '100%' }} />
+                      ) : (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="game-controller" size={32} color="rgba(255,255,255,0.5)" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={{ alignItems: 'center', padding: 40 }}>
+                <Text style={{ color: colors.textSecondary }}>No games yet.</Text>
+              </View>
+            )}
           </View>
         </ScrollView>
       </View>
@@ -432,7 +527,27 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
         username={user.username}
         contentType="profile"
       />
-    </Modal>
+
+      <FollowListModal
+        visible={followModalConfig.visible}
+        onClose={() => setFollowModalConfig({ ...followModalConfig, visible: false })}
+        userId={user.id}
+        username={user.username}
+        initialTab={followModalConfig.tab}
+        onUserPress={(profileUser) => {
+          setFollowModalConfig({ ...followModalConfig, visible: false });
+          setNestedUser({ ...profileUser, isFriend: false });
+        }}
+      />
+
+      {nestedUser && (
+        <UserProfileModal
+          visible={!!nestedUser}
+          onClose={() => setNestedUser(null)}
+          user={nestedUser}
+        />
+      )}
+    </SlideRightModal>
   );
 };
 

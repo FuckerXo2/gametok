@@ -17,6 +17,7 @@ import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { SocketProvider } from './src/context/SocketContext';
 import { requestTrackingPermission } from './src/services/ads';
 import { addNotificationResponseListener, addNotificationReceivedListener, registerForPushNotifications, savePushToken } from './src/services/notifications';
 import { getToken } from './src/services/api';
@@ -259,7 +260,7 @@ const AppContent = () => {
 
 export default function App() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
-  
+
   // Load Graphik fonts
   const [fontsLoaded] = useFonts({
     'Graphik-Regular': require('./assets/fonts/graphik_arabic.otf'),
@@ -272,7 +273,7 @@ export default function App() {
   if (showAnimatedSplash) {
     return <AnimatedSplash onAnimationComplete={() => setShowAnimatedSplash(false)} />;
   }
-  
+
   // Wait for fonts to load
   if (!fontsLoaded) {
     return (
@@ -288,7 +289,9 @@ export default function App() {
         <GestureHandlerRootView style={styles.container}>
           <ThemeProvider>
             <AuthProvider>
-              <AppContent />
+              <SocketProvider>
+                <AppContent />
+              </SocketProvider>
             </AuthProvider>
           </ThemeProvider>
         </GestureHandlerRootView>

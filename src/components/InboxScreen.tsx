@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useAuthScreen } from '../../App';
 import { messages as messagesApi, users, feed, games as gamesApi, stories as storiesApi } from '../services/api';
 import { Avatar } from './Avatar';
@@ -74,6 +75,7 @@ export const InboxScreen: React.FC = () => {
   const { colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { socket, onlineUsers } = useSocket();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'activity' | 'messages'>('activity');
@@ -261,6 +263,34 @@ export const InboxScreen: React.FC = () => {
     load();
   }, [fetchActivity, fetchSuggested, fetchLivePlayers, fetchConversations, fetchPendingCount, fetchStories]);
 
+  // Socket.io messaging listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleReceive = (msg: any) => {
+      // msg format: { id, senderId, receiverId, text, createdAt, gameId }
+
+      // If we are currently chatting with the sender, append instantly
+      if (selectedChat && selectedChat.user.id === msg.senderId) {
+        setChatMessages(prev => [...prev, {
+          id: msg.id,
+          text: msg.text,
+          createdAt: msg.createdAt,
+          isMe: false,
+          gameShare: msg.gameId ? { id: msg.gameId } : null
+        }]);
+      }
+
+      // Either way, fetch conversations so the latest message jumps to the top
+      fetchConversations();
+    };
+
+    socket.on('chat:receive', handleReceive);
+    return () => {
+      socket.off('chat:receive', handleReceive);
+    };
+  }, [socket, selectedChat, fetchConversations]);
+
   // Search effect
   useEffect(() => {
     if (searchQuery.length < 2) {
@@ -307,7 +337,19 @@ export const InboxScreen: React.FC = () => {
     setMessageText('');
     try {
       const data = await messagesApi.send({ recipientId: selectedChat.user.id, text });
+
+      if (socket && data.message) {
+        socket.emit('chat:message', {
+          to: selectedChat.user.id,
+          text: data.message.text,
+          id: data.message.id,
+          createdAt: data.message.createdAt,
+          gameId: data.message.gameShare?.id || null
+        });
+      }
+
       setChatMessages(prev => [...prev, data.message]);
+      fetchConversations(); // pull it to top
     } catch (e) {
       setMessageText(text);
     }
@@ -613,7 +655,16 @@ export const InboxScreen: React.FC = () => {
                       style={[styles.chatItem, { borderBottomColor: colors.border }]}
                       onPress={() => openChat(chat)}
                     >
-                      <Avatar uri={chat.user.avatar} size={52} />
+                      <View>
+                        <Avatar uri={chat.user.avatar} size={52} />
+                        {onlineUsers.includes(chat.user.id) && (
+                          <View style={{
+                            position: 'absolute', bottom: 2, right: 2,
+                            width: 14, height: 14, borderRadius: 7,
+                            backgroundColor: '#22c55e', borderWidth: 2, borderColor: colors.background
+                          }} />
+                        )}
+                      </View>
                       <View style={styles.chatContent}>
                         <View style={styles.chatHeader}>
                           <Text style={[styles.chatUsername, { color: colors.text }]}>

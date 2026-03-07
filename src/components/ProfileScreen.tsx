@@ -27,6 +27,8 @@ import { EditProfileModal } from './EditProfileModal';
 import { RewardsScreen } from './RewardsScreen';
 import { Avatar } from './Avatar';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
+import { FollowListModal } from './FollowListModal';
+import { UserProfileModal } from './UserProfileModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 2;
@@ -61,12 +63,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [stats, setStats] = useState<GamificationStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
+  const [socialStats, setSocialStats] = useState({ followers: 0, following: 0 });
+  const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
   const lastFetchRef = useRef<number>(0);
 
-  const socialStats = {
-    followers: user?.followers?.length || 0,
-    following: user?.following?.length || 0,
-  };
+
 
   const username = user?.username || 'guest';
   const displayName = user?.displayName || '';
@@ -93,12 +95,19 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [statsRes, savedRes] = await Promise.all([
+      const [statsRes, savedRes, userRes] = await Promise.all([
         gamification.getStats(),
         user?.id ? savedGamesApi.userSaved(user.id) : Promise.resolve({ games: [] }),
+        user?.id ? import('../services/api').then(({ users }) => users.get(user.id)) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
       ]);
       setStats(statsRes);
       setSavedGamesList(savedRes.games || []);
+      if (userRes?.stats) {
+        setSocialStats({
+          followers: userRes.stats.followers || 0,
+          following: userRes.stats.following || 0,
+        });
+      }
       lastFetchRef.current = Date.now();
     } catch (e) {
       console.log('Failed to fetch data:', e);
@@ -208,11 +217,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             </TouchableOpacity>
 
             <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>
-              <TouchableOpacity style={{ alignItems: 'center' }}>
+              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(socialStats.followers)}</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Followers</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{ alignItems: 'center' }}>
+              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(socialStats.following)}</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Following</Text>
               </TouchableOpacity>
@@ -316,6 +325,28 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
       <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
       <EditProfileModal visible={showEditProfile} onClose={() => setShowEditProfile(false)} />
+
+      <FollowListModal
+        visible={followModalConfig.visible}
+        onClose={() => setFollowModalConfig({ ...followModalConfig, visible: false })}
+        userId={user?.id || ''}
+        username={username}
+        initialTab={followModalConfig.tab}
+        onUserPress={(profileUser) => {
+          setFollowModalConfig({ ...followModalConfig, visible: false });
+          // Open their profile modal with isFriend passed neutrally (it will be refetched there)
+          setSelectedProfileUser({ ...profileUser, isFriend: false });
+        }}
+      />
+
+      <UserProfileModal
+        visible={!!selectedProfileUser}
+        onClose={() => {
+          setSelectedProfileUser(null);
+          fetchData(true); // Optional: refresh following counts in case they followed/unfollowed
+        }}
+        user={selectedProfileUser}
+      />
 
       {/* Rewards Full Screen Modal */}
       <Modal visible={showRewards} animationType="slide" onRequestClose={() => setShowRewards(false)}>
