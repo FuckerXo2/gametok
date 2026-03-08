@@ -285,6 +285,15 @@ export const GameCard: React.FC<GameCardProps> = ({
 
   const injectedJS = `
     (function() {
+      // Prevent iOS Now Playing widget
+      if (navigator.mediaSession) {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.playbackState = 'none';
+      }
+      Object.defineProperty(navigator, 'mediaSession', { get: function() { return { metadata: null, setActionHandler: function(){}, playbackState: 'none', setPositionState: function(){} }; }, configurable: true });
+
       // Viewport
       var meta = document.querySelector('meta[name="viewport"]');
       if (!meta) {
@@ -426,6 +435,7 @@ export const GameCard: React.FC<GameCardProps> = ({
                 domStorageEnabled
                 allowsInlineMediaPlayback
                 mediaPlaybackRequiresUserAction={false}
+                allowsAirPlayForMediaPlayback={false}
                 injectedJavaScript={injectedJS}
                 onShouldStartLoadWithRequest={(request: { url: string }) => {
                   const url = request.url.toLowerCase();

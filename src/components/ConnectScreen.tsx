@@ -5,17 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
-  Keyboard,
   RefreshControl,
-  Dimensions,
-  Image,
-  Modal,
-  StatusBar,
-  FlatList,
-  useColorScheme,
   Pressable,
+  Modal,
+  TextInput,
+  FlatList,
+  Image,
 } from 'react-native';
 import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -23,382 +19,930 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { WebView } from 'react-native-webview';
-import { games } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useAuthScreen } from '../../App';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
+import { FontStyles } from '../constants/LoopsFonts';
+import { multiplayer, users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
+import { Avatar } from './Avatar';
+import { UserProfileModal } from './UserProfileModal';
+import { MultiplayerModal } from './MultiplayerModal';
+import { SlideRightModal } from './SlideRightModal';
+import { StoryViewer } from './StoryViewer';
+import { AnimatedButton } from './AnimatedButton';
+import * as ImagePicker from 'expo-image-picker';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const FEATURED_CARD_WIDTH = SCREEN_WIDTH * 0.7;
-const GENRE_CARD_WIDTH = (SCREEN_WIDTH - 48) / 2;
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
-// Theme colors
-const themes = {
-  light: {
-    bg: '#ffffff',
-    text: '#000000',
-    textSecondary: 'rgba(0,0,0,0.5)',
-    searchBg: 'rgba(0,0,0,0.05)',
-    genreBg: 'rgba(0,0,0,0.05)',
-    genreBorder: 'rgba(0,0,0,0.1)',
-  },
-  dark: {
-    bg: '#0a0a0f',
-    text: '#ffffff',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    searchBg: 'rgba(255,255,255,0.08)',
-    genreBg: 'rgba(255,255,255,0.05)',
-    genreBorder: 'rgba(255,255,255,0.1)',
-  },
-};
+type TabName = 'play' | 'messages';
 
-interface GameItem {
+interface Conversation {
   id: string;
-  name: string;
-  thumbnail?: string;
-  color?: string;
-  category?: string;
-  plays?: number;
-  embedUrl?: string;
+  user: {
+    id: string;
+    username: string;
+    displayName?: string;
+    avatar?: string;
+  };
+  lastMessage?: {
+    text: string;
+    createdAt: string;
+    isRead: boolean;
+  };
+  streak: number;
 }
 
-// Featured categories - big visual cards
-const FEATURED_CATEGORIES = [
-  { id: 'trending', name: 'Trending', icon: 'flame', gradient: ['#FF416C', '#FF4B2B'] },
-  { id: 'hot', name: 'Hot Now', icon: 'flash', gradient: ['#F857A6', '#FF5858'] },
-  { id: 'foryou', name: 'For You', icon: 'heart', gradient: ['#a855f7', '#7c3aed'] },
-];
+interface UserItem {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  isFollowing?: boolean;
+}
 
-// Genre categories with gradients for cards
-const GENRE_CATEGORIES = [
-  { id: 'puzzle', name: 'Puzzle', icon: 'extension-puzzle', gradient: ['#667eea', '#764ba2'] },
-  { id: 'arcade', name: 'Arcade', icon: 'game-controller', gradient: ['#f093fb', '#f5576c'] },
-  { id: 'action', name: 'Action', icon: 'flash', gradient: ['#4facfe', '#00f2fe'] },
-  { id: 'racing', name: 'Racing', icon: 'car-sport', gradient: ['#43e97b', '#38f9d7'] },
-  { id: 'sports', name: 'Sports', icon: 'football', gradient: ['#fa709a', '#fee140'] },
-  { id: 'hypercasual', name: 'Casual', icon: 'happy', gradient: ['#a8edea', '#fed6e3'] },
-];
+interface ActivityItem {
+  id: string;
+  type: 'follow' | 'like' | 'comment' | 'score' | 'playing';
+  user: UserItem;
+  game?: { id: string; name: string; thumbnail?: string };
+  score?: number;
+  text?: string;
+  createdAt: string;
+}
 
-const isExternalGame = (game: GameItem) => !!game.embedUrl;
-
-const getGameUrl = (game: GameItem) => {
-  if (game.embedUrl) {
-    const sep = game.embedUrl.includes('?') ? '&' : '?';
-    return `${game.embedUrl}${sep}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
-  }
-  return `${GAMES_HOST}/${game.id}/`;
-};
-
-// Ad blocker script for external games (same as HomeScreen)
-const AD_BLOCKER_SCRIPT = `
-(function() {
-  window.alert = function() {};
-  window.confirm = function() { return true; };
-  window.prompt = function() { return ''; };
-  
-  // Fake ad SDKs
-  const fireCallbacks = (callbacks) => {
-    if (!callbacks) return;
-    callbacks.adStarted && callbacks.adStarted();
-    callbacks.adFinished && callbacks.adFinished();
-    callbacks.adReward && callbacks.adReward();
-    callbacks.onComplete && callbacks.onComplete();
-    callbacks.onReward && callbacks.onReward();
-    callbacks.success && callbacks.success();
-    callbacks.complete && callbacks.complete();
-    callbacks.done && callbacks.done();
-    callbacks.onClose && callbacks.onClose();
-  };
-  
-  window.google = window.google || {};
-  window.google.ima = {
-    AdDisplayContainer: function() { this.initialize = function(){}; },
-    AdsLoader: function() { this.addEventListener = function(){}; this.requestAds = function(){}; },
-    AdsManager: function() { this.addEventListener = function(){}; this.init = function(){}; this.start = function(){}; },
-    AdsManagerLoadedEvent: { Type: { ADS_MANAGER_LOADED: 'adsManagerLoaded' } },
-    AdErrorEvent: { Type: { AD_ERROR: 'adError' } },
-    AdEvent: { Type: { CONTENT_PAUSE_REQUESTED: 'pause', CONTENT_RESUME_REQUESTED: 'resume', ALL_ADS_COMPLETED: 'complete' }},
-    AdsRenderingSettings: function(){},
-    AdsRequest: function(){},
-  };
-  
-  window.sdk = {
-    showBanner: () => Promise.resolve(),
-    hideBanner: () => Promise.resolve(),
-    showAd: (type, cb) => { fireCallbacks(cb); return Promise.resolve(); },
-    showRewardedAd: (cb) => { fireCallbacks(cb); return Promise.resolve(); },
-    preloadAd: (cb) => { cb && cb(); return Promise.resolve(); },
-  };
-  window.gdsdk = window.sdk;
-  
-  // Remove ad elements
-  const removeAds = () => {
-    const selectors = [
-      'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', '[class*="ad-"]', '[id*="ad-"]',
-      '.gdsdk-container', '.advertisement', '.ad-overlay', '[class*="preroll"]',
-      '.gm-loader', '.gm-splash', '[class*="gm-"]', '.loading-overlay', '.splash',
-      '#unity-loading-bar', '.unity-loader', '[class*="unity-load"]',
-    ];
-    selectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;';
-        try { el.remove(); } catch(e) {}
-      });
-    });
-  };
-  
-  setInterval(removeAds, 200);
-  setTimeout(removeAds, 0);
-  setTimeout(removeAds, 100);
-  setTimeout(removeAds, 500);
-  setTimeout(removeAds, 1000);
-  
-  // Fullscreen CSS
-  const style = document.createElement('style');
-  style.textContent = \`
-    html, body { margin:0!important; padding:0!important; width:100%!important; height:100%!important; overflow:hidden!important; }
-    canvas, #game-container, .game-container, #unity-container { 
-      width:100vw!important; height:100vh!important; position:fixed!important; top:0!important; left:0!important; 
-    }
-    .gm-loader, .gm-splash, [class*="gm-"], .loading-overlay, .splash, #unity-loading-bar, .unity-loader,
-    [class*="loading-screen"], [class*="splash-screen"], .preloader, #preloader {
-      display:none!important; visibility:hidden!important; opacity:0!important;
-    }
-  \`;
-  document.head.appendChild(style);
-})();
-true;
-`;
-
-// Animated wrapper for press physics + staggered entrance
-const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: React.ReactNode; style?: any }> = ({ onPress, index = 0, children, style }) => {
+// Animated Tab Button Component
+const TabButton: React.FC<{
+  label: string;
+  icon: string;
+  isActive: boolean;
+  onPress: () => void;
+}> = ({ label, icon, isActive, onPress }) => {
   const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const { colors } = useTheme();
 
-  const handlePressIn = () => { scale.value = withSpring(0.96, { damping: 12, stiffness: 200 }); };
-  const handlePressOut = () => { scale.value = withSpring(1, { damping: 10, stiffness: 250 }); };
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.95, { damping: 12, stiffness: 200 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 10, stiffness: 250 });
+  };
+
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress();
-  }
+  };
 
   return (
-    <Animated.View
-      entering={FadeInUp.delay(Math.min((index) * 60, 400)).springify().damping(18)}
-      style={[style, animatedStyle]}
-    >
-      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handlePress}>
-        {children}
+    <Animated.View style={[styles.tabButton, animatedStyle]}>
+      <Pressable
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={handlePress}
+        style={[
+          styles.tabButtonInner,
+          {
+            backgroundColor: isActive ? LoopsColors.color1 : colors.surface,
+          },
+        ]}
+      >
+        <Ionicons
+          name={icon as any}
+          size={20}
+          color={isActive ? LoopsColors.white : colors.textSecondary}
+        />
+        <Text
+          style={[
+            styles.tabButtonText,
+            {
+              color: isActive ? LoopsColors.white : colors.textSecondary,
+            },
+          ]}
+        >
+          {label}
+        </Text>
       </Pressable>
     </Animated.View>
   );
 };
 
-// Featured Card - big card with thumbnail and gradient
-const FeaturedCard: React.FC<{
-  category: typeof FEATURED_CATEGORIES[0];
-  games: GameItem[];
-  onPress: () => void;
-  index?: number;
-}> = ({ category, games, onPress, index }) => {
-  const thumbnail = games[0]?.thumbnail;
+// Messages Tab
+const MessagesTab: React.FC = () => {
+  const { colors } = useTheme();
+  const { user } = useAuth();
+  const { socket, onlineUsers } = useSocket();
+  const insets = useSafeAreaInsets();
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [storyUsers, setStoryUsers] = useState<any[]>([]);
+  const [suggestedUsers, setSuggestedUsers] = useState<UserItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Chat modal state
+  const [selectedChat, setSelectedChat] = useState<Conversation | null>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [loadingChat, setLoadingChat] = useState(false);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Profile modal
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [showUserProfile, setShowUserProfile] = useState(false);
+
+  // Story viewer
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
+  const [storyViewerIndex, setStoryViewerIndex] = useState(0);
+  const [creatingStory, setCreatingStory] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [convRes, activityRes, storiesRes, followingRes] = await Promise.all([
+        messagesApi.getConversations().catch(() => ({ conversations: [] })),
+        feed.activity(30).catch(() => ({ activity: [] })),
+        storiesApi.list().catch(() => ({ stories: [] })),
+        users.following(user?.id || '').catch(() => []),
+      ]);
+
+      setConversations(convRes.conversations || []);
+      setActivity(activityRes.activity || []);
+      setStoryUsers(storiesRes.stories || []);
+
+      // Get suggested users from following
+      const friends = Array.isArray(followingRes) ? followingRes : [];
+      setSuggestedUsers(friends.slice(0, 6));
+    } catch (error) {
+      console.error('Load messages data error:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Socket.io messaging listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleReceive = (msg: any) => {
+      if (selectedChat && selectedChat.user.id === msg.senderId) {
+        setChatMessages(prev => [...prev, {
+          id: msg.id,
+          text: msg.text,
+          createdAt: msg.createdAt,
+          isMe: false,
+          gameShare: msg.gameId ? { id: msg.gameId } : null
+        }]);
+      }
+      loadData();
+    };
+
+    socket.on('chat:receive', handleReceive);
+    return () => {
+      socket.off('chat:receive', handleReceive);
+    };
+  }, [socket, selectedChat, loadData]);
+
+  // Search effect
+  useEffect(() => {
+    if (searchQuery.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const data = await users.search(searchQuery);
+        setSearchResults(data.users || []);
+      } catch (e) { }
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  const openChat = async (conversation: Conversation) => {
+    setSelectedChat(conversation);
+    setLoadingChat(true);
+    try {
+      const data = await messagesApi.getConversation(conversation.user.id);
+      setChatMessages(data.messages || []);
+    } catch (e) { }
+    setLoadingChat(false);
+  };
+
+  const sendMessage = async () => {
+    if (!messageText.trim() || !selectedChat) return;
+    const text = messageText.trim();
+    setMessageText('');
+    try {
+      const data = await messagesApi.send({ recipientId: selectedChat.user.id, text });
+
+      if (socket && data.message) {
+        socket.emit('chat:message', {
+          to: selectedChat.user.id,
+          text: data.message.text,
+          id: data.message.id,
+          createdAt: data.message.createdAt,
+          gameId: data.message.gameShare?.id || null
+        });
+      }
+
+      setChatMessages(prev => [...prev, data.message]);
+      loadData();
+    } catch (e) {
+      setMessageText(text);
+    }
+  };
+
+  const openUserProfile = (userItem: UserItem) => {
+    setSelectedUser(userItem);
+    setShowUserProfile(true);
+  };
+
+  const createStory = async () => {
+    try {
+      setCreatingStory(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [9, 16],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const mediaUrl = result.assets[0].uri;
+        await storiesApi.create(mediaUrl, 'image');
+        await loadData();
+      }
+    } catch (e) {
+      console.log('Create story error:', e);
+    } finally {
+      setCreatingStory(false);
+    }
+  };
+
+  const openStory = (index: number) => {
+    setStoryViewerIndex(index);
+    setShowStoryViewer(true);
+  };
+
+  const formatTime = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(diff / 3600000);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.floor(diff / 86400000)}d`;
+  };
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={LoopsColors.color1} size="large" />
+      </View>
+    );
+  }
+
   return (
-    <AnimatedCard style={styles.featuredCard} onPress={onPress} index={index}>
-      <LinearGradient colors={category.gradient as [string, string]} style={styles.featuredGradient}>
-        {thumbnail && (
-          <Image source={{ uri: thumbnail }} style={styles.featuredBg} blurRadius={2} />
-        )}
-        <View style={styles.featuredContent}>
-          <View style={styles.featuredIcon}>
-            <Ionicons name={category.icon as any} size={28} color="#fff" />
+    <>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={LoopsColors.color1}
+          />
+        }
+      >
+        {/* Search Bar */}
+        <TouchableOpacity
+          style={[styles.searchBar, { backgroundColor: colors.surface }]}
+          onPress={() => setShowSearch(true)}
+        >
+          <Ionicons name="search" size={18} color={colors.textSecondary} />
+          <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Find people</Text>
+        </TouchableOpacity>
+
+        {/* Stories Row */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.storiesRow}
+        >
+          {/* Add Story */}
+          <TouchableOpacity style={styles.storyItem} onPress={createStory} disabled={creatingStory}>
+            <View style={[styles.addStoryCircle, { backgroundColor: colors.surface }]}>
+              {creatingStory ? (
+                <ActivityIndicator size="small" color={LoopsColors.color1} />
+              ) : (
+                <Ionicons name="add" size={28} color={LoopsColors.color1} />
+              )}
+            </View>
+            <Text style={[styles.storyUsername, { color: colors.textSecondary }]}>Add story</Text>
+          </TouchableOpacity>
+
+          {/* Real stories */}
+          {storyUsers.map((storyUser, index) => (
+            <TouchableOpacity
+              key={storyUser.user.id}
+              style={styles.storyItem}
+              onPress={() => openStory(index)}
+            >
+              <LinearGradient
+                colors={storyUser.hasUnviewed ? ['#f472b6', '#a855f7', '#6366f1'] : ['#666', '#444']}
+                style={styles.storyRing}
+              >
+                <View style={[styles.storyAvatarContainer, { backgroundColor: colors.background }]}>
+                  <Avatar uri={storyUser.user.avatar} size={56} />
+                </View>
+              </LinearGradient>
+              <Text style={[styles.storyUsername, { color: colors.text }]} numberOfLines={1}>
+                {storyUser.user.username}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          {/* Fallback: suggested users if no stories */}
+          {storyUsers.length === 0 && suggestedUsers.map((person) => (
+            <TouchableOpacity key={person.id} style={styles.storyItem} onPress={() => openUserProfile(person)}>
+              <View style={[styles.noStoryRing, { borderColor: colors.border }]}>
+                <Avatar uri={person.avatar} size={56} />
+              </View>
+              <Text style={[styles.storyUsername, { color: colors.textSecondary }]} numberOfLines={1}>
+                {person.username}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Fixed Sections */}
+        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
+          <View style={[styles.inboxSectionIcon, { backgroundColor: '#10b981' }]}>
+            <Ionicons name="people" size={22} color="#fff" />
           </View>
-          <Text style={styles.featuredName}>{category.name}</Text>
-          <Text style={styles.featuredCount}>{games.length} games</Text>
-        </View>
-      </LinearGradient>
-    </AnimatedCard>
-  );
-};
+          <View style={styles.inboxSectionContent}>
+            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>New followers</Text>
+            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              {activity.filter(a => a.type === 'follow').length > 0
+                ? `${activity.filter(a => a.type === 'follow')[0]?.user?.username || 'Someone'} started following you`
+                : 'See your new followers here'}
+            </Text>
+          </View>
+          {activity.filter(a => a.type === 'follow').length > 0 && (
+            <View style={styles.inboxBadge}>
+              <Text style={styles.inboxBadgeText}>{activity.filter(a => a.type === 'follow').length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
-// Genre Card - medium card with thumbnail grid
-const GenreCard: React.FC<{
-  genre: typeof GENRE_CATEGORIES[0];
-  games: GameItem[];
-  onPress: () => void;
-  index?: number;
-}> = ({ genre, games, onPress, index }) => {
-  // Get up to 4 thumbnails for the grid
-  const thumbnails = games.slice(0, 4).map(g => g.thumbnail).filter(Boolean);
+        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
+          <View style={[styles.inboxSectionIcon, { backgroundColor: '#ec4899' }]}>
+            <Ionicons name="heart" size={22} color="#fff" />
+          </View>
+          <View style={styles.inboxSectionContent}>
+            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>Activity</Text>
+            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              {activity.filter(a => a.type === 'like' || a.type === 'comment').length > 0
+                ? `${activity.filter(a => a.type === 'like' || a.type === 'comment')[0]?.user?.username || 'Someone'} liked your content`
+                : 'See notifications here'}
+            </Text>
+          </View>
+          {activity.filter(a => a.type === 'like' || a.type === 'comment').length > 0 && (
+            <View style={styles.inboxBadge}>
+              <Text style={styles.inboxBadgeText}>{activity.filter(a => a.type === 'like' || a.type === 'comment').length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
-  return (
-    <AnimatedCard style={styles.genreCard} onPress={onPress} index={index}>
-      <LinearGradient colors={genre.gradient as [string, string]} style={styles.genreGradient}>
-        {/* Thumbnail grid background */}
-        {thumbnails.length > 0 && (
-          <View style={styles.genreThumbnailGrid}>
-            {thumbnails.map((thumb, i) => (
-              <Image key={i} source={{ uri: thumb }} style={styles.genreThumbnail} />
+        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
+          <View style={[styles.inboxSectionIcon, { backgroundColor: '#6366f1' }]}>
+            <Ionicons name="notifications" size={22} color="#fff" />
+          </View>
+          <View style={styles.inboxSectionContent}>
+            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>System notifications</Text>
+            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              Account updates and announcements
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Message Threads */}
+        {conversations.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            {conversations.map((chat) => (
+              <TouchableOpacity
+                key={chat.id}
+                style={[styles.chatItem, { borderBottomColor: colors.border }]}
+                onPress={() => openChat(chat)}
+              >
+                <View>
+                  <Avatar uri={chat.user.avatar} size={52} />
+                  {onlineUsers.includes(chat.user.id) && (
+                    <View style={[styles.onlineDot, { borderColor: colors.background }]} />
+                  )}
+                </View>
+                <View style={styles.chatContent}>
+                  <View style={styles.chatHeader}>
+                    <Text style={[styles.chatUsername, { color: colors.text }]}>
+                      {chat.user.displayName || chat.user.username}
+                    </Text>
+                    {chat.streak > 0 && (
+                      <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.chatPreview, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {chat.lastMessage?.text || 'Start chatting'}
+                  </Text>
+                </View>
+                <View style={styles.chatMeta}>
+                  {chat.lastMessage && (
+                    <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
+                      {formatTime(chat.lastMessage.createdAt)}
+                    </Text>
+                  )}
+                  {chat.lastMessage && !chat.lastMessage.isRead && (
+                    <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
+                  )}
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
-        <View style={styles.genreOverlay} />
-        <View style={styles.genreContent}>
-          <Ionicons name={genre.icon as any} size={24} color="#fff" />
-          <Text style={styles.genreName}>{genre.name}</Text>
-          <Text style={styles.genreCount}>{games.length} games</Text>
+
+        {conversations.length === 0 && (
+          <View style={styles.emptyMessages}>
+            <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No messages yet</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Start a conversation with someone!
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Search Modal */}
+      <SlideRightModal visible={showSearch} onClose={() => { setShowSearch(false); setSearchQuery(''); }}>
+        <View style={[styles.searchModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <View style={styles.searchModalHeader}>
+            <TouchableOpacity onPress={() => { setShowSearch(false); setSearchQuery(''); }}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <View style={[styles.searchModalInput, { backgroundColor: colors.surface }]}>
+              <Ionicons name="search" size={18} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search people..."
+                placeholderTextColor={colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {searching ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={LoopsColors.color1} />
+          ) : searchQuery.length < 2 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="search-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.searchHintText, { color: colors.textSecondary }]}>
+                Search for people by username
+              </Text>
+            </View>
+          ) : searchResults.length === 0 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="person-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.searchHintText, { color: colors.textSecondary }]}>
+                No users found for "{searchQuery}"
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.searchResult, { borderBottomColor: colors.border }]}
+                  onPress={() => { setShowSearch(false); openUserProfile(item); }}
+                >
+                  <Avatar uri={item.avatar} size={48} />
+                  <View style={styles.searchResultContent}>
+                    <Text style={[styles.searchResultName, { color: colors.text }]}>
+                      {item.displayName || item.username}
+                    </Text>
+                    <Text style={[styles.searchResultUsername, { color: colors.textSecondary }]}>
+                      @{item.username}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            />
+          )}
         </View>
-      </LinearGradient>
-    </AnimatedCard>
+      </SlideRightModal>
+
+      {/* Chat Modal */}
+      <SlideRightModal visible={!!selectedChat} onClose={() => setSelectedChat(null)}>
+        {selectedChat && (
+          <View style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+            <View style={[styles.chatModalHeader, { borderBottomColor: colors.border }]}>
+              <TouchableOpacity onPress={() => setSelectedChat(null)}>
+                <Ionicons name="arrow-back" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.chatModalUser}
+                onPress={() => openUserProfile(selectedChat.user)}
+              >
+                <Avatar uri={selectedChat.user.avatar} size={36} />
+                <Text style={[styles.chatModalUsername, { color: colors.text }]}>
+                  {selectedChat.user.displayName || selectedChat.user.username}
+                </Text>
+              </TouchableOpacity>
+              <View style={{ width: 24 }} />
+            </View>
+
+            {loadingChat ? (
+              <ActivityIndicator style={{ flex: 1 }} color={LoopsColors.color1} />
+            ) : (
+              <FlatList
+                data={chatMessages}
+                keyExtractor={(item) => item.id}
+                style={styles.chatMessagesList}
+                contentContainerStyle={{ padding: 16 }}
+                renderItem={({ item }) => {
+                  const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
+                  const hasGameShare = !!item.gameShare;
+                  const thumbUri = item.gameShare?.thumbnail
+                    ? (item.gameShare.thumbnail.startsWith('http') ? item.gameShare.thumbnail : `${GAMES_HOST}${item.gameShare.thumbnail}`)
+                    : null;
+
+                  if (hasGameShare) {
+                    return (
+                      <View style={[
+                        { maxWidth: '70%', marginBottom: 10 },
+                        item.isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
+                      ]}>
+                        <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}>
+                          {thumbUri ? (
+                            <Image
+                              source={{ uri: thumbUri }}
+                              style={{ width: '100%', aspectRatio: 1, backgroundColor: item.gameShare.color || '#333' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={{ width: '100%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: item.gameShare.color || '#333' }}>
+                              <Ionicons name="game-controller" size={40} color="rgba(255,255,255,0.5)" />
+                            </View>
+                          )}
+                          <View style={{
+                            position: 'absolute', bottom: 0, left: 0, right: 0,
+                            paddingHorizontal: 12, paddingVertical: 10,
+                            backgroundColor: 'rgba(0,0,0,0.55)',
+                          }}>
+                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
+                              {item.gameShare.name}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                              <Ionicons name="play-circle" size={14} color="rgba(255,255,255,0.9)" />
+                              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, marginLeft: 4, fontWeight: '500' }}>
+                                Tap to play
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                        {cleanText ? (
+                          <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>
+                            {cleanText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <View style={[
+                      styles.messageBubble,
+                      item.isMe ? styles.myMessage : styles.theirMessage,
+                      { backgroundColor: item.isMe ? LoopsColors.color1 : colors.surface }
+                    ]}>
+                      <Text style={[styles.messageText, { color: item.isMe ? '#fff' : colors.text }]}>
+                        {cleanText}
+                      </Text>
+                    </View>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.emptyChatHint}>
+                    <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
+                      Say hi! 👋
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+
+            <View style={[styles.chatInputArea, { paddingBottom: insets.bottom || 16, borderTopColor: colors.border }]}>
+              <View style={[styles.chatInputBox, { backgroundColor: colors.surface }]}>
+                <TextInput
+                  style={[styles.chatInput, { color: colors.text }]}
+                  placeholder="Message..."
+                  placeholderTextColor={colors.textSecondary}
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  onSubmitEditing={sendMessage}
+                />
+              </View>
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: messageText.trim() ? LoopsColors.color1 : colors.surface }]}
+                onPress={sendMessage}
+                disabled={!messageText.trim()}
+              >
+                <Ionicons name="send" size={20} color={messageText.trim() ? '#fff' : colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </SlideRightModal>
+
+      {/* User Profile Modal */}
+      <UserProfileModal
+        visible={showUserProfile}
+        onClose={() => setShowUserProfile(false)}
+        user={selectedUser ? {
+          id: selectedUser.id,
+          username: selectedUser.username,
+          avatar: selectedUser.avatar || null,
+          status: 'GAMETOK USER',
+          isOnline: false,
+          isFriend: false,
+        } : null}
+      />
+
+      {/* Story Viewer */}
+      <StoryViewer
+        visible={showStoryViewer}
+        onClose={() => setShowStoryViewer(false)}
+        storyUsers={storyUsers}
+        initialUserIndex={storyViewerIndex}
+      />
+    </>
   );
 };
 
-// Game Card
-const GameCard: React.FC<{
-  game: GameItem;
-  onPress: () => void;
-  index?: number;
-}> = ({ game, onPress, index }) => (
-  <AnimatedCard style={styles.gameCard} onPress={onPress} index={index}>
-    {game.thumbnail ? (
-      <Image source={{ uri: game.thumbnail }} style={styles.gameCardImg} />
-    ) : (
-      <LinearGradient colors={[game.color || '#a855f7', '#1a1a2e']} style={styles.gameCardImg}>
-        <Ionicons name="game-controller" size={28} color="rgba(255,255,255,0.4)" />
-      </LinearGradient>
-    )}
-    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.gameCardOverlay}>
-      <Text style={styles.gameCardName} numberOfLines={2}>{game.name}</Text>
-    </LinearGradient>
-  </AnimatedCard>
-);
+// Play Together Tab
+const PlayTogetherTab: React.FC = () => {
+  const { colors } = useTheme();
+  const { user } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-// Category Modal
-const CategoryModal: React.FC<{
-  visible: boolean;
-  title: string;
-  icon: string;
-  gradient?: [string, string];
-  games: GameItem[];
-  onClose: () => void;
-  onPlayGame: (game: GameItem) => void;
-}> = ({ visible, title, icon, gradient, games, onClose, onPlayGame }) => {
-  const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
+  // Active matches
+  const [activeMatches, setActiveMatches] = useState<any[]>([]);
+
+  // Match history
+  const [matchHistory, setMatchHistory] = useState<any[]>([]);
+
+  // Games for multiplayer
+  const [games, setGames] = useState<any[]>([]);
+
+  // Game selection modal state
+  const [selectedGame, setSelectedGame] = useState<{ id: string; name: string } | null>(null);
+  const [showMultiplayerModal, setShowMultiplayerModal] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [activeRes, historyRes, gamesRes] = await Promise.all([
+        multiplayer.getActiveMatches().catch(() => ({ matches: [] })),
+        multiplayer.getMatchHistory(20).catch(() => ({ history: [] })),
+        gamesApi.list(100, 0).catch(() => ({ games: [] })),
+      ]);
+
+      setActiveMatches(activeRes.matches || []);
+      setMatchHistory(historyRes.history || []);
+
+      // Filter to only show Loops games (games with IDs starting with 'loops_')
+      const loopsGames = (gamesRes.games || []).filter((game: any) =>
+        game.id && game.id.startsWith('loops_')
+      );
+      setGames(loopsGames);
+    } catch (error) {
+      console.error('Load multiplayer data error:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={LoopsColors.color1} size="large" />
+      </View>
+    );
+  }
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <View style={[styles.modalContainer, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
-        <LinearGradient colors={gradient || ['#667eea', '#764ba2']} style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-            <Image source={require('../../assets/ui/icons/ic_close.png')} style={{ width: 28, height: 28, tintColor: '#fff' }} />
-          </TouchableOpacity>
-          <View style={styles.modalHeaderContent}>
-            <Ionicons name={icon as any} size={32} color="#fff" />
-            <Text style={styles.modalTitle}>{title}</Text>
-            <Text style={styles.modalSubtitle}>{games.length} games</Text>
-          </View>
-        </LinearGradient>
-
-        <FlatList
-          data={games}
-          numColumns={3}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.modalGrid}
-          renderItem={({ item, index }) => (
-            <GameCard game={item} index={index} onPress={() => onPlayGame(item)} />
-          )}
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 100 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={LoopsColors.color1}
         />
+      }
+    >
+
+      {/* Games Grid */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          🎮 Choose Your Game
+        </Text>
+        {games.length > 0 ? (
+          <View style={styles.gamesGrid}>
+            {games.map((game, index) => (
+              <Animated.View
+                key={game.id}
+                entering={FadeInUp.delay(index * 20).springify()}
+                style={styles.gameGridItem}
+              >
+                <TouchableOpacity
+                  style={[styles.gameGridCard, { backgroundColor: colors.surface }]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedGame({ id: game.id, name: game.name });
+                    setShowMultiplayerModal(true);
+                  }}
+                >
+                  <Image
+                    source={{ uri: game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png` }}
+                    style={styles.gameGridThumbnail}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.gameGridOverlay}>
+                    <Text style={styles.gameGridName} numberOfLines={2}>
+                      {game.name}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyGames}>
+            <Ionicons name="game-controller-outline" size={48} color={colors.textSecondary} />
+            <Text style={[styles.emptyGamesText, { color: colors.textSecondary }]}>
+              Multiplayer games coming soon!
+            </Text>
+            <Text style={[styles.emptyGamesSubtext, { color: colors.textSecondary }]}>
+              Run the seeder to add 36 Loops games
+            </Text>
+          </View>
+        )}
       </View>
-    </Modal>
+
+      {/* Games Arcade Showcase */}
+      <View style={styles.arcadeSection}>
+        <View style={styles.arcadeHeader}>
+          <Text style={[styles.arcadeTitle, { color: colors.text }]}>
+            Live Arcade
+          </Text>
+          <Text style={[styles.arcadeSubtitle, { color: colors.textSecondary }]}>
+            Jump into a lobby and challenge anyone online!
+          </Text>
+        </View>
+
+        {games.length > 0 ? (
+          <View style={styles.arcadeGamesGrid}>
+            {games.map((game, index) => (
+              <Animated.View
+                key={game.id}
+                entering={FadeInUp.delay(index * 20).springify()}
+                style={styles.arcadeGameItem}
+              >
+                <TouchableOpacity
+                  style={[styles.arcadeGameCard, { backgroundColor: colors.surface }]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedGame({ id: game.id, name: game.name });
+                    setShowMultiplayerModal(true);
+                  }}
+                >
+                  <Image
+                    source={{ uri: game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png` }}
+                    style={styles.arcadeGameThumbnail}
+                    resizeMode="cover"
+                  />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.8)', '#000']}
+                    style={styles.arcadeGameOverlay}
+                  >
+                    <View style={styles.liveLobbyBadge}>
+                      <View style={styles.pulsingDot} />
+                      <Text style={styles.liveLobbyText}>Lobby</Text>
+                    </View>
+                    <Text style={styles.arcadeGameName} numberOfLines={2}>
+                      {game.name}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyGamesLobby}>
+            <ActivityIndicator color={LoopsColors.color1} size="large" />
+            <Text style={[styles.emptyGamesLobbyText, { color: colors.textSecondary }]}>
+              Loading Arcade...
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Multiplayer Game Modal */}
+      {selectedGame && (
+        <MultiplayerModal
+          visible={showMultiplayerModal}
+          gameId={selectedGame.id}
+          gameName={selectedGame.name}
+          onClose={() => setShowMultiplayerModal(false)}
+        />
+      )}
+    </ScrollView>
   );
 };
 
 export const ConnectScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
+  const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<GameItem[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-
-  const [allGames, setAllGames] = useState<GameItem[]>([]);
-  const [featuredGames, setFeaturedGames] = useState<Record<string, GameItem[]>>({});
-  const [genreGames, setGenreGames] = useState<Record<string, GameItem[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalData, setModalData] = useState<{
-    title: string;
-    icon: string;
-    gradient?: [string, string];
-    games: GameItem[];
-  } | null>(null);
-
-  const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
-  const [gameLoaded, setGameLoaded] = useState(false);
-
-  const loadData = useCallback(async (refresh = false) => {
-    if (refresh) setRefreshing(true);
-    else setLoading(true);
-
-    try {
-      const data = await games.list(100, 0);
-      const list: GameItem[] = (data.games || []).map((g: GameItem) => ({
-        ...g,
-        thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
-      }));
-      setAllGames(list);
-
-      // Sort for featured
-      const byPlays = [...list].sort((a, b) => (b.plays || 0) - (a.plays || 0));
-      const shuffled = [...list].sort(() => Math.random() - 0.5);
-
-      // Featured categories
-      setFeaturedGames({
-        trending: byPlays.slice(0, 20),
-        hot: byPlays.slice(0, 15),
-        foryou: shuffled.slice(0, 20),
-      });
-
-      // Genre categories
-      const byGenre: Record<string, GameItem[]> = {};
-      list.forEach(g => {
-        const cat = (g.category || 'arcade').toLowerCase();
-        if (!byGenre[cat]) byGenre[cat] = [];
-        byGenre[cat].push(g);
-      });
-      setGenreGames(byGenre);
-    } catch (e) {
-      console.log('Load error:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
+  const [activeTab, setActiveTab] = useState<TabName>('messages');
 
   // Auth gate
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
-        <LinearGradient colors={['#7c3aed', '#a855f7']} style={styles.header}>
-          <Text style={styles.headerTitle}>EXPLORE</Text>
-        </LinearGradient>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Connect</Text>
+        </View>
         <View style={StyleSheet.absoluteFill}>
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
           <View style={styles.authGate}>
-            <Ionicons name="compass" size={64} color="rgba(255,255,255,0.3)" />
-            <Text style={styles.authTitle}>Discover Games</Text>
-            <Text style={styles.authSubtitle}>Sign up to explore thousands of games and find your favorites</Text>
+            <Ionicons name="people" size={64} color="rgba(255,255,255,0.3)" />
+            <Text style={styles.authTitle}>Join the community</Text>
+            <Text style={styles.authSubtitle}>
+              Play together and chat with friends
+            </Text>
             <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen}>
-              <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.authBtnGradient}>
+              <LinearGradient
+                colors={[LoopsColors.color1, '#7c3aed']}
+                style={styles.authBtnGradient}
+              >
                 <Text style={styles.authBtnText}>Sign Up</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -411,204 +955,35 @@ export const ConnectScreen: React.FC = () => {
     );
   }
 
-  // Search - uses server-side search for full database access
-  useEffect(() => {
-    if (searchQuery.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setIsSearching(true);
-    const timeout = setTimeout(async () => {
-      try {
-        const data = await games.search(searchQuery, 50);
-        const results: GameItem[] = (data.games || []).map((g: GameItem) => ({
-          ...g,
-          thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
-        }));
-        setSearchResults(results);
-      } catch (e) {
-        console.log('Search error:', e);
-        // Fallback to local search if API fails
-        const q = searchQuery.toLowerCase();
-        const results = allGames.filter(g =>
-          g.name.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q)
-        );
-        setSearchResults(results);
-      }
-      setIsSearching(false);
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [searchQuery, allGames]);
-
-  const openFeatured = (cat: typeof FEATURED_CATEGORIES[0]) => {
-    setModalData({
-      title: cat.name,
-      icon: cat.icon,
-      gradient: cat.gradient as [string, string],
-      games: featuredGames[cat.id] || [],
-    });
-    setModalVisible(true);
-  };
-
-  const openGenre = (genre: typeof GENRE_CATEGORIES[0]) => {
-    setModalData({
-      title: genre.name,
-      icon: genre.icon,
-      gradient: genre.gradient as [string, string],
-      games: genreGames[genre.id] || [],
-    });
-    setModalVisible(true);
-  };
-
-  const playGame = (game: GameItem) => {
-    setModalVisible(false);
-    setPlayingGame(game);
-    setGameLoaded(false);
-  };
-
-  const isSearchActive = searchQuery.length >= 2;
-
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
-      {/* Purple Header */}
-      <LinearGradient colors={['#7c3aed', '#a855f7']} style={styles.header}>
-        <Text style={styles.headerTitle}>EXPLORE</Text>
-      </LinearGradient>
-
-      {/* Search Bar */}
-      <View style={[styles.searchWrap, { backgroundColor: theme.bg }]}>
-        <View style={[styles.searchBar, { backgroundColor: theme.searchBg }]}>
-          <Ionicons name="search" size={20} color={theme.textSecondary} />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search games..."
-            placeholderTextColor={theme.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}>
-              <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Connect</Text>
       </View>
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color="#a855f7" size="large" />
-      ) : isSearchActive ? (
-        <ScrollView contentContainerStyle={styles.searchResultsGrid}>
-          {isSearching ? (
-            <ActivityIndicator color="#a855f7" style={{ marginTop: 40 }} />
-          ) : searchResults.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="search-outline" size={48} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No games found</Text>
-            </View>
-          ) : (
-            searchResults.map((g, idx) => (
-              <GameCard key={g.id} game={g} index={idx} onPress={() => playGame(g)} />
-            ))
-          )}
-        </ScrollView>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor="#a855f7" />}
-        >
-          {/* Featured Categories - Big Cards */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.featuredRow}
-          >
-            {FEATURED_CATEGORIES.map((cat, idx) => (
-              <FeaturedCard
-                key={cat.id}
-                category={cat}
-                index={idx}
-                games={featuredGames[cat.id] || []}
-                onPress={() => openFeatured(cat)}
-              />
-            ))}
-          </ScrollView>
-
-          {/* Genre Categories - Cards with thumbnails */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Categories</Text>
-            <View style={styles.genreGrid}>
-              {GENRE_CATEGORIES.filter(g => (genreGames[g.id]?.length || 0) > 0).map((genre, idx) => (
-                <GenreCard
-                  key={genre.id}
-                  genre={genre}
-                  index={idx}
-                  games={genreGames[genre.id] || []}
-                  onPress={() => openGenre(genre)}
-                />
-              ))}
-            </View>
-          </View>
-
-          {/* All Games Grid */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Games</Text>
-            <View style={styles.gamesGrid}>
-              {allGames.slice(0, 30).map((g, idx) => (
-                <GameCard key={g.id} game={g} index={idx} onPress={() => playGame(g)} />
-              ))}
-            </View>
-          </View>
-        </ScrollView>
-      )}
-
-      {/* Category Modal */}
-      {modalData && (
-        <CategoryModal
-          visible={modalVisible}
-          title={modalData.title}
-          icon={modalData.icon}
-          gradient={modalData.gradient}
-          games={modalData.games}
-          onClose={() => setModalVisible(false)}
-          onPlayGame={playGame}
+      {/* Tab Switcher */}
+      <View style={[styles.tabSwitcher, { backgroundColor: colors.surface }]}>
+        <TabButton
+          label="Play Together"
+          icon="game-controller"
+          isActive={activeTab === 'play'}
+          onPress={() => setActiveTab('play')}
         />
-      )}
+        <TabButton
+          label="Messages"
+          icon="chatbubbles"
+          isActive={activeTab === 'messages'}
+          onPress={() => setActiveTab('messages')}
+        />
+      </View>
 
-      {/* Game Modal - with ad blocker for external games */}
-      <Modal visible={!!playingGame} animationType="slide" presentationStyle="fullScreen">
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
-          <StatusBar hidden />
-          {playingGame && (
-            <WebView
-              source={{ uri: getGameUrl(playingGame) }}
-              style={{ flex: 1 }}
-              scrollEnabled={false}
-              bounces={false}
-              onLoadEnd={() => setGameLoaded(true)}
-              javaScriptEnabled
-              domStorageEnabled
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              injectedJavaScriptBeforeContentLoaded={isExternalGame(playingGame) ? AD_BLOCKER_SCRIPT : undefined}
-            />
-          )}
-          {!gameLoaded && playingGame && (
-            <View style={[StyleSheet.absoluteFill, styles.gameLoading, { backgroundColor: playingGame.color || '#a855f7' }]}>
-              <ActivityIndicator size="large" color="#fff" />
-              <Text style={styles.gameLoadingText}>Loading {playingGame.name}...</Text>
-            </View>
-          )}
-          <TouchableOpacity
-            style={[styles.gameCloseBtn, { top: insets.top + 10 }]}
-            onPress={() => setPlayingGame(null)}
-          >
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </Modal>
+      {/* Tab Content */}
+      {activeTab === 'play' ? (
+        <PlayTogetherTab />
+      ) : (
+        <MessagesTab />
+      )}
     </View>
   );
 };
@@ -618,259 +993,131 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingTop: 12,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 2,
-  },
-  searchWrap: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 44,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-  },
-  featuredRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 14,
-  },
-  featuredCard: {
-    width: FEATURED_CARD_WIDTH,
-    height: FEATURED_CARD_WIDTH * 0.55,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginRight: 14,
-  },
-  featuredGradient: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  featuredBg: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.4,
-  },
-  featuredContent: {
-    padding: 18,
-  },
-  featuredIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  headerTitle: {
+    fontWeight: '700',
+    ...FontStyles.h3,
+  },
+  tabSwitcher: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 4,
+    borderRadius: 12,
+    gap: 8,
+  },
+  tabButton: {
+    flex: 1,
+  },
+  tabButtonInner: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
   },
-  featuredName: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#fff',
-  },
-  featuredCount: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 2,
+  tabButtonText: {
+    fontWeight: '600',
+    ...FontStyles.buttonSmall,
   },
   section: {
     paddingHorizontal: 16,
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  genreGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  genreCard: {
-    width: GENRE_CARD_WIDTH,
-    height: GENRE_CARD_WIDTH * 0.6,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  genreGradient: {
-    flex: 1,
-  },
-  genreThumbnailGrid: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  genreThumbnail: {
-    width: '50%',
-    height: '50%',
-    opacity: 0.5,
-  },
-  genreOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  genreContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 12,
-  },
-  genreName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
-    marginTop: 6,
-  },
-  genreCount: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 2,
-  },
-  gamesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  gameCard: {
-    width: (SCREEN_WIDTH - 52) / 3,
-    aspectRatio: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#e0e0e0',
-  },
-  gameCardImg: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gameCardOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    padding: 8,
-  },
-  gameCardName: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  searchResultsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 16,
-    gap: 10,
-  },
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 80,
-    width: SCREEN_WIDTH,
-  },
-  emptyText: {
-    fontSize: 14,
-    marginTop: 12,
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-    paddingTop: 16,
-  },
-  modalClose: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalHeaderContent: {
-    alignItems: 'center',
-    paddingTop: 20,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#fff',
-    marginTop: 10,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 4,
-  },
-  modalGrid: {
-    padding: 16,
-    gap: 10,
-  },
-  gameLoading: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gameLoadingText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
     marginTop: 16,
   },
-  gameCloseBtn: {
-    position: 'absolute',
-    right: 16,
-    width: 40,
-    height: 40,
+  sectionTitle: {
+    fontWeight: '700',
+    marginBottom: 16,
+    ...FontStyles.h4,
+  },
+  quickMatchRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  quickMatchCard: {
+    flex: 1,
+    aspectRatio: 1,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    overflow: 'hidden',
+  },
+  quickMatchGradient: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
+  },
+  quickMatchIcon: {
+    marginBottom: 12,
+  },
+  quickMatchEmoji: {
+    fontSize: 48,
+  },
+  quickMatchLabel: {
+    fontWeight: '800',
+    color: LoopsColors.white,
+    marginBottom: 4,
+    ...FontStyles.h3,
+  },
+  quickMatchSubtext: {
+    color: LoopsColors.white80,
+    ...FontStyles.caption,
+  },
+  comingSoonContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  comingSoonTitle: {
+    fontWeight: '700',
+    marginTop: 20,
+    textAlign: 'center',
+    ...FontStyles.h3,
+  },
+  comingSoonText: {
+    marginTop: 8,
+    textAlign: 'center',
+    ...FontStyles.body,
+  },
+  featureList: {
+    marginTop: 32,
+    gap: 16,
+    alignSelf: 'stretch',
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  featureText: {
+    ...FontStyles.body,
   },
   authGate: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
-    paddingTop: 100,
   },
   authTitle: {
-    fontSize: 24,
+    color: LoopsColors.white,
     fontWeight: '700',
-    color: '#fff',
     marginTop: 20,
-    textAlign: 'center',
+    ...FontStyles.h2,
   },
   authSubtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.7)',
+    color: LoopsColors.white60,
     textAlign: 'center',
     marginTop: 8,
-    lineHeight: 22,
+    ...FontStyles.body,
   },
   authBtn: {
     marginTop: 32,
-    borderRadius: 25,
+    borderRadius: 24,
     overflow: 'hidden',
   },
   authBtnGradient: {
@@ -878,14 +1125,583 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   authBtnText: {
-    color: '#fff',
-    fontSize: 16,
+    color: LoopsColors.white,
     fontWeight: '700',
+    ...FontStyles.button,
   },
   authLogin: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
+    color: LoopsColors.white50,
     marginTop: 16,
+    ...FontStyles.caption,
+  },
+  // Queue Modal
+  queueModal: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  queueCard: {
+    padding: 32,
+    borderRadius: 24,
+    alignItems: 'center',
+    minWidth: 280,
+  },
+  // Arcade Games UI
+  arcadeSection: {
+    paddingHorizontal: 8,
+    paddingTop: 12,
+  },
+  arcadeHeader: {
+    paddingHorizontal: 8,
+    marginBottom: 20,
+  },
+  arcadeTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  arcadeSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  arcadeGamesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 4,
+  },
+  arcadeGameItem: {
+    width: '50%',
+    padding: 6,
+  },
+  arcadeGameCard: {
+    aspectRatio: 0.85,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  arcadeGameThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  arcadeGameOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  liveLobbyBadge: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    gap: 6,
+  },
+  pulsingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22c55e',
+  },
+  liveLobbyText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  arcadeGameName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  emptyGamesLobby: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyGamesLobbyText: {
+    marginTop: 16,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Challenge Cards
+  challengeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    gap: 12,
+  },
+  challengeContent: {
+    flex: 1,
+  },
+  challengeFrom: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  challengeGame: {
+    marginTop: 2,
+    ...FontStyles.caption,
+  },
+  challengeActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  challengeAccept: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  challengeDecline: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Active Match Cards
+  activeMatchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+  },
+  activeMatchInfo: {
+    flex: 1,
+  },
+  activeMatchType: {
+    fontWeight: '700',
+    ...FontStyles.h4,
+  },
+  activeMatchStatus: {
+    marginTop: 4,
+    ...FontStyles.caption,
+  },
+  activeMatchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: LoopsColors.color1,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 4,
+  },
+  activeMatchBtnText: {
+    color: LoopsColors.white,
+    fontWeight: '600',
+    ...FontStyles.buttonSmall,
+  },
+  // Friends List
+  friendsScroll: {
+    paddingRight: 16,
+    gap: 12,
+  },
+  friendCard: {
+    width: 80,
+  },
+  friendCardInner: {
+    alignItems: 'center',
+  },
+  onlineDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: SemanticColors.success,
+    borderWidth: 2,
+    borderColor: LoopsColors.white,
+  },
+  friendName: {
+    marginTop: 8,
+    textAlign: 'center',
+    ...FontStyles.caption,
+  },
+  // Match History
+  historyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    gap: 12,
+  },
+  historyResult: {
+    width: 60,
+  },
+  historyResultText: {
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyOpponent: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  historyGame: {
+    marginTop: 2,
+    ...FontStyles.caption,
+  },
+  historyReward: {
+    alignItems: 'flex-end',
+  },
+  historyCoins: {
+    fontWeight: '700',
+    ...FontStyles.body,
+  },
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontWeight: '700',
+    marginTop: 16,
+    textAlign: 'center',
+    ...FontStyles.h3,
+  },
+  emptyText: {
+    marginTop: 8,
+    textAlign: 'center',
+    ...FontStyles.body,
+  },
+  // Messages Tab Styles
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+  },
+  searchPlaceholder: {
+    ...FontStyles.body,
+  },
+  storiesRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  storyItem: {
+    alignItems: 'center',
+    width: 72,
+    marginRight: 4,
+  },
+  addStoryCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderStyle: 'dashed',
+  },
+  storyRing: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    padding: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  storyAvatarContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    padding: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  storyUsername: {
+    marginTop: 6,
+    textAlign: 'center',
+    ...FontStyles.caption,
+  },
+  noStoryRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inboxSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  inboxSectionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inboxSectionContent: {
+    flex: 1,
+  },
+  inboxSectionTitle: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  inboxSectionSubtitle: {
+    marginTop: 2,
+    ...FontStyles.bodySmall,
+  },
+  inboxBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  inboxBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  chatContent: {
+    flex: 1,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatUsername: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  streakBadge: {
+    fontSize: 12,
+  },
+  chatPreview: {
+    marginTop: 2,
+    ...FontStyles.bodySmall,
+  },
+  chatMeta: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  chatTime: {
+    ...FontStyles.caption,
+  },
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  emptyMessages: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  searchModal: {
+    flex: 1,
+  },
+  searchModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  searchModalInput: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    ...FontStyles.body,
+  },
+  searchHint: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  searchHintText: {
+    marginTop: 12,
+    ...FontStyles.bodySmall,
+  },
+  searchResult: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  searchResultContent: {
+    flex: 1,
+  },
+  searchResultName: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  searchResultUsername: {
+    marginTop: 2,
+    ...FontStyles.caption,
+  },
+  chatModal: {
+    flex: 1,
+  },
+  chatModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  chatModalUser: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  chatModalUsername: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  chatMessagesList: {
+    flex: 1,
+  },
+  messageBubble: {
+    maxWidth: '75%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    marginBottom: 8,
+  },
+  myMessage: {
+    alignSelf: 'flex-end',
+    borderBottomRightRadius: 4,
+  },
+  theirMessage: {
+    alignSelf: 'flex-start',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    ...FontStyles.body,
+  },
+  emptyChatHint: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyChatText: {
+    ...FontStyles.body,
+  },
+  chatInputArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    gap: 10,
+  },
+  chatInputBox: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  chatInput: {
+    ...FontStyles.body,
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Games Grid
+  gamesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  gameGridItem: {
+    width: '31%',
+  },
+  gameGridCard: {
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  gameGridThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  gameGridOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  gameGridName: {
+    color: LoopsColors.white,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  emptyGames: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 32,
+  },
+  emptyGamesText: {
+    marginTop: 12,
+    textAlign: 'center',
+    ...FontStyles.body,
+  },
+  emptyGamesSubtext: {
+    marginTop: 4,
+    textAlign: 'center',
+    ...FontStyles.caption,
   },
 });
 

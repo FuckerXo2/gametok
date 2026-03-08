@@ -171,11 +171,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           disabled={isSent}
         >
           <View style={styles.avatarContainer}>
-            {item.avatar ? (
-              <Image source={{ uri: item.avatar }} style={styles.avatar} />
-            ) : (
-              <Avatar uri={item.avatar} userId={item.id} size={40} />
-            )}
+            <Avatar uri={item.avatar} size={AVATAR_SIZE} />
             {isSelected && !isSent && (
               <View style={[styles.selectedBadge, { borderColor: colors.surface }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />

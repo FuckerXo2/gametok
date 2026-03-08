@@ -28,6 +28,19 @@ const POOL_SIZE = 4;
 
 const injectedJS = `
   (function() {
+    // Prevent iOS Now Playing widget
+    if (navigator.mediaSession) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+      navigator.mediaSession.setActionHandler('seekbackward', null);
+      navigator.mediaSession.setActionHandler('seekforward', null);
+      navigator.mediaSession.setActionHandler('previoustrack', null);
+      navigator.mediaSession.setActionHandler('nexttrack', null);
+      navigator.mediaSession.playbackState = 'none';
+    }
+    Object.defineProperty(navigator, 'mediaSession', { get: function() { return { metadata: null, setActionHandler: function(){}, playbackState: 'none', setPositionState: function(){} }; }, configurable: true });
+
     // Viewport
     var meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
@@ -137,7 +150,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
     setPool(prev => {
       // Already in pool?
       if (prev.find(p => p.id === id)) return prev;
-      
+
       // Add to pool
       const newEntry: PooledWebView = {
         id,
@@ -145,7 +158,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
         loaded: false,
         ref: getOrCreateRef(id),
       };
-      
+
       // If pool is full, remove oldest non-active entry
       if (prev.length >= POOL_SIZE) {
         const toRemove = prev.find(p => p.id !== activeId);
@@ -154,7 +167,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
           return [...prev.filter(p => p.id !== toRemove.id), newEntry];
         }
       }
-      
+
       return [...prev, newEntry];
     });
   }, [activeId]);
@@ -176,7 +189,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
         true;
       `);
     }
-    
+
     // Unmute new active
     const newRef = webViewRefs.current.get(id);
     newRef?.current?.injectJavaScript(`
@@ -190,7 +203,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
       }
       true;
     `);
-    
+
     setActiveId(id);
   }, [activeId]);
 
@@ -223,7 +236,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
     try {
       const data = JSON.parse(event.nativeEvent.data);
       onMessage?.(id, data);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   return (
@@ -247,6 +260,7 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
             domStorageEnabled
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
+            allowsAirPlayForMediaPlayback={false}
             injectedJavaScript={injectedJS}
             onLoadEnd={() => handleLoadEnd(item.id)}
             onMessage={(e) => handleMessage(item.id, e)}

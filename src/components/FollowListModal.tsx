@@ -14,12 +14,15 @@ import { useTheme } from '../context/ThemeContext';
 import { users } from '../services/api';
 import { Avatar } from './Avatar';
 import { SlideRightModal } from './SlideRightModal';
+import { AnimatedButton } from './AnimatedButton';
+import { useAuth } from '../context/AuthContext';
 
 interface UserItem {
     id: string;
     username: string;
     displayName: string;
     avatar: string | null;
+    isFollowing?: boolean;
 }
 
 interface FollowListModalProps {
@@ -41,6 +44,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
 }) => {
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
+    const { user: currentUser } = useAuth();
     const [activeTab, setActiveTab] = useState<'followers' | 'following'>(initialTab);
     const [followers, setFollowers] = useState<UserItem[]>([]);
     const [following, setFollowing] = useState<UserItem[]>([]);
@@ -72,23 +76,43 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
 
     const currentData = activeTab === 'followers' ? followers : following;
 
-    const renderItem = ({ item }: { item: UserItem }) => (
-        <TouchableOpacity
-            style={styles.userRow}
-            onPress={() => onUserPress && onUserPress(item)}
-            activeOpacity={0.7}
-        >
-            <Avatar uri={item.avatar} size={54} />
-            <View style={styles.userInfo}>
-                <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
-                    {item.username}
-                </Text>
-                <Text style={[styles.displayName, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {item.displayName || item.username}
-                </Text>
-            </View>
-        </TouchableOpacity>
-    );
+    const renderItem = ({ item }: { item: UserItem }) => {
+        const isCurrentMe = currentUser?.id === item.id;
+
+        return (
+            <TouchableOpacity
+                style={styles.userRow}
+                onPress={() => onUserPress && onUserPress(item)}
+                activeOpacity={0.7}
+            >
+                <Avatar uri={item.avatar} size={54} />
+                <View style={styles.userInfo}>
+                    <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
+                        {item.username}
+                    </Text>
+                    <Text style={[styles.displayName, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {item.displayName || item.username}
+                    </Text>
+                </View>
+                {!isCurrentMe && (
+                    <AnimatedButton
+                        style={[
+                            styles.actionButton,
+                            item.isFollowing ? styles.messageBtn : styles.followBtn
+                        ]}
+                        onPress={() => onUserPress && onUserPress(item)}
+                    >
+                        <Text style={[
+                            styles.actionButtonText,
+                            item.isFollowing ? styles.messageBtnText : styles.followBtnText
+                        ]}>
+                            {item.isFollowing ? 'Message' : 'Follow'}
+                        </Text>
+                    </AnimatedButton>
+                )}
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <SlideRightModal visible={visible} onClose={onClose}>
@@ -232,11 +256,23 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 8,
         marginRight: 10,
+    },
+    messageBtn: {
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
+    },
+    followBtn: {
         backgroundColor: '#a855f7',
     },
     actionButtonText: {
         fontSize: 13,
         fontWeight: '600',
+    },
+    messageBtnText: {
+        color: '#ffffff',
+    },
+    followBtnText: {
         color: '#ffffff',
     },
     centerContainer: {

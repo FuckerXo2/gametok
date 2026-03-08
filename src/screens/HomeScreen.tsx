@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator, AppState } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -304,6 +304,15 @@ true;
 // 3. Event listeners just stop propagation within the WebView, letting native handle it
 const EDGE_BLOCK_SCRIPT = `
 (function() {
+  // Prevent iOS Now Playing widget
+  if (navigator.mediaSession) {
+    navigator.mediaSession.metadata = null;
+    navigator.mediaSession.setActionHandler('play', null);
+    navigator.mediaSession.setActionHandler('pause', null);
+    navigator.mediaSession.playbackState = 'none';
+  }
+  try { Object.defineProperty(navigator, 'mediaSession', { get: function() { return { metadata: null, setActionHandler: function(){}, playbackState: 'none', setPositionState: function(){} }; }, configurable: true }); } catch(e) {}
+
   if (window._edgeBlockActive) return;
   window._edgeBlockActive = true;
   
@@ -1372,6 +1381,117 @@ const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, c
   </Svg>
 );
 
+// Animated Like Button
+const AnimatedLikeButton = ({
+  isLiked,
+  onPress,
+  likeCount,
+  styles
+}: {
+  isLiked: boolean;
+  onPress: (e: any) => void;
+  likeCount: number;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePress = (e: any) => {
+    Animated.sequence([
+      Animated.timing(scale, {
+        toValue: 0.7,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1.2,
+        friction: 3,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        friction: 4,
+        tension: 100,
+        useNativeDriver: true,
+      })
+    ]).start();
+    onPress(e);
+  };
+
+  return (
+    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons
+          name="heart"
+          size={35}
+          color={isLiked ? LoopsColors.mainPink : LoopsColors.white}
+        />
+      </Animated.View>
+      <Text style={styles.actionCount}>{formatCount(likeCount)}</Text>
+    </TouchableOpacity>
+  );
+};
+
+const AnimatedCommentButton = ({
+  onPress,
+  commentCount,
+  styles
+}: {
+  onPress: (e: any) => void;
+  commentCount: number;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePress = (e: any) => {
+    onPress(e);
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.75, duration: 100, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1.15, friction: 3, tension: 40, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
+    ]).start();
+  };
+
+  return (
+    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons name="chatbubble-ellipses" size={32} color={LoopsColors.white} />
+      </Animated.View>
+      <Text style={styles.actionCount}>{formatCount(commentCount)}</Text>
+    </TouchableOpacity>
+  );
+};
+
+const AnimatedShareButton = ({
+  onPress,
+  shareCount,
+  styles
+}: {
+  onPress: (e: any) => void;
+  shareCount: number;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePress = (e: any) => {
+    onPress(e);
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.7, duration: 100, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1.2, friction: 3, tension: 40, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
+    ]).start();
+  };
+
+  return (
+    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons name="arrow-redo" size={32} color={LoopsColors.white} />
+      </Animated.View>
+      <Text style={styles.actionCount}>{formatCount(shareCount)}</Text>
+    </TouchableOpacity>
+  );
+};
+
 // Animated Welcome Screen Component
 const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) => {
   // Animation values
@@ -2117,10 +2237,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   // Handle share - opens share sheet
   const handleShare = (game: Game) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShareGameId(game.id);
-    setShareGameName(game.name);
-    setShowShare(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setShareGameId(game.id);
+      setShareGameName(game.name);
+      setShowShare(true);
+    } catch (e: any) {
+      Alert.alert('Share Error', e.message || String(e));
+    }
   };
 
   // Handle sending game to friend
@@ -2889,6 +3013,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   cacheEnabled={true}
                   allowsInlineMediaPlayback
                   mediaPlaybackRequiresUserAction={false}
+                  allowsAirPlayForMediaPlayback={false}
                   scrollEnabled={false}
                   bounces={false}
                   overScrollMode="never"
@@ -2993,26 +3118,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         <Text style={[styles.actionCount, { color: LoopsColors.coinGold }]}>+{sessionPoints}</Text>
                       </TouchableOpacity>
 
-                      {/* Like */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
+                      <AnimatedLikeButton
+                        isLiked={likedGames.has(item!.game!.id)}
                         onPress={(e) => {
                           triggerClickAnimation(e);
                           handleLike(item!.game!.id);
                         }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="heart"
-                          size={35}
-                          color={likedGames.has(item!.game!.id) ? LoopsColors.mainPink : LoopsColors.white}
-                        />
-                        <Text style={styles.actionCount}>{formatCount(getFakeCount(item!.game!.id, 'likes') + (likedGames.has(item!.game!.id) ? 1 : 0))}</Text>
-                      </TouchableOpacity>
+                        likeCount={getFakeCount(item!.game!.id, 'likes') + (likedGames.has(item!.game!.id) ? 1 : 0)}
+                        styles={styles}
+                      />
 
                       {/* Comments */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
+                      <AnimatedCommentButton
                         onPress={(e) => {
                           triggerClickAnimation(e);
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -3020,11 +3137,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           setCommentsGameName(item!.game!.name);
                           setShowComments(true);
                         }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="chatbubble-ellipses" size={32} color={LoopsColors.white} />
-                        <Text style={styles.actionCount}>{formatCount(getFakeCount(item!.game!.id, 'comments'))}</Text>
-                      </TouchableOpacity>
+                        commentCount={getFakeCount(item!.game!.id, 'comments')}
+                        styles={styles}
+                      />
 
                       {/* Bookmark/Save */}
                       <TouchableOpacity
@@ -3044,17 +3159,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       </TouchableOpacity>
 
                       {/* Share */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
+                      <AnimatedShareButton
                         onPress={(e) => {
                           triggerClickAnimation(e);
                           handleShare(item!.game!);
                         }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="arrow-redo" size={32} color={LoopsColors.white} />
-                        <Text style={styles.actionCount}>{formatCount(getFakeCount(item!.game!.id, 'shares'))}</Text>
-                      </TouchableOpacity>
+                        shareCount={getFakeCount(item!.game!.id, 'shares')}
+                        styles={styles}
+                      />
                     </View>
 
                     {/* Game info - bottom left */}

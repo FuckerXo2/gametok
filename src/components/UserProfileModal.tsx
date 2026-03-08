@@ -15,15 +15,20 @@ import {
   Platform,
   Alert,
   Dimensions,
+  StatusBar,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { messages as messagesApi, users, moderation } from '../services/api';
+import { messages as messagesApi, users, moderation, feed, games as gamesApi, stories as storiesApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { ReportModal } from './ReportModal';
 import { FollowListModal } from './FollowListModal';
 import { SlideRightModal } from './SlideRightModal';
+import { AnimatedButton } from './AnimatedButton';
+import { useAuth } from '../context/AuthContext';
 
 interface UserProfile {
   id: string;
@@ -64,6 +69,7 @@ const SUGGESTED_FRIENDS: any[] = [];
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user, onFriendStatusChange }) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { user: currentUser } = useAuth();
   const [isAdded, setIsAdded] = useState(user?.isFriend ?? false);
   const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -73,7 +79,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [loadingGames, setLoadingGames] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState(true);
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [nestedUser, setNestedUser] = useState<any>(null);
+
+  const [playingGame, setPlayingGame] = useState<any | null>(null);
+  const [gameLoaded, setGameLoaded] = useState(false);
+
+  const isCurrentMe = currentUser?.id === user?.id;
 
   // Update isAdded when user changes or modal opens
   React.useEffect(() => {
@@ -126,45 +139,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   };
 
   const handleBlock = () => {
-    Alert.alert(
-      'Block User',
-      `Are you sure you want to block @${user?.username}? They won't be able to message you or see your profile.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await moderation.block(user!.id);
-              Alert.alert('Blocked', `You've blocked @${user?.username}.`);
-              onClose();
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to block user');
-            }
-          }
-        },
-      ]
-    );
+    setShowBlockConfirm(true);
+  };
+
+  const confirmBlockAction = async () => {
+    try {
+      await moderation.block(user!.id);
+      setShowBlockConfirm(false);
+      onClose();
+    } catch (error: any) {
+      console.log('Failed to block user:', error);
+      setShowBlockConfirm(false);
+    }
   };
 
   const showOptions = () => {
-    const options: any = [
-      { text: 'Report User', onPress: handleReport },
-      { text: 'Block User', style: 'destructive', onPress: handleBlock },
-    ];
-
-    if (isAdded) {
-      options.unshift({
-        text: `Unfollow @${user?.username}`,
-        style: 'destructive',
-        onPress: handleAdd
-      });
-    }
-
-    options.push({ text: 'Cancel', style: 'cancel' });
-
-    Alert.alert('Options', '', options);
+    setShowOptionsModal(true);
   };
 
   if (!user) return null;
@@ -421,7 +411,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             </View>
 
             {/* Action Buttons */}
-            {loadingFollow ? (
+            {isCurrentMe ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}
+                  onPress={() => Alert.alert('Notice', 'Go to the Profile tab to edit your profile.')}
+                >
+                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Edit Profile</Text>
+                </TouchableOpacity>
+              </View>
+            ) : loadingFollow ? (
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
                 <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color={colors.textSecondary} />
@@ -454,7 +453,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             ) : (
               /* When not following: show Follow + Message */
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                <TouchableOpacity
+                <AnimatedButton
                   style={{ flex: 1, backgroundColor: '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                   onPress={handleAdd}
                   disabled={isToggling}
@@ -467,14 +466,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                       <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Follow</Text>
                     </>
                   )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}
-                  onPress={openChat}
-                >
-                  <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
-                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Message</Text>
-                </TouchableOpacity>
+                </AnimatedButton>
               </View>
             )}
           </View>
@@ -498,6 +490,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                     <TouchableOpacity
                       key={game.id}
                       style={{ width: (Dimensions.get('window').width - 4) / 3, aspectRatio: 1, backgroundColor: game.color || colors.surface }}
+                      onPress={() => {
+                        setPlayingGame({ id: game.id, name: game.name, color: game.color || '#a855f7' });
+                        setGameLoaded(false);
+                      }}
                     >
                       {thumbUri ? (
                         <Image source={{ uri: thumbUri }} style={{ width: '100%', height: '100%' }} />
@@ -518,6 +514,75 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           </View>
         </ScrollView>
       </View>
+
+      {/* Options Modal */}
+      <Modal visible={showOptionsModal} transparent animationType="slide" onRequestClose={() => setShowOptionsModal(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setShowOptionsModal(false)}>
+          <View style={{ backgroundColor: colors.background, overflow: 'hidden', paddingBottom: insets.bottom || 20 }}>
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 12 }} />
+
+            {isAdded && (
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.surface, marginBottom: 1 }}
+                onPress={() => { setShowOptionsModal(false); handleAdd(); }}
+              >
+                <Ionicons name="person-remove-outline" size={24} color="#ef4444" style={{ marginRight: 16 }} />
+                <Text style={{ color: '#ef4444', fontSize: 16, fontWeight: '600' }}>Unfollow @{user.username}</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.surface, marginBottom: 1 }}
+              onPress={() => { setShowOptionsModal(false); handleReport(); }}
+            >
+              <Ionicons name="flag-outline" size={24} color={colors.text} style={{ marginRight: 16 }} />
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Report User</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.surface }}
+              onPress={() => { setShowOptionsModal(false); handleBlock(); }}
+            >
+              <Ionicons name="ban-outline" size={24} color="#ef4444" style={{ marginRight: 16 }} />
+              <Text style={{ color: '#ef4444', fontSize: 16, fontWeight: '600' }}>Block User</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 8, backgroundColor: colors.background, marginTop: 4, marginBottom: 4 }} />
+
+            <TouchableOpacity
+              style={{ padding: 16, backgroundColor: colors.surface, alignItems: 'center', paddingBottom: (insets.bottom || 20) + 16 }}
+              onPress={() => setShowOptionsModal(false)}
+            >
+              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Block Confirm Modal */}
+      <Modal visible={showBlockConfirm} transparent animationType="fade" onRequestClose={() => setShowBlockConfirm(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 20, width: '100%', overflow: 'hidden' }}>
+            <View style={{ padding: 24, paddingBottom: 16, alignItems: 'center' }}>
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                <Ionicons name="ban" size={24} color="#ef4444" />
+              </View>
+              <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>Block @{user.username}?</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+                Are you sure you want to block this user? They won't be able to message you, challenge you, or see your profile.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={() => setShowBlockConfirm(false)}>
+                <Text style={{ color: colors.textSecondary, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center' }} onPress={confirmBlockAction}>
+                <Text style={{ color: '#ef4444', fontSize: 16, fontWeight: '700' }}>Block</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Report Modal */}
       <ReportModal
@@ -547,6 +612,42 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           user={nestedUser}
         />
       )}
+
+      {/* Game Playing Modal */}
+      <Modal visible={playingGame !== null} animationType="slide" onRequestClose={() => setPlayingGame(null)}>
+        {playingGame && (
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            <StatusBar hidden />
+            <WebView
+              source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }}
+              style={{ flex: 1 }}
+              scrollEnabled={false}
+              bounces={false}
+              onLoadEnd={() => setGameLoaded(true)}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              allowsAirPlayForMediaPlayback={false}
+            />
+            {!gameLoaded && (
+              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: playingGame.color, justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginTop: 16 }}>Loading {playingGame.name}...</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={{ position: 'absolute', right: 16, top: insets.top + 10, zIndex: 100 }}
+              onPress={() => { setPlayingGame(null); setGameLoaded(false); }}
+            >
+              <BlurView intensity={50} tint="dark" style={{ width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </BlurView>
+            </TouchableOpacity>
+          </View>
+        )}
+      </Modal>
+
     </SlideRightModal>
   );
 };

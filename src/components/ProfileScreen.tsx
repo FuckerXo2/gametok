@@ -335,7 +335,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         onUserPress={(profileUser) => {
           setFollowModalConfig({ ...followModalConfig, visible: false });
           // Open their profile modal with isFriend passed neutrally (it will be refetched there)
-          setSelectedProfileUser({ ...profileUser, isFriend: false });
+          setTimeout(() => {
+            setSelectedProfileUser({ ...profileUser, isFriend: false });
+          }, 300);
         }}
       />
 

@@ -18,10 +18,13 @@ export const AnimatedSplash: React.FC<AnimatedSplashProps> = ({ onAnimationCompl
 
   useEffect(() => {
     if (imageLoaded) {
-      // Image is loaded, hide native splash and start animation
-      SplashScreen.hideAsync().then(() => {
-        runAnimation();
-      });
+      // Add a slight delay to ensure the native view manager has fully drawn the React view buffer
+      // before hiding the OS-level native splash screen, preventing brief flashes/blinks.
+      setTimeout(() => {
+        SplashScreen.hideAsync().then(() => {
+          runAnimation();
+        });
+      }, 50);
     }
   }, [imageLoaded]);
 

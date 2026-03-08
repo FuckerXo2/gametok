@@ -342,7 +342,7 @@ const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; them
   );
 };
 
-const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void; onlineUsers?: string[]; index?: number }> = ({ friend, isAdd, theme, onPress, onlineUsers, index = 0 }) => {
+const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void; onlineUsers?: string[]; index?: number }> = React.memo(({ friend, isAdd, theme, onPress, onlineUsers, index = 0 }) => {
   if (isAdd) {
     return (
       <AnimatedCard onPress={onPress || (() => { })} index={index} style={styles.friendCard}>
@@ -364,10 +364,10 @@ const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?
       {friend.tag && <Text style={[styles.friendTag, { color: theme.textSecondary }]} numberOfLines={1}>{friend.tag}</Text>}
     </AnimatedCard>
   );
-};
+});
 
 // Animated wrapper for press physics + staggered entrance
-const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: React.ReactNode; style?: any }> = ({ onPress, index = 0, children, style }) => {
+const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: React.ReactNode; style?: any }> = React.memo(({ onPress, index = 0, children, style }) => {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -378,9 +378,12 @@ const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: Re
     onPress();
   }
 
+  // Optimize: Only animate the first few visible items
+  const enteringAnim = index < 4 ? FadeInRight.delay(index * 60).springify().damping(18) : undefined;
+
   return (
     <Animated.View
-      entering={FadeInRight.delay(Math.min((index) * 60, 400)).springify().damping(18)}
+      entering={enteringAnim}
       style={[style, animatedStyle]}
     >
       <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handlePress}>
@@ -388,10 +391,10 @@ const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: Re
       </Pressable>
     </Animated.View>
   );
-};
+});
 
 // 1:1 Square Card for "Continue"
-const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = ({ game, onPress, theme, badge, index }) => (
+const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = React.memo(({ game, onPress, theme, badge, index }) => (
   <AnimatedCard onPress={onPress} index={index} style={styles.squareGameCard}>
     <View style={[styles.squareGameImgContainer, { backgroundColor: theme.cardBg }]}>
       {game.thumbnail ? (
@@ -415,10 +418,10 @@ const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any
     </View>
     <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
   </AnimatedCard>
-);
+));
 
 // 16:9 Rectangular Card for "Recommended"
-const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = ({ game, onPress, theme, badge, index }) => (
+const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = React.memo(({ game, onPress, theme, badge, index }) => (
   <AnimatedCard onPress={onPress} index={index} style={styles.rectGameCard}>
     <View style={[styles.rectGameImgContainer, { backgroundColor: theme.cardBg }]}>
       {game.thumbnail ? (
@@ -442,7 +445,7 @@ const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; 
     </View>
     <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
   </AnimatedCard>
-);
+));
 
 export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -714,7 +717,8 @@ export const ExploreScreen: React.FC = () => {
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                     {searchUsers.map(u => (
                       <FriendCard key={u.id} friend={u} theme={theme} onPress={() => { setSelectedUser(u); setShowUserProfile(true); }} onlineUsers={onlineUsers} />
-                    ))}      </ScrollView>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
               {searchGames.length > 0 && (
@@ -888,6 +892,7 @@ export const ExploreScreen: React.FC = () => {
               domStorageEnabled
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
+              allowsAirPlayForMediaPlayback={false}
               injectedJavaScriptBeforeContentLoaded={isExternalGame(playingGame) ? AD_BLOCKER_SCRIPT : undefined}
               injectedJavaScript={createBlurBgScript(playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`, playingGame?.color || '#1a1a2e')}
               ref={webViewRef}
@@ -929,8 +934,11 @@ export const ExploreScreen: React.FC = () => {
           loadFriends();
         }}
         onOpenProfile={(user) => {
-          setSelectedUser(user);
-          setShowUserProfile(true);
+          setShowFindFriends(false);
+          setTimeout(() => {
+            setSelectedUser(user);
+            setShowUserProfile(true);
+          }, 300);
         }}
       />
 

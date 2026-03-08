@@ -27,11 +27,18 @@ export const Avatar: React.FC<AvatarProps> = ({ uri, size = 40, style }) => {
   };
 
   // Check if this is a creator avatar
-  if (uri && uri.startsWith('avatar-creator://')) {
+  if (uri && typeof uri === 'string' && uri.startsWith('avatar-creator://')) {
     try {
       const avatarId = uri.replace('avatar-creator://', '').split('?')[0];
-      const params = new URLSearchParams(uri.split('?')[1] || '');
-      const bgColor = params.get('bg') ? decodeURIComponent(params.get('bg')!) : '#F5D558';
+      const queryPart = uri.split('?')[1] || '';
+
+      let bgColor = '#F5D558'; // default
+      // Simple manual query param parsing to avoid URLSearchParams dependency issues
+      const bgMatch = queryPart.match(/bg=([^&]+)/);
+      if (bgMatch && bgMatch[1]) {
+        bgColor = decodeURIComponent(bgMatch[1]);
+      }
+
       const avatar = getAvatarById(avatarId);
 
       if (avatar) {
@@ -49,10 +56,17 @@ export const Avatar: React.FC<AvatarProps> = ({ uri, size = 40, style }) => {
     }
   }
 
+  // Ensure we NEVER pass an avatar-creator:// URI directly to the Image component
+  // because React Native will throw "No suitable image URL loader found"
+  let imageSource: any = DEFAULT_AVATAR;
+  if (uri && typeof uri === 'string' && !uri.startsWith('avatar-creator://')) {
+    imageSource = { uri };
+  }
+
   return (
     <View style={[avatarStyle, styles.container, style]}>
       <Image
-        source={uri ? { uri } : DEFAULT_AVATAR}
+        source={imageSource}
         style={[avatarStyle, styles.image]}
         defaultSource={DEFAULT_AVATAR}
       />

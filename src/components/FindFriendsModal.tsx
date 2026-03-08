@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import { users } from '../services/api';
 import { Avatar } from './Avatar';
+import { AnimatedButton } from './AnimatedButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface UserItem {
@@ -178,7 +179,7 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
                                             </Text>
                                         </View>
 
-                                        <TouchableOpacity
+                                        <AnimatedButton
                                             style={[
                                                 styles.followBtn,
                                                 isFollowing
@@ -195,7 +196,7 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
                                             ) : (
                                                 <Text style={[styles.followBtnText, { color: '#fff' }]}>Add</Text>
                                             )}
-                                        </TouchableOpacity>
+                                        </AnimatedButton>
                                     </TouchableOpacity>
                                 );
                             }}

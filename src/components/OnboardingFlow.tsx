@@ -51,9 +51,9 @@ import { AvatarCreatorModal, AvatarConfig, getAvatarById } from './AvatarCreator
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-type OnboardingStep = 'welcome' | 'genres' | 'credentials' | 'username' | 'profile';
+type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'profile';
 
-const STEP_ORDER: OnboardingStep[] = ['welcome', 'genres', 'credentials', 'username', 'profile'];
+const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'profile'];
 
 const GAME_GENRES = [
   { id: 'pvp', name: 'PvP', icon: 'flash-outline' as const, color: '#FF4757' },
@@ -387,7 +387,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const { colors } = useTheme();
 
   const [step, setStep] = useState<OnboardingStep>(
-    skipIntro ? (startWithLogin ? 'credentials' : 'genres') : 'welcome'
+    skipIntro ? 'credentials' : 'welcome'
   );
   const [isLogin, setIsLogin] = useState(startWithLogin);
   const [loading, setLoading] = useState(false);
@@ -563,7 +563,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const renderWelcome = () => (
     <View style={styles.stepContainer}>
       <ImageBackground
-        source={require('../../assets/splash.png')}
+        source={require('../../assets/onboarding/pic3.png')}
         style={styles.background}
         resizeMode="cover"
       >
@@ -623,7 +623,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         <Animated.View entering={FadeInUp.delay(900).springify()}>
           <TouchableOpacity
             style={styles.authOption}
-            onPress={() => { setIsLogin(false); goTo('genres'); }}
+            onPress={() => { setIsLogin(false); goTo('credentials'); }}
             disabled={loading || isAuthLoading}
           >
             <Ionicons name="mail-outline" size={22} color="#fff" />
@@ -707,7 +707,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} key={stepKey}>
       <TouchableOpacity
         style={[styles.backButton, { top: 8 }]}
-        onPress={() => goTo(isLogin ? 'welcome' : 'genres')}
+        onPress={() => goTo(isLogin ? 'welcome' : 'welcome')}
       >
         <Ionicons name="arrow-back" size={24} color={colors.text} />
       </TouchableOpacity>
@@ -930,7 +930,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   return (
     <View style={[styles.container, { paddingTop: step === 'welcome' ? 0 : insets.top }]}>
       {step === 'welcome' && renderWelcome()}
-      {step === 'genres' && renderGenres()}
       {step === 'credentials' && renderCredentials()}
       {step === 'username' && renderUsername()}
       {step === 'profile' && renderProfile()}

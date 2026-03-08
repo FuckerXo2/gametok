@@ -407,3 +407,82 @@ export const gamification = {
     return request(`/gamification/leaderboard/${gameId}?limit=${limit}`);
   },
 };
+
+// Multiplayer API
+export const multiplayer = {
+  // Matchmaking
+  joinQueue: async (matchType: '1v1' | '2v2') => {
+    return request('/multiplayer/queue/join', {
+      method: 'POST',
+      body: JSON.stringify({ matchType }),
+    });
+  },
+
+  leaveQueue: async (queueId: string) => {
+    return request('/multiplayer/queue/leave', {
+      method: 'DELETE',
+      body: JSON.stringify({ queueId }),
+    });
+  },
+
+  getQueueStatus: async () => {
+    return request('/multiplayer/queue/status');
+  },
+
+  // Matches
+  getActiveMatches: async () => {
+    return request('/multiplayer/matches/active');
+  },
+
+  getMatch: async (matchId: string) => {
+    return request(`/multiplayer/matches/${matchId}`);
+  },
+
+  setMatchGame: async (matchId: string, gameId: string) => {
+    return request(`/multiplayer/matches/${matchId}/game`, {
+      method: 'POST',
+      body: JSON.stringify({ gameId }),
+    });
+  },
+
+  updateScore: async (matchId: string, score: number) => {
+    return request(`/multiplayer/matches/${matchId}/score`, {
+      method: 'POST',
+      body: JSON.stringify({ score }),
+    });
+  },
+
+  completeMatch: async (matchId: string) => {
+    return request(`/multiplayer/matches/${matchId}/complete`, {
+      method: 'POST',
+    });
+  },
+
+  getMatchHistory: async (limit = 20) => {
+    return request(`/multiplayer/matches/history?limit=${limit}`);
+  },
+
+  // Challenges
+  sendChallenge: async (toUserId: string, gameId: string, matchType: '1v1' | '2v2', message?: string) => {
+    return request('/multiplayer/challenges/send', {
+      method: 'POST',
+      body: JSON.stringify({ toUserId, gameId, matchType, message }),
+    });
+  },
+
+  acceptChallenge: async (challengeId: string) => {
+    return request(`/multiplayer/challenges/${challengeId}/accept`, {
+      method: 'POST',
+    });
+  },
+
+  declineChallenge: async (challengeId: string) => {
+    return request(`/multiplayer/challenges/${challengeId}/decline`, {
+      method: 'POST',
+    });
+  },
+
+  getReceivedChallenges: async () => {
+    return request('/multiplayer/challenges/received');
+  },
+};

@@ -9,7 +9,7 @@ import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
-import { InboxScreen } from './src/components/InboxScreen';
+import { ConnectScreen } from './src/components/ConnectScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { ExploreScreen } from './src/components/ExploreScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
@@ -74,7 +74,7 @@ const MainApp = () => {
 
         {/* Connect (social + messages) - always mounted */}
         <View style={[styles.screenContainer, { opacity: activeTab === 'connect' ? 1 : 0, zIndex: activeTab === 'connect' ? 1 : 0 }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
-          <InboxScreen />
+          <ConnectScreen />
         </View>
 
         {/* Profile - always mounted */}
@@ -269,34 +269,30 @@ export default function App() {
     'Graphik-Bold': require('./assets/fonts/graphik_arabic_bold.otf'),
   });
 
-  // AnimatedSplash renders FIRST, before any providers
-  if (showAnimatedSplash) {
-    return <AnimatedSplash onAnimationComplete={() => setShowAnimatedSplash(false)} />;
-  }
-
-  // Wait for fonts to load
-  if (!fontsLoaded) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  }
-
   return (
-    <ErrorBoundary>
-      <SafeAreaProvider>
-        <GestureHandlerRootView style={styles.container}>
-          <ThemeProvider>
-            <AuthProvider>
-              <SocketProvider>
-                <AppContent />
-              </SocketProvider>
-            </AuthProvider>
-          </ThemeProvider>
-        </GestureHandlerRootView>
-      </SafeAreaProvider>
-    </ErrorBoundary>
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      {fontsLoaded && (
+        <ErrorBoundary>
+          <SafeAreaProvider>
+            <GestureHandlerRootView style={styles.container}>
+              <ThemeProvider>
+                <AuthProvider>
+                  <SocketProvider>
+                    <AppContent />
+                  </SocketProvider>
+                </AuthProvider>
+              </ThemeProvider>
+            </GestureHandlerRootView>
+          </SafeAreaProvider>
+        </ErrorBoundary>
+      )}
+
+      {showAnimatedSplash && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 99999, elevation: 99999 }]}>
+          <AnimatedSplash onAnimationComplete={() => setShowAnimatedSplash(false)} />
+        </View>
+      )}
+    </View>
   );
 }
 

@@ -318,7 +318,7 @@ export const DiscoverScreen: React.FC = () => {
         {playingGame && (
           <View style={styles.gameModal}>
             <StatusBar hidden />
-            <WebView ref={gameWebViewRef} source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }} style={styles.gameWebView} scrollEnabled={false} bounces={false} onLoadEnd={() => setGameLoaded(true)} javaScriptEnabled domStorageEnabled allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} />
+            <WebView ref={gameWebViewRef} source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }} style={styles.gameWebView} scrollEnabled={false} bounces={false} onLoadEnd={() => setGameLoaded(true)} javaScriptEnabled domStorageEnabled allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} allowsAirPlayForMediaPlayback={false} />
             {!gameLoaded && <View style={[styles.gameLoadingOverlay, { backgroundColor: playingGame.color }]}><ActivityIndicator size="large" color="#fff" /><Text style={styles.gameLoadingText}>Loading {playingGame.name}...</Text></View>}
             <TouchableOpacity style={[styles.gameCloseBtn, { top: insets.top + 10 }]} onPress={() => { setPlayingGame(null); setGameLoaded(false); }}>
               <BlurView intensity={50} tint="dark" style={styles.gameCloseBtnBlur}><Ionicons name="close" size={24} color="#fff" /></BlurView>

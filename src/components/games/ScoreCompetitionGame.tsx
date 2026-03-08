@@ -164,6 +164,7 @@ const ScoreCompetitionGame: React.FC<ScoreCompetitionProps> = ({
           domStorageEnabled
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
+          allowsAirPlayForMediaPlayback={false}
         />
       </View>
 
