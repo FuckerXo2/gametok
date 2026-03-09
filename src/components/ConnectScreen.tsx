@@ -39,6 +39,130 @@ import { getGameUrl, R2_BASE_URL, startGameDownload, subscribeToProgress, Downlo
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
+// Script to hide Godot/OpenPigeon's built-in loading screen
+const GODOT_LOADER_HIDE_SCRIPT = `
+(function() {
+  if (window._godotLoaderHidden) return;
+  window._godotLoaderHidden = true;
+  
+  const hideLoaders = () => {
+    // Godot-specific loading elements
+    const selectors = [
+      '#status', '#status-progress', '#status-progress-inner', '#status-indeterminate',
+      '#status-notice', '.godot-loader', '.godot-splash', '[class*="godot-"]',
+      '.loading-screen', '.splash-screen', '#loading', '#splash',
+      '.progress-bar', '.loading-bar', '.loader', '.preloader',
+      '[id*="loading"]', '[id*="splash"]', '[class*="loading"]', '[class*="splash"]',
+    ];
+    
+    selectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;';
+      });
+    });
+    
+    // Also hide any element with "loading" or "progress" in its text
+    document.querySelectorAll('div, span, p').forEach(el => {
+      const text = el.textContent?.toLowerCase() || '';
+      if ((text.includes('loading') || text.includes('progress')) && el.children.length === 0) {
+        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;';
+      }
+    });
+  };
+  
+  // Inject CSS to hide loaders
+  const style = document.createElement('style');
+  style.textContent = \`
+    #status, #status-progress, #status-progress-inner, #status-indeterminate,
+    #status-notice, .godot-loader, .godot-splash, .loading-screen, .splash-screen,
+    #loading, #splash, .progress-bar, .loading-bar, .loader, .preloader,
+    [id*="loading"], [id*="splash"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+    html, body {
+      background: #000 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+    }
+    canvas {
+      width: 100vw !important;
+      height: 100vh !important;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+    }
+  \`;
+  document.head.appendChild(style);
+  
+  // Run immediately and repeatedly
+  hideLoaders();
+  setInterval(hideLoaders, 100);
+  setTimeout(hideLoaders, 0);
+  setTimeout(hideLoaders, 50);
+  setTimeout(hideLoaders, 200);
+  setTimeout(hideLoaders, 500);
+  setTimeout(hideLoaders, 1000);
+  setTimeout(hideLoaders, 2000);
+})();
+true;
+`;
+
+// Script to detect when game is actually ready (canvas rendering)
+const GAME_READY_SCRIPT = `
+(function() {
+  if (window._gameReadyActive) return;
+  window._gameReadyActive = true;
+  
+  let gameReady = false;
+  const startTime = Date.now();
+  
+  const notifyReady = () => {
+    if (gameReady) return;
+    // Minimum 2 seconds to let game initialize
+    if (Date.now() - startTime < 2000) {
+      setTimeout(notifyReady, 2000 - (Date.now() - startTime));
+      return;
+    }
+    gameReady = true;
+    try {
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'GAME_READY' }));
+    } catch(e) {}
+  };
+  
+  // Check for WebGL canvas activity
+  const checkCanvas = () => {
+    const canvases = document.querySelectorAll('canvas');
+    for (const canvas of canvases) {
+      if (canvas.width > 100 && canvas.height > 100) {
+        const ctx = canvas.getContext('webgl') || canvas.getContext('webgl2');
+        if (ctx) {
+          setTimeout(notifyReady, 1500);
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  
+  // Poll for canvas
+  const interval = setInterval(() => {
+    if (checkCanvas() || gameReady) {
+      clearInterval(interval);
+    }
+  }, 200);
+  
+  // Fallback: mark ready after 8 seconds max
+  setTimeout(() => {
+    if (!gameReady) notifyReady();
+  }, 8000);
+})();
+true;
+`;
+
 type TabName = 'play' | 'messages';
 
 interface Conversation {
@@ -962,7 +1086,19 @@ const PlayTogetherTab: React.FC = () => {
             style={gameStyles.gameWebView}
             scrollEnabled={false}
             bounces={false}
-            onLoadEnd={() => setGameLoaded(true)}
+            injectedJavaScript={GODOT_LOADER_HIDE_SCRIPT + GAME_READY_SCRIPT}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'GAME_READY') {
+                  setGameLoaded(true);
+                }
+              } catch (e) {}
+            }}
+            onLoadEnd={() => {
+              // Inject scripts again after load to ensure they run
+              gameWebViewRef.current?.injectJavaScript(GODOT_LOADER_HIDE_SCRIPT);
+            }}
             javaScriptEnabled
             domStorageEnabled
             allowsInlineMediaPlayback
