@@ -34,6 +34,7 @@ import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import { AnimatedButton } from './AnimatedButton';
 import * as ImagePicker from 'expo-image-picker';
+import { getGameUrl, R2_BASE_URL, startGameDownload, subscribeToProgress, DownloadProgress } from '../services/gameDownloader';
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 
@@ -741,6 +742,15 @@ const PlayTogetherTab: React.FC = () => {
   const [playingGame, setPlayingGame] = useState<{ id: string; name: string; embedUrl?: string } | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
   const gameWebViewRef = useRef<WebView>(null);
+  
+  // Download progress state
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+
+  // Subscribe to download progress
+  useEffect(() => {
+    const unsubscribe = subscribeToProgress(setDownloadProgress);
+    return unsubscribe;
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -770,6 +780,12 @@ const PlayTogetherTab: React.FC = () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+  
+  // Get the game URL - uses local if downloaded, otherwise remote R2
+  const getGameEmbedUrl = (game: any): string => {
+    const gameId = game.id.replace('openpigeon_', '');
+    return getGameUrl(gameId);
   };
 
   if (loading) {
@@ -917,12 +933,7 @@ const PlayTogetherTab: React.FC = () => {
           <StatusBar hidden />
           <WebView
             ref={gameWebViewRef}
-            source={{ uri: playingGame?.embedUrl 
-              ? (playingGame.embedUrl.startsWith('http') 
-                  ? playingGame.embedUrl 
-                  : `${GAMES_HOST}${playingGame.embedUrl}`)
-              : `${GAMES_HOST}/loops-games/${playingGame?.id?.replace('loops_', '')}/index.html` 
-            }}
+            source={{ uri: playingGame ? getGameEmbedUrl(playingGame) : '' }}
             style={gameStyles.gameWebView}
             scrollEnabled={false}
             bounces={false}
@@ -931,6 +942,9 @@ const PlayTogetherTab: React.FC = () => {
             domStorageEnabled
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
+            originWhitelist={['*']}
+            allowFileAccess
+            allowUniversalAccessFromFileURLs
           />
           {!gameLoaded && (
             <View style={[gameStyles.gameLoadingOverlay, { backgroundColor: LoopsColors.color1 }]}>

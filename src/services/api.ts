@@ -149,6 +149,11 @@ export const games = {
     return request(`/games?limit=${limit}&offset=${offset}`);
   },
 
+  // Get multiplayer-only games (for Connect screen)
+  multiplayer: async (limit = 50, offset = 0) => {
+    return request(`/games/multiplayer?limit=${limit}&offset=${offset}`);
+  },
+
   search: async (query: string, limit = 50) => {
     return request(`/games/search?q=${encodeURIComponent(query)}&limit=${limit}`);
   },

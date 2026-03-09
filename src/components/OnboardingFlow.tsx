@@ -18,7 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
@@ -27,8 +27,6 @@ import Animated, {
   withTiming,
   withDelay,
   withSequence,
-  withRepeat,
-  runOnJS,
   FadeIn,
   FadeInDown,
   FadeInUp,
@@ -38,8 +36,6 @@ import Animated, {
   ZoomIn,
   BounceIn,
   Easing,
-  interpolate,
-  Layout,
 } from 'react-native-reanimated';
 
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -50,6 +46,10 @@ import { users, auth as authApi } from '../services/api';
 import { AvatarCreatorModal, AvatarConfig, getAvatarById } from './AvatarCreator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Ensure dimensions are valid
+const safeWidth = SCREEN_WIDTH || 375;
+const safeHeight = SCREEN_HEIGHT || 812;
 
 type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'profile';
 
@@ -76,39 +76,13 @@ const SPRING_CONFIG = { damping: 15, stiffness: 150, mass: 0.8 };
 // Floating Particle (welcome screen background)
 // ──────────────────────────────────────────────
 const FloatingParticle: React.FC<{ emoji: string; delay: number; startX: number; startY: number }> = ({ emoji, delay, startX, startY }) => {
-  const translateY = useSharedValue(0);
-  const translateX = useSharedValue(0);
   const opacity = useSharedValue(0);
-  const rotate = useSharedValue(0);
 
   useEffect(() => {
     opacity.value = withDelay(delay, withTiming(0.4, { duration: 800 }));
-    translateY.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(-20, { duration: 2000 + Math.random() * 1000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(20, { duration: 2000 + Math.random() * 1000, easing: Easing.inOut(Easing.ease) }),
-      ), -1, true
-    ));
-    translateX.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(-10, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(10, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
-      ), -1, true
-    ));
-    rotate.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(-15, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(15, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
-      ), -1, true
-    ));
   }, []);
 
   const animStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { translateX: translateX.value },
-      { rotate: `${rotate.value}deg` },
-    ],
     opacity: opacity.value,
   }));
 
@@ -120,12 +94,12 @@ const FloatingParticle: React.FC<{ emoji: string; delay: number; startX: number;
 };
 
 const PARTICLES = [
-  { emoji: '🎮', x: SCREEN_WIDTH * 0.1, y: SCREEN_HEIGHT * 0.12, delay: 0 },
-  { emoji: '🕹️', x: SCREEN_WIDTH * 0.75, y: SCREEN_HEIGHT * 0.08, delay: 300 },
-  { emoji: '🏆', x: SCREEN_WIDTH * 0.85, y: SCREEN_HEIGHT * 0.25, delay: 600 },
-  { emoji: '⚡', x: SCREEN_WIDTH * 0.05, y: SCREEN_HEIGHT * 0.3, delay: 200 },
-  { emoji: '🎯', x: SCREEN_WIDTH * 0.6, y: SCREEN_HEIGHT * 0.18, delay: 500 },
-  { emoji: '🔥', x: SCREEN_WIDTH * 0.3, y: SCREEN_HEIGHT * 0.06, delay: 400 },
+  { emoji: '🎮', x: safeWidth * 0.1, y: safeHeight * 0.12, delay: 0 },
+  { emoji: '🕹️', x: safeWidth * 0.75, y: safeHeight * 0.08, delay: 300 },
+  { emoji: '🏆', x: safeWidth * 0.85, y: safeHeight * 0.25, delay: 600 },
+  { emoji: '⚡', x: safeWidth * 0.05, y: safeHeight * 0.3, delay: 200 },
+  { emoji: '🎯', x: safeWidth * 0.6, y: safeHeight * 0.18, delay: 500 },
+  { emoji: '🔥', x: safeWidth * 0.3, y: safeHeight * 0.06, delay: 400 },
 ];
 
 // ──────────────────────────────────────────────
@@ -182,38 +156,12 @@ const GameTokLogo: React.FC = () => {
 
   return (
     <Animated.View style={[styles.logoWrapper, animStyle]}>
-      <Svg width={280} height={120} viewBox="0 0 280 120">
-        <Defs>
-          <SvgGradient id="gameGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#FF6B6B" />
-            <Stop offset="50%" stopColor="#FF8E53" />
-            <Stop offset="100%" stopColor="#FFC107" />
-          </SvgGradient>
-          <SvgGradient id="tokGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#4ECDC4" />
-            <Stop offset="50%" stopColor="#44A08D" />
-            <Stop offset="100%" stopColor="#093028" />
-          </SvgGradient>
-          <SvgGradient id="glowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <Stop offset="0%" stopColor="#FF6B6B" stopOpacity="0.8" />
-            <Stop offset="100%" stopColor="#4ECDC4" stopOpacity="0.8" />
-          </SvgGradient>
-        </Defs>
-        <G transform="translate(10, 35)">
-          <Rect x="0" y="15" width="50" height="30" rx="8" fill="url(#gameGrad)" />
-          <Rect x="8" y="24" width="12" height="4" rx="1" fill="#fff" opacity="0.9" />
-          <Rect x="12" y="20" width="4" height="12" rx="1" fill="#fff" opacity="0.9" />
-          <Circle cx="38" cy="26" r="3" fill="#fff" opacity="0.9" />
-          <Circle cx="44" cy="32" r="3" fill="#fff" opacity="0.9" />
-          <Circle cx="15" cy="38" r="5" fill="#222" />
-          <Circle cx="35" cy="38" r="5" fill="#222" />
-        </G>
-        <SvgText x="70" y="70" fontSize="48" fontWeight="900" fill="url(#gameGrad)" fontFamily="System">GAME</SvgText>
-        <SvgText x="195" y="70" fontSize="48" fontWeight="900" fill="url(#tokGrad)" fontFamily="System">TOK</SvgText>
-        <Rect x="70" y="80" width="195" height="4" rx="2" fill="url(#glowGrad)" />
-      </Svg>
+      <View style={styles.logoTextContainer}>
+        <Text style={styles.logoTextGame}>GAME</Text>
+        <Text style={styles.logoTextTok}>TOK</Text>
+      </View>
       <Animated.Text
-        entering={FadeInDown.delay(800).duration(500)}
+        entering={FadeInDown.delay(800)}
         style={styles.tagline}
       >
         SWIPE • PLAY • COMPETE
@@ -313,6 +261,11 @@ const AnimatedButton: React.FC<{
     transform: [{ scale: btnScale.value }],
   }));
 
+  // Ensure colors are always valid strings
+  const safeColors = gradColors && gradColors.length >= 2 
+    ? gradColors.map(c => c || '#333') 
+    : ['#a855f7', '#ec4899'];
+
   return (
     <Animated.View entering={FadeInUp.delay(delay).springify()} style={animStyle}>
       <TouchableOpacity
@@ -324,7 +277,7 @@ const AnimatedButton: React.FC<{
         activeOpacity={1}
       >
         <LinearGradient
-          colors={gradColors as any}
+          colors={safeColors}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={styles.gradientButton}
         >
@@ -382,7 +335,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   skipIntro = false,
   startWithLogin = false,
 }) => {
-  const insets = useSafeAreaInsets();
+  const rawInsets = useSafeAreaInsets();
+  // Ensure insets are always valid numbers
+  const insets = {
+    top: rawInsets.top || 0,
+    bottom: rawInsets.bottom || 0,
+    left: rawInsets.left || 0,
+    right: rawInsets.right || 0,
+  };
   const { signup, login, loginWithOAuth, user, refreshUser } = useAuth();
   const { colors } = useTheme();
 
@@ -958,6 +918,9 @@ const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject },
   logoContainer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   logoWrapper: { alignItems: 'center' },
+  logoTextContainer: { flexDirection: 'row', alignItems: 'center' },
+  logoTextGame: { fontSize: 48, fontWeight: '900', color: '#FF6B6B' },
+  logoTextTok: { fontSize: 48, fontWeight: '900', color: '#4ECDC4' },
   tagline: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)', letterSpacing: 4, marginTop: 12 },
   welcomeBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24 },
   signupTitle: { fontSize: 22, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 20 },
@@ -976,7 +939,7 @@ const styles = StyleSheet.create({
   loginLink: { fontSize: 15, color: '#a855f7', fontWeight: '600' },
 
   // Form screens
-  backButton: { position: 'absolute', left: 12, zIndex: 10, padding: 10, width: 44, height: 44, justifyContent: 'center' as const, alignItems: 'center' as const },
+  backButton: { position: 'absolute', left: 12, zIndex: 10, padding: 10, width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   formContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
   stepTitle: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 8 },
   stepSubtitle: { fontSize: 15, color: 'rgba(255,255,255,0.6)', marginBottom: 24 },
@@ -1029,8 +992,8 @@ const styles = StyleSheet.create({
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   dividerLine: { flex: 1, height: 1 },
   dividerText: { marginHorizontal: 16, fontSize: 14 },
-  oauthIconsRow: { flexDirection: 'row', justifyContent: 'center', gap: 16 },
-  oauthIconButton: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
+  oauthIconsRow: { flexDirection: 'row', justifyContent: 'center' },
+  oauthIconButton: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', borderWidth: 1, marginHorizontal: 8 },
   googleButtonModern: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#fff', borderRadius: 24, height: 48, marginBottom: 12,

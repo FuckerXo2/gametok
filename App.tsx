@@ -21,6 +21,7 @@ import { SocketProvider } from './src/context/SocketContext';
 import { requestTrackingPermission } from './src/services/ads';
 import { addNotificationResponseListener, addNotificationReceivedListener, registerForPushNotifications, savePushToken } from './src/services/notifications';
 import { getToken } from './src/services/api';
+import { startGameDownload } from './src/services/gameDownloader';
 
 // Prevent native splash from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -101,6 +102,9 @@ const AppContent = () => {
     requestTrackingPermission();
     handleDeepLink();
     setupNotifications();
+    
+    // Start background download of multiplayer games immediately
+    startGameDownload().catch(e => console.log('[GameDownload] Background download error:', e));
 
     // Request notification permission on app start (for existing users after update)
     if (isAuthenticated) {
