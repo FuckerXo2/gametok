@@ -33,6 +33,7 @@ import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import { AnimatedButton } from './AnimatedButton';
+import { GameLoadingScreen } from './GameLoadingScreen';
 import * as ImagePicker from 'expo-image-picker';
 import { getGameUrl, R2_BASE_URL, startGameDownload, subscribeToProgress, DownloadProgress } from '../services/gameDownloader';
 
@@ -809,6 +810,30 @@ const PlayTogetherTab: React.FC = () => {
         />
       }
     >
+      {/* Download Progress Banner */}
+      {downloadProgress && downloadProgress.isDownloading && (
+        <View style={[styles.downloadBanner, { backgroundColor: colors.surface }]}>
+          <View style={styles.downloadBannerContent}>
+            <ActivityIndicator size="small" color={LoopsColors.color1} />
+            <View style={styles.downloadBannerText}>
+              <Text style={[styles.downloadBannerTitle, { color: colors.text }]}>
+                Installing games...
+              </Text>
+              <Text style={[styles.downloadBannerSubtitle, { color: colors.textSecondary }]}>
+                {downloadProgress.currentFile} • {downloadProgress.progress}%
+              </Text>
+            </View>
+          </View>
+          <View style={styles.downloadProgressBar}>
+            <View 
+              style={[
+                styles.downloadProgressFill, 
+                { width: `${downloadProgress.progress}%`, backgroundColor: LoopsColors.color1 }
+              ]} 
+            />
+          </View>
+        </View>
+      )}
 
       {/* Games Grid */}
       <View style={styles.section}>
@@ -946,11 +971,11 @@ const PlayTogetherTab: React.FC = () => {
             allowFileAccess
             allowUniversalAccessFromFileURLs
           />
-          {!gameLoaded && (
-            <View style={[gameStyles.gameLoadingOverlay, { backgroundColor: LoopsColors.color1 }]}>
-              <ActivityIndicator size="large" color="#fff" />
-              <Text style={gameStyles.gameLoadingText}>Loading {playingGame?.name}...</Text>
-            </View>
+          {!gameLoaded && playingGame && (
+            <GameLoadingScreen
+              gameName={playingGame.name}
+              gameThumbnail={playingGame.embedUrl ? undefined : `${GAMES_HOST}/thumbnails/${playingGame.id}.png`}
+            />
           )}
           <TouchableOpacity 
             style={[gameStyles.gameCloseBtn, { top: insets.top + 10 }]} 
@@ -969,17 +994,6 @@ const PlayTogetherTab: React.FC = () => {
 const gameStyles = StyleSheet.create({
   gameModal: { flex: 1, backgroundColor: '#000' },
   gameWebView: { flex: 1 },
-  gameLoadingOverlay: { 
-    ...StyleSheet.absoluteFillObject, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  gameLoadingText: { 
-    color: '#fff', 
-    fontSize: 16, 
-    fontWeight: '600', 
-    marginTop: 16 
-  },
   gameCloseBtn: { 
     position: 'absolute', 
     right: 16, 
@@ -1071,6 +1085,40 @@ export const ConnectScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  downloadBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+  },
+  downloadBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  downloadBannerText: {
+    flex: 1,
+  },
+  downloadBannerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  downloadBannerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  downloadProgressBar: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+    marginTop: 10,
+    overflow: 'hidden',
+  },
+  downloadProgressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   header: {
     flexDirection: 'row',
