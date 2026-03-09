@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   TextInput,
   FlatList,
   Image,
+  StatusBar,
 } from 'react-native';
 import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -19,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -28,7 +30,6 @@ import { FontStyles } from '../constants/LoopsFonts';
 import { multiplayer, users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
-import { MultiplayerModal } from './MultiplayerModal';
 import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import { AnimatedButton } from './AnimatedButton';
@@ -723,6 +724,7 @@ const MessagesTab: React.FC = () => {
 const PlayTogetherTab: React.FC = () => {
   const { colors } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -735,26 +737,24 @@ const PlayTogetherTab: React.FC = () => {
   // Games for multiplayer
   const [games, setGames] = useState<any[]>([]);
 
-  // Game selection modal state
-  const [selectedGame, setSelectedGame] = useState<{ id: string; name: string } | null>(null);
-  const [showMultiplayerModal, setShowMultiplayerModal] = useState(false);
+  // Direct game playing state
+  const [playingGame, setPlayingGame] = useState<{ id: string; name: string; embedUrl?: string } | null>(null);
+  const [gameLoaded, setGameLoaded] = useState(false);
+  const gameWebViewRef = useRef<WebView>(null);
 
   const loadData = useCallback(async () => {
     try {
       const [activeRes, historyRes, gamesRes] = await Promise.all([
         multiplayer.getActiveMatches().catch(() => ({ matches: [] })),
         multiplayer.getMatchHistory(20).catch(() => ({ history: [] })),
-        gamesApi.list(100, 0).catch(() => ({ games: [] })),
+        gamesApi.multiplayer(50, 0).catch(() => ({ games: [] })),
       ]);
 
       setActiveMatches(activeRes.matches || []);
       setMatchHistory(historyRes.history || []);
 
-      // Filter to only show Loops games (games with IDs starting with 'loops_')
-      const loopsGames = (gamesRes.games || []).filter((game: any) =>
-        game.id && game.id.startsWith('loops_')
-      );
-      setGames(loopsGames);
+      // Games from multiplayer endpoint are already filtered to multiplayer-only
+      setGames(gamesRes.games || []);
     } catch (error) {
       console.error('Load multiplayer data error:', error);
     } finally {
@@ -812,12 +812,15 @@ const PlayTogetherTab: React.FC = () => {
                   activeOpacity={0.7}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedGame({ id: game.id, name: game.name });
-                    setShowMultiplayerModal(true);
+                    setPlayingGame({ id: game.id, name: game.name, embedUrl: game.embedUrl });
+                    setGameLoaded(false);
                   }}
                 >
                   <Image
-                    source={{ uri: game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png` }}
+                    source={{ uri: game.thumbnail?.startsWith('http') 
+                      ? game.thumbnail 
+                      : (game.thumbnail ? `${GAMES_HOST}${game.thumbnail}` : `${GAMES_HOST}/thumbnails/${game.id}.png`) 
+                    }}
                     style={styles.gameGridThumbnail}
                     resizeMode="cover"
                   />
@@ -867,12 +870,18 @@ const PlayTogetherTab: React.FC = () => {
                   activeOpacity={0.7}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedGame({ id: game.id, name: game.name });
-                    setShowMultiplayerModal(true);
+                    setPlayingGame({ id: game.id, name: game.name, embedUrl: game.embedUrl });
+                    setGameLoaded(false);
                   }}
                 >
                   <Image
-                    source={{ uri: game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png` }}
+                    source={{
+                      uri: game.thumbnail?.startsWith('http')
+                        ? game.thumbnail
+                        : (game.thumbnail
+                          ? `https://gametok-backend-production.up.railway.app/games/thumbnails/${game.id}.png`
+                          : `${GAMES_HOST}/thumbnails/${game.id}.png`)
+                    }}
                     style={styles.arcadeGameThumbnail}
                     resizeMode="cover"
                   />
@@ -902,18 +911,75 @@ const PlayTogetherTab: React.FC = () => {
         )}
       </View>
 
-      {/* Multiplayer Game Modal */}
-      {selectedGame && (
-        <MultiplayerModal
-          visible={showMultiplayerModal}
-          gameId={selectedGame.id}
-          gameName={selectedGame.name}
-          onClose={() => setShowMultiplayerModal(false)}
-        />
-      )}
+      {/* Direct Game WebView Modal */}
+      <Modal visible={!!playingGame} animationType="slide" presentationStyle="fullScreen">
+        <View style={gameStyles.gameModal}>
+          <StatusBar hidden />
+          <WebView
+            ref={gameWebViewRef}
+            source={{ uri: playingGame?.embedUrl 
+              ? (playingGame.embedUrl.startsWith('http') 
+                  ? playingGame.embedUrl 
+                  : `${GAMES_HOST}${playingGame.embedUrl}`)
+              : `${GAMES_HOST}/loops-games/${playingGame?.id?.replace('loops_', '')}/index.html` 
+            }}
+            style={gameStyles.gameWebView}
+            scrollEnabled={false}
+            bounces={false}
+            onLoadEnd={() => setGameLoaded(true)}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+          />
+          {!gameLoaded && (
+            <View style={[gameStyles.gameLoadingOverlay, { backgroundColor: LoopsColors.color1 }]}>
+              <ActivityIndicator size="large" color="#fff" />
+              <Text style={gameStyles.gameLoadingText}>Loading {playingGame?.name}...</Text>
+            </View>
+          )}
+          <TouchableOpacity 
+            style={[gameStyles.gameCloseBtn, { top: insets.top + 10 }]} 
+            onPress={() => { setPlayingGame(null); setGameLoaded(false); }}
+          >
+            <BlurView intensity={80} tint="dark" style={gameStyles.gameCloseBtnBlur}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </BlurView>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
+
+const gameStyles = StyleSheet.create({
+  gameModal: { flex: 1, backgroundColor: '#000' },
+  gameWebView: { flex: 1 },
+  gameLoadingOverlay: { 
+    ...StyleSheet.absoluteFillObject, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  gameLoadingText: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: '600', 
+    marginTop: 16 
+  },
+  gameCloseBtn: { 
+    position: 'absolute', 
+    right: 16, 
+    zIndex: 100 
+  },
+  gameCloseBtnBlur: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 20, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    overflow: 'hidden' 
+  },
+});
 
 export const ConnectScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -921,7 +987,7 @@ export const ConnectScreen: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
 
-  const [activeTab, setActiveTab] = useState<TabName>('messages');
+  const [activeTab, setActiveTab] = useState<TabName>('play');
 
   // Auth gate
   if (!isAuthenticated) {
