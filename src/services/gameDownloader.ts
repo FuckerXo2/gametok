@@ -1,9 +1,8 @@
 // Game downloader service
-// NOTE: Local caching is disabled because WebView can't load WASM from file:// URLs
-// Games are served directly from Cloudflare Pages which has proper CORS headers
+// Games are served via Cloudflare Worker that proxies R2 with CORS headers
 
-// Cloudflare Pages URL (has proper CORS headers for WASM)
-const PAGES_URL = 'https://gametok-games.pages.dev/openpigeon-games/';
+// Worker URL that proxies R2 with CORS headers
+const WORKER_URL = 'https://openpigeon-cors.abiolaolasubomi2007.workers.dev/';
 
 export interface DownloadProgress {
   isDownloading: boolean;
@@ -44,9 +43,9 @@ export async function areGamesDownloaded(): Promise<boolean> {
   return true;
 }
 
-// Get the game URL - always use Pages URL for proper CORS/WASM support
+// Get the game URL - uses Worker that proxies R2 with CORS
 export function getGameUrl(gameId: string): string {
-  return `${PAGES_URL}index.html?game=${gameId}`;
+  return `${WORKER_URL}index.html?game=${gameId}`;
 }
 
 // Get current download state
@@ -66,4 +65,4 @@ export async function clearDownloadedGames(): Promise<void> {
   console.log('[GameDownloader] No local cache to clear');
 }
 
-export { PAGES_URL as R2_BASE_URL };
+export { WORKER_URL as R2_BASE_URL };
