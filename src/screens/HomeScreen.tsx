@@ -2757,13 +2757,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.25 || touchStartY.current > SCREEN_HEIGHT * 0.75;
+        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.75;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.25 || touchStartY.current > SCREEN_HEIGHT * 0.75;
+        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.75;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
@@ -3183,27 +3183,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       {/* Overlay gesture zones removed - scrolling is handled completely by PanResponders now */}
 
-      {/* Swipe hint - permanent on welcome, on-touch for games */}
-      {(currentIndex === -1 || showSwipeHint) && (
-        <Animated.View
-          style={[
-            styles.hintContainer,
-            currentIndex !== -1 && { opacity: swipeHintOpacity }
-          ]}
-          pointerEvents="none"
-        >
-          {currentIndex !== -1 && (
-            <View style={[
-              styles.hintGlow,
-              styles.hintGlowDark
-            ]} />
-          )}
-          <Text style={[
-            styles.hintText,
-            currentIndex !== -1 && styles.hintTextDark
-          ]}>Swipe from bottom to browse</Text>
-        </Animated.View>
-      )}
+      {/* Swipe hint - permanently visible on the screen */}
+      <Animated.View
+        style={[
+          styles.hintContainer,
+          currentIndex !== -1 && { opacity: 0.8 }
+        ]}
+        pointerEvents="none"
+      >
+        {currentIndex !== -1 && (
+          <View style={[
+            styles.hintGlow,
+            styles.hintGlowDark
+          ]} />
+        )}
+        <Text style={[
+          styles.hintText,
+          currentIndex !== -1 && styles.hintTextDark
+        ]}>Swipe up to browse</Text>
+      </Animated.View>
 
       {/* Share Sheet */}
       <ShareSheet
