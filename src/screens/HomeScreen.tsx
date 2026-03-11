@@ -2745,82 +2745,55 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     showHint();
   }, []);
 
-  // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
-  const bottomPanGesture = Gesture.Pan()
-    .activeOffsetY([-25, 25])
-    .failOffsetX([-20, 20])
-    .minDistance(25)
-    .onStart(() => {
-      'worklet';
-      runOnJS(handleGestureStart)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isAnimating.current) {
-        runOnJS(updateTranslateY)(event.translationY);
-      }
-    })
-    .onEnd((event) => {
-      'worklet';
-      runOnJS(handleGestureEnd)(event.translationY, event.velocityY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(setScrollEnabled)(false); // Safety reset
-      runOnJS(hideHint)();
-    });
+  // Edge pan responder - natively intercepts touches BEFORE they reach the WebView
+  // but ONLY if the touch started in the top 13% or bottom 13% and is a swipe.
+  // This guarantees taps pass through while scrolling always works.
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () => false, // Let taps pass through
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        const isEdge = gesture.y0 < SCREEN_HEIGHT * 0.13 || gesture.y0 > SCREEN_HEIGHT * 0.87;
+        return isEdge && Math.abs(gesture.dy) > 15; // Steal touch if it's an edge swipe
+      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        const isEdge = gesture.y0 < SCREEN_HEIGHT * 0.13 || gesture.y0 > SCREEN_HEIGHT * 0.87;
+        return isEdge && Math.abs(gesture.dy) > 15;
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!isAnimating.current) {
+          translateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (isAnimating.current) return;
 
-  // Top zone gesture - same as bottom but for swiping down to previous game
-  const topPanGesture = Gesture.Pan()
-    .activeOffsetY([-25, 25])
-    .failOffsetX([-20, 20])
-    .minDistance(25)
-    .onStart(() => {
-      'worklet';
-      runOnJS(handleGestureStart)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isAnimating.current) {
-        runOnJS(updateTranslateY)(event.translationY);
-      }
-    })
-    .onEnd((event) => {
-      'worklet';
-      runOnJS(handleGestureEnd)(event.translationY, event.velocityY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(setScrollEnabled)(false); // Safety reset
-      runOnJS(hideHint)();
-    });
+        const idx = currentIndexRef.current;
+        const total = feedRef.current.length;
 
-  // Full-screen gesture specifically for Ads
-  // Native ad views swallow PanResponder touches, so we use Gesture Handler here to enable full-screen swiping
-  // We use activeOffsetY to wait for actual movement, letting taps pass through to the ad's CTA buttons.
-  const adPanGesture = Gesture.Pan()
-    .activeOffsetY([-15, 15])
-    .failOffsetX([-20, 20])
-    .minDistance(15)
-    .onStart(() => {
-      'worklet';
-      runOnJS(handleGestureStart)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isAnimating.current) {
-        runOnJS(updateTranslateY)(event.translationY);
+        const swipeUp = gestureState.dy < -SWIPE_THRESHOLD || gestureState.vy < -0.5;
+        const swipeDown = gestureState.dy > SWIPE_THRESHOLD || gestureState.vy > 0.5;
+
+        if (swipeUp && idx < total - 1) {
+          animateToIndex(idx + 1);
+        } else if (swipeDown && idx > -1) {
+          animateToIndex(idx - 1);
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (isAnimating.current) return;
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
       }
     })
-    .onEnd((event) => {
-      'worklet';
-      runOnJS(handleGestureEnd)(event.translationY, event.velocityY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(setScrollEnabled)(false); // Safety reset
-      runOnJS(hideHint)();
-    });
+  ).current;
 
   // Overlay pan responder - captures touches when scroll mode is active
   const overlayPanResponder = useRef(
@@ -2977,21 +2950,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         >
           {isWelcome ? (
             // Welcome screen
-            <GestureDetector gesture={bottomPanGesture}>
-              <View style={{ flex: 1 }} collapsable={false}>
-                <WelcomeScreen contentHeight={contentHeight} />
-              </View>
-            </GestureDetector>
+            <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1 }} collapsable={false}>
+              <WelcomeScreen contentHeight={contentHeight} />
+            </Animated.View>
           ) : item!.isAd ? (
             // Native Ad — load at position 0 and +1 (so it's visible during scroll animation)
-            <GestureDetector gesture={adPanGesture}>
-              <Animated.View style={{ flex: 1, backgroundColor: '#000' }} collapsable={false}>
-                {(position === 0 || position === 1) && <NativeAdView contentHeight={contentHeight} />}
-              </Animated.View>
-            </GestureDetector>
+            <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1, backgroundColor: '#000' }} collapsable={false}>
+              {(position === 0 || position === 1) && <NativeAdView contentHeight={contentHeight} />}
+            </Animated.View>
           ) : (
-            // Game screen
-            <View style={{ flex: 1, backgroundColor: item!.game?.color || '#1a1a2e' }}>
+            // Game screen - natively tracks edge panning around the webview
+            <Animated.View {...edgePanResponder.panHandlers} style={{ flex: 1, backgroundColor: item!.game?.color || '#1a1a2e' }} pointerEvents="box-none" collapsable={false}>
               {/* Blurred thumbnail background for letterboxed games */}
               {item!.game && (
                 <Image
@@ -3085,9 +3054,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     return true;
                   }}
                 />
+              </Animated.View>
 
-                {/* Native gesture zones (GestureDetector) handle edge swipes */}
-                {/* No need for additional edge blockers inside WebView container */}
+              {/* Native gesture zones (GestureDetector) handle edge swipes */}
+              {/* No need for additional edge blockers inside WebView container */}
 
                 {/* Loading overlay - shows until game is ready */}
                 {!readyGames.has(item!.id) && item!.game && (
@@ -3181,8 +3151,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     </View>
                   </>
                 )}
-              </Animated.View>
-            </View>
+            </Animated.View>
           )}
         </Animated.View>
       ))}
@@ -3206,13 +3175,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         />
       )}
 
-      <GestureDetector gesture={topPanGesture}>
-        <View key={`top-zone-${gestureKey}`} style={styles.topZone} pointerEvents="box-only" collapsable={false} />
-      </GestureDetector>
-
-      <GestureDetector gesture={bottomPanGesture}>
-        <View key={`bottom-zone-${gestureKey}`} style={styles.bottomZone} pointerEvents="box-only" collapsable={false} />
-      </GestureDetector>
+      {/* Overlay gesture zones removed - scrolling is handled completely by PanResponders now */}
 
       {/* Swipe hint - permanent on welcome, on-touch for games */}
       {(currentIndex === -1 || showSwipeHint) && (

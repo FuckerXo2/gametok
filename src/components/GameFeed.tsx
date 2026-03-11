@@ -7,8 +7,9 @@ import {
   ViewToken,
   Text,
   ActivityIndicator,
-  PanResponder,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './GameCard';
@@ -78,20 +79,39 @@ export const GameFeed: React.FC = () => {
     }
   }, []);
 
-  // Bottom scroll zone pan responder
-  const scrollPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy < -SWIPE_THRESHOLD) {
-          goToNext();
-        } else if (gestureState.dy > SWIPE_THRESHOLD) {
-          goToPrev();
-        }
-      },
-    })
-  ).current;
+  // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
+  // We use hitSlop with a negative top value to shrink the hit area to ONLY the bottom 13% of the wrapper View
+  const bottomPanGesture = Gesture.Pan()
+    .hitSlop({ top: -(screenHeight * 0.87) })
+    .activeOffsetY([-25, 25])
+    .failOffsetX([-20, 20])
+    .minDistance(25)
+    .onEnd((event) => {
+      'worklet';
+      if (event.translationY < -SWIPE_THRESHOLD || event.velocityY < -0.5) {
+        runOnJS(goToNext)();
+      } else if (event.translationY > SWIPE_THRESHOLD || event.velocityY > 0.5) {
+        runOnJS(goToPrev)();
+      }
+    });
+
+  // Top zone gesture - same as bottom but for swiping down to previous game
+  // hitSlop with a negative bottom value shrinks the hit area to ONLY the top 13%
+  const topPanGesture = Gesture.Pan()
+    .hitSlop({ bottom: -(screenHeight * 0.87) })
+    .activeOffsetY([-25, 25])
+    .failOffsetX([-20, 20])
+    .minDistance(25)
+    .onEnd((event) => {
+      'worklet';
+      if (event.translationY < -SWIPE_THRESHOLD || event.velocityY < -0.5) {
+        runOnJS(goToNext)();
+      } else if (event.translationY > SWIPE_THRESHOLD || event.velocityY > 0.5) {
+        runOnJS(goToPrev)();
+      }
+    });
+
+  const gamePanGestures = Gesture.Simultaneous(topPanGesture, bottomPanGesture);
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -200,7 +220,8 @@ export const GameFeed: React.FC = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <GestureDetector gesture={gamePanGestures}>
+    <View style={styles.container} collapsable={false}>
       {/* WebView Pool - games render here */}
       <WebViewPool ref={webViewPoolRef} isScrollMode={false} />
 
@@ -232,12 +253,8 @@ export const GameFeed: React.FC = () => {
         initialNumToRender={3}
       />
 
-      {/* Bottom 25% scroll zone - swipe here to navigate */}
-      <View
-        style={[styles.scrollZone, { height: scrollZoneHeight }]}
-        {...scrollPanResponder.panHandlers}
-      />
     </View>
+    </GestureDetector>
   );
 };
 
@@ -253,11 +270,4 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   loadingText: { color: '#fff', marginTop: 12, fontSize: 16 },
-  scrollZone: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
 });
