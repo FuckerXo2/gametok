@@ -7,6 +7,8 @@ import {
   ViewToken,
   Text,
   ActivityIndicator,
+  PanResponder,
+  Animated,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -79,39 +81,27 @@ export const GameFeed: React.FC = () => {
     }
   }, []);
 
-  // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
-  // We use hitSlop with a negative top value to shrink the hit area to ONLY the bottom 13% of the wrapper View
-  const bottomPanGesture = Gesture.Pan()
-    .hitSlop({ top: -(screenHeight * 0.87) })
-    .activeOffsetY([-25, 25])
-    .failOffsetX([-20, 20])
-    .minDistance(25)
-    .onEnd((event) => {
-      'worklet';
-      if (event.translationY < -SWIPE_THRESHOLD || event.velocityY < -0.5) {
-        runOnJS(goToNext)();
-      } else if (event.translationY > SWIPE_THRESHOLD || event.velocityY > 0.5) {
-        runOnJS(goToPrev)();
+  // Edge pan responder - intercepts touches BEFORE they reach the FlatList/WebView
+  // but ONLY if the touch starts in the top/bottom 13% and is a swipe.
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        return Math.abs(gesture.dy) > 15;
+      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        return Math.abs(gesture.dy) > 15;
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy < -SWIPE_THRESHOLD || gesture.vy < -0.5) {
+          goToNext();
+        } else if (gesture.dy > SWIPE_THRESHOLD || gesture.vy > 0.5) {
+          goToPrev();
+        }
       }
-    });
-
-  // Top zone gesture - same as bottom but for swiping down to previous game
-  // hitSlop with a negative bottom value shrinks the hit area to ONLY the top 13%
-  const topPanGesture = Gesture.Pan()
-    .hitSlop({ bottom: -(screenHeight * 0.87) })
-    .activeOffsetY([-25, 25])
-    .failOffsetX([-20, 20])
-    .minDistance(25)
-    .onEnd((event) => {
-      'worklet';
-      if (event.translationY < -SWIPE_THRESHOLD || event.velocityY < -0.5) {
-        runOnJS(goToNext)();
-      } else if (event.translationY > SWIPE_THRESHOLD || event.velocityY > 0.5) {
-        runOnJS(goToPrev)();
-      }
-    });
-
-  const gamePanGestures = Gesture.Simultaneous(topPanGesture, bottomPanGesture);
+    })
+  ).current;
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -220,8 +210,7 @@ export const GameFeed: React.FC = () => {
   }
 
   return (
-    <GestureDetector gesture={gamePanGestures}>
-    <View style={styles.container} collapsable={false}>
+    <Animated.View style={styles.container} collapsable={false}>
       {/* WebView Pool - games render here */}
       <WebViewPool ref={webViewPoolRef} isScrollMode={false} />
 
@@ -230,7 +219,7 @@ export const GameFeed: React.FC = () => {
         <Text style={styles.headerTitle}>For You</Text>
       </View>
 
-      {/* FlatList just for positioning/tracking, scroll disabled */}
+      {/* Scroll disabled FlatList tracks items */}
       <FlatList
         ref={flatListRef}
         data={feedData}
@@ -253,8 +242,12 @@ export const GameFeed: React.FC = () => {
         initialNumToRender={3}
       />
 
-    </View>
-    </GestureDetector>
+      {/* Native gesture zones handle edge swipes via invisible absolute overlays */}
+      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '13%', zIndex: 10 }} />
+      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '13%', zIndex: 10 }} />
+
+
+    </Animated.View>
   );
 };
 
