@@ -3192,15 +3192,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         pointerEvents="none"
       >
         {currentIndex !== -1 && (
-          <View style={[
-            styles.hintGlow,
-            styles.hintGlowDark
-          ]} />
+          <View style={styles.hintGlow} />
         )}
-        <Text style={[
-          styles.hintText,
-          currentIndex !== -1 && styles.hintTextDark
-        ]}>Swipe up to browse</Text>
+        <Text style={styles.hintText}>Swipe up to browse</Text>
       </Animated.View>
 
       {/* Share Sheet */}
@@ -3341,30 +3335,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: '#a855f7',
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    shadowColor: '#a855f7',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(168, 85, 247, 0.3)',
   },
   hintText: {
-    color: '#ffffff',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
-    fontWeight: '600',
-    textShadowColor: '#a855f7',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    fontWeight: '500',
+    letterSpacing: 2,
     marginBottom: 10,
-  },
-  hintGlowDark: {
-    backgroundColor: '#a855f7',
-    shadowOpacity: 0.7,
-  },
-  hintTextDark: {
-    color: '#a855f7',
-    textShadowRadius: 10,
   },
   errorContainer: {
     flex: 1,
