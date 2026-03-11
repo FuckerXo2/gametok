@@ -81,19 +81,24 @@ export const GameFeed: React.FC = () => {
     }
   }, []);
 
+  const touchStartY = useRef(0);
+
   // Edge pan responder - intercepts touches BEFORE they reach the FlatList/WebView
   // but ONLY if the touch starts in the top/bottom 13% and is a swipe.
   const edgePanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponderCapture: () => false,
+      onStartShouldSetPanResponderCapture: (e) => {
+        touchStartY.current = e.nativeEvent.pageY;
+        return false;
+      },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = gesture.y0 < screenHeight * 0.15 || gesture.y0 > screenHeight * 0.85;
+        const isEdge = touchStartY.current < screenHeight * 0.15 || touchStartY.current > screenHeight * 0.85;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = gesture.y0 < screenHeight * 0.15 || gesture.y0 > screenHeight * 0.85;
+        const isEdge = touchStartY.current < screenHeight * 0.15 || touchStartY.current > screenHeight * 0.85;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },

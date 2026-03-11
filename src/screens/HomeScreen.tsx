@@ -2745,20 +2745,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     showHint();
   }, []);
 
+  const touchStartY = useRef(0);
+
   // Edge pan responder - natively intercepts touches BEFORE they reach the WebView
   // but ONLY if the touch started in the top 13% or bottom 13% and is a swipe.
   // This guarantees taps pass through while scrolling always works.
   const edgePanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponderCapture: () => false, // Let taps pass through
+      onStartShouldSetPanResponderCapture: (e) => {
+        touchStartY.current = e.nativeEvent.pageY;
+        return false; // Let taps pass through
+      },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = gesture.y0 < SCREEN_HEIGHT * 0.15 || gesture.y0 > SCREEN_HEIGHT * 0.85;
+        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.15 || touchStartY.current > SCREEN_HEIGHT * 0.85;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
-        return isEdge && isVerticalSwipe;
+        return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = gesture.y0 < SCREEN_HEIGHT * 0.15 || gesture.y0 > SCREEN_HEIGHT * 0.85;
+        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.15 || touchStartY.current > SCREEN_HEIGHT * 0.85;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
