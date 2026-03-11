@@ -2757,13 +2757,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.15 || touchStartY.current > SCREEN_HEIGHT * 0.85;
+        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.25 || touchStartY.current > SCREEN_HEIGHT * 0.75;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.15 || touchStartY.current > SCREEN_HEIGHT * 0.85;
+        const isEdge = touchStartY.current < SCREEN_HEIGHT * 0.25 || touchStartY.current > SCREEN_HEIGHT * 0.75;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },

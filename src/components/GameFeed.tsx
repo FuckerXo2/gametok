@@ -92,13 +92,13 @@ export const GameFeed: React.FC = () => {
         return false;
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = touchStartY.current < screenHeight * 0.15 || touchStartY.current > screenHeight * 0.85;
+        const isEdge = touchStartY.current < screenHeight * 0.25 || touchStartY.current > screenHeight * 0.75;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = touchStartY.current < screenHeight * 0.15 || touchStartY.current > screenHeight * 0.85;
+        const isEdge = touchStartY.current < screenHeight * 0.25 || touchStartY.current > screenHeight * 0.75;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
