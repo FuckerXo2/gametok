@@ -2752,11 +2752,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => false, // Let taps pass through
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        return Math.abs(gesture.dy) > 15; // Steal touch if it's an edge swipe
+        const isEdge = gesture.y0 < SCREEN_HEIGHT * 0.15 || gesture.y0 > SCREEN_HEIGHT * 0.85;
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        return Math.abs(gesture.dy) > 15;
+        const isEdge = gesture.y0 < SCREEN_HEIGHT * 0.15 || gesture.y0 > SCREEN_HEIGHT * 0.85;
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
       },
       onPanResponderMove: (_, gesture) => {
         if (!isAnimating.current) {
@@ -2958,7 +2962,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
             </Animated.View>
           ) : (
             // Game screen - natively tracks edge panning around the webview
-            <Animated.View style={{ flex: 1, backgroundColor: item!.game?.color || '#1a1a2e' }} collapsable={false}>
+            <Animated.View {...edgePanResponder.panHandlers} style={{ flex: 1, backgroundColor: item!.game?.color || '#1a1a2e' }} pointerEvents="box-none" collapsable={false}>
               {/* Blurred thumbnail background for letterboxed games */}
               {item!.game && (
                 <Image
@@ -3054,9 +3058,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                 />
               </Animated.View>
 
-              {/* Native gesture zones handle edge swipes via invisible absolute overlays */}
-              <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '13%', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.01)' }} />
-              <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '13%', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.01)' }} />
+              {/* Native gesture zones intercept handled earlier via Animated.View pointerEvents box-none */}
 
                 {/* Loading overlay - shows until game is ready */}
                 {!readyGames.has(item!.id) && item!.game && (

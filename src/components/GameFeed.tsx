@@ -87,11 +87,15 @@ export const GameFeed: React.FC = () => {
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        return Math.abs(gesture.dy) > 15;
+        const isEdge = gesture.y0 < screenHeight * 0.15 || gesture.y0 > screenHeight * 0.85;
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        return Math.abs(gesture.dy) > 15;
+        const isEdge = gesture.y0 < screenHeight * 0.15 || gesture.y0 > screenHeight * 0.85;
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
       },
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dy < -SWIPE_THRESHOLD || gesture.vy < -0.5) {
@@ -210,7 +214,7 @@ export const GameFeed: React.FC = () => {
   }
 
   return (
-    <Animated.View style={styles.container} collapsable={false}>
+    <Animated.View {...edgePanResponder.panHandlers} style={styles.container} pointerEvents="box-none" collapsable={false}>
       {/* WebView Pool - games render here */}
       <WebViewPool ref={webViewPoolRef} isScrollMode={false} />
 
@@ -242,10 +246,7 @@ export const GameFeed: React.FC = () => {
         initialNumToRender={3}
       />
 
-      {/* Native gesture zones handle edge swipes via invisible absolute overlays */}
-      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '13%', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.01)' }} />
-      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '13%', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.01)' }} />
-
+      {/* Native gesture zones handle edge swipes via container pointerEvents="box-none" */}
 
     </Animated.View>
   );
