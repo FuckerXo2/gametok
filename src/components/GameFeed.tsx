@@ -243,8 +243,8 @@ export const GameFeed: React.FC = () => {
       />
 
       {/* Native gesture zones handle edge swipes via invisible absolute overlays */}
-      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '13%', zIndex: 10 }} />
-      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '13%', zIndex: 10 }} />
+      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '13%', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.01)' }} />
+      <View {...edgePanResponder.panHandlers} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '13%', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.01)' }} />
 
 
     </Animated.View>
