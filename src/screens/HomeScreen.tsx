@@ -2961,9 +2961,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
               <WelcomeScreen contentHeight={contentHeight} />
             </Animated.View>
           ) : item!.isAd ? (
-            // Native Ad — load at position 0 and +1 (so it's visible during scroll animation)
+            // Native Ad — load at position 0 and +1/-1 (so it doesn't instantly unmount and crash when swiping past)
             <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1, backgroundColor: '#000' }} collapsable={false}>
-              {(position === 0 || position === 1) && <NativeAdView contentHeight={contentHeight} />}
+              {(Math.abs(position) <= 1) && <NativeAdView contentHeight={contentHeight} />}
             </Animated.View>
           ) : (
             // Game screen - natively tracks edge panning around the webview

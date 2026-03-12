@@ -74,11 +74,11 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
         console.log("[Ad] Creating Google native ad...");
         const ad = await GNativeAd.createForAdRequest(NATIVE_AD_UNIT_ID, {
           requestNonPersonalizedAdsOnly: false,
-          startVideoMuted: false, // Prevents video native ads from being automatically muted on start
+          startVideoMuted: true, // MUST remain true to prevent native audio session crashes
         });
 
         if (destroyed) {
-          ad.destroy();
+          setTimeout(() => { try { ad.destroy(); } catch (e) {} }, 1000);
           return;
         }
 
@@ -118,11 +118,14 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
       destroyed = true;
       clearTimeout(timeout);
       if (nativeAd) {
-        try {
-          nativeAd.destroy();
-        } catch (e) {
-          // Ignore cleanup errors
-        }
+        // Defer destruction to prevent React Native view hierarchy detachment crashes
+        setTimeout(() => {
+          try {
+            nativeAd.destroy();
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        }, 2000);
       }
     };
   }, [hasGMA, retryCount]);
@@ -270,12 +273,11 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
         style={[styles.container, { width: "100%", height: "100%" }]}
       >
         <View style={[styles.adContainer, { backgroundColor: "#000" }]}>
-          {/* Fullscreen media background */}
-          {GNativeMediaView && (
-            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-              <GNativeMediaView style={StyleSheet.absoluteFillObject} />
-            </View>
-          )}
+          {/* Static Gradient Background to replace crash-prone GNativeMediaView */}
+          <LinearGradient
+            colors={["#1a1a2e", "#16213e", "#0f0f23"]}
+            style={StyleSheet.absoluteFillObject}
+          />
 
           {/* Sponsored badge */}
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>
