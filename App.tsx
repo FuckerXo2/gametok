@@ -43,11 +43,27 @@ interface AuthScreenContextType {
 const AuthScreenContext = createContext<AuthScreenContextType>({ showAuthScreen: () => { }, showLoginScreen: () => { }, hideAuthScreen: () => { } });
 export const useAuthScreen = () => useContext(AuthScreenContext);
 
+// Navigation context - to switch tabs from anywhere (e.g., notification taps)
+interface NavigationContextType {
+  activeTab: TabName;
+  setActiveTab: (tab: TabName) => void;
+  pendingChatUserId: string | null;
+  setPendingChatUserId: (userId: string | null) => void;
+}
+const NavigationContext = createContext<NavigationContextType>({ 
+  activeTab: 'home', 
+  setActiveTab: () => {}, 
+  pendingChatUserId: null,
+  setPendingChatUserId: () => {}
+});
+export const useNavigation = () => useContext(NavigationContext);
+
 type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
 const MainApp = () => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
+  const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
   const { isDark, colors } = useTheme();
 
   const handleTabPress = (tab: TabName) => {
@@ -60,7 +76,7 @@ const MainApp = () => {
 
   // Keep all screens mounted, just hide/show them
   return (
-    <>
+    <NavigationContext.Provider value={{ activeTab, setActiveTab, pendingChatUserId, setPendingChatUserId }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         {/* Home - always mounted */}
@@ -84,7 +100,7 @@ const MainApp = () => {
         </View>
       </View>
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
-    </>
+    </NavigationContext.Provider>
   );
 };
 
@@ -170,8 +186,10 @@ const AppContent = () => {
   }, [isAuthenticated, authLoading]);
 
   const checkOnboarding = async () => {
-    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
-    setShowOnboarding(!hasSeenOnboarding);
+    // Never show onboarding on launch — users go straight to home screen.
+    // Sign up / login is only accessible through auth gates on locked tabs.
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
   };
 
   // Handle deep links
@@ -211,7 +229,7 @@ const AppContent = () => {
     setShowOnboarding(false);
   };
 
-  // Still loading auth or onboarding check - brief moment after splash
+  // Still loading auth check
   if (showOnboarding === null || authLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
@@ -220,27 +238,15 @@ const AppContent = () => {
     );
   }
 
-  // User hasn't seen onboarding yet - show intro slides
-  if (showOnboarding) {
-    return (
-      <View style={{ flex: 1 }}>
-        <OnboardingFlow
-          onComplete={handleOnboardingComplete}
-          isAuthLoading={false}
-        />
-      </View>
-    );
-  }
-
-  // Show auth screen (triggered from AuthGate)
+  // Show auth screen (triggered from AuthGate on locked tabs)
   if (showAuth) {
     return (
       <View style={{ flex: 1 }}>
         <OnboardingFlow
           onComplete={() => { setShowAuth(false); setStartWithLogin(false); }}
           isAuthLoading={false}
-          skipIntro={startWithLogin}
-          startWithLogin={startWithLogin}
+          skipIntro={false}
+          startWithLogin={false}
         />
       </View>
     );
@@ -250,7 +256,7 @@ const AppContent = () => {
   return (
     <AuthScreenContext.Provider value={{
       showAuthScreen: () => { setStartWithLogin(false); setShowAuth(true); },
-      showLoginScreen: () => { setStartWithLogin(true); setShowAuth(true); },
+      showLoginScreen: () => { setStartWithLogin(false); setShowAuth(true); },
       hideAuthScreen: () => setShowAuth(false)
     }}>
       <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>

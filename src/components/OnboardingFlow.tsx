@@ -523,7 +523,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const renderWelcome = () => (
     <View style={styles.stepContainer}>
       <ImageBackground
-        source={require('../../assets/onboarding/pic3.png')}
+        source={require('../../assets/gametok_bg.png')}
         style={styles.background}
         resizeMode="cover"
       >
@@ -911,7 +911,7 @@ const genreStyles2 = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  stepContainer: { flex: 1 },
+  stepContainer: { flex: 1, backgroundColor: '#000' },
 
   // Welcome
   background: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },

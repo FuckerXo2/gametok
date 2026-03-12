@@ -24,7 +24,7 @@ import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { useAuthScreen } from '../../App';
+import { useAuthScreen, useNavigation } from '../../App';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
 import { multiplayer, users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
@@ -1150,8 +1150,16 @@ export const ConnectScreen: React.FC = () => {
   const { colors } = useTheme();
   const { isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { pendingChatUserId } = useNavigation();
 
-  const [activeTab, setActiveTab] = useState<TabName>('play');
+  const [activeTab, setActiveTab] = useState<TabName>('messages');
+
+  // Switch to messages tab if coming from a notification
+  useEffect(() => {
+    if (pendingChatUserId) {
+      setActiveTab('messages');
+    }
+  }, [pendingChatUserId]);
 
   // Auth gate
   if (!isAuthenticated) {
