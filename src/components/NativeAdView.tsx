@@ -273,11 +273,13 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
         style={[styles.container, { width: "100%", height: "100%" }]}
       >
         <View style={[styles.adContainer, { backgroundColor: "#000" }]}>
-          {/* Static Gradient Background to replace crash-prone GNativeMediaView */}
-          <LinearGradient
-            colors={["#1a1a2e", "#16213e", "#0f0f23"]}
-            style={StyleSheet.absoluteFillObject}
-          />
+          <View style={styles.nativeMediaContainer}>
+            <LinearGradient
+              colors={["#1a1a2e", "#16213e", "#0f0f23"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <GNativeMediaView style={styles.nativeMediaView} />
+          </View>
 
           {/* Sponsored badge */}
           <View style={[styles.sponsoredBadge, { top: insets.top + 10 }]}>

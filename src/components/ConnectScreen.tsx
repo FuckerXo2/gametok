@@ -14,7 +14,7 @@ import {
   Image,
   StatusBar,
 } from 'react-native';
-import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring, withDelay } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -792,281 +792,100 @@ const MessagesTab: React.FC = () => {
 // Play Together Tab
 const PlayTogetherTab: React.FC = () => {
   const { colors } = useTheme();
-  const { user } = useAuth();
-  const insets = useSafeAreaInsets();
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  // Active matches
-  const [activeMatches, setActiveMatches] = useState<any[]>([]);
+  // Animated values for the illustration
+  const avatar1Scale = useSharedValue(0);
+  const avatar2Scale = useSharedValue(0);
+  const trophyScale = useSharedValue(0);
+  const trophyRotate = useSharedValue(0);
 
-  // Match history
-  const [matchHistory, setMatchHistory] = useState<any[]>([]);
-
-  // Games for multiplayer
-  const [games, setGames] = useState<any[]>([]);
-
-  // Direct game playing state
-  const [playingGame, setPlayingGame] = useState<{ id: string; name: string; embedUrl?: string } | null>(null);
-  const [gameLoaded, setGameLoaded] = useState(false);
-  const gameWebViewRef = useRef<WebView>(null);
-  
-  // Download progress state
-  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
-
-  // Subscribe to download progress
   useEffect(() => {
-    const unsubscribe = subscribeToProgress(setDownloadProgress);
-    return unsubscribe;
+    // Staggered entrance animations
+    avatar1Scale.value = withDelay(200, withSpring(1, { damping: 12, stiffness: 100 }));
+    avatar2Scale.value = withDelay(400, withSpring(1, { damping: 12, stiffness: 100 }));
+    trophyScale.value = withDelay(600, withSpring(1, { damping: 10, stiffness: 80 }));
+    trophyRotate.value = withDelay(800, withSpring(10, { damping: 8, stiffness: 60 }));
   }, []);
 
-  const loadData = useCallback(async () => {
-    try {
-      const [activeRes, historyRes, gamesRes] = await Promise.all([
-        multiplayer.getActiveMatches().catch(() => ({ matches: [] })),
-        multiplayer.getMatchHistory(20).catch(() => ({ history: [] })),
-        gamesApi.multiplayer(50, 0).catch(() => ({ games: [] })),
-      ]);
+  const avatar1Style = useAnimatedStyle(() => ({
+    transform: [{ scale: avatar1Scale.value }],
+  }));
 
-      setActiveMatches(activeRes.matches || []);
-      setMatchHistory(historyRes.history || []);
+  const avatar2Style = useAnimatedStyle(() => ({
+    transform: [{ scale: avatar2Scale.value }],
+  }));
 
-      // Games from multiplayer endpoint are already filtered to multiplayer-only
-      setGames(gamesRes.games || []);
-    } catch (error) {
-      console.error('Load multiplayer data error:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  };
-  
-  // Get the game URL - uses local if downloaded, otherwise remote R2
-  const getGameEmbedUrl = (game: any): string => {
-    const gameId = game.id.replace('openpigeon_', '');
-    return getGameUrl(gameId);
-  };
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={LoopsColors.color1} size="large" />
-      </View>
-    );
-  }
+  const trophyStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: trophyScale.value },
+      { rotate: `${trophyRotate.value}deg` },
+    ],
+  }));
 
   return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingBottom: 100 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={LoopsColors.color1}
-        />
-      }
-    >
-      {/* Download Progress Banner */}
-      {downloadProgress && downloadProgress.isDownloading && (
-        <View style={[styles.downloadBanner, { backgroundColor: colors.surface }]}>
-          <View style={styles.downloadBannerContent}>
-            <ActivityIndicator size="small" color={LoopsColors.color1} />
-            <View style={styles.downloadBannerText}>
-              <Text style={[styles.downloadBannerTitle, { color: colors.text }]}>
-                Installing games...
-              </Text>
-              <Text style={[styles.downloadBannerSubtitle, { color: colors.textSecondary }]}>
-                {downloadProgress.currentFile} • {downloadProgress.progress}%
-              </Text>
-            </View>
+    <View style={styles.comingSoonContainer}>
+      {/* Animated Illustration */}
+      <View style={styles.illustrationContainer}>
+        {/* Left Avatar (purple) */}
+        <Animated.View style={[styles.avatarCircle, styles.avatarLeft, avatar1Style]}>
+          <View style={[styles.avatarInner, { backgroundColor: '#8B5CF6' }]}>
+            <Ionicons name="person" size={32} color="#fff" />
           </View>
-          <View style={styles.downloadProgressBar}>
-            <View 
-              style={[
-                styles.downloadProgressFill, 
-                { width: `${downloadProgress.progress}%`, backgroundColor: LoopsColors.color1 }
-              ]} 
-            />
-          </View>
-        </View>
-      )}
+        </Animated.View>
 
-      {/* Games Grid */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          🎮 Choose Your Game
+        {/* Trophy in the middle */}
+        <Animated.View style={[styles.trophyContainer, trophyStyle]}>
+          <Text style={styles.trophyEmoji}>🏆</Text>
+        </Animated.View>
+
+        {/* Right Avatar (pink) */}
+        <Animated.View style={[styles.avatarCircle, styles.avatarRight, avatar2Style]}>
+          <View style={[styles.avatarInner, { backgroundColor: '#EC4899' }]}>
+            <Ionicons name="person" size={32} color="#fff" />
+          </View>
+        </Animated.View>
+      </View>
+
+      {/* Title */}
+      <Animated.Text 
+        entering={FadeInUp.delay(800).springify()}
+        style={[styles.comingSoonTitle, { color: colors.text }]}
+      >
+        Play Together
+      </Animated.Text>
+
+      {/* Coming Soon Badge */}
+      <Animated.View 
+        entering={FadeInUp.delay(900).springify()}
+        style={styles.comingSoonBadge}
+      >
+        <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+        <Text style={[styles.comingSoonBadgeText, { color: colors.textSecondary }]}>
+          Coming Soon
         </Text>
-        {games.length > 0 ? (
-          <View style={styles.gamesGrid}>
-            {games.map((game, index) => (
-              <Animated.View
-                key={game.id}
-                entering={FadeInUp.delay(index * 20).springify()}
-                style={styles.gameGridItem}
-              >
-                <TouchableOpacity
-                  style={[styles.gameGridCard, { backgroundColor: colors.surface }]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setPlayingGame({ id: game.id, name: game.name, embedUrl: game.embedUrl });
-                    setGameLoaded(false);
-                  }}
-                >
-                  <Image
-                    source={{ uri: game.thumbnail?.startsWith('http') 
-                      ? game.thumbnail 
-                      : (game.thumbnail ? `${GAMES_HOST}${game.thumbnail}` : `${GAMES_HOST}/thumbnails/${game.id}.png`) 
-                    }}
-                    style={styles.gameGridThumbnail}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.gameGridOverlay}>
-                    <Text style={styles.gameGridName} numberOfLines={2}>
-                      {game.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.emptyGames}>
-            <Ionicons name="game-controller-outline" size={48} color={colors.textSecondary} />
-            <Text style={[styles.emptyGamesText, { color: colors.textSecondary }]}>
-              Multiplayer games coming soon!
-            </Text>
-            <Text style={[styles.emptyGamesSubtext, { color: colors.textSecondary }]}>
-              Run the seeder to add 36 Loops games
-            </Text>
-          </View>
-        )}
-      </View>
+      </Animated.View>
 
-      {/* Games Arcade Showcase */}
-      <View style={styles.arcadeSection}>
-        <View style={styles.arcadeHeader}>
-          <Text style={[styles.arcadeTitle, { color: colors.text }]}>
-            Live Arcade
-          </Text>
-          <Text style={[styles.arcadeSubtitle, { color: colors.textSecondary }]}>
-            Jump into a lobby and challenge anyone online!
-          </Text>
-        </View>
+      {/* Description */}
+      <Animated.Text 
+        entering={FadeInUp.delay(1000).springify()}
+        style={[styles.comingSoonText, { color: colors.textSecondary }]}
+      >
+        Challenge friends to multiplayer games,{'\n'}
+        compete in real-time, and climb the{'\n'}
+        leaderboards together!
+      </Animated.Text>
 
-        {games.length > 0 ? (
-          <View style={styles.arcadeGamesGrid}>
-            {games.map((game, index) => (
-              <Animated.View
-                key={game.id}
-                entering={FadeInUp.delay(index * 20).springify()}
-                style={styles.arcadeGameItem}
-              >
-                <TouchableOpacity
-                  style={[styles.arcadeGameCard, { backgroundColor: colors.surface }]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setPlayingGame({ id: game.id, name: game.name, embedUrl: game.embedUrl });
-                    setGameLoaded(false);
-                  }}
-                >
-                  <Image
-                    source={{
-                      uri: game.thumbnail?.startsWith('http')
-                        ? game.thumbnail
-                        : (game.thumbnail
-                          ? `https://gametok-backend-production.up.railway.app/games/thumbnails/${game.id}.png`
-                          : `${GAMES_HOST}/thumbnails/${game.id}.png`)
-                    }}
-                    style={styles.arcadeGameThumbnail}
-                    resizeMode="cover"
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.8)', '#000']}
-                    style={styles.arcadeGameOverlay}
-                  >
-                    <View style={styles.liveLobbyBadge}>
-                      <View style={styles.pulsingDot} />
-                      <Text style={styles.liveLobbyText}>Lobby</Text>
-                    </View>
-                    <Text style={styles.arcadeGameName} numberOfLines={2}>
-                      {game.name}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.emptyGamesLobby}>
-            <ActivityIndicator color={LoopsColors.color1} size="large" />
-            <Text style={[styles.emptyGamesLobbyText, { color: colors.textSecondary }]}>
-              Loading Arcade...
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Direct Game WebView Modal */}
-      <Modal visible={!!playingGame} animationType="slide" presentationStyle="fullScreen">
-        <View style={gameStyles.gameModal}>
-          <StatusBar hidden />
-          <WebView
-            ref={gameWebViewRef}
-            source={{ uri: playingGame ? getGameEmbedUrl(playingGame) : '' }}
-            style={gameStyles.gameWebView}
-            scrollEnabled={false}
-            bounces={false}
-            injectedJavaScript={GODOT_LOADER_HIDE_SCRIPT + GAME_READY_SCRIPT}
-            onMessage={(event) => {
-              try {
-                const data = JSON.parse(event.nativeEvent.data);
-                if (data.type === 'GAME_READY') {
-                  setGameLoaded(true);
-                }
-              } catch (e) {}
-            }}
-            onLoadEnd={() => {
-              // Inject scripts again after load to ensure they run
-              gameWebViewRef.current?.injectJavaScript(GODOT_LOADER_HIDE_SCRIPT);
-            }}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            originWhitelist={['*']}
-            allowFileAccess
-            allowUniversalAccessFromFileURLs
-          />
-          {!gameLoaded && playingGame && (
-            <GameLoadingScreen
-              gameName={playingGame.name}
-              gameThumbnail={playingGame.embedUrl ? undefined : `${GAMES_HOST}/thumbnails/${playingGame.id}.png`}
-            />
-          )}
-          <TouchableOpacity 
-            style={[gameStyles.gameCloseBtn, { top: insets.top + 10 }]} 
-            onPress={() => { setPlayingGame(null); setGameLoaded(false); }}
-          >
-            <BlurView intensity={80} tint="dark" style={gameStyles.gameCloseBtnBlur}>
-              <Ionicons name="close" size={24} color="#fff" />
-            </BlurView>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-    </ScrollView>
+      {/* Notification prompt */}
+      <Animated.View 
+        entering={FadeInUp.delay(1100).springify()}
+        style={[styles.notifyPrompt, { backgroundColor: colors.surface }]}
+      >
+        <Ionicons name="notifications-outline" size={18} color={colors.textSecondary} />
+        <Text style={[styles.notifyPromptText, { color: colors.textSecondary }]}>
+          We'll notify you when it's ready!
+        </Text>
+      </Animated.View>
+    </View>
   );
 };
 
@@ -1284,20 +1103,83 @@ const styles = StyleSheet.create({
     ...FontStyles.caption,
   },
   comingSoonContainer: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 60,
+    justifyContent: 'center',
     paddingHorizontal: 32,
+    paddingBottom: 100,
+  },
+  illustrationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+    height: 120,
+  },
+  avatarCircle: {
+    width: 80,
+    height: 80,
+  },
+  avatarLeft: {
+    marginRight: -15,
+    zIndex: 1,
+  },
+  avatarRight: {
+    marginLeft: -15,
+    zIndex: 1,
+  },
+  avatarInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trophyContainer: {
+    zIndex: 2,
+    marginTop: -40,
+  },
+  trophyEmoji: {
+    fontSize: 40,
+  },
+  comingSoonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    marginBottom: 20,
+    gap: 6,
+  },
+  comingSoonBadgeText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  notifyPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 24,
+    marginTop: 24,
+    gap: 10,
+  },
+  notifyPromptText: {
+    fontSize: 14,
   },
   comingSoonTitle: {
     fontWeight: '700',
     marginTop: 20,
     textAlign: 'center',
-    ...FontStyles.h3,
+    ...FontStyles.h2,
   },
   comingSoonText: {
     marginTop: 8,
     textAlign: 'center',
     ...FontStyles.body,
+    lineHeight: 22,
   },
   featureList: {
     marginTop: 32,

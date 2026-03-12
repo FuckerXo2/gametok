@@ -25,7 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { WebView } from 'react-native-webview';
 import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
-import { games, users } from '../services/api';
+import { games, users, feed } from '../services/api';
 import { FindFriendsModal } from './FindFriendsModal';
 import { UserProfileModal } from './UserProfileModal';
 import { Avatar } from './Avatar';
@@ -84,6 +84,20 @@ const getGameUrl = (game: GameItem) => {
   }
   // Make sure we correctly construct local Game URLs
   return `${GAMES_HOST}/${game.id}/`;
+};
+
+// Format time ago for notifications
+const formatTimeAgo = (dateStr: string) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(diff / 86400000);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks}w`;
 };
 
 // Generate a consistent fake number for a game based on its ID
@@ -473,6 +487,8 @@ export const ExploreScreen: React.FC = () => {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [categoryModal, setCategoryModal] = useState<{ title: string; category: string } | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   const [friends, setFriends] = useState<any[]>([]);
 
@@ -493,7 +509,19 @@ export const ExploreScreen: React.FC = () => {
     }
   }, [isAuthenticated, user?.id]);
 
+  const loadNotifications = useCallback(async () => {
+    if (isAuthenticated) {
+      try {
+        const res = await feed.activity(50);
+        setNotifications(res.activity || []);
+      } catch (e) {
+        console.log('Notifications error', e);
+      }
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => { loadFriends(); }, [loadFriends]);
+  useEffect(() => { loadNotifications(); }, [loadNotifications]);
 
   // Interstitial Ad
   const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
@@ -669,7 +697,7 @@ export const ExploreScreen: React.FC = () => {
           <TouchableOpacity style={styles.iconBtn}>
             <Ionicons name="aperture" size={26} color={theme.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => { loadNotifications(); setShowNotifications(true); }}>
             <Ionicons name="notifications-outline" size={26} color={theme.text} />
           </TouchableOpacity>
         </View>
@@ -963,6 +991,70 @@ export const ExploreScreen: React.FC = () => {
         games={categoryModal ? featuredGames[categoryModal.category] || [] : []}
         onPlayGame={playGame}
       />
+
+      {/* Notifications Modal */}
+      <Modal visible={showNotifications} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.notificationsModal, { backgroundColor: theme.bg }]}>
+          <View style={[styles.notificationsHeader, { borderBottomColor: theme.border }]}>
+            <Text style={[styles.notificationsTitle, { color: theme.text }]}>Notifications</Text>
+            <TouchableOpacity onPress={() => setShowNotifications(false)} style={styles.notificationsClose}>
+              <Ionicons name="close" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+            {notifications.length === 0 ? (
+              <View style={styles.notificationsEmpty}>
+                <Ionicons name="notifications-outline" size={48} color={theme.textSecondary} />
+                <Text style={[styles.notificationsEmptyText, { color: theme.textSecondary }]}>
+                  No notifications yet
+                </Text>
+              </View>
+            ) : (
+              notifications.map((item, index) => (
+                <TouchableOpacity 
+                  key={item.id || index} 
+                  style={styles.notificationItem}
+                  onPress={() => {
+                    if (item.user) {
+                      setShowNotifications(false);
+                      setTimeout(() => {
+                        setSelectedUser(item.user);
+                        setShowUserProfile(true);
+                      }, 300);
+                    }
+                  }}
+                >
+                  <View style={{ paddingTop: 2 }}>
+                    {item.type === 'follow' ? (
+                      <View style={[styles.notifIconCircle, { backgroundColor: '#a855f7', borderColor: theme.text }]}>
+                        <Ionicons name="person" size={14} color="#fff" />
+                      </View>
+                    ) : (
+                      <View style={[styles.notifIconCircle, { backgroundColor: '#3b82f6', borderColor: theme.text }]}>
+                        <Ionicons name="chatbubble" size={12} color="#fff" style={{ marginTop: 1 }} />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.notificationContent}>
+                    <Text style={[styles.notificationText, { color: theme.text }]}>
+                      <Text style={{ fontWeight: '700' }}>{item.user?.displayName || item.user?.username || 'Someone'}</Text>
+                      {item.type === 'follow' ? ' started following you' : ` commented on ${item.game?.name || 'a game'}`}
+                    </Text>
+                    {item.text && (
+                      <Text style={[styles.notificationSubtext, { color: theme.textSecondary }]} numberOfLines={1}>
+                        "{item.text}"
+                      </Text>
+                    )}
+                    <Text style={[styles.notificationTime, { color: theme.textSecondary }]}>
+                      {formatTimeAgo(item.createdAt)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1221,6 +1313,64 @@ const styles = StyleSheet.create({
     color: '#a1a1aa',
     fontSize: 14,
     marginTop: 16,
+  },
+  // Notifications Modal
+  notificationsModal: {
+    flex: 1,
+  },
+  notificationsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  notificationsTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  notificationsClose: {
+    padding: 4,
+  },
+  notificationsEmpty: {
+    alignItems: 'center',
+    paddingVertical: 80,
+  },
+  notificationsEmptyText: {
+    marginTop: 12,
+    fontSize: 15,
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  notifIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  notificationContent: {
+    flex: 1,
+  },
+  notificationText: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  notificationSubtext: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  notificationTime: {
+    fontSize: 13,
+    marginTop: 6,
   },
 });
 

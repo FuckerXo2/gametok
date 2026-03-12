@@ -246,7 +246,7 @@ const AppContent = () => {
           onComplete={() => { setShowAuth(false); setStartWithLogin(false); }}
           isAuthLoading={false}
           skipIntro={false}
-          startWithLogin={false}
+          startWithLogin={startWithLogin}
         />
       </View>
     );
@@ -256,7 +256,7 @@ const AppContent = () => {
   return (
     <AuthScreenContext.Provider value={{
       showAuthScreen: () => { setStartWithLogin(false); setShowAuth(true); },
-      showLoginScreen: () => { setStartWithLogin(false); setShowAuth(true); },
+      showLoginScreen: () => { setStartWithLogin(true); setShowAuth(true); },
       hideAuthScreen: () => setShowAuth(false)
     }}>
       <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
