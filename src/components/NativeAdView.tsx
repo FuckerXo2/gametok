@@ -59,8 +59,8 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
   const [adFailed, setAdFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
-  // Check if Google Mobile Ads is available natively (skip entirely on Simulator to prevent hangs)
-  const hasGMA = !isExpoGo && GNativeAd && GNativeAdView && Constants.isDevice;
+  // Check if Google Mobile Ads is available
+  const hasGMA = !isExpoGo && GNativeAd && GNativeAdView;
 
   // Create and load native ad
   useEffect(() => {
