@@ -18,7 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle, Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
@@ -141,7 +141,7 @@ const progressStyles = StyleSheet.create({
 // Animated GameTok Logo
 // ──────────────────────────────────────────────
 const GameTokLogo: React.FC = () => {
-  const scale = useSharedValue(0.3);
+  const scale = useSharedValue(0.95);
   const opacity = useSharedValue(0);
 
   useEffect(() => {
@@ -156,10 +156,36 @@ const GameTokLogo: React.FC = () => {
 
   return (
     <Animated.View style={[styles.logoWrapper, animStyle]}>
-      <View style={styles.logoTextContainer}>
-        <Text style={styles.logoTextGame}>GAME</Text>
-        <Text style={styles.logoTextTok}>TOK</Text>
-      </View>
+      <Svg width={280} height={120} viewBox="0 0 280 120">
+        <Defs>
+          <SvgGradient id="gameGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#FF6B6B" />
+            <Stop offset="50%" stopColor="#FF8E53" />
+            <Stop offset="100%" stopColor="#FFC107" />
+          </SvgGradient>
+          <SvgGradient id="tokGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#4ECDC4" />
+            <Stop offset="50%" stopColor="#44A08D" />
+            <Stop offset="100%" stopColor="#093028" />
+          </SvgGradient>
+          <SvgGradient id="glowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#FF6B6B" stopOpacity="0.8" />
+            <Stop offset="100%" stopColor="#4ECDC4" stopOpacity="0.8" />
+          </SvgGradient>
+        </Defs>
+        <G transform="translate(10, 35)">
+          <Rect x="0" y="15" width="50" height="30" rx="8" fill="url(#gameGrad)" />
+          <Rect x="8" y="24" width="12" height="4" rx="1" fill="#fff" opacity="0.9" />
+          <Rect x="12" y="20" width="4" height="12" rx="1" fill="#fff" opacity="0.9" />
+          <Circle cx="38" cy="26" r="3" fill="#fff" opacity="0.9" />
+          <Circle cx="44" cy="32" r="3" fill="#fff" opacity="0.9" />
+          <Circle cx="15" cy="38" r="5" fill="#222" />
+          <Circle cx="35" cy="38" r="5" fill="#222" />
+        </G>
+        <SvgText x="70" y="70" fontSize="48" fontWeight="900" fill="url(#gameGrad)" fontFamily="System">GAME</SvgText>
+        <SvgText x="195" y="70" fontSize="48" fontWeight="900" fill="url(#tokGrad)" fontFamily="System">TOK</SvgText>
+        <Rect x="70" y="80" width="195" height="4" rx="2" fill="url(#glowGrad)" />
+      </Svg>
       <Animated.Text
         entering={FadeInDown.delay(800)}
         style={styles.tagline}

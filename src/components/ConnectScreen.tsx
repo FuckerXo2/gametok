@@ -471,156 +471,99 @@ const MessagesTab: React.FC = () => {
           onPress={() => setShowSearch(true)}
         >
           <Ionicons name="search" size={18} color={colors.textSecondary} />
-          <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Find people</Text>
+          <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search messages</Text>
         </TouchableOpacity>
 
-        {/* Stories Row */}
+        {/* Quick Access Row - New button + Recent contacts */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.storiesRow}
+          contentContainerStyle={styles.quickAccessRow}
         >
-          {/* Add Story */}
-          <TouchableOpacity style={styles.storyItem} onPress={createStory} disabled={creatingStory}>
-            <View style={[styles.addStoryCircle, { backgroundColor: colors.surface }]}>
-              {creatingStory ? (
-                <ActivityIndicator size="small" color={LoopsColors.color1} />
-              ) : (
-                <Ionicons name="add" size={28} color={LoopsColors.color1} />
-              )}
+          {/* New Message Button */}
+          <TouchableOpacity style={styles.newMessageBtn} onPress={() => setShowSearch(true)}>
+            <View style={[styles.newMessageCircle, { backgroundColor: colors.surface }]}>
+              <Ionicons name="create-outline" size={24} color={LoopsColors.color1} />
             </View>
-            <Text style={[styles.storyUsername, { color: colors.textSecondary }]}>Add story</Text>
+            <Text style={[styles.quickAccessLabel, { color: colors.text }]}>New</Text>
           </TouchableOpacity>
 
-          {/* Real stories */}
-          {storyUsers.map((storyUser, index) => (
-            <TouchableOpacity
-              key={storyUser.user.id}
-              style={styles.storyItem}
-              onPress={() => openStory(index)}
+          {/* Recent contacts (plain avatars, no gradient rings) */}
+          {suggestedUsers.map((person) => (
+            <TouchableOpacity 
+              key={person.id} 
+              style={styles.quickAccessItem} 
+              onPress={() => {
+                // Start a chat with this person
+                const existingConvo = conversations.find(c => c.user.id === person.id);
+                if (existingConvo) {
+                  openChat(existingConvo);
+                } else {
+                  // Create a new conversation object
+                  openChat({
+                    id: `new-${person.id}`,
+                    user: person,
+                    streak: 0
+                  });
+                }
+              }}
             >
-              <LinearGradient
-                colors={storyUser.hasUnviewed ? ['#f472b6', '#a855f7', '#6366f1'] : ['#666', '#444']}
-                style={styles.storyRing}
-              >
-                <View style={[styles.storyAvatarContainer, { backgroundColor: colors.background }]}>
-                  <Avatar uri={storyUser.user.avatar} size={56} />
-                </View>
-              </LinearGradient>
-              <Text style={[styles.storyUsername, { color: colors.text }]} numberOfLines={1}>
-                {storyUser.user.username}
-              </Text>
-            </TouchableOpacity>
-          ))}
-
-          {/* Fallback: suggested users if no stories */}
-          {storyUsers.length === 0 && suggestedUsers.map((person) => (
-            <TouchableOpacity key={person.id} style={styles.storyItem} onPress={() => openUserProfile(person)}>
-              <View style={[styles.noStoryRing, { borderColor: colors.border }]}>
-                <Avatar uri={person.avatar} size={56} />
-              </View>
-              <Text style={[styles.storyUsername, { color: colors.textSecondary }]} numberOfLines={1}>
+              <Avatar uri={person.avatar} size={56} />
+              <Text style={[styles.quickAccessLabel, { color: colors.textSecondary }]} numberOfLines={1}>
                 {person.username}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        {/* Fixed Sections */}
-        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
-          <View style={[styles.inboxSectionIcon, { backgroundColor: '#10b981' }]}>
-            <Ionicons name="people" size={22} color="#fff" />
-          </View>
-          <View style={styles.inboxSectionContent}>
-            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>New followers</Text>
-            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-              {activity.filter(a => a.type === 'follow').length > 0
-                ? `${activity.filter(a => a.type === 'follow')[0]?.user?.username || 'Someone'} started following you`
-                : 'See your new followers here'}
-            </Text>
-          </View>
-          {activity.filter(a => a.type === 'follow').length > 0 && (
-            <View style={styles.inboxBadge}>
-              <Text style={styles.inboxBadgeText}>{activity.filter(a => a.type === 'follow').length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
-          <View style={[styles.inboxSectionIcon, { backgroundColor: '#ec4899' }]}>
-            <Ionicons name="heart" size={22} color="#fff" />
-          </View>
-          <View style={styles.inboxSectionContent}>
-            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>Activity</Text>
-            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-              {activity.filter(a => a.type === 'like' || a.type === 'comment').length > 0
-                ? `${activity.filter(a => a.type === 'like' || a.type === 'comment')[0]?.user?.username || 'Someone'} liked your content`
-                : 'See notifications here'}
-            </Text>
-          </View>
-          {activity.filter(a => a.type === 'like' || a.type === 'comment').length > 0 && (
-            <View style={styles.inboxBadge}>
-              <Text style={styles.inboxBadgeText}>{activity.filter(a => a.type === 'like' || a.type === 'comment').length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
-          <View style={[styles.inboxSectionIcon, { backgroundColor: '#6366f1' }]}>
-            <Ionicons name="notifications" size={22} color="#fff" />
-          </View>
-          <View style={styles.inboxSectionContent}>
-            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>System notifications</Text>
-            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-              Account updates and announcements
-            </Text>
-          </View>
-        </TouchableOpacity>
+        {/* Messages Section Header */}
+        <View style={styles.messagesSectionHeader}>
+          <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Messages</Text>
+          <TouchableOpacity onPress={() => setShowSearch(true)}>
+            <Ionicons name="create-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
         {/* Message Threads */}
-        {conversations.length > 0 && (
-          <View style={{ marginTop: 8 }}>
-            {conversations.map((chat) => (
-              <TouchableOpacity
-                key={chat.id}
-                style={[styles.chatItem, { borderBottomColor: colors.border }]}
-                onPress={() => openChat(chat)}
-              >
-                <View>
-                  <Avatar uri={chat.user.avatar} size={52} />
-                  {onlineUsers.includes(chat.user.id) && (
-                    <View style={[styles.onlineDot, { borderColor: colors.background }]} />
-                  )}
-                </View>
-                <View style={styles.chatContent}>
-                  <View style={styles.chatHeader}>
-                    <Text style={[styles.chatUsername, { color: colors.text }]}>
-                      {chat.user.displayName || chat.user.username}
-                    </Text>
-                    {chat.streak > 0 && (
-                      <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
-                    )}
-                  </View>
-                  <Text style={[styles.chatPreview, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {chat.lastMessage?.text || 'Start chatting'}
+        {conversations.length > 0 ? (
+          conversations.map((chat) => (
+            <TouchableOpacity
+              key={chat.id}
+              style={styles.chatItem}
+              onPress={() => openChat(chat)}
+            >
+              <View>
+                <Avatar uri={chat.user.avatar} size={52} />
+                {onlineUsers.includes(chat.user.id) && (
+                  <View style={[styles.onlineDot, { borderColor: colors.background }]} />
+                )}
+              </View>
+              <View style={styles.chatContent}>
+                <View style={styles.chatHeader}>
+                  <Text style={[styles.chatUsername, { color: colors.text }]}>
+                    {chat.user.displayName}
                   </Text>
-                </View>
-                <View style={styles.chatMeta}>
-                  {chat.lastMessage && (
-                    <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
-                      {formatTime(chat.lastMessage.createdAt)}
-                    </Text>
-                  )}
-                  {chat.lastMessage && !chat.lastMessage.isRead && (
-                    <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
+                  {chat.streak > 0 && (
+                    <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
                   )}
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {conversations.length === 0 && (
+                <Text style={[styles.chatPreview, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {chat.lastMessage?.text || 'Start chatting'}
+                </Text>
+              </View>
+              <View style={styles.chatMeta}>
+                {chat.lastMessage && (
+                  <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
+                    {formatTime(chat.lastMessage.createdAt)}
+                  </Text>
+                )}
+                {chat.lastMessage && !chat.lastMessage.isRead && (
+                  <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
+                )}
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
           <View style={styles.emptyMessages}>
             <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No messages yet</Text>
@@ -1673,6 +1616,45 @@ const styles = StyleSheet.create({
   searchPlaceholder: {
     ...FontStyles.body,
   },
+  // Quick Access Row (New button + recent contacts)
+  quickAccessRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 16,
+  },
+  newMessageBtn: {
+    alignItems: 'center',
+    width: 64,
+  },
+  newMessageCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickAccessItem: {
+    alignItems: 'center',
+    width: 64,
+  },
+  quickAccessLabel: {
+    marginTop: 6,
+    textAlign: 'center',
+    ...FontStyles.caption,
+    fontSize: 11,
+  },
+  // Messages Section Header
+  messagesSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  messagesSectionTitle: {
+    fontWeight: '600',
+    fontSize: 16,
+  },
   storiesRow: {
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -1767,7 +1749,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
     gap: 12,
   },
   chatContent: {
