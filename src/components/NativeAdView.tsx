@@ -41,7 +41,7 @@ try {
 }
 
 // Ad unit IDs by platform
-const NATIVE_AD_UNIT_ID = __DEV__
+const NATIVE_AD_UNIT_ID = __DEV__ || !Constants.isDevice
   ? GTestIds?.NATIVE || "ca-app-pub-3940256099942544/3986624511" // Test ID
   : Platform.select({
     ios: "ca-app-pub-1961802731817431/9914305307",
@@ -59,8 +59,8 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
   const [adFailed, setAdFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
-  // Check if Google Mobile Ads is available
-  const hasGMA = !isExpoGo && GNativeAd && GNativeAdView;
+  // Check if Google Mobile Ads is available natively (skip entirely on Simulator to prevent hangs)
+  const hasGMA = !isExpoGo && GNativeAd && GNativeAdView && Constants.isDevice;
 
   // Create and load native ad
   useEffect(() => {
