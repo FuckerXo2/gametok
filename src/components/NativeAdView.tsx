@@ -41,7 +41,7 @@ try {
 }
 
 // Ad unit IDs by platform
-const NATIVE_AD_UNIT_ID = __DEV__ || !Constants.isDevice
+const NATIVE_AD_UNIT_ID = __DEV__
   ? GTestIds?.NATIVE || "ca-app-pub-3940256099942544/3986624511" // Test ID
   : Platform.select({
     ios: "ca-app-pub-1961802731817431/9914305307",
