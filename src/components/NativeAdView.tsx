@@ -280,12 +280,23 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
       >
         <View style={[styles.adContainer, { backgroundColor: "#000" }]}>
           <View style={styles.nativeMediaContainer}>
-            {/* Static Gradient Background to replace crash-prone GNativeMediaView.
-                Rendering it inside FlashList causes EXC_BAD_ACCESS crashes during view recycling. */}
-            <LinearGradient
-              colors={["#1a1a2e", "#16213e", "#0f0f23"]}
-              style={StyleSheet.absoluteFillObject}
-            />
+            {/* Using a static Image instead of NativeMediaView. 
+                NativeMediaView handles video but causes EXC_BAD_ACCESS crashes in FlashList view recycling. 
+                Static Image shows the main ad creative safely without the video engine crashing. */}
+            {nativeAd?.images?.length > 0 ? (
+              <GNativeAsset assetType={GNativeAssetType.IMAGE}>
+                <Image
+                  source={{ uri: nativeAd.images[0].url }}
+                  style={[styles.nativeMediaView, { backgroundColor: '#0a0a14' }]}
+                  resizeMode="cover"
+                />
+              </GNativeAsset>
+            ) : (
+              <LinearGradient
+                colors={["#1a1a2e", "#16213e", "#0f0f23"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+            )}
           </View>
 
           {/* Sponsored badge */}
@@ -306,8 +317,9 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
               {nativeAd.icon ? (
                 <GNativeAsset assetType={GNativeAssetType.ICON}>
                   <Image
-                    source={{ uri: nativeAd.icon.uri }}
+                    source={{ uri: nativeAd.icon.url }}
                     style={styles.nativeAdIcon}
+                    resizeMode="cover"
                   />
                 </GNativeAsset>
               ) : null}
