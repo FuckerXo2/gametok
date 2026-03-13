@@ -274,11 +274,12 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
       >
         <View style={[styles.adContainer, { backgroundColor: "#000" }]}>
           <View style={styles.nativeMediaContainer}>
+            {/* Static Gradient Background to replace crash-prone GNativeMediaView.
+                Rendering it inside FlashList causes EXC_BAD_ACCESS crashes during view recycling. */}
             <LinearGradient
               colors={["#1a1a2e", "#16213e", "#0f0f23"]}
               style={StyleSheet.absoluteFillObject}
             />
-            <GNativeMediaView style={styles.nativeMediaView} />
           </View>
 
           {/* Sponsored badge */}
