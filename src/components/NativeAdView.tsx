@@ -303,41 +303,41 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
           >
             {/* Ad icon + headline */}
             <View style={styles.nativeAdInfo}>
-              {nativeAd.icon && (
+              {nativeAd.icon ? (
                 <GNativeAsset assetType={GNativeAssetType.ICON}>
                   <Image
                     source={{ uri: nativeAd.icon.uri }}
                     style={styles.nativeAdIcon}
                   />
                 </GNativeAsset>
-              )}
+              ) : null}
               <View style={styles.nativeAdTextContainer}>
                 <GNativeAsset assetType={GNativeAssetType.HEADLINE}>
                   <Text style={styles.nativeAdHeadline} numberOfLines={2}>
                     {nativeAd.headline}
                   </Text>
                 </GNativeAsset>
-                {nativeAd.advertiser && (
+                {nativeAd.advertiser ? (
                   <GNativeAsset assetType={GNativeAssetType.ADVERTISER}>
                     <Text style={styles.nativeAdAdvertiser} numberOfLines={1}>
                       {nativeAd.advertiser}
                     </Text>
                   </GNativeAsset>
-                )}
+                ) : null}
               </View>
             </View>
 
             {/* Body text */}
-            {nativeAd.body && (
+            {nativeAd.body ? (
               <GNativeAsset assetType={GNativeAssetType.BODY}>
                 <Text style={styles.nativeAdBody} numberOfLines={2}>
                   {nativeAd.body}
                 </Text>
               </GNativeAsset>
-            )}
+            ) : null}
 
             {/* Star rating */}
-            {nativeAd.starRating && (
+            {typeof nativeAd.starRating === 'number' && nativeAd.starRating > 0 ? (
               <View style={styles.starRatingContainer}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Ionicons
@@ -355,10 +355,10 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
                   {nativeAd.starRating.toFixed(1)}
                 </Text>
               </View>
-            )}
+            ) : null}
 
             {/* CTA Button */}
-            {nativeAd.callToAction && (
+            {nativeAd.callToAction ? (
               <GNativeAsset assetType={GNativeAssetType.CALL_TO_ACTION}>
                 <View style={styles.nativeCtaButton}>
                   <Text style={styles.nativeCtaText}>
@@ -366,23 +366,23 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
                   </Text>
                 </View>
               </GNativeAsset>
-            )}
+            ) : null}
 
             {/* Store & price */}
-            {(nativeAd.store || nativeAd.price) && (
+            {(nativeAd.store || nativeAd.price) ? (
               <View style={styles.storeRow}>
-                {nativeAd.store && (
+                {nativeAd.store ? (
                   <GNativeAsset assetType={GNativeAssetType.STORE}>
                     <Text style={styles.storeText}>{nativeAd.store}</Text>
                   </GNativeAsset>
-                )}
-                {nativeAd.price && (
+                ) : null}
+                {nativeAd.price ? (
                   <GNativeAsset assetType={GNativeAssetType.PRICE}>
                     <Text style={styles.priceText}>{nativeAd.price}</Text>
                   </GNativeAsset>
-                )}
+                ) : null}
               </View>
-            )}
+            ) : null}
           </LinearGradient>
 
           <View style={[styles.sideActions, { bottom: insets.bottom + 100 }]}>
