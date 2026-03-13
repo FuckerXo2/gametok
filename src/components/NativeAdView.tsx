@@ -58,6 +58,7 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
   const [adLoaded, setAdLoaded] = useState(false);
   const [adFailed, setAdFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const activeAdRef = useRef<any>(null);
 
   // Check if Google Mobile Ads is available
   const hasGMA = !isExpoGo && GNativeAd && GNativeAdView;
@@ -84,6 +85,7 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
 
         console.log("[Ad] Google native ad loaded:", ad.headline);
         loadSuccess = true;
+        activeAdRef.current = ad;
         setNativeAd(ad);
         setAdLoaded(true);
         setAdFailed(false);
@@ -117,15 +119,19 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
     return () => {
       destroyed = true;
       clearTimeout(timeout);
-      if (nativeAd) {
+      
+      const adToDestroy = activeAdRef.current;
+      if (adToDestroy) {
         // Defer destruction to prevent React Native view hierarchy detachment crashes
         setTimeout(() => {
           try {
-            nativeAd.destroy();
+            console.log("[Ad] Destroying Google native ad...");
+            adToDestroy.destroy();
           } catch (e) {
             // Ignore cleanup errors
           }
-        }, 2000);
+        }, 1000); // 1s is enough to clear out the view
+        activeAdRef.current = null;
       }
     };
   }, [hasGMA, retryCount]);
