@@ -2873,13 +2873,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.85;
+        const isBottomEdge = touchStartY.current > SCREEN_HEIGHT - BOTTOM_ZONE_HEIGHT - 85; // 85px accounts for BottomNav + safe area
+        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT + 50; // 50px accounts for top safe area
+        const isEdge = isBottomEdge || isTopEdge;
+        
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.80;
+        const isBottomEdge = touchStartY.current > SCREEN_HEIGHT - BOTTOM_ZONE_HEIGHT - 85;
+        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT + 50;
+        const isEdge = isBottomEdge || isTopEdge;
+        
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
@@ -3446,7 +3452,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: BOTTOM_ZONE_HEIGHT + 40,
+    height: BOTTOM_ZONE_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 15,
