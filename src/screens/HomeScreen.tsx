@@ -3060,11 +3060,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     return result;
   }, [feed, currentIndex]);
 
-  if (loading) {
+  if (loading && currentIndex !== -1) {
     return <View style={styles.container} />;
   }
 
-  if (feed.length === 0) return null;
+  if (feed.length === 0 && currentIndex !== -1) return null;
 
   const isCurrentAd = currentIndex > -1 && feed[currentIndex] && feed[currentIndex].isAd;
 
