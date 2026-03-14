@@ -3303,6 +3303,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         />
       )}
 
+      {/* Overlay gesture zones removed - scrolling is handled completely by PanResponders now */}
+
+      {/* Swipe hint - permanently visible on the screen */}
+      <Animated.View
+        style={[
+          styles.hintContainer,
+          currentIndex !== -1 && { opacity: 0.8 }
+        ]}
+        pointerEvents="none"
+      >
+        {currentIndex !== -1 && (
+          <View style={styles.hintGlow} />
+        )}
+        <Text style={styles.hintText}>Swipe up to browse</Text>
+      </Animated.View>
+
       {/* Share Sheet */}
       <ShareSheet
         visible={showShare}
@@ -3425,7 +3441,35 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
   },
-
+  hintContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_ZONE_HEIGHT + 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 15,
+  },
+  hintGlow: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_ZONE_HEIGHT,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(168, 85, 247, 0.3)',
+  },
+  hintText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
   errorContainer: {
     flex: 1,
     backgroundColor: LoopsColors.black, // Match GameLoadingScreen background
