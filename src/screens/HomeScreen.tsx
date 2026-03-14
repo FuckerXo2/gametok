@@ -2211,6 +2211,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   // Calculate actual content height (screen minus tab bar)
   const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
+  const contentHeightRef = useRef(contentHeight);
+  
+  useEffect(() => {
+    contentHeightRef.current = contentHeight;
+  }, [contentHeight]);
 
   // Trigger click animation at button position
   const triggerClickAnimation = (event: any) => {
@@ -2864,7 +2869,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const touchStartY = useRef(0);
 
   // Edge pan responder - natively intercepts touches BEFORE they reach the WebView
-  // but ONLY if the touch started in the top 13% or bottom 13% and is a swipe.
+  // but ONLY if the touch started in the top 15% or bottom 15% and is a swipe.
   // This guarantees taps pass through while scrolling always works.
   const edgePanResponder = useRef(
     PanResponder.create({
@@ -2873,8 +2878,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isBottomEdge = touchStartY.current > SCREEN_HEIGHT - BOTTOM_ZONE_HEIGHT - 85; // 85px accounts for BottomNav + safe area
-        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT + 50; // 50px accounts for top safe area
+        // Use EXACT mathematically precise boundaries based on the latest physical rendered height
+        // This flawlessly syncs the invisible PanResponder zone to the visible purple box overlay
+        const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT; 
+        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT; 
         const isEdge = isBottomEdge || isTopEdge;
         
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
@@ -2882,8 +2889,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isBottomEdge = touchStartY.current > SCREEN_HEIGHT - BOTTOM_ZONE_HEIGHT - 85;
-        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT + 50;
+        const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT;
+        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT;
         const isEdge = isBottomEdge || isTopEdge;
         
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
