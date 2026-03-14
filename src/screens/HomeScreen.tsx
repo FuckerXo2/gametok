@@ -27,8 +27,8 @@ import { LoopsAnimations } from '../constants/LoopsAnimations';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://gametok-games.pages.dev';
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
-const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.13; // 13% for better swipe detection
-const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.13;
+const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
+const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15;
 const SWIPE_THRESHOLD = 50;
 
 interface Game {
@@ -316,7 +316,7 @@ const EDGE_BLOCK_SCRIPT = `
   if (window._edgeBlockActive) return;
   window._edgeBlockActive = true;
   
-  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
+  const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
   
   // Block touch events in edge zones at capture phase
   // This prevents games from capturing swipes that should go to native gesture handlers
@@ -1046,7 +1046,7 @@ const AD_BLOCKER_SCRIPT = `
   
   // CRITICAL: Block touch events at screen edges to allow native swipe gestures
   // This prevents the WebView from capturing swipe gestures at top/bottom
-  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
+  const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
   
   const blockEdgeTouches = (e) => {
     if (!e.touches || e.touches.length === 0) return;
@@ -1380,6 +1380,81 @@ const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, c
     </G>
   </Svg>
 );
+
+// Swipe hint overlay — shows the hand icon bobbing in the bottom swipe zone
+// for the first 5 seconds on each game so users know where to swipe
+const SwipeHintOverlay: React.FC<{ gameIndex: number }> = ({ gameIndex }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const bobY = useRef(new Animated.Value(0)).current;
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    setVisible(true);
+    opacity.setValue(0);
+    bobY.setValue(0);
+
+    // Fade in
+    Animated.timing(opacity, {
+      toValue: 0.85,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+
+    // Bob up and down continuously
+    const bobAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bobY, { toValue: -12, duration: 600, useNativeDriver: true }),
+        Animated.timing(bobY, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    bobAnimation.start();
+
+    // Fade out after 4 seconds (gives 1s fade out before the 5s mark)
+    const fadeTimer = setTimeout(() => {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 1000,
+        useNativeDriver: true,
+      }).start(() => {
+        setVisible(false);
+        bobAnimation.stop();
+      });
+    }, 4000);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      bobAnimation.stop();
+    };
+  }, [gameIndex]);
+
+  if (!visible || gameIndex <= 0) return null; // Don't show on welcome screen
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        bottom: BOTTOM_ZONE_HEIGHT - 10,
+        alignSelf: 'center',
+        alignItems: 'center',
+        opacity,
+        zIndex: 5,
+        transform: [{ translateY: bobY }],
+      }}
+      pointerEvents="none"
+    >
+      <SwipeUpHand size={36} color="rgba(255,255,255,0.9)" />
+      <Text style={{
+        color: 'rgba(255,255,255,0.9)',
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: 4,
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+      }}>Swipe up for next</Text>
+    </Animated.View>
+  );
+};
 
 // Animated Like Button
 const AnimatedLikeButton = ({
@@ -2665,6 +2740,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    // Safety timeout — if the animation callback or rAF never fires
+    // (e.g. JS thread blocked by heavy WebView mount on iPhone X),
+    // force-unlock gestures after 600ms so scrolling doesn't permanently freeze.
+    const safetyTimer = setTimeout(() => {
+      if (isAnimating.current) {
+        console.log('[Feed] Safety timeout: force-unlocking isAnimating');
+        translateY.setValue(0);
+        isAnimating.current = false;
+        setGestureKey(prev => prev + 1);
+      }
+    }, 600);
+
     Animated.timing(translateY, {
       toValue: direction * contentHeight,
       duration: 200,
@@ -2676,6 +2763,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       // Delay resetting translateY so it aligns perfectly with the next native render tick
       requestAnimationFrame(() => {
+        clearTimeout(safetyTimer);
         translateY.setValue(0);
         isAnimating.current = false;
         setGestureKey(prev => prev + 1);
@@ -2757,13 +2845,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.75;
+        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.85;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.75;
+        const isEdge = touchStartY.current > SCREEN_HEIGHT * 0.80;
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
       },
@@ -3161,6 +3249,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           )}
         </Animated.View>
       ))}
+
+      {/* Swipe hint — shows hand icon bobbing in the swipe zone for 5s on each new game */}
+      <SwipeHintOverlay gameIndex={currentIndex} />
 
       {/* For You header - tappable to refresh, swipes pass through around it */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">

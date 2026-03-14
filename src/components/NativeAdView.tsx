@@ -280,17 +280,15 @@ const NativeAdComponent: React.FC<NativeAdViewProps> = ({ contentHeight }) => {
       >
         <View style={[styles.adContainer, { backgroundColor: "#000" }]}>
           <View style={styles.nativeMediaContainer}>
-            {/* Using a static Image instead of NativeMediaView. 
-                NativeMediaView handles video but causes EXC_BAD_ACCESS crashes in FlashList view recycling. 
-                Static Image shows the main ad creative safely without the video engine crashing. */}
-            {nativeAd?.images?.length > 0 ? (
-              <GNativeAsset assetType={GNativeAssetType.IMAGE}>
-                <Image
-                  source={{ uri: nativeAd.images[0].url }}
-                  style={[styles.nativeMediaView, { backgroundColor: '#0a0a14' }]}
-                  resizeMode="cover"
-                />
-              </GNativeAsset>
+            {/* Using Google's NativeMediaView (required by AdMob policy).
+                This component handles both images and video ad creatives.
+                The original crash was caused by FlashList view recycling —
+                since this ad renders in a simple Animated.View, MediaView is safe here. */}
+            {GNativeMediaView ? (
+              <GNativeMediaView
+                style={styles.nativeMediaView}
+                resizeMode="cover"
+              />
             ) : (
               <LinearGradient
                 colors={["#1a1a2e", "#16213e", "#0f0f23"]}

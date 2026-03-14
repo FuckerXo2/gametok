@@ -85,6 +85,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const init = async () => {
       await refreshUser();
       setIsLoading(false);
+
+      // Prompt ALL users for push notifications (not just logged-in users).
+      // This lets us re-engage users who haven't signed up yet.
+      // Delay slightly so the app feels loaded before the system prompt appears.
+      setTimeout(async () => {
+        const pushToken = await registerForPushNotifications();
+        if (pushToken) {
+          // Store token locally so we can send it to backend when they sign up later
+          await AsyncStorage.setItem('pushToken', pushToken);
+
+          // If user is already authenticated, save to backend with auth
+          const authToken = await getToken();
+          if (authToken) {
+            await savePushToken(pushToken, authToken);
+          } else {
+            // Not logged in — register as anonymous so backend can send re-engagement
+            try {
+              await fetch('https://gametok-backend-production.up.railway.app/api/notifications/register-anonymous', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pushToken }),
+              });
+            } catch (e) {
+              console.log('[Notifications] Failed to register anonymous token:', e);
+            }
+          }
+        }
+      }, 2000);
     };
     init();
   }, []);
@@ -96,9 +124,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(data.user);
     await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
 
-    // Register for push notifications
-    const pushToken = await registerForPushNotifications();
+    // Send push token to backend (may have been collected before sign-in)
+    const pushToken = await AsyncStorage.getItem('pushToken') || await registerForPushNotifications();
     if (pushToken) {
+      await AsyncStorage.setItem('pushToken', pushToken);
       const authToken = await getToken();
       if (authToken) {
         await savePushToken(pushToken, authToken);
@@ -113,9 +142,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(data.user);
     await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
 
-    // Register for push notifications
-    const pushToken = await registerForPushNotifications();
+    // Send push token to backend (may have been collected before sign-up)
+    const pushToken = await AsyncStorage.getItem('pushToken') || await registerForPushNotifications();
     if (pushToken) {
+      await AsyncStorage.setItem('pushToken', pushToken);
       const authToken = await getToken();
       if (authToken) {
         await savePushToken(pushToken, authToken);
@@ -130,9 +160,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(data.user);
     await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
 
-    // Register for push notifications
-    const pushToken = await registerForPushNotifications();
+    // Send push token to backend (may have been collected before OAuth)
+    const pushToken = await AsyncStorage.getItem('pushToken') || await registerForPushNotifications();
     if (pushToken) {
+      await AsyncStorage.setItem('pushToken', pushToken);
       const authToken = await getToken();
       if (authToken) {
         await savePushToken(pushToken, authToken);
@@ -153,6 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.removeItem('authUser');
     // Clear onboarding flag to show welcome screen again
     await AsyncStorage.removeItem('hasSeenOnboarding');
+    await AsyncStorage.removeItem('hasLaunchedBefore');
     setUser(null);
   };
 

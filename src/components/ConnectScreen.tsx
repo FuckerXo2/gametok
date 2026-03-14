@@ -8,160 +8,32 @@ import {
   ActivityIndicator,
   RefreshControl,
   Pressable,
-  Modal,
   TextInput,
   FlatList,
   Image,
-  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring, withDelay } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeInRight, useSharedValue, useAnimatedStyle, withSpring, withDelay } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useAuthScreen, useNavigation } from '../../App';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
-import { multiplayer, users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
+import { users, messages as messagesApi, feed, stories as storiesApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
-import { AnimatedButton } from './AnimatedButton';
-import { GameLoadingScreen } from './GameLoadingScreen';
 import * as ImagePicker from 'expo-image-picker';
-import { getGameUrl, R2_BASE_URL, startGameDownload, subscribeToProgress, DownloadProgress } from '../services/gameDownloader';
 
 const GAMES_HOST = 'https://gametok-games.pages.dev';
-
-// Script to hide Godot/OpenPigeon's built-in loading screen
-const GODOT_LOADER_HIDE_SCRIPT = `
-(function() {
-  if (window._godotLoaderHidden) return;
-  window._godotLoaderHidden = true;
-  
-  const hideLoaders = () => {
-    // Godot-specific loading elements
-    const selectors = [
-      '#status', '#status-progress', '#status-progress-inner', '#status-indeterminate',
-      '#status-notice', '.godot-loader', '.godot-splash', '[class*="godot-"]',
-      '.loading-screen', '.splash-screen', '#loading', '#splash',
-      '.progress-bar', '.loading-bar', '.loader', '.preloader',
-      '[id*="loading"]', '[id*="splash"]', '[class*="loading"]', '[class*="splash"]',
-    ];
-    
-    selectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;';
-      });
-    });
-    
-    // Also hide any element with "loading" or "progress" in its text
-    document.querySelectorAll('div, span, p').forEach(el => {
-      const text = el.textContent?.toLowerCase() || '';
-      if ((text.includes('loading') || text.includes('progress')) && el.children.length === 0) {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;';
-      }
-    });
-  };
-  
-  // Inject CSS to hide loaders
-  const style = document.createElement('style');
-  style.textContent = \`
-    #status, #status-progress, #status-progress-inner, #status-indeterminate,
-    #status-notice, .godot-loader, .godot-splash, .loading-screen, .splash-screen,
-    #loading, #splash, .progress-bar, .loading-bar, .loader, .preloader,
-    [id*="loading"], [id*="splash"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-    html, body {
-      background: #000 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      overflow: hidden !important;
-    }
-    canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-    }
-  \`;
-  document.head.appendChild(style);
-  
-  // Run immediately and repeatedly
-  hideLoaders();
-  setInterval(hideLoaders, 100);
-  setTimeout(hideLoaders, 0);
-  setTimeout(hideLoaders, 50);
-  setTimeout(hideLoaders, 200);
-  setTimeout(hideLoaders, 500);
-  setTimeout(hideLoaders, 1000);
-  setTimeout(hideLoaders, 2000);
-})();
-true;
-`;
-
-// Script to detect when game is actually ready (canvas rendering)
-const GAME_READY_SCRIPT = `
-(function() {
-  if (window._gameReadyActive) return;
-  window._gameReadyActive = true;
-  
-  let gameReady = false;
-  const startTime = Date.now();
-  
-  const notifyReady = () => {
-    if (gameReady) return;
-    // Minimum 2 seconds to let game initialize
-    if (Date.now() - startTime < 2000) {
-      setTimeout(notifyReady, 2000 - (Date.now() - startTime));
-      return;
-    }
-    gameReady = true;
-    try {
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'GAME_READY' }));
-    } catch(e) {}
-  };
-  
-  // Check for WebGL canvas activity
-  const checkCanvas = () => {
-    const canvases = document.querySelectorAll('canvas');
-    for (const canvas of canvases) {
-      if (canvas.width > 100 && canvas.height > 100) {
-        const ctx = canvas.getContext('webgl') || canvas.getContext('webgl2');
-        if (ctx) {
-          setTimeout(notifyReady, 1500);
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-  
-  // Poll for canvas
-  const interval = setInterval(() => {
-    if (checkCanvas() || gameReady) {
-      clearInterval(interval);
-    }
-  }, 200);
-  
-  // Fallback: mark ready after 8 seconds max
-  setTimeout(() => {
-    if (!gameReady) notifyReady();
-  }, 8000);
-})();
-true;
-`;
 
 type TabName = 'play' | 'messages';
 
@@ -263,7 +135,7 @@ const TabButton: React.FC<{
 const MessagesTab: React.FC = () => {
   const { colors } = useTheme();
   const { user } = useAuth();
-  const { socket, onlineUsers } = useSocket();
+  const { chatSocket, onlineUsers, typingUsers, joinConversation, leaveConversation, sendTyping, stopTyping } = useSocket();
   const insets = useSafeAreaInsets();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -321,28 +193,52 @@ const MessagesTab: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Socket.io messaging listener
+  // Socket.io messaging listener - real-time messages
   useEffect(() => {
-    if (!socket) return;
+    if (!chatSocket) return;
 
-    const handleReceive = (msg: any) => {
-      if (selectedChat && selectedChat.user.id === msg.senderId) {
+    const handleNewMessage = ({ conversationId, message }: any) => {
+      // If we're in this conversation, add the message
+      if (selectedChat && (selectedChat.id === conversationId || selectedChat.user.id === message.senderId)) {
         setChatMessages(prev => [...prev, {
-          id: msg.id,
-          text: msg.text,
-          createdAt: msg.createdAt,
-          isMe: false,
-          gameShare: msg.gameId ? { id: msg.gameId } : null
+          id: message.id,
+          text: message.text,
+          createdAt: message.createdAt,
+          isMe: message.senderId === user?.id,
+          isRead: false,
+          gameShare: message.gameShare || null
         }]);
       }
+      // Refresh conversation list
       loadData();
     };
 
-    socket.on('chat:receive', handleReceive);
-    return () => {
-      socket.off('chat:receive', handleReceive);
+    const handleMessagesRead = ({ conversationId, messageIds }: any) => {
+      if (selectedChat && selectedChat.id === conversationId) {
+        setChatMessages(prev => prev.map(msg => 
+          messageIds.includes(msg.id) ? { ...msg, isRead: true } : msg
+        ));
+      }
     };
-  }, [socket, selectedChat, loadData]);
+
+    chatSocket.on('chat:new_message', handleNewMessage);
+    chatSocket.on('chat:messages_read', handleMessagesRead);
+
+    return () => {
+      chatSocket.off('chat:new_message', handleNewMessage);
+      chatSocket.off('chat:messages_read', handleMessagesRead);
+    };
+  }, [chatSocket, selectedChat, user?.id, loadData]);
+
+  // Join/leave conversation room when chat opens/closes
+  useEffect(() => {
+    if (selectedChat && chatSocket) {
+      joinConversation(selectedChat.id);
+      return () => {
+        leaveConversation(selectedChat.id);
+      };
+    }
+  }, [selectedChat, chatSocket, joinConversation, leaveConversation]);
 
   // Search effect
   useEffect(() => {
@@ -381,23 +277,26 @@ const MessagesTab: React.FC = () => {
     if (!messageText.trim() || !selectedChat) return;
     const text = messageText.trim();
     setMessageText('');
+    
+    // Stop typing indicator when sending
+    stopTyping(selectedChat.id);
+    
     try {
       const data = await messagesApi.send({ recipientId: selectedChat.user.id, text });
-
-      if (socket && data.message) {
-        socket.emit('chat:message', {
-          to: selectedChat.user.id,
-          text: data.message.text,
-          id: data.message.id,
-          createdAt: data.message.createdAt,
-          gameId: data.message.gameShare?.id || null
-        });
-      }
-
       setChatMessages(prev => [...prev, data.message]);
       loadData();
     } catch (e) {
       setMessageText(text);
+    }
+  };
+
+  // Handle typing in the input
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    if (selectedChat && text.length > 0) {
+      sendTyping(selectedChat.id);
+    } else if (selectedChat) {
+      stopTyping(selectedChat.id);
     }
   };
 
@@ -466,111 +365,131 @@ const MessagesTab: React.FC = () => {
         }
       >
         {/* Search Bar */}
-        <TouchableOpacity
-          style={[styles.searchBar, { backgroundColor: colors.surface }]}
-          onPress={() => setShowSearch(true)}
-        >
-          <Ionicons name="search" size={18} color={colors.textSecondary} />
-          <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search messages</Text>
-        </TouchableOpacity>
+        <Animated.View entering={FadeInRight.delay(50).springify().damping(18)}>
+          <TouchableOpacity
+            style={[styles.searchBar, { backgroundColor: colors.surface }]}
+            onPress={() => setShowSearch(true)}
+          >
+            <Ionicons name="search" size={18} color={colors.textSecondary} />
+            <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search messages</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Quick Access Row - New button + Recent contacts */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickAccessRow}
-        >
-          {/* New Message Button */}
-          <TouchableOpacity style={styles.newMessageBtn} onPress={() => setShowSearch(true)}>
-            <View style={[styles.newMessageCircle, { backgroundColor: colors.surface }]}>
-              <Ionicons name="create-outline" size={24} color={LoopsColors.color1} />
-            </View>
-            <Text style={[styles.quickAccessLabel, { color: colors.text }]}>New</Text>
-          </TouchableOpacity>
-
-          {/* Recent contacts (plain avatars, no gradient rings) */}
-          {suggestedUsers.map((person) => (
-            <TouchableOpacity 
-              key={person.id} 
-              style={styles.quickAccessItem} 
-              onPress={() => {
-                // Start a chat with this person
-                const existingConvo = conversations.find(c => c.user.id === person.id);
-                if (existingConvo) {
-                  openChat(existingConvo);
-                } else {
-                  // Create a new conversation object
-                  openChat({
-                    id: `new-${person.id}`,
-                    user: person,
-                    streak: 0
-                  });
-                }
-              }}
-            >
-              <Avatar uri={person.avatar} size={56} />
-              <Text style={[styles.quickAccessLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-                {person.username}
-              </Text>
+        <Animated.View entering={FadeInRight.delay(100).springify().damping(18)}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickAccessRow}
+          >
+            {/* New Message Button */}
+            <TouchableOpacity style={styles.newMessageBtn} onPress={() => setShowSearch(true)}>
+              <View style={[styles.newMessageCircle, { backgroundColor: colors.surface }]}>
+                <Ionicons name="create-outline" size={24} color={LoopsColors.color1} />
+              </View>
+              <Text style={[styles.quickAccessLabel, { color: colors.text }]}>New</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+
+            {/* Recent contacts (plain avatars, no gradient rings) */}
+            {suggestedUsers.map((person) => (
+              <TouchableOpacity 
+                key={person.id} 
+                style={styles.quickAccessItem} 
+                onPress={() => {
+                  // Start a chat with this person
+                  const existingConvo = conversations.find(c => c.user.id === person.id);
+                  if (existingConvo) {
+                    openChat(existingConvo);
+                  } else {
+                    // Create a new conversation object
+                    openChat({
+                      id: `new-${person.id}`,
+                      user: person,
+                      streak: 0
+                    });
+                  }
+                }}
+              >
+                <Avatar uri={person.avatar} size={56} />
+                <Text style={[styles.quickAccessLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {person.username}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </Animated.View>
 
         {/* Messages Section Header */}
-        <View style={styles.messagesSectionHeader}>
+        <Animated.View entering={FadeInRight.delay(150).springify().damping(18)} style={styles.messagesSectionHeader}>
           <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Messages</Text>
           <TouchableOpacity onPress={() => setShowSearch(true)}>
             <Ionicons name="create-outline" size={22} color={colors.text} />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         {/* Message Threads */}
         {conversations.length > 0 ? (
-          conversations.map((chat) => (
-            <TouchableOpacity
-              key={chat.id}
-              style={styles.chatItem}
-              onPress={() => openChat(chat)}
-            >
-              <View>
-                <Avatar uri={chat.user.avatar} size={52} />
-                {onlineUsers.includes(chat.user.id) && (
-                  <View style={[styles.onlineDot, { borderColor: colors.background }]} />
-                )}
-              </View>
-              <View style={styles.chatContent}>
-                <View style={styles.chatHeader}>
-                  <Text style={[styles.chatUsername, { color: colors.text }]}>
-                    {chat.user.displayName}
-                  </Text>
-                  {chat.streak > 0 && (
-                    <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
-                  )}
-                </View>
-                <Text style={[styles.chatPreview, { color: colors.textSecondary }]} numberOfLines={1}>
-                  {chat.lastMessage?.text || 'Start chatting'}
-                </Text>
-              </View>
-              <View style={styles.chatMeta}>
-                {chat.lastMessage && (
-                  <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
-                    {formatTime(chat.lastMessage.createdAt)}
-                  </Text>
-                )}
-                {chat.lastMessage && !chat.lastMessage.isRead && (
-                  <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))
+          conversations.map((chat, index) => {
+            const isUnread = chat.lastMessage && !chat.lastMessage.isRead;
+            return (
+              <Animated.View 
+                key={chat.id} 
+                entering={index < 8 ? FadeInRight.delay(200 + index * 50).springify().damping(18) : undefined}
+              >
+                <TouchableOpacity
+                  style={styles.chatItem}
+                  onPress={() => openChat(chat)}
+                >
+                  <View>
+                    <Avatar uri={chat.user.avatar} size={52} />
+                    {onlineUsers.includes(chat.user.id) && (
+                      <View style={[styles.onlineDot, { borderColor: colors.background }]} />
+                    )}
+                  </View>
+                  <View style={styles.chatContent}>
+                    <View style={styles.chatHeader}>
+                      <Text style={[styles.chatUsername, { color: colors.text, fontWeight: isUnread ? '700' : '600' }]}>
+                        {chat.user.displayName}
+                      </Text>
+                      {chat.streak > 0 && (
+                        <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
+                      )}
+                    </View>
+                    <Text 
+                      style={[
+                        styles.chatPreview, 
+                        { 
+                          color: isUnread ? colors.text : colors.textSecondary,
+                          fontWeight: isUnread ? '600' : '400'
+                        }
+                      ]} 
+                      numberOfLines={1}
+                    >
+                      {chat.lastMessage?.text || 'Start chatting'}
+                    </Text>
+                  </View>
+                  <View style={styles.chatMeta}>
+                    {chat.lastMessage && (
+                      <Text style={[styles.chatTime, { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' }]}>
+                        {formatTime(chat.lastMessage.createdAt)}
+                      </Text>
+                    )}
+                    {isUnread && (
+                      <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          })
         ) : (
-          <View style={styles.emptyMessages}>
+          <Animated.View entering={FadeInRight.delay(200).springify().damping(18)} style={styles.emptyMessages}>
             <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No messages yet</Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               Start a conversation with someone!
             </Text>
-          </View>
+          </Animated.View>
         )}
       </ScrollView>
 
@@ -644,7 +563,11 @@ const MessagesTab: React.FC = () => {
       {/* Chat Modal */}
       <SlideRightModal visible={!!selectedChat} onClose={() => setSelectedChat(null)}>
         {selectedChat && (
-          <View style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <KeyboardAvoidingView 
+            style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
             <View style={[styles.chatModalHeader, { borderBottomColor: colors.border }]}>
               <TouchableOpacity onPress={() => setSelectedChat(null)}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -654,9 +577,16 @@ const MessagesTab: React.FC = () => {
                 onPress={() => openUserProfile(selectedChat.user)}
               >
                 <Avatar uri={selectedChat.user.avatar} size={36} />
-                <Text style={[styles.chatModalUsername, { color: colors.text }]}>
-                  {selectedChat.user.displayName || selectedChat.user.username}
-                </Text>
+                <View>
+                  <Text style={[styles.chatModalUsername, { color: colors.text }]}>
+                    {selectedChat.user.displayName || selectedChat.user.username}
+                  </Text>
+                  {typingUsers.get(selectedChat.id) === selectedChat.user.id && (
+                    <Text style={[styles.typingIndicator, { color: LoopsColors.color1 }]}>
+                      typing...
+                    </Text>
+                  )}
+                </View>
               </TouchableOpacity>
               <View style={{ width: 24 }} />
             </View>
@@ -665,21 +595,33 @@ const MessagesTab: React.FC = () => {
               <ActivityIndicator style={{ flex: 1 }} color={LoopsColors.color1} />
             ) : (
               <FlatList
-                data={chatMessages}
+                data={[...chatMessages].reverse()}
                 keyExtractor={(item) => item.id}
                 style={styles.chatMessagesList}
-                contentContainerStyle={{ padding: 16 }}
-                renderItem={({ item }) => {
+                contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+                inverted
+                renderItem={({ item, index }) => {
                   const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
                   const hasGameShare = !!item.gameShare;
                   const thumbUri = item.gameShare?.thumbnail
                     ? (item.gameShare.thumbnail.startsWith('http') ? item.gameShare.thumbnail : `${GAMES_HOST}${item.gameShare.thumbnail}`)
                     : null;
+                  
+                  // Message grouping - check if previous message (in reversed order) is from same person
+                  const reversedMessages = [...chatMessages].reverse();
+                  const prevMsg = reversedMessages[index + 1];
+                  const nextMsg = reversedMessages[index - 1];
+                  const isFirstInGroup = !prevMsg || prevMsg.isMe !== item.isMe;
+                  const isLastInGroup = !nextMsg || nextMsg.isMe !== item.isMe;
+                  
+                  // Format timestamp
+                  const msgTime = new Date(item.createdAt);
+                  const timeStr = msgTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                   if (hasGameShare) {
                     return (
                       <View style={[
-                        { maxWidth: '70%', marginBottom: 10 },
+                        { maxWidth: '70%', marginBottom: isLastInGroup ? 12 : 2 },
                         item.isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
                       ]}>
                         <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}>
@@ -721,13 +663,31 @@ const MessagesTab: React.FC = () => {
 
                   return (
                     <View style={[
-                      styles.messageBubble,
-                      item.isMe ? styles.myMessage : styles.theirMessage,
-                      { backgroundColor: item.isMe ? LoopsColors.color1 : colors.surface }
+                      { marginBottom: isLastInGroup ? 12 : 2 },
+                      item.isMe ? { alignSelf: 'flex-end', alignItems: 'flex-end' } : { alignSelf: 'flex-start', alignItems: 'flex-start' }
                     ]}>
-                      <Text style={[styles.messageText, { color: item.isMe ? '#fff' : colors.text }]}>
-                        {cleanText}
-                      </Text>
+                      <View style={[
+                        styles.messageBubble,
+                        item.isMe ? styles.myMessage : styles.theirMessage,
+                        { backgroundColor: item.isMe ? colors.surface : colors.surface }
+                      ]}>
+                        <Text style={[styles.messageText, { color: colors.text }]}>
+                          {cleanText}
+                        </Text>
+                      </View>
+                      {/* Timestamp + read receipt on last message in group */}
+                      {isLastInGroup && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>{timeStr}</Text>
+                          {item.isMe && (
+                            <Ionicons 
+                              name={item.isRead ? "checkmark-done" : "checkmark"} 
+                              size={14} 
+                              color={item.isRead ? LoopsColors.color1 : colors.textSecondary} 
+                            />
+                          )}
+                        </View>
+                      )}
                     </View>
                   );
                 }}
@@ -748,8 +708,9 @@ const MessagesTab: React.FC = () => {
                   placeholder="Message..."
                   placeholderTextColor={colors.textSecondary}
                   value={messageText}
-                  onChangeText={setMessageText}
+                  onChangeText={handleTextChange}
                   onSubmitEditing={sendMessage}
+                  returnKeyType="send"
                 />
               </View>
               <TouchableOpacity
@@ -760,7 +721,7 @@ const MessagesTab: React.FC = () => {
                 <Ionicons name="send" size={20} color={messageText.trim() ? '#fff' : colors.textSecondary} />
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         )}
       </SlideRightModal>
 
@@ -888,24 +849,6 @@ const PlayTogetherTab: React.FC = () => {
     </View>
   );
 };
-
-const gameStyles = StyleSheet.create({
-  gameModal: { flex: 1, backgroundColor: '#000' },
-  gameWebView: { flex: 1 },
-  gameCloseBtn: { 
-    position: 'absolute', 
-    right: 16, 
-    zIndex: 100 
-  },
-  gameCloseBtnBlur: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 20, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    overflow: 'hidden' 
-  },
-});
 
 export const ConnectScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -1738,6 +1681,11 @@ const styles = StyleSheet.create({
   chatModalUsername: {
     fontWeight: '600',
     ...FontStyles.body,
+  },
+  typingIndicator: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   chatMessagesList: {
     flex: 1,
