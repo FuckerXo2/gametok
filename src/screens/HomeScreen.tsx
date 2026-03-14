@@ -1381,33 +1381,44 @@ const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, c
   </Svg>
 );
 
-// Swipe hint overlay — shows the hand icon bobbing in the bottom swipe zone
+// Swipe hint overlay — shows the hand icon and highlight area in the bottom swipe zone
 // for the first 5 seconds on each game so users know where to swipe
 const SwipeHintOverlay: React.FC<{ gameIndex: number }> = ({ gameIndex }) => {
   const opacity = useRef(new Animated.Value(0)).current;
-  const bobY = useRef(new Animated.Value(0)).current;
+  const handY = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
     setVisible(true);
     opacity.setValue(0);
-    bobY.setValue(0);
+    handY.setValue(0);
 
     // Fade in
     Animated.timing(opacity, {
-      toValue: 0.85,
+      toValue: 1,
       duration: 400,
       useNativeDriver: true,
     }).start();
 
-    // Bob up and down continuously
-    const bobAnimation = Animated.loop(
+    // Hand swipe animation - travels from bottom upwards like the welcome screen
+    const swipeAnimation = Animated.loop(
       Animated.sequence([
-        Animated.timing(bobY, { toValue: -12, duration: 600, useNativeDriver: true }),
-        Animated.timing(bobY, { toValue: 0, duration: 600, useNativeDriver: true }),
+        Animated.timing(handY, {
+          toValue: -80, // Travel up 80px
+          duration: 1000,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(handY, {
+          toValue: 0,
+          duration: 800,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.delay(300), // Pause at bottom before repeating
       ])
     );
-    bobAnimation.start();
+    swipeAnimation.start();
 
     // Fade out after 4 seconds (gives 1s fade out before the 5s mark)
     const fadeTimer = setTimeout(() => {
@@ -1417,13 +1428,13 @@ const SwipeHintOverlay: React.FC<{ gameIndex: number }> = ({ gameIndex }) => {
         useNativeDriver: true,
       }).start(() => {
         setVisible(false);
-        bobAnimation.stop();
+        swipeAnimation.stop();
       });
     }, 4000);
 
     return () => {
       clearTimeout(fadeTimer);
-      bobAnimation.stop();
+      swipeAnimation.stop();
     };
   }, [gameIndex]);
 
@@ -1433,25 +1444,37 @@ const SwipeHintOverlay: React.FC<{ gameIndex: number }> = ({ gameIndex }) => {
     <Animated.View
       style={{
         position: 'absolute',
-        bottom: BOTTOM_ZONE_HEIGHT - 10,
-        alignSelf: 'center',
-        alignItems: 'center',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: BOTTOM_ZONE_HEIGHT,
         opacity,
         zIndex: 5,
-        transform: [{ translateY: bobY }],
+        backgroundColor: 'rgba(168, 85, 247, 0.15)', // Semi-transparent purple
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(168, 85, 247, 0.3)',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
       pointerEvents="none"
     >
-      <SwipeUpHand size={36} color="rgba(255,255,255,0.9)" />
-      <Text style={{
-        color: 'rgba(255,255,255,0.9)',
-        fontSize: 12,
-        fontWeight: '600',
-        marginTop: 4,
-        textShadowColor: 'rgba(0,0,0,0.5)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 3,
-      }}>Swipe up for next</Text>
+      <Animated.View style={{
+        alignItems: 'center',
+        transform: [{ translateY: handY }]
+      }}>
+        <SwipeUpHand size={36} color="rgba(255,255,255,0.9)" />
+        <Text style={{
+          color: 'rgba(255,255,255,0.9)',
+          fontSize: 12,
+          fontWeight: '600',
+          marginTop: 4,
+          textShadowColor: 'rgba(0,0,0,0.5)',
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 3,
+        }}>Swipe up for next</Text>
+      </Animated.View>
     </Animated.View>
   );
 };
@@ -2550,19 +2573,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     const init = async () => {
       console.log('[HomeScreen] Starting init...');
 
-      // Check if this is the first launch
-      const hasLaunchedBefore = await AsyncStorage.getItem('hasLaunchedBefore');
-      const isFirstLaunch = !hasLaunchedBefore;
+      // Always show welcome screen on app load
+      // We removed the 'hasLaunchedBefore' check so it consistently starts at -1 on fresh load
 
-      if (!isFirstLaunch) {
-        // Skip welcome screen on subsequent launches
-        setCurrentIndex(0);
-      }
-
-      // Mark that the app has been launched
-      if (isFirstLaunch) {
-        await AsyncStorage.setItem('hasLaunchedBefore', 'true');
-      }
 
       // Initialize ads SDK (don't block on this)
       console.log('[HomeScreen] Initializing ads...');
