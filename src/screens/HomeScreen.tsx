@@ -1382,13 +1382,18 @@ const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, c
 );
 
 // Swipe hint overlay — shows the hand icon and highlight area in the bottom swipe zone
-// for the first 5 seconds on each game so users know where to swipe
-const SwipeHintOverlay: React.FC<{ gameIndex: number }> = ({ gameIndex }) => {
+// occasionally to remind users where to swipe
+const SwipeHintOverlay: React.FC<{ gameIndex: number; shouldShow: boolean }> = ({ gameIndex, shouldShow }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const handY = useRef(new Animated.Value(0)).current;
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (!shouldShow) {
+      setVisible(false);
+      return;
+    }
+
     setVisible(true);
     opacity.setValue(0);
     handY.setValue(0);
@@ -1436,9 +1441,9 @@ const SwipeHintOverlay: React.FC<{ gameIndex: number }> = ({ gameIndex }) => {
       clearTimeout(fadeTimer);
       swipeAnimation.stop();
     };
-  }, [gameIndex]);
+  }, [gameIndex, shouldShow]);
 
-  if (!visible || gameIndex <= 0) return null; // Don't show on welcome screen
+  if (!visible || gameIndex < 0) return null; // Don't show on welcome screen
 
   return (
     <Animated.View
@@ -3273,8 +3278,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         </Animated.View>
       ))}
 
-      {/* Swipe hint — shows hand icon bobbing in the swipe zone for 5s on each new game */}
-      <SwipeHintOverlay gameIndex={currentIndex} />
+      {/* Swipe hint — shows hand icon for 5s on first game or after an ad */}
+      <SwipeHintOverlay 
+        gameIndex={currentIndex} 
+        shouldShow={currentIndex === 0 || (currentIndex > 0 && !!feed[currentIndex - 1]?.isAd)}
+      />
 
       {/* For You header - tappable to refresh, swipes pass through around it */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
