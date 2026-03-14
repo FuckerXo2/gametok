@@ -184,6 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.removeItem('authUser');
     // Clear onboarding flag to show welcome screen again
     await AsyncStorage.removeItem('hasSeenOnboarding');
+    await AsyncStorage.removeItem('hasLaunchedBefore');
     setUser(null);
   };
 

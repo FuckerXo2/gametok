@@ -2573,9 +2573,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     const init = async () => {
       console.log('[HomeScreen] Starting init...');
 
-      // Always show welcome screen on app load
-      // We removed the 'hasLaunchedBefore' check so it consistently starts at -1 on fresh load
+      // Check if this is the first launch
+      const hasLaunchedBefore = await AsyncStorage.getItem('hasLaunchedBefore');
+      const isFirstLaunch = !hasLaunchedBefore;
 
+      if (!isFirstLaunch) {
+        // Skip welcome screen on subsequent launches
+        setCurrentIndex(0);
+      }
+
+      // Mark that the app has been launched
+      if (isFirstLaunch) {
+        await AsyncStorage.setItem('hasLaunchedBefore', 'true');
+      }
 
       // Initialize ads SDK (don't block on this)
       console.log('[HomeScreen] Initializing ads...');
