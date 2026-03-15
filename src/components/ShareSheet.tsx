@@ -119,8 +119,8 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const getThumbnailUrl = () => `https://gametok-games.pages.dev/thumbnails/${gameId}.png`;
-  const getShareUrl = () => `https://gametok-landing.pages.dev/game.html?id=${gameId}&name=${encodeURIComponent(gameName)}&img=${encodeURIComponent(getThumbnailUrl())}`;
+  const getThumbnailUrl = () => `https://games.gametok.co/thumbnails/${gameId}.png`;
+  const getShareUrl = () => `https://gametok.co/game.html?id=${gameId}&name=${encodeURIComponent(gameName)}&img=${encodeURIComponent(getThumbnailUrl())}`;
   const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮\n${getShareUrl()}`;
 
   const handleExternalShare = async (optionId: string) => {

@@ -27,7 +27,7 @@
       "bundleIdentifier": "com.olasubomi.gametok",
       "buildNumber": "47",
       "associatedDomains": [
-        "applinks:gametok-landing.pages.dev"
+        "applinks:gametok.co"
       ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

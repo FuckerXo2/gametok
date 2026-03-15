@@ -33,7 +33,7 @@ import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import * as ImagePicker from 'expo-image-picker';
 
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 
 type TabName = 'play' | 'messages';
 

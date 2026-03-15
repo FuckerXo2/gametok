@@ -38,7 +38,7 @@ import { GameLoadingScreen } from './GameLoadingScreen';
 import { LoopsBadges, LoopsIcons, BadgeSizes } from '../constants/LoopsBadges';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 
 // Theme colors matching the new design (clean, modern)
 const themes = {

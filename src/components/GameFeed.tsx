@@ -19,7 +19,7 @@ import { WebViewPool, WebViewPoolHandle } from './WebViewPool';
 import { games as gamesApi } from '../services/api';
 import { initializeAds, getAdFrequency } from '../services/ads';
 
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 const SCROLL_ZONE_HEIGHT = 0.25; // Bottom 25% of screen
 const SWIPE_THRESHOLD = 50;
 

@@ -30,7 +30,7 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const profileUrl = `https://gametok-games.pages.dev/u/${user?.username || 'user'}`;
+  const profileUrl = `https://games.gametok.co/u/${user?.username || 'user'}`;
 
   const handleShare = async (platform?: string) => {
     try {

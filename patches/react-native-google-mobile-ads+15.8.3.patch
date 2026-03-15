@@ -1,0 +1,37 @@
+diff --git a/node_modules/react-native-google-mobile-ads/ios/RNGoogleMobileAds/RNGoogleMobileAdsCommon.mm b/node_modules/react-native-google-mobile-ads/ios/RNGoogleMobileAds/RNGoogleMobileAdsCommon.mm
+index 9b5db63..df9099f 100644
+--- a/node_modules/react-native-google-mobile-ads/ios/RNGoogleMobileAds/RNGoogleMobileAdsCommon.mm
++++ b/node_modules/react-native-google-mobile-ads/ios/RNGoogleMobileAds/RNGoogleMobileAdsCommon.mm
+@@ -118,7 +118,7 @@ + (NSDictionary *)getCodeAndMessageFromAdError:(NSError *)error {
+     code = @"internal-error";
+   } else if (error.code == GADErrorInvalidArgument) {
+     code = @"invalid-argument";
+-  } else if (error.code == GADErrorReceivedInvalidAdString) {
++  } else if (error.code == GADErrorReceivedInvalidResponse) {
+     code = @"received-invalid-ad-string";
+   } else if (error.code == GADErrorAdAlreadyUsed) {
+     code = @"ad-already-used";
+diff --git a/node_modules/react-native-google-mobile-ads/lib/commonjs/specs/modules/NativeGoogleMobileAdsNativeModule.js b/node_modules/react-native-google-mobile-ads/lib/commonjs/specs/modules/NativeGoogleMobileAdsNativeModule.js
+index eabc2a2..dfee1d1 100644
+--- a/node_modules/react-native-google-mobile-ads/lib/commonjs/specs/modules/NativeGoogleMobileAdsNativeModule.js
++++ b/node_modules/react-native-google-mobile-ads/lib/commonjs/specs/modules/NativeGoogleMobileAdsNativeModule.js
+@@ -21,5 +21,5 @@ var _reactNative = require("react-native");
+  * limitations under the License.
+  *
+  */
+-var _default = exports.default = _reactNative.TurboModuleRegistry.getEnforcing('RNGoogleMobileAdsNativeModule');
++var _default = exports.default = _reactNative.TurboModuleRegistry.get('RNGoogleMobileAdsNativeModule');
+ //# sourceMappingURL=NativeGoogleMobileAdsNativeModule.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-google-mobile-ads/lib/module/specs/modules/NativeGoogleMobileAdsNativeModule.js b/node_modules/react-native-google-mobile-ads/lib/module/specs/modules/NativeGoogleMobileAdsNativeModule.js
+index 8cbe84c..60c7890 100644
+--- a/node_modules/react-native-google-mobile-ads/lib/module/specs/modules/NativeGoogleMobileAdsNativeModule.js
++++ b/node_modules/react-native-google-mobile-ads/lib/module/specs/modules/NativeGoogleMobileAdsNativeModule.js
+@@ -16,5 +16,5 @@
+  */
+ 
+ import { TurboModuleRegistry } from 'react-native';
+-export default TurboModuleRegistry.getEnforcing('RNGoogleMobileAdsNativeModule');
++export default TurboModuleRegistry.get('RNGoogleMobileAdsNativeModule');
+ //# sourceMappingURL=NativeGoogleMobileAdsNativeModule.js.map
+\ No newline at end of file

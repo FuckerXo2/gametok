@@ -30,7 +30,7 @@ import { Avatar } from './Avatar';
 import { FriendRequestsScreen } from './FriendRequestsScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 
 interface UserResult {
   id: string;

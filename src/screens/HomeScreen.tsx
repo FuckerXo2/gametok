@@ -25,7 +25,7 @@ import { LoopsAnimations } from '../constants/LoopsAnimations';
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
 const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
 const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15;

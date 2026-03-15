@@ -62,7 +62,7 @@ interface ChatMessage {
   };
 }
 
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 
 const SUGGESTED_FRIENDS: any[] = [];
 

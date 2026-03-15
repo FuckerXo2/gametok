@@ -2,7 +2,7 @@
 
 This document provides an index of all games available in GameTOK, as required by Apple App Review Guideline 4.7.4.
 
-**Live Index URL:** https://gametok-games.pages.dev/game-index.html
+**Live Index URL:** https://games.gametok.co/game-index.html
 **Last Updated:** January 19, 2026
 **Contact:** gametokapp@gmail.com
 **App Version:** 1.0
@@ -11,41 +11,41 @@ This document provides an index of all games available in GameTOK, as required b
 
 ## Self-Hosted Games (Developed by GameTOK)
 
-These games are developed and hosted by GameTOK on our servers (gametok-games.pages.dev):
+These games are developed and hosted by GameTOK on our servers (games.gametok.co):
 
 | Game Name | Developer | Category | Direct URL |
 |-----------|-----------|----------|------------|
-| 2048 | GameTOK | Puzzle | https://gametok-games.pages.dev/2048/ |
-| 2048 Classic | GameTOK | Puzzle | https://gametok-games.pages.dev/2048-v2/ |
-| Tetris | GameTOK | Puzzle | https://gametok-games.pages.dev/tetris/ |
-| Hextris | GameTOK | Puzzle | https://gametok-games.pages.dev/hextris/ |
-| Memory Match | GameTOK | Puzzle | https://gametok-games.pages.dev/memory-match/ |
-| Block Blast | GameTOK | Puzzle | https://gametok-games.pages.dev/block-blast/ |
-| Color Match | GameTOK | Puzzle | https://gametok-games.pages.dev/color-match/ |
-| Simon Says | GameTOK | Puzzle | https://gametok-games.pages.dev/simon-says/ |
-| Number Tap | GameTOK | Puzzle | https://gametok-games.pages.dev/number-tap/ |
-| Breakout | GameTOK | Arcade | https://gametok-games.pages.dev/breakout/ |
-| Snake.io | GameTOK | Arcade | https://gametok-games.pages.dev/snake-io/ |
-| Piano Tiles | GameTOK | Arcade | https://gametok-games.pages.dev/piano-tiles/ |
-| Tower Blocks 3D | GameTOK | Arcade | https://gametok-games.pages.dev/tower-blocks-3d/ |
-| Flappy Bird | GameTOK | Casual | https://gametok-games.pages.dev/flappy-bird/ |
-| Doodle Jump | GameTOK | Casual | https://gametok-games.pages.dev/doodle-jump/ |
-| Crossy Road | GameTOK | Casual | https://gametok-games.pages.dev/crossy-road/ |
-| Bubble Pop | GameTOK | Casual | https://gametok-games.pages.dev/bubble-pop/ |
-| Ball Bounce | GameTOK | Casual | https://gametok-games.pages.dev/ball-bounce/ |
-| Tower Master | GameTOK | Casual | https://gametok-games.pages.dev/towermaster/ |
-| Rock Paper Scissors | GameTOK | Casual | https://gametok-games.pages.dev/rock-paper-scissors/ |
-| Fruit Slicer | GameTOK | Action | https://gametok-games.pages.dev/fruit-slicer/ |
-| Geometry Dash | GameTOK | Action | https://gametok-games.pages.dev/geometry-dash/ |
-| Whack-a-Mole | GameTOK | Action | https://gametok-games.pages.dev/whack-a-mole/ |
-| Aim Trainer | GameTOK | Action | https://gametok-games.pages.dev/aim-trainer/ |
-| Tap Tap Dash | GameTOK | Action | https://gametok-games.pages.dev/tap-tap-dash/ |
-| Tomb of the Mask | GameTOK | Action | https://gametok-games.pages.dev/tomb-of-mask-1/ |
-| Basketball | GameTOK | Sports | https://gametok-games.pages.dev/basketball/ |
-| Basketball 3D | GameTOK | Sports | https://gametok-games.pages.dev/basketball-3d/ |
-| Connect 4 | GameTOK | Strategy | https://gametok-games.pages.dev/connect4/ |
-| Tic Tac Toe | GameTOK | Strategy | https://gametok-games.pages.dev/tic-tac-toe/ |
-| Pong | GameTOK | Retro | https://gametok-games.pages.dev/pong/ |
+| 2048 | GameTOK | Puzzle | https://games.gametok.co/2048/ |
+| 2048 Classic | GameTOK | Puzzle | https://games.gametok.co/2048-v2/ |
+| Tetris | GameTOK | Puzzle | https://games.gametok.co/tetris/ |
+| Hextris | GameTOK | Puzzle | https://games.gametok.co/hextris/ |
+| Memory Match | GameTOK | Puzzle | https://games.gametok.co/memory-match/ |
+| Block Blast | GameTOK | Puzzle | https://games.gametok.co/block-blast/ |
+| Color Match | GameTOK | Puzzle | https://games.gametok.co/color-match/ |
+| Simon Says | GameTOK | Puzzle | https://games.gametok.co/simon-says/ |
+| Number Tap | GameTOK | Puzzle | https://games.gametok.co/number-tap/ |
+| Breakout | GameTOK | Arcade | https://games.gametok.co/breakout/ |
+| Snake.io | GameTOK | Arcade | https://games.gametok.co/snake-io/ |
+| Piano Tiles | GameTOK | Arcade | https://games.gametok.co/piano-tiles/ |
+| Tower Blocks 3D | GameTOK | Arcade | https://games.gametok.co/tower-blocks-3d/ |
+| Flappy Bird | GameTOK | Casual | https://games.gametok.co/flappy-bird/ |
+| Doodle Jump | GameTOK | Casual | https://games.gametok.co/doodle-jump/ |
+| Crossy Road | GameTOK | Casual | https://games.gametok.co/crossy-road/ |
+| Bubble Pop | GameTOK | Casual | https://games.gametok.co/bubble-pop/ |
+| Ball Bounce | GameTOK | Casual | https://games.gametok.co/ball-bounce/ |
+| Tower Master | GameTOK | Casual | https://games.gametok.co/towermaster/ |
+| Rock Paper Scissors | GameTOK | Casual | https://games.gametok.co/rock-paper-scissors/ |
+| Fruit Slicer | GameTOK | Action | https://games.gametok.co/fruit-slicer/ |
+| Geometry Dash | GameTOK | Action | https://games.gametok.co/geometry-dash/ |
+| Whack-a-Mole | GameTOK | Action | https://games.gametok.co/whack-a-mole/ |
+| Aim Trainer | GameTOK | Action | https://games.gametok.co/aim-trainer/ |
+| Tap Tap Dash | GameTOK | Action | https://games.gametok.co/tap-tap-dash/ |
+| Tomb of the Mask | GameTOK | Action | https://games.gametok.co/tomb-of-mask-1/ |
+| Basketball | GameTOK | Sports | https://games.gametok.co/basketball/ |
+| Basketball 3D | GameTOK | Sports | https://games.gametok.co/basketball-3d/ |
+| Connect 4 | GameTOK | Strategy | https://games.gametok.co/connect4/ |
+| Tic Tac Toe | GameTOK | Strategy | https://games.gametok.co/tic-tac-toe/ |
+| Pong | GameTOK | Retro | https://games.gametok.co/pong/ |
 
 ---
 
@@ -80,4 +80,4 @@ GameTOK is a registered publisher on GameMonetize, a legitimate HTML5 game distr
 
 ---
 
-For the most up-to-date game index, visit: https://gametok-games.pages.dev/game-index.html
+For the most up-to-date game index, visit: https://games.gametok.co/game-index.html

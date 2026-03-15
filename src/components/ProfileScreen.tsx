@@ -34,7 +34,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 2;
 const NUM_COLUMNS = 3;
 const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 
 interface Game { id: string; name: string; thumbnail?: string; }
 interface GamificationStats {
@@ -387,12 +387,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 <Text style={{ color: colors.text, fontSize: 16 }}>Contact Us</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}>
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok.co/privacy.html')}>
                 <Ionicons name="shield-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Privacy Policy</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}>
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok.co/terms.html')}>
                 <Ionicons name="document-text-outline" size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Terms of Service</Text>
               </TouchableOpacity>
