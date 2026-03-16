@@ -28,7 +28,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://games.gametok.co';
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
 const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
-const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15;
+const TOP_ZONE_HEIGHT = 0; // Removed top scroll zone so taps at the top of the game work
 const SWIPE_THRESHOLD = 50;
 
 interface Game {
@@ -2583,17 +2583,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     const init = async () => {
       console.log('[HomeScreen] Starting init...');
 
-      // Check if this is the first launch
+      // Mark that the app has been launched (kept for legacy analytics/flags if needed)
       const hasLaunchedBefore = await AsyncStorage.getItem('hasLaunchedBefore');
-      const isFirstLaunch = !hasLaunchedBefore;
-
-      if (!isFirstLaunch) {
-        // Skip welcome screen on subsequent launches
-        setCurrentIndex(0);
-      }
-
-      // Mark that the app has been launched
-      if (isFirstLaunch) {
+      if (!hasLaunchedBefore) {
         await AsyncStorage.setItem('hasLaunchedBefore', 'true');
       }
 
