@@ -3500,13 +3500,13 @@ const styles = StyleSheet.create({
   actionButtons: {
     position: 'absolute',
     right: 8,
-    bottom: 100,
+    top: '38%',
     alignItems: 'center',
     zIndex: 10,
   },
   actionButton: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 18,
   },
   actionCount: {
     color: LoopsColors.white,
