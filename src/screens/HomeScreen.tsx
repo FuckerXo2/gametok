@@ -3500,7 +3500,7 @@ const styles = StyleSheet.create({
   actionButtons: {
     position: 'absolute',
     right: 8,
-    top: '38%',
+    top: '50%',
     alignItems: 'center',
     zIndex: 10,
   },
