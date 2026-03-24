@@ -127,8 +127,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         {activeHtml ? (
           <View style={{ flex: 1 }}>
             <WebView 
-              source={{ html: activeHtml }}
+              source={{ html: activeHtml, baseUrl: 'https://gametok.app' }}
               style={{ flex: 1, backgroundColor: '#000' }}
+              originWhitelist={['*']}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
               bounces={false}
               scrollEnabled={false}
             />
