@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, Linking, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,6 +14,7 @@ import { ProfileScreen } from './src/components/ProfileScreen';
 import { ExploreScreen } from './src/components/ExploreScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
+import { CreateScreen } from './src/screens/CreateScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -58,10 +59,11 @@ const NavigationContext = createContext<NavigationContextType>({
 });
 export const useNavigation = () => useContext(NavigationContext);
 
-type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
+type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
 
 const MainApp = () => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
+  const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
   const { isDark, colors } = useTheme();
@@ -71,6 +73,12 @@ const MainApp = () => {
       // Already on home — trigger refresh
       setHomeRefreshTrigger(prev => prev + 1);
     }
+    
+    // Remember where we came from so the modal can slide back flawlessly
+    if (tab !== 'create') {
+      setPreviousTab(tab);
+    }
+    
     setActiveTab(tab);
   };
 
@@ -99,7 +107,15 @@ const MainApp = () => {
           <ProfileScreen isActive={activeTab === 'profile'} />
         </View>
       </View>
+      
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
+      
+      {/* Sliding Create Screen Modal - Overlays everything natively */}
+      <CreateScreen 
+        isActive={activeTab === 'create'} 
+        onClose={() => setActiveTab(previousTab)} 
+      />
+      
     </NavigationContext.Provider>
   );
 };

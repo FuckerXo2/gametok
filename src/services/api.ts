@@ -47,7 +47,7 @@ const request = async (endpoint: string, options: RequestInit = {}) => {
   }
 
   if (!response.ok) {
-    const error: any = new Error(data.error || 'Request failed');
+    const error: any = new Error(data.error || data.message || `Request failed. Dump: ${JSON.stringify(data)}`);
     error.status = response.status;
     throw error;
   }
