@@ -33,11 +33,6 @@ export const PkResults: React.FC<Props> = ({
     return isWinner ? 'Victory!' : 'Defeat';
   };
 
-  const getCoins = () => {
-    if (isDraw) return 50;
-    return isWinner ? 100 : 25;
-  };
-
   return (
     <View style={styles.container}>
       <View style={styles.backdrop} />
@@ -77,12 +72,6 @@ export const PkResults: React.FC<Props> = ({
             <Text style={styles.playerName} numberOfLines={1}>{opponent.username}</Text>
             <Text style={styles.playerScore}>{opponentScore}</Text>
           </View>
-        </View>
-
-        {/* Rewards */}
-        <View style={styles.rewardsContainer}>
-          <Text style={styles.rewardsLabel}>Coins Earned</Text>
-          <Text style={styles.rewardsValue}>+{getCoins()} 🪙</Text>
         </View>
 
         {/* Actions */}
@@ -161,23 +150,6 @@ const styles = StyleSheet.create({
   },
   vsText: {
     ...FontStyles.button,
-    color: LoopsColors.primary
-  },
-  rewardsContainer: {
-    backgroundColor: LoopsColors.background,
-    borderRadius: 16,
-    padding: 20,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 24
-  },
-  rewardsLabel: {
-    ...FontStyles.label,
-    color: LoopsColors.textSecondary,
-    marginBottom: 8
-  },
-  rewardsValue: {
-    ...FontStyles.h2,
     color: LoopsColors.primary
   },
   actions: {

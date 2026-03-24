@@ -21,10 +21,9 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen } from '../../App';
-import { auth, savedGames as savedGamesApi, gamification } from '../services/api';
+import { auth, savedGames as savedGamesApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
-import { RewardsScreen } from './RewardsScreen';
 import { Avatar } from './Avatar';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FollowListModal } from './FollowListModal';
@@ -59,8 +58,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showRewards, setShowRewards] = useState(false);
-  const [stats, setStats] = useState<GamificationStats | null>(null);
+  const [stats, setStats] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
   const [socialStats, setSocialStats] = useState({ followers: 0, following: 0 });
@@ -95,12 +93,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [statsRes, savedRes, userRes] = await Promise.all([
-        gamification.getStats(),
+      const [savedRes, userRes] = await Promise.all([
         user?.id ? savedGamesApi.userSaved(user.id) : Promise.resolve({ games: [] }),
         user?.id ? import('../services/api').then(({ users }) => users.get(user.id)) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
       ]);
-      setStats(statsRes);
       setSavedGamesList(savedRes.games || []);
       if (userRes?.stats) {
         setSocialStats({
@@ -236,65 +232,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           <View style={{ marginBottom: 16 }}>
             <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{displayName || username}</Text>
             {bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{bio}</Text> : null}
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.coinGold + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 16, height: 16 }} />
-                <Text style={{ color: LoopsColors.coinGold, fontSize: 13, fontWeight: '700' }}>{formatNumber(stats?.points.balance || 0)}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.color6 + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                <Ionicons name="trophy" size={12} color={LoopsColors.color6} />
-                <Text style={{ color: LoopsColors.color6, fontSize: 13, fontWeight: '700' }}>Level {stats?.level?.current || 1}</Text>
-              </View>
-              {(stats?.streak.current || 0) > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: LoopsColors.color2 + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                  <Ionicons name="flame" size={14} color={LoopsColors.color2} />
-                  <Text style={{ color: LoopsColors.color2, fontSize: 13, fontWeight: '600' }}>{stats?.streak.current} day streak</Text>
-                </View>
-              )}
-            </View>
           </View>
 
           {/* Edit Profile Button */}
           <TouchableOpacity
-            style={{ backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: colors.border }}
+            style={{ backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: colors.border }}
             onPress={() => setShowEditProfile(true)}
           >
             <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Edit Profile</Text>
-          </TouchableOpacity>
-
-          {/* Rewards Vault Entry Button */}
-          <TouchableOpacity
-            style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}
-            onPress={() => setShowRewards(true)}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={['#1a1a2e', '#16213e', '#0f3460']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: LoopsColors.coinGold + '26', justifyContent: 'center', alignItems: 'center' }}>
-                  <FontAwesome5 name="gift" size={20} color={LoopsColors.coinGold} />
-                </View>
-                <View>
-                  <Text style={{ color: LoopsColors.white, fontSize: 15, fontWeight: '800' }}>Rewards Vault</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                    <Text style={{ color: LoopsColors.coinGold, fontSize: 13, fontWeight: '700' }}>
-                      {(stats?.points.balance || 0).toLocaleString()} Coins
-                    </Text>
-                    <Text style={{ color: LoopsColors.white50, fontSize: 12, fontWeight: '600' }}>
-                      ≈ ${((stats?.points.usdValue !== undefined && stats.points.usdValue > 0) ? stats.points.usdValue : (stats?.points.balance || 0) / 5667).toFixed(2)} USD
-                    </Text>
-                  </View>
-                </View>
-              </View>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: LoopsColors.white10, justifyContent: 'center', alignItems: 'center' }}>
-                <Ionicons name="chevron-forward" size={16} color={LoopsColors.white} />
-              </View>
-            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -334,7 +279,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         initialTab={followModalConfig.tab}
         onUserPress={(profileUser) => {
           setFollowModalConfig({ ...followModalConfig, visible: false });
-          // Open their profile modal with isFriend passed neutrally (it will be refetched there)
           setTimeout(() => {
             setSelectedProfileUser({ ...profileUser, isFriend: false });
           }, 300);
@@ -345,15 +289,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         visible={!!selectedProfileUser}
         onClose={() => {
           setSelectedProfileUser(null);
-          fetchData(true); // Optional: refresh following counts in case they followed/unfollowed
+          fetchData(true);
         }}
         user={selectedProfileUser}
       />
-
-      {/* Rewards Full Screen Modal */}
-      <Modal visible={showRewards} animationType="slide" onRequestClose={() => setShowRewards(false)}>
-        <RewardsScreen isActive={showRewards} onClose={() => setShowRewards(false)} />
-      </Modal>
 
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>

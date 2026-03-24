@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
-import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress, gamification } from '../services/api';
+import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress } from '../services/api';
 import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
 import { CommentsSheet } from '../components/CommentsSheet';
@@ -2112,7 +2112,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const { user } = useAuth();
   const isFocused = isActive; // Use the prop instead of navigation hook
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
+  const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1, will be set to 0 if returning user
   const [loading, setLoading] = useState(true);
 
   const [scrollEnabled, setScrollEnabled] = useState(false);
@@ -2195,7 +2195,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
       if (playTimeSeconds >= 5) {
         try {
-          await gamification.gamePlayed(gameId, playTimeSeconds);
+          // Gamification removed
+          console.log(`[Game] Played ${gameId} for ${playTimeSeconds}s`);
           // Reset the start time to now (so we don't double-count)
           gameStartTimeRef.current = Date.now();
         } catch (e) {
@@ -2403,10 +2404,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         const gameId = lastTrackedGameRef.current;
 
         if (playTimeSeconds >= 5) {
-          console.log(`[Gamification] Tab unfocused - played ${gameId} for ${playTimeSeconds}s`);
-          gamification.gamePlayed(gameId, playTimeSeconds).catch(e => {
-            console.log('[Gamification] Failed to record play:', e);
-          });
+          console.log(`[Game] Tab unfocused - played ${gameId} for ${playTimeSeconds}s`);
+          // Gamification removed
         }
         gameStartTimeRef.current = null;
       }
@@ -2491,14 +2490,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       // Only track if played for at least 5 seconds
       if (playTimeSeconds >= 5) {
-        console.log(`[Gamification] Played ${gameId} for ${playTimeSeconds}s`);
-        gamification.gamePlayed(gameId, playTimeSeconds).then(result => {
-          console.log('[Gamification] Points earned:', result.pointsEarned, 'XP:', result.xpEarned);
-          // Clear saved session points after successful sync
-          gameSessionPointsRef.current[gameId] = 0;
-        }).catch(e => {
-          console.log('[Gamification] Failed to record play:', e);
-        });
+        console.log(`[Game] Played ${gameId} for ${playTimeSeconds}s`);
+        // Gamification removed - clear saved session points
+        gameSessionPointsRef.current[gameId] = 0;
       }
 
       gameStartTimeRef.current = null;
@@ -2545,18 +2539,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         clearInterval(periodicSyncIntervalRef.current);
       }
       periodicSyncIntervalRef.current = setInterval(() => {
-        console.log(`[Gamification] Sync check - gameStartTime: ${gameStartTimeRef.current}, user: ${user?.id || 'NO USER'}, gameId: ${currentGameId}`);
+        console.log(`[Game] Sync check - gameStartTime: ${gameStartTimeRef.current}, user: ${user?.id || 'NO USER'}, gameId: ${currentGameId}`);
         if (gameStartTimeRef.current && user && currentGameId) {
           const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
           if (playTimeSeconds >= 5) {
-            console.log(`[Gamification] Syncing ${currentGameId}: ${playTimeSeconds}s played`);
-            gamification.gamePlayed(currentGameId, playTimeSeconds).then((result) => {
-              console.log(`[Gamification] Sync SUCCESS - points earned: ${result.pointsEarned}`);
-              // Reset start time after successful sync
-              gameStartTimeRef.current = Date.now();
-            }).catch(e => {
-              console.log('[Gamification] Sync FAILED:', e.message || e);
-            });
+            console.log(`[Game] Syncing ${currentGameId}: ${playTimeSeconds}s played`);
+            // Gamification removed
+            gameStartTimeRef.current = Date.now();
           }
         }
       }, 5000); // Sync every 5 seconds
@@ -2587,6 +2576,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const hasLaunchedBefore = await AsyncStorage.getItem('hasLaunchedBefore');
       if (!hasLaunchedBefore) {
         await AsyncStorage.setItem('hasLaunchedBefore', 'true');
+      } else {
+        // Returning user — skip welcome screen, go straight to games
+        setCurrentIndex(0);
       }
 
       // Initialize ads SDK (don't block on this)

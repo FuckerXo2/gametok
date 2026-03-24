@@ -343,75 +343,8 @@ export const moderation = {
 };
 
 // Gamification API
-export const gamification = {
-  // Get user's points, streak, and level stats
-  getStats: async () => {
-    return request('/gamification/stats');
-  },
-
-  // Claim daily login bonus
-  claimDaily: async () => {
-    return request('/gamification/daily-claim', { method: 'POST' });
-  },
-
-  // Claim reward for watching an ad
-  claimAdReward: async () => {
-    return request('/gamification/ad-reward', { method: 'POST' });
-  },
-
-  // Record game played (awards points/XP)
-  gamePlayed: async (gameId: string, playTimeSeconds?: number) => {
-    return request('/gamification/game-played', {
-      method: 'POST',
-      body: JSON.stringify({ gameId, playTimeSeconds }),
-    });
-  },
-
-  // Get daily challenges
-  getChallenges: async () => {
-    return request('/gamification/challenges');
-  },
-
-  // Claim challenge reward
-  claimChallenge: async (challengeId: string) => {
-    return request(`/gamification/challenges/${challengeId}/claim`, { method: 'POST' });
-  },
-
-  // Get all achievements
-  getAchievements: async () => {
-    return request('/gamification/achievements');
-  },
-
-  // Get rewards shop
-  getRewards: async () => {
-    return request('/gamification/rewards');
-  },
-
-  // Claim a reward
-  claimReward: async (rewardId: string) => {
-    return request(`/gamification/rewards/${rewardId}/claim`, { method: 'POST' });
-  },
-
-  // Get user's claimed rewards
-  getMyRewards: async () => {
-    return request('/gamification/my-rewards');
-  },
-
-  // Get points transaction history
-  getTransactions: async (limit = 50) => {
-    return request(`/gamification/transactions?limit=${limit}`);
-  },
-
-  // Get leaderboard
-  getLeaderboard: async (type: 'points' | 'level' | 'streak' = 'points', limit = 50) => {
-    return request(`/gamification/leaderboard?type=${type}&limit=${limit}`);
-  },
-
-  // Get per-game leaderboard
-  getGameLeaderboard: async (gameId: string, limit = 50) => {
-    return request(`/gamification/leaderboard/${gameId}?limit=${limit}`);
-  },
-};
+// Gamification API - REMOVED
+// All gamification endpoints have been removed
 
 // Multiplayer API
 export const multiplayer = {
@@ -490,4 +423,20 @@ export const multiplayer = {
   getReceivedChallenges: async () => {
     return request('/multiplayer/challenges/received');
   },
+};
+
+// DreamStream AI Engine API
+export const ai = {
+  dream: async (prompt: string) => {
+    return request('/ai/dream', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    });
+  },
+  drafts: async () => {
+    return request('/ai/drafts');
+  },
+  publish: async (draftId: string) => {
+    return request(`/ai/publish/${draftId}`, { method: 'POST' });
+  }
 };

@@ -15,7 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
+type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
 
 interface BottomNavProps {
   activeTab: TabName;
@@ -106,9 +106,43 @@ const AnimatedTab = ({
   );
 };
 
+const CreateButton = ({ onPress, colors, isDark }: { onPress: () => void, colors: any, isDark: boolean }) => {
+  const scale = useSharedValue(1);
+
+  const handlePressIn = () => { scale.value = withTiming(0.85, { duration: 100 }); };
+  const handlePressOut = () => { scale.value = withSpring(1, { damping: 10, stiffness: 250 }); };
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }]
+  }));
+
+  return (
+    <Pressable
+      style={styles.createButtonContainer}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onPress();
+      }}
+    >
+      <Animated.View style={[styles.createButtonWrapper, animatedStyle]}>
+        {/* Engineered Psychological 3D Depth using GameTok Brand Colors */}
+        <View style={[styles.createButtonGlitch, { backgroundColor: '#00e5ff', left: -3 }]} />
+        <View style={[styles.createButtonGlitch, { backgroundColor: colors.primary, right: -3 }]} />
+        
+        {/* High Contrast Core */}
+        <View style={[styles.createButton, { backgroundColor: isDark ? '#FFF' : '#000' }]}>
+          <Ionicons name="add" size={24} color={isDark ? '#000' : '#FFF'} />
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
 
   const tabs: { name: TabName; icon: string; iconActive: string; label: string }[] = [
@@ -127,7 +161,25 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
         borderTopColor: colors.border,
       }
     ]}>
-      {tabs.map((tab) => (
+      {tabs.slice(0, 2).map((tab) => (
+        <AnimatedTab
+          key={tab.name}
+          tab={tab}
+          isActive={activeTab === tab.name}
+          onPress={() => onTabPress(tab.name)}
+          colors={colors}
+          user={user}
+        />
+      ))}
+
+      {/* Custom GameTok AI Studio Button */}
+      <CreateButton 
+        onPress={() => onTabPress('create')} 
+        colors={colors} 
+        isDark={isDark} 
+      />
+
+      {tabs.slice(2).map((tab) => (
         <AnimatedTab
           key={tab.name}
           tab={tab}
@@ -163,6 +215,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
     fontWeight: '600',
+  },
+  createButtonContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2, 
+  },
+  createButtonWrapper: {
+    width: 44,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  createButtonGlitch: {
+    position: 'absolute',
+    width: 44,
+    height: 30,
+    borderRadius: 8,
+  },
+  createButton: {
+    width: 44,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarContainer: {
     width: 26,

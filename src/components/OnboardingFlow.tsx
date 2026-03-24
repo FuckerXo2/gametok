@@ -473,9 +473,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         }
       }
     } catch (e: any) {
+      console.error('[GoogleSignIn] Error:', e.code, e.message, JSON.stringify(e));
       if (e.code === statusCodes.SIGN_IN_CANCELLED) { /* cancelled */ }
       else if (e.code === statusCodes.IN_PROGRESS) { setError('Sign-in already in progress'); }
-      else { setError('Google Sign-In failed. Please try again.'); }
+      else { setError(`Google Sign-In failed: ${e.code || e.message}`); }
     } finally {
       setLoading(false);
     }

@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { gamification } from '../services/api';
 import { LoopsColors, SemanticColors, LoopsGradients } from '../constants/LoopsColors';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -28,7 +27,6 @@ interface LeaderboardEntry {
   username: string;
   displayName: string | null;
   avatar: string | null;
-  points: number;
   playTime: number;
   isCurrentUser?: boolean;
 }
@@ -44,7 +42,6 @@ interface LeaderboardModalProps {
     displayName?: string | null;
     avatar?: string | null;
   } | null;
-  sessionPoints: number;
   sessionPlayTime: number;
 }
 
@@ -58,19 +55,12 @@ const TIERS = [
 
 const getTier = (rank: number) => TIERS.find(t => rank >= t.minRank && rank <= t.maxRank) || TIERS[4];
 
-const formatPoints = (points: number): string => {
-  if (points >= 1000000) return `${(points / 1000000).toFixed(1)}M`;
-  if (points >= 1000) return `${(points / 1000).toFixed(1)}K`;
-  return points.toLocaleString();
-};
-
 export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   visible,
   onClose,
   gameId,
   gameName,
   currentUser,
-  sessionPoints,
   sessionPlayTime,
 }) => {
   const insets = useSafeAreaInsets();
@@ -103,7 +93,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     }
   }, [visible, gameId]);
 
-  // Force re-render every second to update live points display
   const [, forceUpdate] = useState(0);
   useEffect(() => {
     if (!visible) return;
@@ -134,7 +123,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     if (!currentUser) return leaderboard;
     
     const existingEntry = leaderboard.find(e => e.userId === currentUser.id);
-    const totalPoints = (existingEntry?.points || 0) + sessionPoints;
     const totalPlayTime = (existingEntry?.playTime || 0) + sessionPlayTime;
     
     const currentUserEntry: LeaderboardEntry = {
@@ -143,7 +131,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
       username: currentUser.username,
       displayName: currentUser.displayName || null,
       avatar: currentUser.avatar || null,
-      points: totalPoints,
       playTime: totalPlayTime,
       isCurrentUser: true,
     };
@@ -153,7 +140,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
       .map(e => ({ ...e, isCurrentUser: false }));
     
     merged.push(currentUserEntry);
-    merged.sort((a, b) => b.points - a.points);
     merged = merged.map((entry, index) => ({ ...entry, rank: index + 1 }));
     
     return merged;
@@ -208,11 +194,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             <Text style={[styles.tierLabel, { color: tier.color }]}>{tier.name}</Text>
           </View>
         </View>
-        
-        <View style={styles.pointsWrap}>
-          <FontAwesome5 name="coins" size={12} color={LoopsColors.coinGold} />
-          <Text style={styles.pointsText}>{formatPoints(player.points)}</Text>
-        </View>
       </View>
     );
   };
@@ -264,10 +245,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
               </View>
               <View style={styles.myRankRight}>
                 <Text style={styles.myRankNum}>#{currentUserEntry.rank}</Text>
-                <View style={styles.myRankPoints}>
-                  <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 14, height: 14 }} />
-                  <Text style={styles.myRankPointsText}>{formatPoints(currentUserEntry.points)}</Text>
-                </View>
               </View>
             </View>
           )}
