@@ -29,30 +29,49 @@ const headers = async () => {
 };
 
 // Generic request handler
-const request = async (endpoint: string, options: RequestInit = {}) => {
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers: await headers(),
-  });
+const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: number) => {
+  // Use caller's signal if provided (for cancellation), otherwise create one for timeout
+  const externalSignal = options.signal as AbortSignal | undefined;
+  const controller = new AbortController();
+  const timeout = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
-  // Get response text first to handle non-JSON responses
-  const text = await response.text();
+  // If external signal aborts, propagate to our controller
+  if (externalSignal) {
+    if (externalSignal.aborted) { controller.abort(); }
+    else { externalSignal.addEventListener('abort', () => controller.abort(), { once: true }); }
+  }
 
-  let data;
   try {
-    data = JSON.parse(text);
-  } catch (e) {
-    console.error('[API] Invalid JSON response:', text.substring(0, 200));
-    throw new Error('Server returned invalid response');
-  }
+    const { signal: _, ...restOptions } = options;
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...restOptions,
+      headers: await headers(),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const error: any = new Error(data.error || data.message || `Request failed. Dump: ${JSON.stringify(data)}`);
-    error.status = response.status;
-    throw error;
-  }
+    // Get response text first to handle non-JSON responses
+    const text = await response.text();
 
-  return data;
+    let data;
+    try {
+      // The backend sends whitespace heartbeats to keep connections alive.
+      // Strip them before parsing JSON.
+      data = JSON.parse(text.trim());
+    } catch (e) {
+      console.error('[API] Invalid JSON response:', text.substring(0, 200));
+      throw new Error('Server returned invalid response');
+    }
+
+    if (!response.ok) {
+      const error: any = new Error(data.error || data.message || `Request failed. Dump: ${JSON.stringify(data)}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    return data;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 };
 
 // Auth API
@@ -427,11 +446,61 @@ export const multiplayer = {
 
 // DreamStream AI Engine API
 export const ai = {
-  dream: async (prompt: string) => {
-    return request('/ai/dream', {
-      method: 'POST',
-      body: JSON.stringify({ prompt }),
+  dream: (prompt: string) => {
+    const controller = new AbortController();
+    
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        // Step 1: Tell backend to start generation process and return immediately
+        const res = await request('/ai/dream', {
+          method: 'POST',
+          body: JSON.stringify({ prompt }),
+          signal: controller.signal,
+        }, 20000); // Fast timeout for the initial launch request
+
+        // Fallback or legacy instant-return support
+        if (!res.jobId && res.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
+        const jobId = res.jobId;
+        console.log(`[DreamStream] Background Job ${jobId} initiated. Polling status...`);
+
+        // Step 2: Poll the backend every 5 seconds until generation finishes
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/ai/dream/status/${jobId}`);
+            
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else {
+              // Status is 'pending', just keep waiting
+              console.log(`[DreamStream] Job ${jobId} is still pending...`);
+            }
+          } catch (pollingErr: any) {
+            console.warn('[DreamStream] Polling blip (ignoring):', pollingErr.message);
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+        
+      } catch (err) {
+        reject(err);
+      }
     });
+
+    return { promise, cancel: () => controller.abort() };
   },
   drafts: async () => {
     return request('/ai/drafts');
