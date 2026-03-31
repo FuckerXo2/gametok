@@ -502,8 +502,63 @@ export const ai = {
 
     return { promise, cancel: () => controller.abort() };
   },
+  edit: (draftId: string, instructions: string, newAsset?: any) => {
+    const controller = new AbortController();
+    
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const res = await request('/ai/edit', {
+          method: 'POST',
+          body: JSON.stringify({ draftId, instructions, newAsset }),
+          signal: controller.signal,
+        }, 20000);
+
+        if (!res.jobId && res.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
+        const jobId = res.jobId;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/ai/dream/status/${jobId}`);
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Unknown AI server error'));
+            }
+          } catch (pollingErr: any) {
+            console.warn('[DreamStream] Polling blip (ignoring):', pollingErr.message);
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort() };
+  },
+  generateAsset: async (prompt: string) => {
+    return request('/ai/generate-asset', {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    });
+  },
   drafts: async () => {
     return request('/ai/drafts');
+  },
+  getDraft: async (draftId: string) => {
+    return request(`/ai/draft/${draftId}`);
   },
   publish: async (draftId: string) => {
     return request(`/ai/publish/${draftId}`, { method: 'POST' });
