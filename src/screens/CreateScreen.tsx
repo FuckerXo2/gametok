@@ -104,10 +104,9 @@ const GENRE_CHIPS = [
     iconColor: '#a855f7', 
     label: 'Platformer', 
     prompts: [
-      'A wildly fast-paced platformer where you double jump over lava pits and bounce off walls to collect neon coins while avoiding saw blades.',
-      'A cyberpunk platformer set in a dystopian city where you grapple on buildings and escape from pursuit drones.',
-      'A cute but brutally difficult pixel art platformer starring a squishy slime trying to escape a cursed dungeon.',
-      'A mind-bending platformer where tapping the screen reverses gravity, making you run on the ceiling to dodge spikes.'
+      'Create an immersive, high-speed 2D cyberpunk platformer where you control a rogue ninja. The player must fluidly double-jump over glowing lava pits, wall-jump between glass skyscrapers, and dash through laser barriers. Include a robust particle system with neon sparks whenever the ninja lands, a scoring multiplier for consecutive jumps, and a dynamic camera that smooth-scrolls based on velocity. The UI should have a sleek, glassmorphic HUD showing health, score, and a combo meter.',
+      'Build a brutally challenging precision platformer set in a haunted, pixelated dungeon. The physics must feel tight and responsive like Celeste. The map is filled with crumbling platforms, swinging pendulums, and ghost enemies that chase you if you stay still for too long. Add satisfying screen-shake effects on hard impacts, a timer tracking milliseconds for speedrunners, and hidden collectibles tucked away in secret corners. Use soft, eerie lighting effects around the player.',
+      'Design a gravity-flipping puzzle platformer where the player can tap the screen to invert gravity instantly. The levels should consist of mirrored architecture where the ceiling is just as treacherous as the floor, featuring dual threats like spikes on the bottom and acid on top. The game loop must smoothly transition gravity with a 180-degree camera flip, leaving a trail of glowing dust behind the player. Include a chill synthwave background track.'
     ] 
   },
   { 
@@ -115,10 +114,9 @@ const GENRE_CHIPS = [
     iconColor: '#25F4EE', 
     label: 'Puzzle', 
     prompts: [
-      'A satisfying physics puzzle where you draw bridges and ramps with your finger to guide a fragile egg to a basket.',
-      'An addictive color-matching puzzle game with massive chain reaction combos that fill the screen with confetti.',
-      'A Tetris-style falling block puzzle but the blocks have jello physics and stack squishily on top of each other.',
-      'A clever brain-teaser where you slide ice blocks across a friction-less floor to hit specific targets.'
+      'Program a highly polished, addictive color-matching puzzle game similar to Candy Crush but with a unique twist: the board is a perfect circle and the tiles fall toward the center. When chains of 4 or more are matched, trigger absolute chaos with massive particle explosions, cascading combos, and satisfying "POP" sound effects. Implement a multiplier system that ramps up exponentially, screen-shakes for mega clears, and a sleek modern UI with floating UI text.',
+      'Create a complex, physics-based contraption puzzle where the player uses their finger to draw rigid lines, bouncy trampolines, and acceleration ramps. The goal is to safely guide a fragile, rolling glass egg into a woven basket. The egg must shatter realistically if it hits the ground too hard. Include dynamic 2D lighting, a beautifully painted sunset background, and physics materials (friction, restitution) that feel incredibly intuitive to the touch.',
+      'Develop a brain-teasing sliding tile puzzle set on a frictionless ice rink. The player controls a small penguin block that slides continuously until it hits a wall or an obstacle. Design intricate mazes with teleporters, breakable ice walls, and buttons that toggle gates on and off. The aesthetics must be a relaxing winter wonderland with falling snowflakes, smooth icy reflections, and soft ambient wind sound effects.'
     ] 
   },
   { 
@@ -126,10 +124,9 @@ const GENRE_CHIPS = [
     iconColor: '#FF6B9D', 
     label: 'Space', 
     prompts: [
-      'An intense vertical space shooter where you upgrade your lasers to blast through massive waves of alien bugs.',
-      'A high-speed endless runner set in a neon hyperspace tunnel where you dodge asteroid fields and laser barriers.',
-      'A realistic physics game where you must perfectly thrust and rotate a lunar lander to touch down safely on uneven terrain.',
-      'A twin-stick bullet hell space battle against a giant boss that shoots spirals of colorful plasma blasts.'
+      'Develop an intense, retro 80s arcade vertical space shooter with bullet hell mechanics. The player controls a heavily armed starship facing endless, procedurally generated waves of alien fighter swarms. The ship can pick up power-ups perfectly bouncing around the screen to upgrade to spread-shots, homing lasers, and a giant screen-clearing plasma bomb. Add extreme screen-bloom for the lasers, thumping synth music, and giant boss fights at every wave 10.',
+      'Create a mesmerizing, high-speed endless runner set entirely within a 3D-styled geometric hyperspace tunnel. The player must rotate 360 degrees around the inner wall of the tunnel to dodge rapidly approaching crimson laser grids and floating asteroids. The speed should progressively increase until it becomes a blur of motion. Integrate a heavy electronic dance music visualizer effect where the colors of the tunnel pulse according to the implicit beat of the music.',
+      'Code a highly realistic physics simulation where the player pilots a lunar excursion module. You must manage a limited fuel supply while perfectly balancing left, right, and main thrusters to achieve a soft touchdown on randomized, jagged lunar terrain. Include variable gravity, realistic inertia, completely custom particle physics for the thruster exhaust bouncing off the terrain, and a retro CRT monitor aesthetic for the heads-up display.'
     ] 
   },
   { 
@@ -137,10 +134,9 @@ const GENRE_CHIPS = [
     iconColor: '#FFA726', 
     label: 'Battle', 
     prompts: [
-      'A chaotic auto-battler where you drop medieval knights and wizards onto a grid to fight hoards of green goblins.',
-      'A 1v1 auto-battler where you place knights and wizards',
-      'A frantic top-down bullet hell game with huge boss fights',
-      'A magic casting battle simulator against hordes of slimes'
+      'Build a chaotic, physics-driven auto-battler set on a grand strategy grid. The player drops different units—heavy knights, rapid-fire archers, and area-of-effect wizards—onto the battlefield before pressing "BATTLE". The armies then charge into hundreds of green goblins with hilarious ragdoll physics and huge sweeping attacks. The screen should be filled with floating damage numbers, sword clashes, fireball explosions, and intense screenshake for critical hits.',
+      'Create a frantic, fast-paced arena survival game where time only moves when the player moves, similar to SUPERHOT. The player is trapped in a minimalist white void and must dodge incoming slow-motion red bullets while throwing katanas and shooting back at enemies. The entire aesthetic should be extremely stark: brilliant white background, stark black geometry, and vibrant crimson for enemies and their attacks. Include slow-mo sound effects and dramatic camera zooming.',
+      'Design a top-down rogue-lite magical combat game. The player is a wizard who can combine elements: drawing a circle casts a protective earth shield, while swiping casts a blazing fire wall. Survive against endless waves of bouncing slime monsters that split into smaller ones when killed. The game needs highly juicy game feel—heavy hit-stop on impacts, massive colorful spells, smooth player dashing, and a combo counter that rewards aggressive playstyles.'
     ] 
   },
   { 
@@ -1510,7 +1506,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           <Pressable style={styles.closeBtn} onPress={handleCancel}>
             <Ionicons name="close" size={22} color="#FFF" />
           </Pressable>
-          <Text style={styles.genHeaderTitle}>{labsMode ? '⚗️ Labs Engine' : 'DreamStream'}</Text>
+          <Text style={styles.genHeaderTitle}>{labsMode ? 'Labs Engine' : 'DreamStream'}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -1593,11 +1589,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           </Pressable>
           <Text style={styles.headerTitle}>Create your game</Text>
           <Pressable 
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: labsMode ? 'rgba(52,199,89,0.15)' : 'rgba(255,255,255,0.06)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: labsMode ? 'rgba(52,199,89,0.3)' : 'transparent' }}
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: labsMode ? 'rgba(52,199,89,0.15)' : 'rgba(255,255,255,0.06)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: labsMode ? 'rgba(52,199,89,0.3)' : 'transparent' }}
             onPress={() => setLabsMode(prev => !prev)}
           >
-            <Text style={{ fontSize: 14, marginRight: 4 }}>⚗️</Text>
-            <Text style={{ color: labsMode ? '#34C759' : '#888', fontSize: 12, fontWeight: '700' }}>{labsMode ? 'Gemma 4' : 'Labs'}</Text>
+            <Ionicons name="flask" size={14} color={labsMode ? '#34C759' : '#888'} style={{ marginRight: 6 }} />
+            <Text style={{ color: labsMode ? '#34C759' : '#888', fontSize: 13, fontWeight: '700' }}>{labsMode ? 'Gemma 4' : 'Labs'}</Text>
           </Pressable>
         </View>
       ) : studioTab === 'drafts' ? (
@@ -1687,12 +1683,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                   style={styles.surpriseBtn}
                   onPress={() => {
                     const surprises = [
-                      'A hypnotic infinite 3D runner where you dodge falling emoji meteors in a neon synthwave space tunnel, with EDM flashing lights syncing to the impact',
-                      'An addictive tower defense game where you place rapid-fire turrets to stop a horde of evolving zombies from reaching the left side of the screen',
-                      'A satisfying physics simulation where you slice watermelons like fruit ninja while avoiding bombs that cause the screen to shake',
-                      'A zombie office survival game where you drag and throw staplers and coffee mugs at undead coworkers with ragdoll physics',
-                      'An intense top-down twin-stick shooter in a neon nightclub where time only moves when you move, letting you dodge bullets matrix-style',
-                      'A funny crazy cat vs laser pointer chase game with ridiculous ragdoll physics and meow sounds when it hits objects',
+                      'A massive, completely unhinged physics simulation where you control a magnetic wrecking ball. You must swing through fully destructible voxel skyscrapers, causing absolute chaos and frame-dropping levels of particle explosions. The ground should shatter realistically, and the UI should keep a running tally of millions of dollars in property damage with a satisfying slot-machine counter animation.',
+                      'An intensely addictive tower defense hybrid set in a microscopic cell. You are defending the nucleus from evolving viruses. Place white blood cell turrets that automatically lock on to enemies. Crucially, the viruses mutate every wave, becoming immune to certain projectile colors, forcing the player to constantly upgrade and swap turret types. Include an incredible liquid-like UI with soft blobs and organic sounds.',
+                      'A deeply satisfying game focused purely on game feel and cutting things. Fruits and objects fly across the screen, and the player swipes their finger to slice them accurately in half like Fruit Ninja. However, implement extremely detailed hit-stop, heavy screen shake on critical hits, and physics where the two halves of the object actually fly apart based precisely on the angle of the swipe vector. Add combo tracking and announcer voice text.',
+                      'A hyper-stylized neon rhythm game where the map generates purely based on the beat. The player controls a glowing cube racing down an infinite track. Bass hits spawn massive obstacles you have to jump over, while synth notes create speed pads. The camera must pulse and FOV warp aggressively to the beat to make the player feel the music. Keep the neon colors vibrant against an absolute pitch-black background.',
                     ];
                     setPrompt(surprises[Math.floor(Math.random() * surprises.length)]);
                   }}
