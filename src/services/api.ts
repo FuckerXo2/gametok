@@ -446,6 +446,56 @@ export const multiplayer = {
 
 // DreamStream AI Engine API
 export const ai = {
+  dreamLabs: (prompt: string) => {
+    const controller = new AbortController();
+    
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const res = await request('/ai/dream-labs', {
+          method: 'POST',
+          body: JSON.stringify({ prompt }),
+          signal: controller.signal,
+        }, 20000);
+
+        if (!res.jobId && res.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
+        const jobId = res.jobId;
+        console.log(`[DreamLabs] Background Job ${jobId} initiated. Polling status...`);
+
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/ai/dream/status/${jobId}`);
+            
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Unknown AI server error'));
+            }
+          } catch (pollingErr: any) {
+            console.warn('[DreamLabs] Polling blip (ignoring):', pollingErr.message);
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+        
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort() };
+  },
   dream: (prompt: string) => {
     const controller = new AbortController();
     
