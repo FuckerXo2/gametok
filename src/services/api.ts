@@ -455,7 +455,7 @@ export const ai = {
           method: 'POST',
           body: JSON.stringify({ prompt }),
           signal: controller.signal,
-        }, 20000);
+        }, 60000);
 
         if (!res.jobId && res.htmlPreview) {
           resolve(res);
@@ -506,7 +506,7 @@ export const ai = {
           method: 'POST',
           body: JSON.stringify({ prompt }),
           signal: controller.signal,
-        }, 20000); // Fast timeout for the initial launch request
+        }, 60000); // 60s timeout to allow for Railway cold starts
 
         // Fallback or legacy instant-return support
         if (!res.jobId && res.htmlPreview) {
