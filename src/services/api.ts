@@ -608,9 +608,15 @@ export const ai = {
     return request('/ai/drafts');
   },
   getDraft: async (draftId: string) => {
-    return request(`/ai/draft/${draftId}`);
+    return request(`/ai/drafts/${draftId}`);
   },
   publish: async (draftId: string) => {
     return request(`/ai/publish/${draftId}`, { method: 'POST' });
+  },
+  templates: async () => {
+    return request('/ai/templates');
+  },
+  getTemplate: async (templateId: string) => {
+    return request(`/ai/templates/${templateId}`);
   }
 };
