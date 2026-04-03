@@ -1360,7 +1360,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
           {/* Post Game Button */}
           <Pressable 
-            style={({ pressed }) => [{ backgroundColor: '#E8730C', paddingVertical: 18, borderRadius: 30, alignItems: 'center', shadowColor: '#E8730C', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+            style={({ pressed }) => [{ backgroundColor: colors.primary, paddingVertical: 18, borderRadius: 30, alignItems: 'center', shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
             onPress={handlePublish}
           >
             <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>Post Game</Text>
@@ -1382,7 +1382,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             Leaving now means your game creation gets yeeted. Like... gone. Forever. 😬
           </Text>
           <Pressable 
-            style={({ pressed }) => [{ width: '100%', backgroundColor: '#E8730C', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginBottom: 10 }, pressed && { opacity: 0.85 }]}
+            style={({ pressed }) => [{ width: '100%', backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginBottom: 10 }, pressed && { opacity: 0.85 }]}
             onPress={() => setShowExitConfirm(null)}
           >
             <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Fine, I'll Stay</Text>
@@ -1415,7 +1415,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             </View>
           </View>
           <Pressable 
-            style={[styles.previewPublishPill, { backgroundColor: '#E8730C' }]} 
+            style={[styles.previewPublishPill, { backgroundColor: colors.primary }]} 
             onPress={() => setPhase('publish')}
           >
             <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>Next</Text>
