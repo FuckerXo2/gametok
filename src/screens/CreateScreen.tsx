@@ -15,6 +15,7 @@ import {
   Image,
   Alert,
   Modal,
+  FlatList,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -29,13 +30,14 @@ import Animated, {
   SlideInDown,
   FadeInDown,
   FadeInUp,
+  FadeOutDown,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { ai, API_URL, getToken } from '../services/api';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
+
 import { useTheme } from '../context/ThemeContext';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -45,7 +47,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // =============================================
 // TYPES
 // =============================================
-type DreamPhase = 'idle' | 'generating' | 'preview';
+type DreamPhase = 'idle' | 'generating' | 'preview' | 'publish';
 type StudioTab = 'create' | 'drafts' | 'templates';
 
 interface DraftItem {
@@ -102,10 +104,10 @@ const GENRE_CHIPS = [
     iconColor: '#a855f7', 
     label: 'Platformer', 
     prompts: [
-      'A fast-paced platformer with wall-jumping and coin collecting',
-      'A neon cyberpunk platformer where you double jump over laser pits',
-      'A cute pixel art platformer with bouncing mushrooms and clouds',
-      'A gravity-flipping platformer where touching the ceiling is survival'
+      'A wildly fast-paced platformer where you double jump over lava pits and bounce off walls to collect neon coins while avoiding saw blades.',
+      'A cyberpunk platformer set in a dystopian city where you grapple on buildings and escape from pursuit drones.',
+      'A cute but brutally difficult pixel art platformer starring a squishy slime trying to escape a cursed dungeon.',
+      'A mind-bending platformer where tapping the screen reverses gravity, making you run on the ceiling to dodge spikes.'
     ] 
   },
   { 
@@ -113,10 +115,10 @@ const GENRE_CHIPS = [
     iconColor: '#25F4EE', 
     label: 'Puzzle', 
     prompts: [
-      'A relaxing color-matching puzzle game with chain combos',
-      'A physics-based puzzle where you draw lines to guide a falling ball',
-      'A tetris-like falling block puzzle with exploding rows',
-      'A brain teasing sliding tile puzzle with ice mechanics'
+      'A satisfying physics puzzle where you draw bridges and ramps with your finger to guide a fragile egg to a basket.',
+      'An addictive color-matching puzzle game with massive chain reaction combos that fill the screen with confetti.',
+      'A Tetris-style falling block puzzle but the blocks have jello physics and stack squishily on top of each other.',
+      'A clever brain-teaser where you slide ice blocks across a friction-less floor to hit specific targets.'
     ] 
   },
   { 
@@ -124,10 +126,10 @@ const GENRE_CHIPS = [
     iconColor: '#FF6B9D', 
     label: 'Space', 
     prompts: [
-      'A space shooter with asteroid dodging and laser cannons',
-      'An infinite space runner dodging alien ships in hyperspace',
-      'A zero-gravity physics game where you thrust to land on moons',
-      'A top-down roguelite space shooter with bouncing lasers'
+      'An intense vertical space shooter where you upgrade your lasers to blast through massive waves of alien bugs.',
+      'A high-speed endless runner set in a neon hyperspace tunnel where you dodge asteroid fields and laser barriers.',
+      'A realistic physics game where you must perfectly thrust and rotate a lunar lander to touch down safely on uneven terrain.',
+      'A twin-stick bullet hell space battle against a giant boss that shoots spirals of colorful plasma blasts.'
     ] 
   },
   { 
@@ -135,7 +137,7 @@ const GENRE_CHIPS = [
     iconColor: '#FFA726', 
     label: 'Battle', 
     prompts: [
-      'An arena battle game with waves of enemies and power-ups',
+      'A chaotic auto-battler where you drop medieval knights and wizards onto a grid to fight hoards of green goblins.',
       'A 1v1 auto-battler where you place knights and wizards',
       'A frantic top-down bullet hell game with huge boss fights',
       'A magic casting battle simulator against hordes of slimes'
@@ -232,11 +234,40 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [communityVideos, setCommunityVideos] = useState<any[]>([]);
   const [communityAudios, setCommunityAudios] = useState<any[]>([]);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [showPhotosModal, setShowPhotosModal] = useState(false);
+  const [showCommunityImagesModal, setShowCommunityImagesModal] = useState(false);
+  const [communityPhotos, setCommunityPhotos] = useState<any[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
+  const [selectedAudio, setSelectedAudio] = useState<any | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
+  const [selectedCommunityImage, setSelectedCommunityImage] = useState<any | null>(null);
+  const [attachedAssets, setAttachedAssets] = useState<any[]>([]);
+  const [memeTab, setMemeTab] = useState<'gif' | 'stickers'>('gif');
+  const [memeSearchQuery, setMemeSearchQuery] = useState('');
+  const [isMemeSearching, setIsMemeSearching] = useState(false);
+  const [giphyResults, setGiphyResults] = useState<any[]>([]);
+  const [giphyStickers, setGiphyStickers] = useState<any[]>([]);
+  const [isGiphyLoading, setIsGiphyLoading] = useState(false);
+  const [isGiphyLoadingMore, setIsGiphyLoadingMore] = useState(false);
+  
+  const [showExitConfirm, setShowExitConfirm] = useState<'discard' | 'closeApp' | null>(null);
+  const [privacySetting, setPrivacySetting] = useState<'public' | 'play_only' | 'private'>('public');
+  const [labsMode, setLabsMode] = useState(false);
+
+  // Audio search state
+  const [audioSearchQuery, setAudioSearchQuery] = useState('');
+  const [isAudioSearching, setIsAudioSearching] = useState(false);
+  const [freesoundBgm, setFreesoundBgm] = useState<any[]>([]);
+  const [freesoundSfx, setFreesoundSfx] = useState<any[]>([]);
+  const [isFreesoundLoading, setIsFreesoundLoading] = useState(false);
+  const [isFreesoundLoadingMore, setIsFreesoundLoadingMore] = useState(false);
 
   // Studio tab state
   const [studioTab, setStudioTab] = useState<StudioTab>('create');
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
 
   // Animations
   const orbPulse = useSharedValue(1);
@@ -267,7 +298,24 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     if (studioTab === 'drafts') {
       fetchDrafts();
     }
+    if (studioTab === 'templates') {
+      fetchTemplates();
+    }
   }, [studioTab, fetchDrafts]);
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      setTemplatesLoading(true);
+      const res = await ai.templates() as any;
+      if (res?.templates) {
+        setTemplates(res.templates);
+      }
+    } catch (e) {
+      console.error('Failed to fetch templates:', e);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, []);
 
   // Orb animation during generation
   useEffect(() => {
@@ -317,12 +365,21 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   };
 
   const handleDream = async () => {
-    if (!prompt.trim() || phase === 'generating') return;
+    let finalPrompt = prompt.trim();
+    if (!finalPrompt || phase === 'generating') return;
+
+    if (attachedAssets.length > 0) {
+      finalPrompt += `\n\n[USER ATTACHED ASSETS (REQUIRED)]\n`;
+      attachedAssets.forEach((a, i) => {
+        finalPrompt += `Asset (${i+1}): ${a.instruction}\n`;
+      });
+    }
+
     setPhase('generating');
     setErrorMsg(null);
 
     try {
-      const { promise, cancel } = ai.dream(prompt);
+      const { promise, cancel } = labsMode ? ai.dreamLabs(finalPrompt) : ai.dream(finalPrompt);
       cancelRef.current = cancel;
       const res = await promise as any;
       cancelRef.current = null;
@@ -358,24 +415,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     { name: 'Retro 80s', bg: '#10002b', colors: ['#F72585', '#7209B7', '#4CC9F0'], instruction: 'Change the color scheme to synthwave retro: hot pink, deep purple, electric blue.' },
   ];
 
-  const OPTIONS_SOUNDS = [
-    { label: 'Add Full Sound Effects', icon: 'musical-notes', desc: 'Jumps, scores, collisions, and game over', instruction: 'Add rich sound effects throughout the game. Use window.playSound("jump") for jumps/taps, window.playSound("coin") for scoring, window.playSound("hit") for collisions, and window.playSound("gameover") for game over.' },
-    { label: 'Mute Entire Game', icon: 'volume-mute', desc: 'Remove all audio completely', instruction: 'Remove all calls to window.playSound() from the entire game. Make it completely silent.' },
-  ];
+  /* FREESOUND AUDIO LOADED DYNAMICALLY VIA API */
 
-  const OPTIONS_BGM = [
-    { label: 'BGM-gameplay-military-tense', duration: '01:25', url: 'https://cdn.freesound.org/previews/495/495537_495537-lq.mp3' },
-    { label: 'BGM-menu-scifi-mysterious', duration: '01:41', url: 'https://cdn.freesound.org/previews/454/454593_454593-lq.mp3' },
-    { label: 'BGM-gameplay-modern-exciting', duration: '01:36', url: 'https://cdn.freesound.org/previews/588/588496_588496-lq.mp3' },
-    { label: 'BGM-retro-8bit-arcade', duration: '01:53', url: 'https://cdn.freesound.org/previews/251/251461_251461-lq.mp3' },
-  ];
+  /* COMMUNITY VIDEOS LOADED DYNAMICALLY VIA API */
 
-  const OPTIONS_VIDEOS = [
-    { label: 'Hyperspace', thumb: 'https://picsum.photos/seed/hyper/200/300', url: 'https://cdn.pixabay.com/video/2020/09/20/50531-460875411_tiny.mp4' },
-    { label: 'Neon Grid', thumb: 'https://picsum.photos/seed/neon/200/300', url: 'https://cdn.pixabay.com/video/2021/04/16/71239-537446549_tiny.mp4' },
-    { label: 'Cloud Flight', thumb: 'https://picsum.photos/seed/cloud/200/300', url: 'https://cdn.pixabay.com/video/2021/08/04/83896-584742491_tiny.mp4' },
-    { label: 'Pixel Snow', thumb: 'https://picsum.photos/seed/pixel/200/300', url: 'https://cdn.pixabay.com/video/2019/12/17/30419-380962372_tiny.mp4' },
-  ];
+  /* GIPHY ASSETS ARE LOADED DYNAMICALLY VIA API */
 
   const OPTIONS_FEATURES = [
     { id: 'cam', icon: 'videocam', label: 'Live Camera', desc: 'Streams camera feed as game background.', instruction: 'Add HTML5 camera feed using navigator.mediaDevices.getUserMedia and render it as the game canvas background.' },
@@ -400,8 +444,79 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       if (data.success && data.assets) {
         if (type === 'video') setCommunityVideos(data.assets);
         else if (type === 'bgm' || type === 'sfx') setCommunityAudios(data.assets);
+        else if (type === 'image') setCommunityPhotos(data.assets);
       }
     } catch(err) { console.log(err); }
+  };
+
+  const fetchGiphy = async (type: 'gifs' | 'stickers', query: string = '', offset: number = 0) => {
+    if (offset === 0) setIsGiphyLoading(true);
+    else setIsGiphyLoadingMore(true);
+    
+    try {
+      const endpoint = query.trim() ? 'search' : 'trending';
+      const GIPHY_API_KEY = 'SwEhCBr38RpeNNffpxmtsZK9Umum8edV';
+      const qParam = query.trim() ? `&q=${encodeURIComponent(query)}` : '';
+      const url = `https://api.giphy.com/v1/${type}/${endpoint}?api_key=${GIPHY_API_KEY}&limit=20&offset=${offset}${qParam}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      const formatted = (data.data || []).map((item: any) => ({
+        id: item.id,
+        url: item.images.fixed_height.url,
+      }));
+
+      if (type === 'gifs') {
+        setGiphyResults(prev => offset === 0 ? formatted : [...prev, ...formatted]);
+      } else {
+        setGiphyStickers(prev => offset === 0 ? formatted : [...prev, ...formatted]);
+      }
+    } catch (error) {
+      console.error('Error fetching Giphy:', error);
+    } finally {
+      setIsGiphyLoading(false);
+      setIsGiphyLoadingMore(false);
+    }
+  };
+
+  const fetchFreesound = async (type: 'bgm' | 'sfx', query: string = '', offset: number = 1) => {
+    if (offset === 1) setIsFreesoundLoading(true);
+    else setIsFreesoundLoadingMore(true);
+
+    try {
+      const FREESOUND_API_KEY = 'mgD2q6sEgb7r8seRdGqRVBgszcAgMqPAzGpHPAkk';
+      const actualQuery = query.trim() || (type === 'bgm' ? 'game music loop' : 'game effect UI');
+      const filter = type === 'bgm' ? '&filter=duration:[10.0 TO 300.0]' : '&filter=duration:[0.1 TO 15.0]';
+      const url = `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(actualQuery)}&token=${FREESOUND_API_KEY}${filter}&fields=id,name,previews,duration&page_size=20&page=${offset}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      const formatted = (data.results || []).map((item: any) => {
+         const dur = Math.round(item.duration || 0);
+         const mins = Math.floor(dur / 60);
+         const secs = dur % 60;
+         return {
+            id: item.id,
+            label: item.name,
+            url: item.previews['preview-hq-mp3'] || item.previews['preview-lq-mp3'],
+            duration: `${mins < 10 ? '0'+mins : mins}:${secs < 10 ? '0'+secs : secs}`,
+            instruction: type === 'bgm' ? `Set the game background music to this URL: ${item.previews['preview-hq-mp3'] || item.previews['preview-lq-mp3']}` : `Add a sound effect using this URL: ${item.previews['preview-hq-mp3'] || item.previews['preview-lq-mp3']}`
+         };
+      });
+
+      if (type === 'bgm') {
+        setFreesoundBgm(prev => offset === 1 ? formatted : [...prev, ...formatted]);
+      } else {
+        setFreesoundSfx(prev => offset === 1 ? formatted : [...prev, ...formatted]);
+      }
+    } catch (error) {
+      console.error('Error fetching Freesound:', error);
+    } finally {
+      setIsFreesoundLoading(false);
+      setIsFreesoundLoadingMore(false);
+    }
   };
 
   useEffect(() => {
@@ -411,6 +526,20 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   useEffect(() => {
     if (showAudioModal) fetchCommunityAssets(audioTab);
   }, [showAudioModal, audioTab]);
+
+  // Pre-load trending Giphy and Freesound results silently in the background
+  useEffect(() => {
+    fetchGiphy('gifs', '');
+    fetchGiphy('stickers', '');
+    fetchFreesound('bgm', '');
+    fetchFreesound('sfx', '');
+  }, []);
+
+  useEffect(() => {
+    if (showPhotosModal) {
+      fetchCommunityAssets('image');
+    }
+  }, [showPhotosModal]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
@@ -428,7 +557,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           quality: 0.8,
         });
       } else {
-        result = await DocumentPicker.getDocumentAsync({ type: 'audio/*' });
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.All,
+          quality: 0.8,
+        });
       }
       if (result.canceled || !result.assets || result.assets.length === 0) return;
       setIsUploadingAsset(true);
@@ -447,14 +579,21 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       });
       const uploadData = await uploadRes.json();
       setIsUploadingAsset(false);
-      if (uploadData.success) {
+      if (uploadData.success && (uploadData.url || uploadData.asset?.url)) {
+        const finalUrl = uploadData.asset?.url || uploadData.url;
+        const uploadedItem = { url: finalUrl, type, thumb: finalUrl };
         if (type === 'video') {
           setShowVideosModal(false);
-          handleEdit(`Add a full-screen looping background video: ${uploadData.url}`);
+          handleAssetSelect(uploadedItem, `Add a full-screen looping background video: ${finalUrl}`);
         } else if (type === 'bgm' || type === 'sfx') {
           setShowAudioModal(false);
-          handleEdit(`Inject this audio URL into the game: ${uploadData.url}`);
+          handleAssetSelect(uploadedItem, `Inject this audio URL into the game: ${finalUrl}`);
+        } else if (type === 'image') {
+          setShowCommunityImagesModal(false);
+          handleAssetSelect(uploadedItem, `Use this image: ${finalUrl}`);
         }
+        // Refresh community pool silently so it's ready next time
+        fetchCommunityAssets(type);
       } else {
         Alert.alert('Upload Failed', uploadData.error || 'Failed');
       }
@@ -473,8 +612,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setIsGeneratingImage(true);
     try {
       const result = await ai.generateAsset(imagePromptText);
-      if (result && (result as any).imageUrl) {
-        setGeneratedImageUri((result as any).imageUrl);
+      if (result && ((result as any).base64 || (result as any).imageUrl)) {
+        setGeneratedImageUri((result as any).base64 || (result as any).imageUrl);
+        // Silently refresh the community image pool, since the backend just added this AI image globally
+        fetchCommunityAssets('image');
       }
     } catch (e) {
       Alert.alert('Error', 'Image generation failed');
@@ -490,9 +631,27 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setPhase('idle');
   };
 
+  const handleAssetSelect = (item: any, fallbackInstruction: string) => {
+    if (!activeDraftId) {
+      if (!attachedAssets.find(a => a.url === item.url)) {
+        const newItem = { ...item, instruction: fallbackInstruction };
+        setAttachedAssets(prev => [...prev, newItem]);
+      }
+    } else {
+      handleEdit(fallbackInstruction);
+    }
+  };
+
   const handleEdit = async (instructionsText: string, newAsset?: { key: string; base64: string }) => {
-    if (!instructionsText.trim() || !activeDraftId) return;
     const instructions = instructionsText.trim();
+    if (!instructions) return;
+
+    if (!activeDraftId) {
+      // If the game hasn't been generated yet, append the asset instruction to the prompt text box
+      setPrompt(prev => prev + (prev ? '\n' : '') + `[Asset Added: ${instructions}]`);
+      return;
+    }
+
     setPhase('generating');
     setErrorMsg(null);
 
@@ -522,6 +681,31 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setPhase('idle');
   };
 
+  const handleIntentClose = (actionType: 'discard' | 'closeApp' = 'closeApp') => {
+    if (phase === 'generating') {
+      // If generating, don't show exit modal, just drop back to idle/close 
+      // (Keep cooking handles the background logic inherently)
+      if (actionType === 'closeApp') onClose();
+      else setPhase('idle');
+      return;
+    }
+    
+    // Check if user has unsaved input or an active preview
+    if (activeDraftId || prompt.trim() || attachedAssets.length > 0 || activeHtml) {
+      setShowExitConfirm(actionType);
+    } else {
+      if (actionType === 'closeApp') onClose();
+      else handleRegenerate();
+    }
+  };
+
+  const handleConfirmExit = () => {
+    const action = showExitConfirm;
+    setShowExitConfirm(null);
+    handleRegenerate();
+    if (action === 'closeApp') onClose();
+  };
+
   const handlePublish = async () => {
     if (!activeDraftId) return;
     try {
@@ -546,7 +730,673 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   };
 
+
+  const renderSharedModals = () => (
+    <>
+      {/* === MODIFY MODAL === */}
+              <Modal visible={showModifyModal} transparent animationType="fade" onRequestClose={() => setShowModifyModal(false)}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => setShowModifyModal(false)}>
+                  <Animated.View entering={FadeInUp.duration(250)} style={{ width: '100%', maxWidth: 360, backgroundColor: '#141416', borderRadius: 28, padding: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onStartShouldSetResponder={() => true}>
+                    <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 20 }}>Modify Game</Text>
+                    {MODIFY_OPTIONS.map((opt, i) => (
+                      <Pressable key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }} onPress={() => { setShowModifyModal(false); handleEdit(opt.instruction); }}>
+                        <Ionicons name={opt.icon as any} size={22} color="#FFF" style={{ marginRight: 14 }} />
+                        <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>{opt.label}</Text>
+                      </Pressable>
+                    ))}
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+      
+              {/* === COLORS MODAL === */}
+              <Modal visible={showColorsModal} transparent animationType="fade" onRequestClose={() => setShowColorsModal(false)}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => setShowColorsModal(false)}>
+                  <Animated.View entering={FadeInUp.duration(250)} style={{ width: '100%', maxWidth: 360, backgroundColor: '#141416', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onStartShouldSetResponder={() => true}>
+                    <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 }}>Color Palettes</Text>
+                    <ScrollView style={{ maxHeight: 400 }}>
+                      {COLOR_PALETTES.map((palette, i) => (
+                        <Pressable key={i} style={{ padding: 16, borderRadius: 16, backgroundColor: palette.bg, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onPress={() => { setShowColorsModal(false); handleEdit(palette.instruction); }}>
+                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                            {palette.colors.map(c => <View key={c} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c }} />)}
+                          </View>
+                          <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>{palette.name}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+      
+              {/* === FEATURES MODAL === */}
+              <Modal visible={showFeaturesModal} transparent animationType="fade" onRequestClose={() => setShowFeaturesModal(false)}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => setShowFeaturesModal(false)}>
+                  <Animated.View entering={SlideInDown.duration(250)} style={{ width: '100%', maxHeight: '75%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: insets.bottom + 20 }} onStartShouldSetResponder={() => true}>
+                    <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 16 }}>
+                      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', marginBottom: 12 }} />
+                      <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>Feature Setup</Text>
+                    </View>
+                    <ScrollView style={{ paddingHorizontal: 20 }}>
+                      {OPTIONS_FEATURES.map((opt, i) => (
+                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }}>
+                          <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                            <Ionicons name={opt.icon as any} size={20} color="#999" />
+                          </View>
+                          <View style={{ flex: 1, marginRight: 12 }}>
+                            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600', marginBottom: 4 }}>{opt.label}</Text>
+                            <Text style={{ color: '#888', fontSize: 13, lineHeight: 18 }}>{opt.desc}</Text>
+                          </View>
+                          <Pressable 
+                            onPress={() => setActiveFeatures(prev => ({...prev, [opt.id]: !prev[opt.id]}))}
+                            style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: activeFeatures[opt.id] ? '#a855f7' : 'rgba(255,255,255,0.1)', justifyContent: 'center', paddingHorizontal: 2 }}
+                          >
+                            <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF', alignSelf: activeFeatures[opt.id] ? 'flex-end' : 'flex-start' }} />
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+                    <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 16, gap: 12 }}>
+                      <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setActiveFeatures({})}>
+                        <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Clear all</Text>
+                      </Pressable>
+                      <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#a855f7', alignItems: 'center' }} onPress={() => {
+                        setShowFeaturesModal(false);
+                        const activeKeys = Object.keys(activeFeatures).filter(k => activeFeatures[k]);
+                        if (activeKeys.length === 0) return;
+                        const inst = activeKeys.map(k => OPTIONS_FEATURES.find(o => o.id === k)?.instruction).join(' ');
+                        handleEdit(inst);
+                      }}>
+                        <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Apply</Text>
+                      </Pressable>
+                    </View>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+      
+              {/* === AUDIO MODAL === */}
+              <Modal visible={showAudioModal} transparent animationType="fade" onRequestClose={() => { setShowAudioModal(false); setSelectedAudio(null); }}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => { setShowAudioModal(false); setSelectedAudio(null); }}>
+                  <Animated.View entering={SlideInDown.duration(250)} style={{ width: '100%', height: '75%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28 }} onStartShouldSetResponder={() => true}>
+                    <View style={{ alignItems: 'center', paddingTop: 12 }}>
+                      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)' }} />
+                    </View>
+                    
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }}>
+                      {isAudioSearching ? (
+                        <View style={{ flex: 1, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, paddingHorizontal: 12 }}>
+                          <Ionicons name="search" size={18} color="#888" />
+                          <TextInput
+                            style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, color: '#FFF', fontSize: 15 }}
+                            placeholder={`Search ${audioTab === 'bgm' ? 'Music' : 'Sound Effects'}...`}
+                            placeholderTextColor="#888"
+                            autoFocus
+                            value={audioSearchQuery}
+                            onChangeText={setAudioSearchQuery}
+                            onSubmitEditing={() => fetchFreesound(audioTab, audioSearchQuery)}
+                            returnKeyType="search"
+                          />
+                          <Pressable onPress={() => { setIsAudioSearching(false); setAudioSearchQuery(''); fetchFreesound(audioTab, ''); }}>
+                             <Text style={{ color: '#a855f7', fontWeight: '600' }}>Cancel</Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>{audioTab === 'bgm' ? 'BGM' : 'Sound effects'}</Text>
+                          <Pressable 
+                            style={{ position: 'absolute', right: 20, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}
+                            onPress={() => setIsAudioSearching(true)}
+                          >
+                            <Ionicons name="search" size={18} color="#CCC" />
+                          </Pressable>
+                        </>
+                      )}
+                    </View>
+
+                    <FlatList
+                      style={{ paddingHorizontal: 20, paddingTop: 16 }}
+                      data={audioTab === 'bgm' ? freesoundBgm : freesoundSfx}
+                      keyExtractor={(item, index) => `${item.id}-${index}`}
+                      showsVerticalScrollIndicator={false}
+                      onEndReached={() => {
+                        const currentLen = audioTab === 'bgm' ? freesoundBgm.length : freesoundSfx.length;
+                        const nextPage = Math.floor(currentLen / 20) + 1;
+                        if (currentLen > 0 && !isFreesoundLoadingMore && !isFreesoundLoading) {
+                          fetchFreesound(audioTab, audioSearchQuery, nextPage);
+                        }
+                      }}
+                      onEndReachedThreshold={0.5}
+                      ListHeaderComponent={
+                        <Pressable onPress={() => handleAssetUpload(audioTab)} style={{ backgroundColor: '#444', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, alignItems: 'center', marginBottom: 16, alignSelf: 'flex-start', flexDirection: 'row', justifyContent: 'center' }}>
+                          <Ionicons name="push-outline" size={18} color="#a855f7" style={{ marginRight: 8 }} />
+                          <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '700' }}>Upload</Text>
+                        </Pressable>
+                      }
+                      renderItem={({ item }) => {
+                        const isSelected = selectedAudio && (selectedAudio.url ? selectedAudio.url === item.url : selectedAudio.instruction === item.instruction);
+                        return (
+                          <Pressable style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }} onPress={() => setSelectedAudio(item)}>
+                            <View style={{ flex: 1, paddingRight: 16 }}>
+                              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{item.label || item.title}</Text>
+                              <Text style={{ color: '#666', fontSize: 12 }}>{item.duration || '00:03'}</Text>
+                            </View>
+                            <Ionicons name="play" size={24} color="#FFF" style={{ marginHorizontal: 16 }} />
+                            <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: isSelected ? '#a855f7' : '#777', alignItems: 'center', justifyContent: 'center' }}>
+                                {isSelected && <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#a855f7' }} />}
+                            </View>
+                          </Pressable>
+                        );
+                      }}
+                      ListEmptyComponent={
+                        isFreesoundLoading ? (
+                          <View style={{ width: '100%', height: 200, alignItems: 'center', justifyContent: 'center' }}>
+                            <ActivityIndicator size="large" color="#a855f7" />
+                          </View>
+                        ) : null
+                      }
+                      ListFooterComponent={
+                        isFreesoundLoadingMore ? (
+                          <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                            <ActivityIndicator size="small" color="#a855f7" />
+                          </View>
+                        ) : <View style={{ height: 40 }} />
+                      }
+                    />
+
+                    <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16), backgroundColor: '#1C1C1E', gap: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                      <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#555', alignItems: 'center' }} onPress={() => { setSelectedAudio(null); setShowAudioModal(false); }}>
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Cancel</Text>
+                      </Pressable>
+                      <Pressable 
+                        style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#a855f7', alignItems: 'center', opacity: selectedAudio ? 1 : 0.5 }} 
+                        disabled={!selectedAudio} 
+                        onPress={() => { 
+                          setShowAudioModal(false); 
+                          const fallback = audioTab === 'bgm' ? 'Inject this auto-looping background music: ' : selectedAudio.instruction;
+                          const instruction = audioTab === 'bgm' ? fallback + selectedAudio.url : fallback;
+                          handleAssetSelect({ ...selectedAudio, type: audioTab }, instruction);
+                          setSelectedAudio(null); 
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Select</Text>
+                      </Pressable>
+                    </View>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+      
+              {/* === VIDEOS MODAL === */}
+              <Modal visible={showVideosModal} transparent animationType="fade" onRequestClose={() => { setShowVideosModal(false); setSelectedVideo(null); }}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => { setShowVideosModal(false); setSelectedVideo(null); }}>
+                  <Animated.View entering={SlideInDown.duration(250)} style={{ width: '100%', height: '75%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28 }} onStartShouldSetResponder={() => true}>
+                    <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 16 }}>
+                      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', marginBottom: 12 }} />
+                      <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>Video</Text>
+                    </View>
+                    <FlatList
+                      style={{ flex: 1 }}
+                      data={[{ isUpload: true }, ...communityVideos]}
+                      keyExtractor={(item: any, index) => item.isUpload ? 'upload-btn' : `vid-${item.id || index}`}
+                      numColumns={3}
+                      showsVerticalScrollIndicator={false}
+                      contentContainerStyle={{ paddingHorizontal: 4 }}
+                      columnWrapperStyle={{ gap: 4, marginBottom: 4 }}
+                      renderItem={({ item }: any) => {
+                        if (item.isUpload) {
+                          return (
+                            <Pressable onPress={() => handleAssetUpload('video')} style={{ width: '32%', aspectRatio: 0.8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
+                              {isUploadingAsset ? <ActivityIndicator size="small" color="#a855f7" style={{ marginBottom: 8 }} /> : <Ionicons name="push-outline" size={24} color="#a855f7" style={{ marginBottom: 8 }} />}
+                              <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '600' }}>Upload</Text>
+                              <Text style={{ color: '#666', fontSize: 11, marginTop: 4 }}>(Max 15s)</Text>
+                            </Pressable>
+                          );
+                        }
+                        const isSelected = selectedVideo?.url === item.url;
+                        return (
+                          <Pressable style={{ width: '32%', aspectRatio: 0.8, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }} onPress={() => setSelectedVideo(item)}>
+                            <Image source={{ uri: item.thumb || item.thumbnail || 'https://picsum.photos/200/300' }} style={{ width: '100%', height: '100%', opacity: isSelected ? 0.6 : 0.8 }} resizeMode="cover" />
+                            <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                              <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>{item.duration || '00:15'}</Text>
+                            </View>
+                            {isSelected && (
+                              <View style={[StyleSheet.absoluteFillObject, { borderWidth: 4, borderColor: '#a855f7', borderRadius: 12 }]} />
+                            )}
+                          </Pressable>
+                        );
+                      }}
+                      ListFooterComponent={
+                        <>
+                          {communityVideos.length === 0 && (
+                            <View style={{ width: '100%', height: 200, alignItems: 'center', justifyContent: 'center' }}>
+                              <ActivityIndicator size="large" color="#a855f7" />
+                            </View>
+                          )}
+                          <View style={{ height: 40 }} />
+                        </>
+                      }
+                    />
+                    {/* Bottom Action Bar */}
+                    <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16), backgroundColor: '#1C1C1E', gap: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                      <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#555', alignItems: 'center' }} onPress={() => { setSelectedVideo(null); setShowVideosModal(false); }}>
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Cancel</Text>
+                      </Pressable>
+                      <Pressable 
+                        style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#a855f7', alignItems: 'center', opacity: selectedVideo ? 1 : 0.5 }} 
+                        disabled={!selectedVideo} 
+                        onPress={() => { 
+                          setShowVideosModal(false); 
+                          handleAssetSelect(selectedVideo, 'Add a full-screen looping background video, autoplaying and muted: ' + (selectedVideo.url || ''));
+                          setSelectedVideo(null); 
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Select</Text>
+                      </Pressable>
+                    </View>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+
+              {/* === COMMUNITY IMAGES MODAL === */}
+              <Modal visible={showCommunityImagesModal} transparent animationType="fade" onRequestClose={() => { setShowCommunityImagesModal(false); setSelectedCommunityImage(null); }}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => { setShowCommunityImagesModal(false); setSelectedCommunityImage(null); }}>
+                  <Animated.View entering={SlideInDown.duration(250)} style={{ width: '100%', height: '75%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28 }} onStartShouldSetResponder={() => true}>
+                    <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 16 }}>
+                      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', marginBottom: 12 }} />
+                      <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>Images</Text>
+                    </View>
+                    <FlatList
+                      style={{ flex: 1 }}
+                      data={[{ isUpload: true }, ...communityPhotos]}
+                      keyExtractor={(item: any, index) => item.isUpload ? 'upload-img-btn' : `img-${item.id || index}`}
+                      numColumns={3}
+                      showsVerticalScrollIndicator={false}
+                      contentContainerStyle={{ paddingHorizontal: 4 }}
+                      columnWrapperStyle={{ gap: 4, marginBottom: 4 }}
+                      renderItem={({ item }: any) => {
+                        if (item.isUpload) {
+                          return (
+                            <Pressable onPress={() => handleAssetUpload('image')} style={{ width: '32%', aspectRatio: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
+                              {isUploadingAsset ? <ActivityIndicator size="small" color="#a855f7" style={{ marginBottom: 8 }} /> : <Ionicons name="push-outline" size={24} color="#a855f7" style={{ marginBottom: 8 }} />}
+                              <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '600' }}>Upload</Text>
+                            </Pressable>
+                          );
+                        }
+                        const isSelected = selectedCommunityImage?.url === item.url;
+                        return (
+                          <Pressable style={{ width: '32%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }} onPress={() => setSelectedCommunityImage(item)}>
+                            <Image source={{ uri: item.thumb || item.thumbnail || item.url }} style={{ width: '100%', height: '100%', opacity: isSelected ? 0.6 : 0.8 }} resizeMode="cover" />
+                            {isSelected && (
+                              <View style={[StyleSheet.absoluteFillObject, { borderWidth: 4, borderColor: '#a855f7', borderRadius: 12 }]} />
+                            )}
+                          </Pressable>
+                        );
+                      }}
+                      ListFooterComponent={
+                        <>
+                          {communityPhotos.length === 0 && (
+                            <View style={{ width: '100%', height: 200, alignItems: 'center', justifyContent: 'center' }}>
+                              <ActivityIndicator size="large" color="#a855f7" />
+                            </View>
+                          )}
+                          <View style={{ height: 40 }} />
+                        </>
+                      }
+                    />
+                    {/* Bottom Action Bar */}
+                    <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16), backgroundColor: '#1C1C1E', gap: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                      <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#555', alignItems: 'center' }} onPress={() => { setSelectedCommunityImage(null); setShowCommunityImagesModal(false); }}>
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Cancel</Text>
+                      </Pressable>
+                      <Pressable 
+                        style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#a855f7', alignItems: 'center', opacity: selectedCommunityImage ? 1 : 0.5 }} 
+                        disabled={!selectedCommunityImage} 
+                        onPress={() => { 
+                          setShowCommunityImagesModal(false); 
+                          handleAssetSelect(selectedCommunityImage, 'Use this community image asset: ' + (selectedCommunityImage.url || ''));
+                          setSelectedCommunityImage(null); 
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Select</Text>
+                      </Pressable>
+                    </View>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+      
+              {/* === PHOTOS MODAL === */}
+              <Modal visible={showPhotosModal} transparent animationType="fade" onRequestClose={() => { setShowPhotosModal(false); setSelectedPhoto(null); }}>
+                <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => { setShowPhotosModal(false); setSelectedPhoto(null); }}>
+                  <Animated.View entering={SlideInDown.duration(250)} style={{ width: '100%', height: '75%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28 }} onStartShouldSetResponder={() => true}>
+                    <View style={{ alignItems: 'center', paddingTop: 12 }}>
+                      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)' }} />
+                    </View>
+                    
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16 }}>
+                      {isMemeSearching ? (
+                        <View style={{ flex: 1, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, paddingHorizontal: 12 }}>
+                          <Ionicons name="search" size={18} color="#888" />
+                          <TextInput
+                            style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, color: '#FFF', fontSize: 15 }}
+                            placeholder={`Search ${memeTab === 'gif' ? 'GIFs' : 'Stickers'}...`}
+                            placeholderTextColor="#888"
+                            autoFocus
+                            value={memeSearchQuery}
+                            onChangeText={setMemeSearchQuery}
+                            onSubmitEditing={() => fetchGiphy(memeTab === 'gif' ? 'gifs' : 'stickers', memeSearchQuery)}
+                            returnKeyType="search"
+                          />
+                          <Pressable onPress={() => { setIsMemeSearching(false); setMemeSearchQuery(''); fetchGiphy(memeTab === 'gif' ? 'gifs' : 'stickers', ''); }}>
+                             <Text style={{ color: '#a855f7', fontWeight: '600' }}>Cancel</Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>Meme</Text>
+                          <Pressable 
+                            style={{ position: 'absolute', right: 20, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }} 
+                            onPress={() => setIsMemeSearching(true)}
+                          >
+                            <Ionicons name="search" size={18} color="#CCC" />
+                          </Pressable>
+                        </>
+                      )}
+                    </View>
+
+                    <View style={{ flexDirection: 'row', backgroundColor: '#2C2C2E', borderRadius: 24, alignSelf: 'center', padding: 4, marginBottom: 16 }}>
+                      <Pressable 
+                        onPress={() => setMemeTab('gif')}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 24, backgroundColor: memeTab === 'gif' ? '#1C1C1E' : 'transparent', borderRadius: 20 }}>
+                        <Text style={{ color: memeTab === 'gif' ? '#FFF' : '#CCC', fontSize: 14, fontWeight: memeTab === 'gif' ? '700' : '600' }}>👾  GIF</Text>
+                      </Pressable>
+                      <Pressable 
+                        onPress={() => setMemeTab('stickers')}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 24, backgroundColor: memeTab === 'stickers' ? '#1C1C1E' : 'transparent', borderRadius: 20 }}>
+                        <Text style={{ color: memeTab === 'stickers' ? '#FFF' : '#CCC', fontSize: 14, fontWeight: memeTab === 'stickers' ? '700' : '600' }}>🙂  Stickers</Text>
+                      </Pressable>
+                    </View>
+                    
+                    <FlatList
+                      style={{ flex: 1 }}
+                      data={memeTab === 'gif' ? giphyResults : giphyStickers}
+                      keyExtractor={(item, index) => `${item.id}-${index}`}
+                      numColumns={3}
+                      showsVerticalScrollIndicator={false}
+                      onEndReached={() => {
+                        const currentLen = memeTab === 'gif' ? giphyResults.length : giphyStickers.length;
+                        if (currentLen > 0 && !isGiphyLoadingMore && !isGiphyLoading) {
+                          fetchGiphy(memeTab === 'gif' ? 'gifs' : 'stickers', memeSearchQuery, currentLen);
+                        }
+                      }}
+                      onEndReachedThreshold={0.5}
+                      renderItem={({ item }) => {
+                        const isSelected = selectedPhoto?.url === item.url;
+                        return (
+                          <Pressable 
+                            style={{ flex: 1/3, aspectRatio: 1, backgroundColor: '#000' }} 
+                            onPress={() => setSelectedPhoto(item)}
+                          >
+                            <Image source={{ uri: item.url }} style={{ width: '100%', height: '100%', opacity: isSelected ? 0.6 : 1 }} resizeMode="cover" />
+                            {isSelected && (
+                              <View style={[StyleSheet.absoluteFillObject, { borderWidth: 4, borderColor: '#a855f7' }]} />
+                            )}
+                          </Pressable>
+                        );
+                      }}
+                      ListEmptyComponent={
+                        isGiphyLoading ? (
+                          <View style={{ width: '100%', height: 200, alignItems: 'center', justifyContent: 'center' }}>
+                            <ActivityIndicator size="large" color="#a855f7" />
+                          </View>
+                        ) : null
+                      }
+                      ListFooterComponent={
+                        isGiphyLoadingMore ? (
+                          <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                            <ActivityIndicator size="small" color="#a855f7" />
+                          </View>
+                        ) : <View style={{ height: 20 }} />
+                      }
+                    />
+      
+                    {/* Bottom Action Bar */}
+                    <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16), backgroundColor: '#1C1C1E', gap: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                      <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#555', alignItems: 'center' }} onPress={() => { setSelectedPhoto(null); setShowPhotosModal(false); }}>
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Cancel</Text>
+                      </Pressable>
+                      <Pressable 
+                        style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#a855f7', alignItems: 'center', opacity: selectedPhoto ? 1 : 0.5 }} 
+                        disabled={!selectedPhoto} 
+                        onPress={() => { 
+                          setShowPhotosModal(false); 
+                          handleAssetSelect({ url: selectedPhoto.url, type: 'image', thumb: selectedPhoto.url }, `Use image: ${selectedPhoto.url}`);
+                          setSelectedPhoto(null); 
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Select</Text>
+                      </Pressable>
+                    </View>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+      
+              {/* === IMAGE MAKER MODAL === */}
+              <Modal visible={showImageModal} transparent animationType="fade" onRequestClose={() => { if (!isGeneratingImage) setShowImageModal(false); }}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                  <View style={{ width: '100%', maxWidth: 380, backgroundColor: '#141416', borderRadius: 28, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(168,85,247,0.15)' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 22, paddingBottom: 6 }}>
+                      <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(168,85,247,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                        <Ionicons name="sparkles" size={22} color="#a855f7" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '800' }}>AI Image Maker</Text>
+                      </View>
+                      {!isGeneratingImage && (
+                        <Pressable onPress={() => setShowImageModal(false)} hitSlop={12}>
+                          <Ionicons name="close-circle" size={30} color="rgba(255,255,255,0.2)" />
+                        </Pressable>
+                      )}
+                    </View>
+                    {generatedImageUri ? (
+                      <View style={{ margin: 16, borderRadius: 16, overflow: 'hidden' }}>
+                        <Image source={{ uri: generatedImageUri }} style={{ width: '100%', aspectRatio: 1, backgroundColor: '#000' }} resizeMode="contain" />
+                      </View>
+                    ) : isGeneratingImage ? (
+                      <View style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 16, aspectRatio: 1.2, backgroundColor: '#0D0D10', alignItems: 'center', justifyContent: 'center' }}>
+                        <ActivityIndicator size="large" color="#a855f7" />
+                        <Text style={{ color: '#CCC', fontSize: 15, fontWeight: '700', marginTop: 16 }}>Creating your image...</Text>
+                      </View>
+                    ) : (
+                      <View style={{ margin: 16 }}>
+                        <TextInput
+                          style={{ color: '#FFF', fontSize: 16, backgroundColor: '#0D0D10', borderRadius: 16, padding: 16, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: 'rgba(168,85,247,0.1)' }}
+                          placeholder="Describe what you want to create..."
+                          placeholderTextColor="#444"
+                          value={imagePromptText}
+                          onChangeText={setImagePromptText}
+                          multiline
+                          autoFocus
+                        />
+                      </View>
+                    )}
+                    <View style={{ padding: 16, gap: 10 }}>
+                      {generatedImageUri ? (
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                          <Pressable style={{ flex: 1, paddingVertical: 15, borderRadius: 30, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => { setGeneratedImageUri(null); setImagePromptText(''); }}>
+                            <Text style={{ color: '#999', fontWeight: '700', fontSize: 14 }}>Try Again</Text>
+                          </Pressable>
+                          <Pressable style={{ flex: 1, borderRadius: 30, overflow: 'hidden' }} onPress={() => { setShowImageModal(false); handleAssetSelect({ url: generatedImageUri, type: 'image', thumb: generatedImageUri }, `Use this AI generated asset image: ${generatedImageUri}`); }}>
+                            <LinearGradient colors={['#a855f7', '#7c3aed']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 15, alignItems: 'center', borderRadius: 30 }}>
+                              <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 14 }}>Use This Image</Text>
+                            </LinearGradient>
+                          </Pressable>
+                        </View>
+                      ) : !isGeneratingImage ? (
+                        <Pressable style={{ borderRadius: 30, overflow: 'hidden' }} onPress={submitImageGeneration} disabled={!imagePromptText.trim()}>
+                          <LinearGradient colors={imagePromptText.trim() ? ['#a855f7', '#7c3aed'] : ['#2A2A2D', '#222']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, borderRadius: 30 }}>
+                            <Ionicons name="color-wand" size={18} color={imagePromptText.trim() ? '#FFF' : '#666'} />
+                            <Text style={{ color: imagePromptText.trim() ? '#FFF' : '#666', fontWeight: '800', fontSize: 15 }}>Generate Image</Text>
+                          </LinearGradient>
+                        </Pressable>
+                      ) : (
+                        <Pressable style={{ paddingVertical: 15, borderRadius: 30, borderWidth: 1.5, borderColor: 'rgba(255,59,48,0.2)', alignItems: 'center', backgroundColor: 'rgba(255,59,48,0.06)' }} onPress={() => { setIsGeneratingImage(false); setShowImageModal(false); }}>
+                          <Text style={{ color: '#FF6B6B', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              </Modal>
+    </>
+  );
+
   if (!isActive) return null;
+
+  // ======================
+  // RENDER: PUBLISH SETTINGS
+  // ======================
+  if (phase === 'publish' && activeHtml) {
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.previewTopBar}>
+          <Pressable style={styles.closeBtn} onPress={() => setPhase('preview')}>
+            <Ionicons name="chevron-back" size={22} color="#FFF" />
+          </Pressable>
+          <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '700' }}>Publish Game</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false} bounces={false}>
+          {/* Game Thumbnail Preview */}
+          <View style={{ alignItems: 'center', marginBottom: 28 }}>
+            <View style={{ width: 180, height: 240, borderRadius: 20, overflow: 'hidden', backgroundColor: '#1E1E1E', shadowColor: '#a855f7', shadowOpacity: 0.3, shadowRadius: 24, shadowOffset: { width: 0, height: 8 } }}>
+              <WebView
+                source={{ html: activeHtml, baseUrl: 'https://gametok.app' }}
+                style={{ flex: 1, backgroundColor: '#000' }}
+                scrollEnabled={false}
+                javaScriptEnabled={true}
+                originWhitelist={['*']}
+                allowsInlineMediaPlayback={true}
+              />
+              <View style={{ position: 'absolute', bottom: 12, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 }}>
+                <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Edit</Text>
+                <Ionicons name="create-outline" size={14} color="#FFF" style={{ marginLeft: 4 }} />
+              </View>
+            </View>
+          </View>
+
+          {/* Game Name */}
+          <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700', marginBottom: 10 }}>Game Name</Text>
+          <View style={{ backgroundColor: '#1E1E1E', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
+            <TextInput
+              style={{ color: '#FFF', fontSize: 16, fontWeight: '500' }}
+              placeholder="Enter your game's name"
+              placeholderTextColor="#555"
+              value={gameTitle}
+              onChangeText={setGameTitle}
+              maxLength={60}
+            />
+          </View>
+
+          {/* Privacy Settings */}
+          <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Privacy Settings</Text>
+          <View style={{ backgroundColor: '#1E1E1E', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
+            {/* Public games */}
+            <Pressable 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
+              onPress={() => setPrivacySetting('public')}
+            >
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(52,199,89,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                <Ionicons name="people" size={20} color="#34C759" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Public games</Text>
+                <Text style={{ color: '#888', fontSize: 13, marginTop: 2 }}>Anyone can play and remix</Text>
+              </View>
+              <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: privacySetting === 'public' ? '#34C759' : '#3A3A3C', justifyContent: 'center', padding: 2 }}>
+                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF', alignSelf: privacySetting === 'public' ? 'flex-end' : 'flex-start' }} />
+              </View>
+            </Pressable>
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 70 }} />
+
+            {/* Public for play only */}
+            <Pressable 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
+              onPress={() => setPrivacySetting('play_only')}
+            >
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(168,85,247,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                <Ionicons name="eye" size={20} color="#a855f7" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Public for play only</Text>
+                <Text style={{ color: '#888', fontSize: 13, marginTop: 2 }}>Anyone can play but not remix</Text>
+              </View>
+              <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: privacySetting === 'play_only' ? '#34C759' : '#3A3A3C', justifyContent: 'center', padding: 2 }}>
+                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF', alignSelf: privacySetting === 'play_only' ? 'flex-end' : 'flex-start' }} />
+              </View>
+            </Pressable>
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 70 }} />
+
+            {/* Only me */}
+            <Pressable 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 }}
+              onPress={() => setPrivacySetting('private')}
+            >
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                <Ionicons name="lock-closed" size={20} color="#888" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Only me</Text>
+                <Text style={{ color: '#888', fontSize: 13, marginTop: 2 }}>Only visible to me</Text>
+              </View>
+              <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: privacySetting === 'private' ? '#34C759' : '#3A3A3C', justifyContent: 'center', padding: 2 }}>
+                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF', alignSelf: privacySetting === 'private' ? 'flex-end' : 'flex-start' }} />
+              </View>
+            </Pressable>
+          </View>
+
+          {/* Terms text */}
+          <Text style={{ color: '#666', fontSize: 13, textAlign: 'center', marginTop: 30, marginBottom: 16 }}>
+            By creating a game, you agree to GameTok's <Text style={{ color: '#a855f7' }}>Terms</Text>.
+          </Text>
+
+          {/* Post Game Button */}
+          <Pressable 
+            style={({ pressed }) => [{ backgroundColor: '#E8730C', paddingVertical: 18, borderRadius: 30, alignItems: 'center', shadowColor: '#E8730C', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+            onPress={handlePublish}
+          >
+            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>Post Game</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ======================
+  // RENDER: EXIT CONFIRMATION MODAL (rendered on top of any phase)
+  // ======================
+  const exitModal = (
+    <Modal visible={!!showExitConfirm} transparent animationType="fade" onRequestClose={() => setShowExitConfirm(null)}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <View style={{ width: '100%', maxWidth: 340, backgroundColor: '#2C2C2E', borderRadius: 28, padding: 28, alignItems: 'center' }}>
+          <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '800', marginBottom: 14, textAlign: 'center' }}>Hold up—heading out?</Text>
+          <Text style={{ color: '#AAA', fontSize: 15, textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
+            Leaving now means your game creation gets yeeted. Like... gone. Forever. 😬
+          </Text>
+          <Pressable 
+            style={({ pressed }) => [{ width: '100%', backgroundColor: '#E8730C', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginBottom: 10 }, pressed && { opacity: 0.85 }]}
+            onPress={() => setShowExitConfirm(null)}
+          >
+            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Fine, I'll Stay</Text>
+          </Pressable>
+          <Pressable 
+            style={({ pressed }) => [{ width: '100%', backgroundColor: '#3A3A3C', paddingVertical: 16, borderRadius: 24, alignItems: 'center' }, pressed && { opacity: 0.85 }]}
+            onPress={handleConfirmExit}
+          >
+            <Text style={{ color: '#FF453A', fontSize: 16, fontWeight: '700' }}>I'm Out</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (phase === 'preview' && activeHtml) {
     return (
@@ -556,17 +1406,19 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       >
         {/* === TOP BAR === */}
         <Animated.View entering={FadeInDown.duration(400)} style={styles.previewTopBar}>
-          <Pressable style={styles.closeBtn} onPress={handleRegenerate}>
-            <Ionicons name="arrow-back" size={22} color="#FFF" />
+          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('discard')}>
+            <Ionicons name="close" size={22} color="#FFF" />
           </Pressable>
-          <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }} numberOfLines={1}>
-            {gameTitle || 'Preview'}
-          </Text>
+          <View style={{ flexDirection: 'row', backgroundColor: '#2C2C2E', borderRadius: 20, padding: 3 }}>
+            <View style={{ paddingVertical: 6, paddingHorizontal: 16, backgroundColor: '#1C1C1E', borderRadius: 18 }}>
+              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>Preview</Text>
+            </View>
+          </View>
           <Pressable 
-            style={[styles.previewPublishPill, { backgroundColor: colors.primary }]} 
-            onPress={handlePublish}
+            style={[styles.previewPublishPill, { backgroundColor: '#E8730C' }]} 
+            onPress={() => setPhase('publish')}
           >
-            <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>Publish</Text>
+            <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>Next</Text>
           </Pressable>
         </Animated.View>
 
@@ -592,252 +1444,59 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           )}
         </View>
 
-        {/* === BOTTOM TOOL STRIP === */}
-        <Animated.View entering={SlideInDown.duration(500)} style={[styles.previewBottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 16 }}>
-            {[
-              { icon: 'options-outline', label: 'Modify', action: handleModify },
-              { icon: 'hardware-chip-outline', label: 'Features', action: () => setShowFeaturesModal(true) },
-              { icon: 'musical-notes-outline', label: 'Audio', action: () => setShowAudioModal(true) },
-              { icon: 'film-outline', label: 'Videos', action: () => setShowVideosModal(true) },
-              { icon: 'color-filter-outline', label: 'Colors', action: () => setShowColorsModal(true) },
-              { icon: 'image-outline', label: 'Images', action: handleGeneratePhoto },
-            ].map((tool, i) => (
-              <Pressable key={i} style={{ alignItems: 'center', gap: 6 }} onPress={tool.action}>
-                <View style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name={tool.icon as any} size={22} color="#FFF" />
-                </View>
-                <Text style={{ color: '#AAA', fontSize: 11, fontWeight: '600' }}>{tool.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </Animated.View>
-
-        {/* === MODIFY MODAL === */}
-        <Modal visible={showModifyModal} transparent animationType="fade" onRequestClose={() => setShowModifyModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => setShowModifyModal(false)}>
-            <Animated.View entering={FadeInUp.duration(300).springify()} style={{ width: '100%', maxWidth: 360, backgroundColor: '#141416', borderRadius: 28, padding: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onStartShouldSetResponder={() => true}>
-              <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 20 }}>Modify Game</Text>
-              {MODIFY_OPTIONS.map((opt, i) => (
-                <Pressable key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }} onPress={() => { setShowModifyModal(false); handleEdit(opt.instruction); }}>
-                  <Ionicons name={opt.icon as any} size={22} color="#FFF" style={{ marginRight: 14 }} />
-                  <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>{opt.label}</Text>
+        {/* === BOTTOM TOOL STRIP & INPUT === */}
+        <Animated.View entering={SlideInDown.duration(500)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16) }}>
+          {/* Media Toolbar Pill */}
+          {!keyboardVisible && (
+            <Animated.View 
+              entering={FadeInDown.duration(300)} 
+              exiting={FadeOutDown.duration(200)}
+              style={{ backgroundColor: '#1E1E1E', borderRadius: 40, paddingVertical: 14, paddingHorizontal: 24, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}
+            >
+              {[
+                { icon: 'options', label: 'Modify', action: handleModify },
+                { icon: 'color-palette-outline', label: 'Colors', action: () => setShowColorsModal(true) },
+                { icon: 'image-outline', label: 'Memes', action: () => setShowPhotosModal(true) },
+                { icon: 'film-outline', label: 'Videos', action: () => setShowVideosModal(true) },
+                { icon: 'musical-notes-outline', label: 'Sounds', action: () => setShowAudioModal(true) },
+              ].map((tool, i) => (
+                <Pressable key={i} style={{ alignItems: 'center', gap: 6 }} onPress={tool.action}>
+                  <Ionicons name={tool.icon as any} size={22} color="#D2CDC5" />
+                  <Text style={{ color: '#888', fontSize: 11, fontWeight: '500' }}>{tool.label}</Text>
                 </Pressable>
               ))}
             </Animated.View>
-          </Pressable>
-        </Modal>
+          )}
 
-        {/* === COLORS MODAL === */}
-        <Modal visible={showColorsModal} transparent animationType="fade" onRequestClose={() => setShowColorsModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => setShowColorsModal(false)}>
-            <Animated.View entering={FadeInUp.duration(300).springify()} style={{ width: '100%', maxWidth: 360, backgroundColor: '#141416', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onStartShouldSetResponder={() => true}>
-              <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 }}>Color Palettes</Text>
-              <ScrollView style={{ maxHeight: 400 }}>
-                {COLOR_PALETTES.map((palette, i) => (
-                  <Pressable key={i} style={{ padding: 16, borderRadius: 16, backgroundColor: palette.bg, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }} onPress={() => { setShowColorsModal(false); handleEdit(palette.instruction); }}>
-                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                      {palette.colors.map(c => <View key={c} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c }} />)}
-                    </View>
-                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>{palette.name}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </Animated.View>
-          </Pressable>
-        </Modal>
-
-        {/* === FEATURES MODAL === */}
-        <Modal visible={showFeaturesModal} transparent animationType="fade" onRequestClose={() => setShowFeaturesModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => setShowFeaturesModal(false)}>
-            <Animated.View entering={SlideInDown.duration(300).springify()} style={{ width: '100%', maxHeight: '80%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: insets.bottom + 20 }} onStartShouldSetResponder={() => true}>
-              <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 16 }}>
-                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', marginBottom: 12 }} />
-                <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>Feature Setup</Text>
-              </View>
-              <ScrollView style={{ paddingHorizontal: 20 }}>
-                {OPTIONS_FEATURES.map((opt, i) => (
-                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }}>
-                    <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                      <Ionicons name={opt.icon as any} size={20} color="#999" />
-                    </View>
-                    <View style={{ flex: 1, marginRight: 12 }}>
-                      <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600', marginBottom: 4 }}>{opt.label}</Text>
-                      <Text style={{ color: '#888', fontSize: 13, lineHeight: 18 }}>{opt.desc}</Text>
-                    </View>
-                    <Pressable 
-                      onPress={() => setActiveFeatures(prev => ({...prev, [opt.id]: !prev[opt.id]}))}
-                      style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: activeFeatures[opt.id] ? '#D97736' : 'rgba(255,255,255,0.1)', justifyContent: 'center', paddingHorizontal: 2 }}
-                    >
-                      <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF', alignSelf: activeFeatures[opt.id] ? 'flex-end' : 'flex-start' }} />
-                    </Pressable>
-                  </View>
-                ))}
-              </ScrollView>
-              <View style={{ flexDirection: 'row', paddingHorizontal: 20, paddingTop: 16, gap: 12 }}>
-                <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => setActiveFeatures({})}>
-                  <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Clear all</Text>
-                </Pressable>
-                <Pressable style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: '#D97736', alignItems: 'center' }} onPress={() => {
-                  setShowFeaturesModal(false);
-                  const activeKeys = Object.keys(activeFeatures).filter(k => activeFeatures[k]);
-                  if (activeKeys.length === 0) return;
-                  const inst = activeKeys.map(k => OPTIONS_FEATURES.find(o => o.id === k)?.instruction).join(' ');
-                  handleEdit(inst);
-                }}>
-                  <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Apply</Text>
-                </Pressable>
-              </View>
-            </Animated.View>
-          </Pressable>
-        </Modal>
-
-        {/* === AUDIO MODAL === */}
-        <Modal visible={showAudioModal} transparent animationType="fade" onRequestClose={() => setShowAudioModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => setShowAudioModal(false)}>
-            <Animated.View entering={SlideInDown.duration(300).springify()} style={{ width: '100%', height: '85%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: insets.bottom }} onStartShouldSetResponder={() => true}>
-              <View style={{ alignItems: 'center', paddingVertical: 12 }}>
-                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', marginBottom: 12 }} />
-                <View style={{ flexDirection: 'row', marginTop: 10 }}>
-                  <Pressable onPress={() => setAudioTab('bgm')} style={{ paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: audioTab === 'bgm' ? '#FFF' : 'transparent' }}>
-                    <Text style={{ color: audioTab === 'bgm' ? '#FFF' : '#777', fontSize: 16, fontWeight: '700' }}>BGM</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setAudioTab('sfx')} style={{ paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: audioTab === 'sfx' ? '#FFF' : 'transparent' }}>
-                    <Text style={{ color: audioTab === 'sfx' ? '#FFF' : '#777', fontSize: 16, fontWeight: '700' }}>Sound effects</Text>
-                  </Pressable>
-                </View>
-              </View>
-              <ScrollView style={{ paddingHorizontal: 20, paddingTop: 10 }}>
-                <Pressable onPress={() => handleAssetUpload(audioTab)} style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginBottom: 16, width: 140, flexDirection: 'row', justifyContent: 'center' }}>
-                  <Ionicons name="push-outline" size={18} color="#FFF" style={{ marginRight: 8 }} />
-                  <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600' }}>Upload</Text>
-                </Pressable>
-                {audioTab === 'bgm' ? (
-                  (communityAudios.length > 0 ? communityAudios : OPTIONS_BGM).map((opt: any, i: number) => (
-                    <Pressable key={'b'+i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }} onPress={() => { setShowAudioModal(false); handleEdit('Inject this auto-looping background music: ' + opt.url); }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{opt.label || opt.title}</Text>
-                        <Text style={{ color: '#666', fontSize: 12 }}>{opt.duration || ''}</Text>
-                      </View>
-                      <Ionicons name="play" size={24} color="#FFF" style={{ marginHorizontal: 16 }} />
-                      <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#777' }} />
-                    </Pressable>
-                  ))
-                ) : (
-                  OPTIONS_SOUNDS.map((opt, i) => (
-                    <Pressable key={'s'+i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }} onPress={() => { setShowAudioModal(false); handleEdit(opt.instruction); }}>
-                      <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                        <Ionicons name={opt.icon as any} size={20} color="#FFF" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600', marginBottom: 4 }}>{opt.label}</Text>
-                        <Text style={{ color: '#888', fontSize: 13 }}>{opt.desc}</Text>
-                      </View>
-                    </Pressable>
-                  ))
-                )}
-              </ScrollView>
-            </Animated.View>
-          </Pressable>
-        </Modal>
-
-        {/* === VIDEOS MODAL === */}
-        <Modal visible={showVideosModal} transparent animationType="fade" onRequestClose={() => setShowVideosModal(false)}>
-          <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }} onPress={() => setShowVideosModal(false)}>
-            <Animated.View entering={SlideInDown.duration(300).springify()} style={{ width: '100%', height: '80%', backgroundColor: '#1C1C1E', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: insets.bottom }} onStartShouldSetResponder={() => true}>
-              <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 16 }}>
-                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', marginBottom: 12 }} />
-                <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700' }}>Video</Text>
-              </View>
-              <ScrollView style={{ marginTop: 10 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 4, gap: 4 }}>
-                  <Pressable onPress={() => handleAssetUpload('video')} style={{ width: '32%', aspectRatio: 0.8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                    {isUploadingAsset ? <ActivityIndicator size="small" color="#D97736" style={{ marginBottom: 8 }} /> : <Ionicons name="push-outline" size={24} color="#D97736" style={{ marginBottom: 8 }} />}
-                    <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '600' }}>Upload</Text>
-                    <Text style={{ color: '#666', fontSize: 11, marginTop: 4 }}>(Maximum 15s)</Text>
-                  </Pressable>
-                  {(communityVideos.length > 0 ? communityVideos : OPTIONS_VIDEOS).map((opt: any, i: number) => (
-                    <Pressable key={i} style={{ width: '32%', aspectRatio: 0.8, borderRadius: 12, overflow: 'hidden', marginBottom: 8, backgroundColor: '#000' }} onPress={() => { setShowVideosModal(false); handleEdit('Add a full-screen looping background video, autoplaying and muted: ' + (opt.url || '')); }}>
-                      <Image source={{ uri: opt.thumb || opt.thumbnail || 'https://picsum.photos/200/300' }} style={{ width: '100%', height: '100%', opacity: 0.8 }} resizeMode="cover" />
-                      <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                        <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>00:15</Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
-            </Animated.View>
-          </Pressable>
-        </Modal>
-
-        {/* === IMAGE MAKER MODAL === */}
-        <Modal visible={showImageModal} transparent animationType="fade" onRequestClose={() => { if (!isGeneratingImage) setShowImageModal(false); }}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-            <View style={{ width: '100%', maxWidth: 380, backgroundColor: '#141416', borderRadius: 28, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(168,85,247,0.15)' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 22, paddingBottom: 6 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(168,85,247,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                  <Ionicons name="sparkles" size={22} color="#a855f7" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '800' }}>AI Image Maker</Text>
-                </View>
-                {!isGeneratingImage && (
-                  <Pressable onPress={() => setShowImageModal(false)} hitSlop={12}>
-                    <Ionicons name="close-circle" size={30} color="rgba(255,255,255,0.2)" />
-                  </Pressable>
-                )}
-              </View>
-              {generatedImageUri ? (
-                <View style={{ margin: 16, borderRadius: 16, overflow: 'hidden' }}>
-                  <Image source={{ uri: generatedImageUri }} style={{ width: '100%', aspectRatio: 1, backgroundColor: '#000' }} resizeMode="contain" />
-                </View>
-              ) : isGeneratingImage ? (
-                <View style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 16, aspectRatio: 1.2, backgroundColor: '#0D0D10', alignItems: 'center', justifyContent: 'center' }}>
-                  <ActivityIndicator size="large" color="#a855f7" />
-                  <Text style={{ color: '#CCC', fontSize: 15, fontWeight: '700', marginTop: 16 }}>Creating your image...</Text>
-                </View>
-              ) : (
-                <View style={{ margin: 16 }}>
-                  <TextInput
-                    style={{ color: '#FFF', fontSize: 16, backgroundColor: '#0D0D10', borderRadius: 16, padding: 16, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: 'rgba(168,85,247,0.1)' }}
-                    placeholder="Describe what you want to create..."
-                    placeholderTextColor="#444"
-                    value={imagePromptText}
-                    onChangeText={setImagePromptText}
-                    multiline
-                    autoFocus
-                  />
-                </View>
-              )}
-              <View style={{ padding: 16, gap: 10 }}>
-                {generatedImageUri ? (
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <Pressable style={{ flex: 1, paddingVertical: 15, borderRadius: 30, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center' }} onPress={() => { setGeneratedImageUri(null); setImagePromptText(''); }}>
-                      <Text style={{ color: '#999', fontWeight: '700', fontSize: 14 }}>Try Again</Text>
-                    </Pressable>
-                    <Pressable style={{ flex: 1, borderRadius: 30, overflow: 'hidden' }} onPress={() => { setShowImageModal(false); setPrompt(prev => prev + (prev ? '\n' : '') + '[AI Image attached]'); }}>
-                      <LinearGradient colors={['#a855f7', '#7c3aed']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 15, alignItems: 'center', borderRadius: 30 }}>
-                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 14 }}>Use This Image</Text>
-                      </LinearGradient>
-                    </Pressable>
-                  </View>
-                ) : !isGeneratingImage ? (
-                  <Pressable style={{ borderRadius: 30, overflow: 'hidden' }} onPress={submitImageGeneration} disabled={!imagePromptText.trim()}>
-                    <LinearGradient colors={imagePromptText.trim() ? ['#a855f7', '#7c3aed'] : ['#2A2A2D', '#222']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, borderRadius: 30 }}>
-                      <Ionicons name="color-wand" size={18} color={imagePromptText.trim() ? '#FFF' : '#666'} />
-                      <Text style={{ color: imagePromptText.trim() ? '#FFF' : '#666', fontWeight: '800', fontSize: 15 }}>Generate Image</Text>
-                    </LinearGradient>
-                  </Pressable>
-                ) : (
-                  <Pressable style={{ paddingVertical: 15, borderRadius: 30, borderWidth: 1.5, borderColor: 'rgba(255,59,48,0.2)', alignItems: 'center', backgroundColor: 'rgba(255,59,48,0.06)' }} onPress={() => { setIsGeneratingImage(false); setShowImageModal(false); }}>
-                    <Text style={{ color: '#FF6B6B', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
-                  </Pressable>
-                )}
-              </View>
+          {/* Chat Input Row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="add" size={24} color="#FFF" />
+            </Pressable>
+            
+            <View style={{ flex: 1, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333', borderRadius: 24, paddingVertical: 6, paddingLeft: 16, paddingRight: 6, flexDirection: 'row', alignItems: 'center' }}>
+              <TextInput
+                style={{ flex: 1, color: '#FFF', fontSize: 15, paddingVertical: 6 }}
+                placeholder="Add some awesome sauce..."
+                placeholderTextColor="#666"
+                value={prompt}
+                onChangeText={setPrompt}
+                onSubmitEditing={() => { if(prompt.trim()) { handleEdit(prompt); setPrompt(''); } }}
+                returnKeyType="send"
+              />
+              <Pressable 
+                onPress={() => { if(prompt.trim()) { handleEdit(prompt); setPrompt(''); } }}
+                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons name="arrow-up" size={18} color={prompt.trim() ? '#FFF' : '#666'} />
+              </Pressable>
             </View>
           </View>
-        </Modal>
-      </KeyboardAvoidingView>
+        </Animated.View>
+
+                {renderSharedModals()}
+        {exitModal}
+</KeyboardAvoidingView>
     );
   }
 
@@ -851,7 +1510,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           <Pressable style={styles.closeBtn} onPress={handleCancel}>
             <Ionicons name="close" size={22} color="#FFF" />
           </Pressable>
-          <Text style={styles.genHeaderTitle}>DreamStream</Text>
+          <Text style={styles.genHeaderTitle}>{labsMode ? '⚗️ Labs Engine' : 'DreamStream'}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -859,7 +1518,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           {/* Pulsating energy orb */}
           <Animated.View style={[styles.orbOuter, animatedOrbStyle]}>
             <LinearGradient
-              colors={[colors.primary, '#00E5FF', '#B026FF']}
+              colors={labsMode ? ['#34C759', '#00E5FF', '#4CAF50'] : [colors.primary, '#00E5FF', '#B026FF']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.orbGradient}
@@ -867,9 +1526,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           </Animated.View>
 
           {/* Ambient glow beneath orb */}
-          <View style={[styles.orbGlow, { backgroundColor: colors.primary }]} />
+          <View style={[styles.orbGlow, { backgroundColor: labsMode ? '#34C759' : colors.primary }]} />
 
-          <Text style={styles.genTitle}>Building your universe...</Text>
+          <Text style={styles.genTitle}>{labsMode ? 'Gemma 4 is cooking...' : 'Building your universe...'}</Text>
           <Text style={styles.genSubtitle}>"{prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt}"</Text>
 
           {/* Step indicators */}
@@ -896,6 +1555,20 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             <Text style={styles.cancelBtnText}>Stop Generation</Text>
           </Pressable>
         </View>
+
+        {/* Keep cooking in background */}
+        <Pressable
+          style={{ position: 'absolute', bottom: Math.max(insets.bottom + 12, 30), left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF', paddingVertical: 16, paddingHorizontal: 24, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 8 }}
+          onPress={() => {
+            // Don't cancel the backend job — just return user to idle
+            // The polling mechanism will still pick up the result later
+            setPhase('idle');
+          }}
+        >
+          <Text style={{ fontSize: 20, marginRight: 10 }}>🔥</Text>
+          <Text style={{ color: '#000', fontSize: 16, fontWeight: '800', flex: 1 }}>Keep cooking in background</Text>
+          <Ionicons name="chevron-down-outline" size={18} color="#666" />
+        </Pressable>
       </View>
     );
   }
@@ -905,27 +1578,31 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // ======================
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {/* Full-screen pure purple-to-blue gradient for Create, solid black for Drafts */}
-      {studioTab !== 'drafts' && (
-        <LinearGradient
-          colors={['rgba(88,28,135,0.4)', 'rgba(30,58,138,0.3)', 'rgba(10,20,50,0.1)']}
-          locations={[0, 0.5, 1]}
-          style={StyleSheet.absoluteFillObject}
-        />
-      )}
+      {/* Full-screen purple-to-blue gradient for all tabs */}
+      <LinearGradient
+        colors={['rgba(88,28,135,0.4)', 'rgba(30,58,138,0.3)', 'rgba(10,20,50,0.1)']}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFillObject}
+      />
 
       {/* Header — changes based on active tab */}
       {studioTab === 'create' ? (
         <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={onClose}>
+          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('closeApp')}>
             <Ionicons name="close" size={20} color="#E0E0E0" />
           </Pressable>
           <Text style={styles.headerTitle}>Create your game</Text>
-          <View style={{ width: 38 }} />
+          <Pressable 
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: labsMode ? 'rgba(52,199,89,0.15)' : 'rgba(255,255,255,0.06)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: labsMode ? 'rgba(52,199,89,0.3)' : 'transparent' }}
+            onPress={() => setLabsMode(prev => !prev)}
+          >
+            <Text style={{ fontSize: 14, marginRight: 4 }}>⚗️</Text>
+            <Text style={{ color: labsMode ? '#34C759' : '#888', fontSize: 12, fontWeight: '700' }}>{labsMode ? 'Gemma 4' : 'Labs'}</Text>
+          </Pressable>
         </View>
       ) : studioTab === 'drafts' ? (
         <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={onClose}>
+          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('closeApp')}>
             <Ionicons name="close" size={20} color="#E0E0E0" />
           </Pressable>
           <Text style={styles.headerTitle}>Your Draft</Text>
@@ -935,7 +1612,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         </View>
       ) : (
         <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={onClose}>
+          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('closeApp')}>
             <Ionicons name="close" size={20} color="#E0E0E0" />
           </Pressable>
           <Text style={styles.headerTitle}>Templates</Text>
@@ -963,6 +1640,33 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                 style={styles.inputGlowBorder}
               />
 
+              {/* Attached Assets Visual Row */}
+              {attachedAssets.length > 0 && (
+                <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                    {attachedAssets.map((asset, i) => (
+                      <View key={`attached-${i}`} style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', backgroundColor: '#333' }}>
+                        <Image source={{ uri: asset.thumb || asset.thumbnail || asset.url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                        {asset.type?.includes('audio') || asset.type?.includes('bgm') || asset.type?.includes('sfx') ? (
+                          <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="musical-notes" size={18} color="#FFF" />
+                          </View>
+                        ) : null}
+                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '800' }}>{i + 1}</Text>
+                        </View>
+                        <Pressable 
+                          onPress={() => setAttachedAssets(prev => prev.filter((_, idx) => idx !== i))} 
+                          style={{ position: 'absolute', top: 2, right: 2, backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 12, padding: 2 }}
+                        >
+                          <Ionicons name="close" size={10} color="#FFF" />
+                        </Pressable>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
               {/* Text input area */}
               <TextInput
                 ref={inputRef}
@@ -983,12 +1687,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                   style={styles.surpriseBtn}
                   onPress={() => {
                     const surprises = [
-                      'A hypnotic infinite runner where you dodge falling emoji meteors in space',
-                      'An addictive tower stacking game with physics and chain-reaction explosions',
-                      'A satisfying color-matching puzzle game with chain combos and confetti',
-                      'A zombie office survival game where you throw staplers at undead coworkers',
-                      'A neon rhythm game where you tap beats falling through a cyberpunk city',
-                      'A cat vs laser pointer chase game with ragdoll physics',
+                      'A hypnotic infinite 3D runner where you dodge falling emoji meteors in a neon synthwave space tunnel, with EDM flashing lights syncing to the impact',
+                      'An addictive tower defense game where you place rapid-fire turrets to stop a horde of evolving zombies from reaching the left side of the screen',
+                      'A satisfying physics simulation where you slice watermelons like fruit ninja while avoiding bombs that cause the screen to shake',
+                      'A zombie office survival game where you drag and throw staplers and coffee mugs at undead coworkers with ragdoll physics',
+                      'An intense top-down twin-stick shooter in a neon nightclub where time only moves when you move, letting you dodge bullets matrix-style',
+                      'A funny crazy cat vs laser pointer chase game with ridiculous ragdoll physics and meow sounds when it hits objects',
                     ];
                     setPrompt(surprises[Math.floor(Math.random() * surprises.length)]);
                   }}
@@ -998,7 +1702,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                 </Pressable>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  {prompt.length > 0 && <Text style={styles.charCount}>{prompt.length}</Text>}
                   <Pressable
                     style={[styles.sendBtn, !prompt.trim() && { opacity: 0.3 }]}
                     onPress={handleDream}
@@ -1014,29 +1717,53 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           {/* === MEDIA TOOLBAR === */}
           <Animated.View entering={FadeInUp.delay(200).duration(400)}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
-              <Pressable style={styles.mediaBtn}>
+              <Pressable style={styles.mediaBtn} onPress={() => setShowCommunityImagesModal(true)}>
                 <View style={[styles.mediaIcon, { backgroundColor: 'rgba(168,85,247,0.12)' }]}>
                   <Ionicons name="images-outline" size={26} color="#a855f7" />
                 </View>
                 <Text style={styles.mediaLabel}>Images</Text>
               </Pressable>
-              <Pressable style={styles.mediaBtn}>
+              
+              <Pressable style={styles.mediaBtn} onPress={() => setShowVideosModal(true)}>
+                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(255,107,157,0.12)' }]}>
+                  <Ionicons name="film-outline" size={26} color="#FF6B9D" />
+                </View>
+                <Text style={styles.mediaLabel}>Videos</Text>
+              </Pressable>
+
+              <Pressable style={styles.mediaBtn} onPress={() => { setAudioTab('sfx'); setShowAudioModal(true); }}>
                 <View style={[styles.mediaIcon, { backgroundColor: 'rgba(37,244,238,0.12)' }]}>
-                  <Ionicons name="musical-notes-outline" size={26} color="#25F4EE" />
+                  <Ionicons name="volume-high-outline" size={26} color="#25F4EE" />
                 </View>
                 <Text style={styles.mediaLabel}>Sounds</Text>
               </Pressable>
-              <Pressable style={styles.mediaBtn}>
-                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(255,107,157,0.12)' }]}>
-                  <Ionicons name="happy-outline" size={26} color="#FF6B9D" />
+
+              <Pressable style={styles.mediaBtn} onPress={() => { setAudioTab('bgm'); setShowAudioModal(true); }}>
+                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(120,40,200,0.12)' }]}>
+                  <Ionicons name="musical-notes-outline" size={26} color="#A040FF" />
+                </View>
+                <Text style={styles.mediaLabel}>BGM</Text>
+              </Pressable>
+
+              <Pressable style={styles.mediaBtn} onPress={() => setShowPhotosModal(true)}>
+                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(255,60,100,0.12)' }]}>
+                  <Ionicons name="happy-outline" size={26} color="#FF456A" />
                 </View>
                 <Text style={styles.mediaLabel}>Memes</Text>
               </Pressable>
-              <Pressable style={styles.mediaBtn}>
-                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(255,167,38,0.12)' }]}>
-                  <Ionicons name="sparkles-outline" size={26} color="#FFA726" />
+
+              <Pressable style={styles.mediaBtn} onPress={() => setShowImageModal(true)}>
+                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(255,200,50,0.12)' }]}>
+                  <Ionicons name="sparkles-outline" size={26} color="#FFC832" />
                 </View>
                 <Text style={styles.mediaLabel}>Make Image</Text>
+              </Pressable>
+
+              <Pressable style={styles.mediaBtn} onPress={() => setShowFeaturesModal(true)}>
+                <View style={[styles.mediaIcon, { backgroundColor: 'rgba(255,167,38,0.12)' }]}>
+                  <Ionicons name="hardware-chip-outline" size={26} color="#FFA726" />
+                </View>
+                <Text style={styles.mediaLabel}>Feature</Text>
               </Pressable>
             </ScrollView>
           </Animated.View>
@@ -1077,76 +1804,75 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       {studioTab === 'drafts' && (
         <View style={{ flex: 1 }}>
           {/* Draft count */}
-          <Text style={styles.draftCountLabel}>{drafts.length} drafts</Text>
+          <Animated.View entering={FadeInUp.duration(400)}>
+            <Text style={styles.draftCountLabel}>{drafts.length} drafts</Text>
+          </Animated.View>
 
-          {draftsLoading ? (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator size="large" color="#a855f7" />
-            </View>
-          ) : drafts.length === 0 ? (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          {drafts.length === 0 ? (
+            <Animated.View entering={FadeInUp.delay(100).duration(400)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
               <Ionicons name="folder-open-outline" size={48} color="#333" />
               <Text style={{ color: '#555', fontSize: 16, fontWeight: '600' }}>No drafts yet</Text>
               <Text style={{ color: '#444', fontSize: 13 }}>Games you generate will appear here</Text>
-            </View>
+            </Animated.View>
           ) : (
             <ScrollView
               contentContainerStyle={styles.draftsGrid}
               showsVerticalScrollIndicator={false}
             >
               {drafts.map((draft, index) => (
-                <Pressable
-                  key={draft.id}
-                  style={({ pressed }) => [styles.draftCard, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
-                  onPress={async () => {
-                    try {
-                      const res = await ai.getDraft(draft.id) as any;
-                      if (res?.draft?.html_payload) {
-                        setActiveHtml(res.draft.html_payload);
-                        setActiveDraftId(res.draft.id);
-                        setGameTitle(res.draft.title || 'Untitled Game');
-                        setPhase('preview');
+                <Animated.View key={draft.id} entering={FadeInUp.delay(index * 80).duration(400)}>
+                  <Pressable
+                    style={({ pressed }) => [styles.draftCard, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
+                    onPress={async () => {
+                      try {
+                        const res = await ai.getDraft(draft.id) as any;
+                        if (res?.draft?.html_payload) {
+                          setActiveHtml(res.draft.html_payload);
+                          setActiveDraftId(res.draft.id);
+                          setGameTitle(res.draft.title || 'Untitled Game');
+                          setPhase('preview');
+                        }
+                      } catch (e) {
+                        console.error('Failed to open draft:', e);
                       }
-                    } catch (e) {
-                      console.error('Failed to open draft:', e);
-                    }
-                  }}
-                >
-                  {/* Thumbnail */}
-                  <View style={styles.draftThumbnail}>
-                    {draft.thumbnail ? (
-                      <Image
-                        source={{ uri: draft.thumbnail }}
-                        style={StyleSheet.absoluteFillObject}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <>
-                        <LinearGradient
-                          colors={DRAFT_GRADIENTS[index % DRAFT_GRADIENTS.length]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
+                    }}
+                  >
+                    {/* Thumbnail */}
+                    <View style={styles.draftThumbnail}>
+                      {draft.thumbnail ? (
+                        <Image
+                          source={{ uri: draft.thumbnail }}
                           style={StyleSheet.absoluteFillObject}
+                          resizeMode="cover"
                         />
-                        <Ionicons
-                          name={DRAFT_ICONS[index % DRAFT_ICONS.length]}
-                          size={44}
-                          color="rgba(255,255,255,0.35)"
-                        />
-                      </>
-                    )}
-                    {/* Completed badge */}
-                    <View style={styles.draftBadge}>
-                      <Text style={styles.draftBadgeText}>Completed</Text>
+                      ) : (
+                        <>
+                          <LinearGradient
+                            colors={DRAFT_GRADIENTS[index % DRAFT_GRADIENTS.length]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={StyleSheet.absoluteFillObject}
+                          />
+                          <Ionicons
+                            name={DRAFT_ICONS[index % DRAFT_ICONS.length]}
+                            size={44}
+                            color="rgba(255,255,255,0.35)"
+                          />
+                        </>
+                      )}
+                      {/* Completed badge */}
+                      <View style={styles.draftBadge}>
+                        <Text style={styles.draftBadgeText}>Completed</Text>
+                      </View>
                     </View>
-                  </View>
 
-                  {/* Info */}
-                  <Text style={styles.draftTitle} numberOfLines={1}>
-                    {draft.title || 'Untitled Game'}
-                  </Text>
-                  <Text style={styles.draftDate}>{getTimeAgo(draft.created_at)}</Text>
-                </Pressable>
+                    {/* Info */}
+                    <Text style={styles.draftTitle} numberOfLines={1}>
+                      {draft.title || 'Untitled Game'}
+                    </Text>
+                    <Text style={styles.draftDate}>{getTimeAgo(draft.created_at)}</Text>
+                  </Pressable>
+                </Animated.View>
               ))}
             </ScrollView>
           )}
@@ -1154,13 +1880,78 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       )}
 
       {/* ============================== */}
-      {/* TAB: TEMPLATES (placeholder)   */}
+      {/* TAB: TEMPLATES                 */}
       {/* ============================== */}
       {studioTab === 'templates' && (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-          <Ionicons name="color-wand-outline" size={48} color="#333" />
-          <Text style={{ color: '#555', fontSize: 16, fontWeight: '600' }}>Coming Soon</Text>
-          <Text style={{ color: '#444', fontSize: 13 }}>Pre-built game templates to remix</Text>
+        <View style={{ flex: 1 }}>
+          <Animated.View entering={FadeInUp.duration(400)}>
+            <Text style={styles.draftCountLabel}>{templates.length} templates</Text>
+          </Animated.View>
+
+          {templates.length === 0 ? (
+            <Animated.View entering={FadeInUp.delay(100).duration(400)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <Ionicons name="cube-outline" size={48} color="#333" />
+              <Text style={{ color: '#555', fontSize: 16, fontWeight: '600' }}>No templates yet</Text>
+              <Text style={{ color: '#444', fontSize: 13 }}>Create a game and mark it as a template</Text>
+            </Animated.View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={styles.draftsGrid}
+              showsVerticalScrollIndicator={false}
+            >
+              {templates.map((tpl: any, index: number) => (
+                <Animated.View key={tpl.id} entering={FadeInUp.delay(index * 80).duration(400)}>
+                  <Pressable
+                    style={({ pressed }) => [styles.draftCard, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
+                    onPress={async () => {
+                      try {
+                        const res = await ai.getTemplate(tpl.id) as any;
+                        if (res?.template?.html_payload) {
+                          setActiveHtml(res.template.html_payload);
+                          setActiveDraftId(tpl.id);
+                          setGameTitle(res.template.title || 'Untitled');
+                          setPhase('preview');
+                        }
+                      } catch (e) {
+                        Alert.alert('Error', 'Failed to load template');
+                      }
+                    }}
+                  >
+                    <View style={styles.draftThumbnail}>
+                      {tpl.thumbnail ? (
+                        <Image
+                          source={{ uri: tpl.thumbnail }}
+                          style={StyleSheet.absoluteFillObject}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <>
+                          <LinearGradient
+                            colors={DRAFT_GRADIENTS[index % DRAFT_GRADIENTS.length]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={StyleSheet.absoluteFillObject}
+                          />
+                          <Ionicons
+                            name={DRAFT_ICONS[index % DRAFT_ICONS.length]}
+                            size={44}
+                            color="rgba(255,255,255,0.35)"
+                          />
+                        </>
+                      )}
+                      <View style={[styles.draftBadge, { backgroundColor: 'rgba(168,85,247,0.85)' }]}>
+                        <Text style={styles.draftBadgeText}>Template</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.draftTitle} numberOfLines={1}>
+                      {tpl.title || 'Untitled Game'}
+                    </Text>
+                    <Text style={styles.draftDate}>{tpl.prompt ? tpl.prompt.substring(0, 40) + '...' : 'Tap to remix'}</Text>
+                  </Pressable>
+                </Animated.View>
+              ))}
+            </ScrollView>
+          )}
         </View>
       )}
 
@@ -1205,7 +1996,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           </View>
         </InputAccessoryView>
       )}
-    </View>
+
+            {renderSharedModals()}
+      {exitModal}
+</View>
   );
 };
 
@@ -1551,10 +2345,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   webviewContainer: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginHorizontal: 8,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
   },
   previewBottomBar: {
     flexDirection: 'row',
@@ -1665,12 +2457,15 @@ const styles = StyleSheet.create({
   },
   draftCard: {
     width: (SCREEN_WIDTH - 16 * 2 - 12) / 2,
-    marginBottom: 4,
+    backgroundColor: '#1E1E1F',
+    borderRadius: 20,
+    marginBottom: 8,
+    padding: 6,
   },
   draftThumbnail: {
     width: '100%',
-    aspectRatio: 0.85,
-    borderRadius: 16,
+    aspectRatio: 0.75, // Taller image like the screenshot
+    borderRadius: 14,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1678,27 +2473,30 @@ const styles = StyleSheet.create({
   },
   draftBadge: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 12,
+    bottom: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
   },
   draftBadgeText: {
     color: '#FFF',
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
   },
   draftTitle: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
+    paddingHorizontal: 4,
+    marginBottom: 2,
   },
   draftDate: {
-    color: '#777',
+    color: '#888',
     fontSize: 11,
     fontWeight: '500',
-    marginTop: 2,
+    paddingHorizontal: 4,
+    paddingBottom: 8,
   },
 });
