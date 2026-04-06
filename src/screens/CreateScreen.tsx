@@ -203,6 +203,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const webviewRef = useRef<WebView>(null);
+
+  // Game Config Bridge State (Rezona-style)
+  const [gameConfig, setGameConfig] = useState<Record<string, { type: string; label: string; value: number; min: number; max: number }>>({}); 
+  const [editableSlots, setEditableSlots] = useState<{ id: string; type: string; label: string; src: string }[]>([]);
+  const [showConfigPanel, setShowConfigPanel] = useState(false);
 
   // Core state
   const [prompt, setPrompt] = useState('');
@@ -212,8 +218,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [gameTitle, setGameTitle] = useState('');
   const [activeStep, setActiveStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Modal & UGC state
+  
+  const [showEditor, setShowEditor] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatedImageUri, setGeneratedImageUri] = useState<string | null>(null);
@@ -264,6 +270,105 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+
+  // === WEBVIEW BRIDGE (Rezona Architecture) ===
+  // This JavaScript is injected into the WebView after the game HTML loads.
+  // It reads the <script id="game-config"> block and all data-editable tags,
+  // then sends them back to React Native via window.ReactNativeWebView.postMessage.
+  const BRIDGE_INJECT_JS = `
+    (function() {
+      try {
+        // 1. Parse game-config block
+        var configEl = document.getElementById('game-config');
+        var config = {};
+        if (configEl) {
+          try { config = JSON.parse(configEl.textContent); } catch(e) {}
+          // Populate window.gameConfig for the game to read
+          window.gameConfig = {};
+          for (var k in config) { window.gameConfig[k] = config[k].value; }
+        }
+
+        // 2. Find all data-editable asset slots
+        var editables = document.querySelectorAll('[data-editable]');
+        var slots = [];
+        editables.forEach(function(el) {
+          slots.push({
+            id: el.id,
+            type: el.getAttribute('data-editable'),
+            label: el.getAttribute('data-label') || el.id,
+            src: el.src || ''
+          });
+        });
+
+        // 3. Send back to React Native
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'GAME_BRIDGE_INIT',
+          config: config,
+          slots: slots
+        }));
+
+        // 4. Listen for asset swap commands from React Native
+        window.addEventListener('message', function(event) {
+          try {
+            var msg = JSON.parse(event.data);
+            if (msg.type === 'SWAP_ASSET') {
+              var target = document.getElementById(msg.slotId);
+              if (target) { target.src = msg.newSrc; }
+            } else if (msg.type === 'UPDATE_CONFIG') {
+              if (window.gameConfig) {
+                window.gameConfig[msg.key] = msg.value;
+              }
+            }
+          } catch(e) {}
+        });
+      } catch(e) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'BRIDGE_ERROR', error: e.message }));
+      }
+    })();
+    true;
+  `;
+
+  // Handle messages from the WebView game
+  const handleWebViewMessage = useCallback((event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'GAME_BRIDGE_INIT') {
+        if (data.config && Object.keys(data.config).length > 0) {
+          setGameConfig(data.config);
+          console.log('Bridge: Game config received with', Object.keys(data.config).length, 'params');
+        }
+        if (data.slots && data.slots.length > 0) {
+          setEditableSlots(data.slots);
+          console.log('Bridge: Found', data.slots.length, 'editable asset slots');
+        }
+      }
+    } catch (e) {
+      // Silently ignore non-JSON messages
+    }
+  }, []);
+
+  // Send a config update to the running game
+  const updateGameConfig = useCallback((key: string, value: number) => {
+    setGameConfig(prev => ({
+      ...prev,
+      [key]: { ...prev[key], value }
+    }));
+    webviewRef.current?.postMessage(JSON.stringify({
+      type: 'UPDATE_CONFIG',
+      key,
+      value
+    }));
+  }, []);
+
+  // Swap an editable asset in the running game
+  const swapGameAsset = useCallback((slotId: string, newSrc: string) => {
+    setEditableSlots(prev => prev.map(s => s.id === slotId ? { ...s, src: newSrc } : s));
+    webviewRef.current?.postMessage(JSON.stringify({
+      type: 'SWAP_ASSET',
+      slotId,
+      newSrc
+    }));
+  }, []);
 
   // Animations
   const orbPulse = useSharedValue(1);
@@ -394,7 +499,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         // User cancelled — no error message needed
         return;
       }
-      console.error('AI Generation Error', error);
+      console.error('AI Generation Error', error?.message || error);
       setErrorMsg(error.message || 'Something went wrong');
       setPhase('idle');
     }
@@ -594,7 +699,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         Alert.alert('Upload Failed', uploadData.error || 'Failed');
       }
     } catch (e) {
-      console.log(e);
+      console.log(e?.message || e);
       setIsUploadingAsset(false);
       Alert.alert('Error', 'Asset upload failed');
     }
@@ -712,7 +817,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         onClose();
       }
     } catch (e) {
-      console.error(e);
+      console.error(e.message || e);
     }
   };
 
@@ -1410,17 +1515,26 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
               <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>Preview</Text>
             </View>
           </View>
-          <Pressable 
-            style={[styles.previewPublishPill, { backgroundColor: colors.primary }]} 
-            onPress={() => setPhase('publish')}
-          >
-            <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>Next</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable 
+              onPress={() => setShowEditor(!showEditor)} 
+              style={{ marginRight: 16, backgroundColor: 'rgba(255,255,255,0.1)', padding: 8, borderRadius: 20 }}
+            >
+              <Ionicons name={showEditor ? "eye-outline" : "eye-off-outline"} size={20} color="#FFF" />
+            </Pressable>
+            <Pressable 
+              style={[styles.previewPublishPill, { backgroundColor: colors.primary }]} 
+              onPress={() => setPhase('publish')}
+            >
+              <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>Next</Text>
+            </Pressable>
+          </View>
         </Animated.View>
 
         {/* === GAME WEBVIEW === */}
         <View style={styles.webviewContainer}>
           <WebView
+            ref={webviewRef}
             source={{ html: activeHtml, baseUrl: 'https://gametok.app' }}
             style={{ flex: 1, backgroundColor: '#000' }}
             originWhitelist={['*']}
@@ -1432,8 +1546,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             mixedContentMode="always"
             allowUniversalAccessFromFileURLs={true}
             allowFileAccessFromFileURLs={true}
-            onError={(e) => console.log('WebView Error:', e.nativeEvent)}
-            onHttpError={(e) => console.log('WebView HTTP Error:', e.nativeEvent)}
+            injectedJavaScript={BRIDGE_INJECT_JS}
+            onMessage={handleWebViewMessage}
+            onError={(e) => console.log('WebView Error: code', e.nativeEvent.code)}
+            onHttpError={(e) => console.log('WebView HTTP Error: code', e.nativeEvent.statusCode)}
           />
           {keyboardVisible && (
             <Pressable style={[StyleSheet.absoluteFill, { zIndex: 999 }]} onPress={() => Keyboard.dismiss()} />
@@ -1441,58 +1557,59 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         </View>
 
         {/* === BOTTOM TOOL STRIP & INPUT === */}
-        <Animated.View entering={SlideInDown.duration(500)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16) }}>
-          {/* Media Toolbar Pill */}
-          {!keyboardVisible && (
-            <Animated.View 
-              entering={FadeInDown.duration(300)} 
-              exiting={FadeOutDown.duration(200)}
-              style={{ backgroundColor: '#1E1E1E', borderRadius: 40, paddingVertical: 14, paddingHorizontal: 24, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}
-            >
-              {[
-                { icon: 'options', label: 'Modify', action: handleModify },
-                { icon: 'color-palette-outline', label: 'Colors', action: () => setShowColorsModal(true) },
-                { icon: 'image-outline', label: 'Memes', action: () => setShowPhotosModal(true) },
-                { icon: 'film-outline', label: 'Videos', action: () => setShowVideosModal(true) },
-                { icon: 'musical-notes-outline', label: 'Sounds', action: () => setShowAudioModal(true) },
-              ].map((tool, i) => (
-                <Pressable key={i} style={{ alignItems: 'center', gap: 6 }} onPress={tool.action}>
-                  <Ionicons name={tool.icon as any} size={22} color="#D2CDC5" />
-                  <Text style={{ color: '#888', fontSize: 11, fontWeight: '500' }}>{tool.label}</Text>
-                </Pressable>
-              ))}
-            </Animated.View>
-          )}
-
-          {/* Chat Input Row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Pressable style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="add" size={24} color="#FFF" />
-            </Pressable>
-            
-            <View style={{ flex: 1, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333', borderRadius: 24, paddingVertical: 6, paddingLeft: 16, paddingRight: 6, flexDirection: 'row', alignItems: 'center' }}>
-              <TextInput
-                style={{ flex: 1, color: '#FFF', fontSize: 15, paddingVertical: 6 }}
-                placeholder="Add some awesome sauce..."
-                placeholderTextColor="#666"
-                value={prompt}
-                onChangeText={setPrompt}
-                onSubmitEditing={() => { if(prompt.trim()) { handleEdit(prompt); setPrompt(''); } }}
-                returnKeyType="send"
-              />
-              <Pressable 
-                onPress={() => { if(prompt.trim()) { handleEdit(prompt); setPrompt(''); } }}
-                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' }}
+        {showEditor && (
+          <Animated.View entering={SlideInDown.duration(500)} exiting={SlideOutDown.duration(300)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16) }}>
+            {/* Media Toolbar Pill */}
+            {!keyboardVisible && (
+              <Animated.View 
+                entering={FadeInDown.duration(300)} 
+                exiting={FadeOutDown.duration(200)}
+                style={{ backgroundColor: '#1E1E1E', borderRadius: 40, paddingVertical: 14, paddingHorizontal: 24, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}
               >
-                <Ionicons name="arrow-up" size={18} color={prompt.trim() ? '#FFF' : '#666'} />
-              </Pressable>
-            </View>
-          </View>
-        </Animated.View>
+                {[
+                  { icon: 'options', label: 'Modify', action: handleModify },
+                  { icon: 'color-palette-outline', label: 'Colors', action: () => setShowColorsModal(true) },
+                  { icon: 'image-outline', label: 'Memes', action: () => setShowPhotosModal(true) },
+                  { icon: 'film-outline', label: 'Videos', action: () => setShowVideosModal(true) },
+                  { icon: 'musical-notes-outline', label: 'Sounds', action: () => setShowAudioModal(true) },
+                ].map((tool, i) => (
+                  <Pressable key={i} style={{ alignItems: 'center', gap: 6 }} onPress={tool.action}>
+                    <Ionicons name={tool.icon as any} size={22} color="#D2CDC5" />
+                    <Text style={{ color: '#888', fontSize: 11, fontWeight: '500' }}>{tool.label}</Text>
+                  </Pressable>
+                ))}
+              </Animated.View>
+            )}
 
-                {renderSharedModals()}
+            {/* Chat Input Row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Pressable style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="add" size={24} color="#FFF" />
+              </Pressable>
+              
+              <View style={{ flex: 1, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333', borderRadius: 24, paddingVertical: 6, paddingLeft: 16, paddingRight: 6, flexDirection: 'row', alignItems: 'center' }}>
+                <TextInput
+                  style={{ flex: 1, color: '#FFF', fontSize: 15, paddingVertical: 6 }}
+                  placeholder="Add some awesome sauce..."
+                  placeholderTextColor="#666"
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  onSubmitEditing={() => { if(prompt.trim()) { handleEdit(prompt); setPrompt(''); } }}
+                  returnKeyType="send"
+                />
+                <Pressable 
+                  onPress={() => { if(prompt.trim()) { handleEdit(prompt); setPrompt(''); } }}
+                  style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ionicons name="arrow-up" size={18} color={prompt.trim() ? '#FFF' : '#666'} />
+                </Pressable>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+        {renderSharedModals()}
         {exitModal}
-</KeyboardAvoidingView>
+      </KeyboardAvoidingView>
     );
   }
 
