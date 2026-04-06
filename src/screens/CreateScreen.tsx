@@ -1612,6 +1612,21 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             </View>
           </Animated.View>
         )}
+
+        {/* === EDIT ERROR TOAST (visible in preview) === */}
+        {errorMsg && (
+          <Animated.View 
+            entering={FadeInDown.duration(300)}
+            style={{ position: 'absolute', top: insets.top + 60, left: 16, right: 16, zIndex: 20, backgroundColor: 'rgba(255,59,48,0.95)', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          >
+            <Ionicons name="warning" size={18} color="#FFF" />
+            <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={2}>{errorMsg}</Text>
+            <Pressable onPress={() => setErrorMsg(null)}>
+              <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          </Animated.View>
+        )}
+
         {renderSharedModals()}
         {exitModal}
       </KeyboardAvoidingView>
