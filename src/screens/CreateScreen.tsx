@@ -763,6 +763,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       cancelRef.current = null;
       if (res.success && res.htmlPreview) {
         setActiveHtml(res.htmlPreview);
+        // CRITICAL: Update the active draft to the NEW version so subsequent edits chain correctly
+        if (res.draftId) {
+          setActiveDraftId(res.draftId);
+        }
         setPhase('preview');
       } else {
         throw new Error(res.error || 'Failed to modify game.');
@@ -770,7 +774,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     } catch (err: any) {
       if (err.message !== 'aborted') {
         setErrorMsg(err.message || 'Check your connection and try again.');
-        setPhase('idle');
+        setPhase('preview'); // Stay on preview instead of going to idle — the original game is still playable
       }
     }
   };
