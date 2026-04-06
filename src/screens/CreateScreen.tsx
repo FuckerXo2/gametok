@@ -31,6 +31,7 @@ import Animated, {
   FadeInDown,
   FadeInUp,
   FadeOutDown,
+  SlideOutDown,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
