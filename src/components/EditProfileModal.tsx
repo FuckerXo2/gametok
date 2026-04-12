@@ -18,7 +18,6 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { users } from '../services/api';
 import { Avatar } from './Avatar';
-import { AvatarCreatorModal, AvatarConfig, getAvatarById } from './AvatarCreator';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -34,9 +33,6 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
   const [bio, setBio] = useState(user?.bio || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar || '');
   const [isSaving, setIsSaving] = useState(false);
-  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
-  const [localAvatarImage, setLocalAvatarImage] = useState<any>(null);
-  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
 
   // Reset form when modal opens
   React.useEffect(() => {
@@ -44,7 +40,6 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
       setDisplayName(user.displayName || '');
       setBio(user.bio || '');
       setAvatarUrl(user.avatar || '');
-      setLocalAvatarImage(null);
     }
   }, [visible, user]);
 
@@ -69,34 +64,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
     }
   };
 
-  const handleAvatarCreated = (config: AvatarConfig, imageSource: any) => {
-    setAvatarConfig(config);
-    setLocalAvatarImage(imageSource);
-    setAvatarUrl(`avatar-creator://${config.avatarId}?bg=${encodeURIComponent(config.backgroundColor)}`);
-    setShowAvatarCreator(false);
-  };
-
-  // Determine what avatar to show in the preview
   const renderAvatarPreview = () => {
-    if (localAvatarImage && avatarConfig) {
-      return (
-        <View style={styles.avatarWrapper}>
-          <View style={[styles.creatorAvatarPreview, { backgroundColor: avatarConfig.backgroundColor }]}>
-            <Image source={localAvatarImage} style={styles.creatorAvatarImage} />
-          </View>
-          <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
-            <Ionicons name="sparkles" size={16} color="#fff" />
-          </View>
-        </View>
-      );
-    }
-
     return (
       <View style={styles.avatarWrapper}>
         <Avatar uri={avatarUrl || null} size={96} />
-        <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
-          <Ionicons name="sparkles" size={16} color="#fff" />
-        </View>
       </View>
     );
   };
@@ -123,17 +94,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={() => setShowAvatarCreator(true)}>
-              {renderAvatarPreview()}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.createAvatarBtn, { backgroundColor: colors.primary }]}
-              onPress={() => setShowAvatarCreator(true)}
-            >
-              <Ionicons name="sparkles" size={16} color="#fff" />
-              <Text style={styles.createAvatarText}>Create Avatar</Text>
-            </TouchableOpacity>
+            {renderAvatarPreview()}
           </View>
 
           {/* Display Name */}
@@ -167,14 +128,6 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
           <View style={{ height: 100 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Avatar Creator Modal */}
-      <AvatarCreatorModal
-        visible={showAvatarCreator}
-        onClose={() => setShowAvatarCreator(false)}
-        onSave={handleAvatarCreated}
-        initialConfig={avatarConfig || undefined}
-      />
     </SlideRightModal>
   );
 };
@@ -195,44 +148,6 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 20 },
   avatarSection: { alignItems: 'center', marginBottom: 32 },
   avatarWrapper: { position: 'relative', marginBottom: 12 },
-  editBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#000',
-  },
-  creatorAvatarPreview: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  creatorAvatarImage: {
-    width: 96,
-    height: 96,
-    resizeMode: 'cover',
-  },
-  createAvatarBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 22,
-    gap: 6,
-  },
-  createAvatarText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-  },
   section: { marginBottom: 28 },
   sectionTitle: { fontSize: 15, fontWeight: '600', marginBottom: 12 },
   input: {

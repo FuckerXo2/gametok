@@ -33,7 +33,11 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: 
   // Use caller's signal if provided (for cancellation), otherwise create one for timeout
   const externalSignal = options.signal as AbortSignal | undefined;
   const controller = new AbortController();
-  const timeout = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let didTimeout = false;
+  const timeout = timeoutMs ? setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs) : null;
 
   // If external signal aborts, propagate to our controller
   if (externalSignal) {
@@ -69,6 +73,13 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: 
     }
 
     return data;
+  } catch (error: any) {
+    if (didTimeout) {
+      const timeoutError: any = new Error('Request timed out.');
+      timeoutError.code = 'REQUEST_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
   }
@@ -444,18 +455,18 @@ export const multiplayer = {
   },
 };
 
-// DreamStream AI Engine API
+// // DreamStream AI Engine API
 export const ai = {
-  dreamLabs: (prompt: string) => {
+  dreamLabs: (prompt: string, attachments: any[] = []) => {
     const controller = new AbortController();
     
     const promise = new Promise(async (resolve, reject) => {
       try {
         const res = await request('/ai/dream-labs', {
           method: 'POST',
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, attachments }),
           signal: controller.signal,
-        }, 60000);
+        }, 300000); // Allow up to 5 minutes for the initial DreamLabs job handshake
 
         if (!res.jobId && res.htmlPreview) {
           resolve(res);
@@ -496,7 +507,7 @@ export const ai = {
 
     return { promise, cancel: () => controller.abort() };
   },
-  dream: (prompt: string) => {
+  dream: (prompt: string, attachments: any[] = []) => {
     const controller = new AbortController();
     
     const promise = new Promise(async (resolve, reject) => {
@@ -504,9 +515,9 @@ export const ai = {
         // Step 1: Tell backend to start generation process and return immediately
         const res = await request('/ai/dream', {
           method: 'POST',
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, attachments }),
           signal: controller.signal,
-        }, 60000); // 60s timeout to allow for Railway cold starts
+        }, 300000); // Allow up to 5 minutes for the initial Dream job handshake
 
         // Fallback or legacy instant-return support
         if (!res.jobId && res.htmlPreview) {
@@ -552,16 +563,16 @@ export const ai = {
 
     return { promise, cancel: () => controller.abort() };
   },
-  edit: (draftId: string, instructions: string, newAsset?: any) => {
+  edit: (draftId: string, instructions: string, newAsset?: any, attachments: any[] = []) => {
     const controller = new AbortController();
     
     const promise = new Promise(async (resolve, reject) => {
       try {
         const res = await request('/ai/edit', {
           method: 'POST',
-          body: JSON.stringify({ draftId, instructions, newAsset }),
+          body: JSON.stringify({ draftId, instructions, newAsset, attachments }),
           signal: controller.signal,
-        }, 20000);
+        }, 300000); // Allow up to 5 minutes for the initial edit job handshake
 
         if (!res.jobId && res.htmlPreview) {
           resolve(res);

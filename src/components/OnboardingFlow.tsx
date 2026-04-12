@@ -43,7 +43,7 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
-import { AvatarCreatorModal, AvatarConfig, getAvatarById } from './AvatarCreator';
+import { Avatar } from './Avatar';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -395,9 +395,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [avatar, setAvatar] = useState<string | null>(null);
-  const [showAvatarCreator, setShowAvatarCreator] = useState(false);
-  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig | null>(null);
-  const [localAvatarImage, setLocalAvatarImage] = useState<any>(null);
 
   // Check Apple Sign-In
   useEffect(() => {
@@ -529,14 +526,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onComplete();
-  };
-
-  const handleAvatarCreated = (config: AvatarConfig, imageSource: any) => {
-    setAvatarConfig(config);
-    setLocalAvatarImage(imageSource);
-    setAvatar(`avatar-creator://${config.avatarId}?bg=${encodeURIComponent(config.backgroundColor)}`);
-    setShowAvatarCreator(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const toggleGenre = (id: string) => {
@@ -839,30 +828,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           Set up your profile
         </Animated.Text>
         <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>
-          Create your avatar and tell us about yourself
+          Tell us about yourself
         </Animated.Text>
 
         <Animated.View entering={ZoomIn.delay(300).springify()}>
-          <TouchableOpacity style={styles.avatarPicker} onPress={() => setShowAvatarCreator(true)}>
-            {localAvatarImage && avatarConfig ? (
-              <View style={[styles.avatarImage, { backgroundColor: avatarConfig.backgroundColor, overflow: 'hidden' }]}>
-                <Image source={localAvatarImage} style={styles.avatarImage} />
-              </View>
-            ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name="sparkles" size={32} color={colors.textSecondary} />
-              </View>
-            )}
-            <View style={[styles.avatarBadge, { backgroundColor: '#a855f7' }]}>
-              <Ionicons name="add" size={16} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        <Animated.View entering={BounceIn.delay(500)}>
-          <TouchableOpacity style={styles.createAvatarBtnOnboarding} onPress={() => setShowAvatarCreator(true)}>
-            <Text style={styles.createAvatarTextOnboarding}>✨ Create Your Avatar</Text>
-          </TouchableOpacity>
+          <View style={styles.avatarPicker}>
+            <Avatar uri={avatar} size={120} />
+          </View>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(600).springify()} style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -902,12 +874,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         </TouchableOpacity>
       </View>
 
-      <AvatarCreatorModal
-        visible={showAvatarCreator}
-        onClose={() => setShowAvatarCreator(false)}
-        onSave={handleAvatarCreated}
-        initialConfig={avatarConfig || undefined}
-      />
     </KeyboardAvoidingView>
   );
 

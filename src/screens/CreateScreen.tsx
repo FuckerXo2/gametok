@@ -96,6 +96,17 @@ interface CreateScreenProps {
   onClose: () => void;
 }
 
+type StructuredAttachment = {
+  type: string;
+  url: string;
+  thumb?: string;
+  thumbnail?: string;
+  title?: string;
+  label?: string;
+  instruction: string;
+  duration?: string;
+};
+
 // =============================================
 // GENRE CHIP DATA
 // =============================================
@@ -174,6 +185,13 @@ const GENERATION_STEPS = [
   { icon: 'musical-notes', text: 'Generating audio...' },
 ];
 
+const COOKING_STATUS_LINES = [
+  'Wizard is scribbling the game rules...',
+  'Knight is keeping the forge safe...',
+  'Teaching the zombies how to lose...',
+  'Sanding the rough edges off the fun...',
+];
+
 // =============================================
 // STEP INDICATOR COMPONENT (for generation phase)
 // =============================================
@@ -205,6 +223,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const inputRef = useRef<TextInput>(null);
   const cancelRef = useRef<(() => void) | null>(null);
   const webviewRef = useRef<WebView>(null);
+  const enemyIdRef = useRef(0);
 
   // Game Config Bridge State (Rezona-style)
   const [gameConfig, setGameConfig] = useState<Record<string, { type: string; label: string; value: number; min: number; max: number }>>({}); 
@@ -219,6 +238,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [gameTitle, setGameTitle] = useState('');
   const [activeStep, setActiveStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [knightLane, setKnightLane] = useState(1);
+  const [sceneEnemies, setSceneEnemies] = useState<Array<{ id: number; lane: number; depth: number; kind: 'zombie' | 'ghoul' }>>([]);
+  const [defeatedEnemies, setDefeatedEnemies] = useState(0);
+  const [wizardHeat, setWizardHeat] = useState(24);
+  const [swingTick, setSwingTick] = useState(0);
   
   const [showEditor, setShowEditor] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -330,6 +354,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   `;
 
   // Handle messages from the WebView game
+  const showPreviewError = useCallback((message: string) => {
+    if (!message) return;
+    setErrorMsg(message.length > 180 ? message.slice(0, 177) + '...' : message);
+  }, []);
+
   const handleWebViewMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
@@ -342,11 +371,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           setEditableSlots(data.slots);
           console.log('Bridge: Found', data.slots.length, 'editable asset slots');
         }
+        setErrorMsg(null);
+      } else if (data.type === 'BRIDGE_ERROR') {
+        showPreviewError(`Preview bridge error: ${data.error || 'Bridge initialization failed.'}`);
+      } else if (data.type === 'RUNTIME_ERROR') {
+        const label = data.kind || 'Preview runtime error';
+        const detail = data.detail || 'The generated game failed while running.';
+        showPreviewError(`${label}: ${detail}`);
       }
     } catch (e) {
       // Silently ignore non-JSON messages
     }
-  }, []);
+  }, [showPreviewError]);
 
   // Send a config update to the running game
   const updateGameConfig = useCallback((key: string, value: number) => {
@@ -454,6 +490,66 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     return () => clearInterval(interval);
   }, [phase]);
 
+  useEffect(() => {
+    if (phase !== 'generating') return;
+
+    enemyIdRef.current = 0;
+    setKnightLane(1);
+    setSceneEnemies([]);
+    setDefeatedEnemies(0);
+    setWizardHeat(24);
+    setSwingTick(0);
+
+    const interval = setInterval(() => {
+      setSwingTick((prev) => prev + 1);
+      setWizardHeat((prev) => Math.max(16, prev - 1));
+      setSceneEnemies((prev) => {
+        let defeated = 0;
+        let slipped = 0;
+
+        let next = prev
+          .map((enemy) => ({ ...enemy, depth: enemy.depth + 1 }))
+          .filter((enemy) => {
+            const inStrikeZone = enemy.depth >= 4 && enemy.depth <= 5 && enemy.lane === knightLane;
+            if (inStrikeZone) {
+              defeated += 1;
+              return false;
+            }
+            if (enemy.depth > 6) {
+              slipped += 1;
+              return false;
+            }
+            return true;
+          });
+
+        if (defeated > 0) {
+          setDefeatedEnemies((prevDefeated) => prevDefeated + defeated);
+          setWizardHeat((prevHeat) => Math.min(100, prevHeat + defeated * 5));
+        }
+
+        if (slipped > 0) {
+          setWizardHeat((prevHeat) => Math.max(8, prevHeat - slipped * 8));
+        }
+
+        if (next.length < 7 && Math.random() < 0.8) {
+          next = [
+            ...next,
+            {
+              id: enemyIdRef.current++,
+              lane: Math.floor(Math.random() * 3),
+              depth: 0,
+              kind: Math.random() > 0.72 ? 'ghoul' : 'zombie',
+            },
+          ];
+        }
+
+        return next;
+      });
+    }, 520);
+
+    return () => clearInterval(interval);
+  }, [phase, knightLane]);
+
   const animatedOrbStyle = useAnimatedStyle(() => ({
     transform: [{ scale: orbPulse.value }, { rotate: `${orbRotation.value}deg` } as any],
   }));
@@ -466,26 +562,56 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setPrompt(randomPrompt);
   };
 
-  const handleDream = async () => {
-    let finalPrompt = prompt.trim();
-    if (!finalPrompt || phase === 'generating') return;
+  const formatDreamError = useCallback((error: any, mode: 'generate' | 'edit' = 'generate') => {
+    const fallback = mode === 'edit'
+      ? 'Could not update the game right now. Please try again.'
+      : 'Could not generate the game right now. Please try again.';
 
-    if (attachedAssets.length > 0) {
-      finalPrompt += `\n\n[USER ATTACHED ASSETS (REQUIRED)]\n`;
-      attachedAssets.forEach((a, i) => {
-        finalPrompt += `Asset (${i+1}): ${a.instruction}\n`;
-      });
+    if (!error) return fallback;
+
+    const message = String(error.message || error);
+    if (error.name === 'AbortError' || message.includes('aborted')) {
+      return null;
     }
+
+    if (error.code === 'REQUEST_TIMEOUT' || /timed out/i.test(message)) {
+      return mode === 'edit'
+        ? 'The update request took too long to start. Railway may be cold or the AI backend is overloaded. Try again in a moment.'
+        : 'The generation request took too long to start. Railway may be cold or the AI backend is overloaded. Try again in a moment.';
+    }
+
+    if (/network request failed/i.test(message)) {
+      return 'Could not reach the AI backend. Check your connection and try again.';
+    }
+
+    return message || fallback;
+  }, []);
+
+  const handleDream = async () => {
+    const finalPrompt = prompt.trim();
+    if (!finalPrompt || phase === 'generating') return;
 
     setPhase('generating');
     setErrorMsg(null);
 
     try {
-      const { promise, cancel } = labsMode ? ai.dreamLabs(finalPrompt) : ai.dream(finalPrompt);
+      const attachments = attachedAssets.map(({ type, url, thumb, thumbnail, title, label, instruction, duration }) => ({
+        type,
+        url,
+        thumb,
+        thumbnail,
+        title,
+        label,
+        instruction,
+        duration,
+      }));
+      const { promise, cancel } = labsMode ? ai.dreamLabs(finalPrompt, attachments) : ai.dream(finalPrompt, attachments);
       cancelRef.current = cancel;
       const res = await promise as any;
       cancelRef.current = null;
       if (res.success && res.htmlPreview) {
+        setGameConfig({});
+        setEditableSlots([]);
         setActiveHtml(res.htmlPreview);
         setActiveDraftId(res.draftId);
         setGameTitle(res.title || 'Untitled Dream');
@@ -496,12 +622,13 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       }
     } catch (error: any) {
       cancelRef.current = null;
-      if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      const friendlyMessage = formatDreamError(error, 'generate');
+      if (!friendlyMessage) {
         // User cancelled — no error message needed
         return;
       }
-      console.error('AI Generation Error', error?.message || error);
-      setErrorMsg(error.message || 'Something went wrong');
+      console.warn('AI Generation Warning:', error?.message || error);
+      setErrorMsg(friendlyMessage);
       setPhase('idle');
     }
   };
@@ -699,7 +826,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       } else {
         Alert.alert('Upload Failed', uploadData.error || 'Failed');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.log(e?.message || e);
       setIsUploadingAsset(false);
       Alert.alert('Error', 'Asset upload failed');
@@ -733,24 +860,63 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setPhase('idle');
   };
 
-  const handleAssetSelect = (item: any, fallbackInstruction: string) => {
-    if (!activeDraftId) {
-      if (!attachedAssets.find(a => a.url === item.url)) {
-        const newItem = { ...item, instruction: fallbackInstruction };
-        setAttachedAssets(prev => [...prev, newItem]);
-      }
-    } else {
-      handleEdit(fallbackInstruction);
+  const normalizeAttachmentType = (type: string | undefined) => {
+    const normalized = String(type || '').trim().toLowerCase();
+    switch (normalized) {
+      case 'photo':
+      case 'gif':
+      case 'sticker':
+        return 'image';
+      case 'music':
+        return 'bgm';
+      case 'audio':
+        return 'sfx';
+      default:
+        return normalized || 'image';
     }
   };
 
-  const handleEdit = async (instructionsText: string, newAsset?: { key: string; base64: string }) => {
+  const toStructuredAttachment = (item: any, fallbackInstruction: string): StructuredAttachment => ({
+    type: normalizeAttachmentType(item?.type),
+    url: String(item?.url || '').trim(),
+    thumb: item?.thumb || item?.thumbnail || item?.url,
+    thumbnail: item?.thumbnail || item?.thumb || item?.url,
+    title: item?.title || item?.label || '',
+    label: item?.label || item?.title || '',
+    instruction: String(item?.instruction || fallbackInstruction || '').trim(),
+    duration: item?.duration || '',
+  });
+
+  const handleAssetSelect = (item: any, fallbackInstruction: string) => {
+    const attachment = toStructuredAttachment(item, fallbackInstruction);
+    if (!attachment.url || !attachment.instruction) return;
+
+    if (!activeDraftId) {
+      if (!attachedAssets.find(a => a.url === attachment.url)) {
+        setAttachedAssets(prev => [...prev, attachment]);
+      }
+    } else {
+      handleEdit(attachment.instruction, undefined, [attachment]);
+    }
+  };
+
+  const handleEdit = async (
+    instructionsText: string,
+    newAsset?: { key: string; base64: string },
+    attachments: StructuredAttachment[] = []
+  ) => {
     const instructions = instructionsText.trim();
     if (!instructions) return;
 
     if (!activeDraftId) {
-      // If the game hasn't been generated yet, append the asset instruction to the prompt text box
-      setPrompt(prev => prev + (prev ? '\n' : '') + `[Asset Added: ${instructions}]`);
+      if (attachments.length > 0) {
+        setAttachedAssets(prev => {
+          const existingUrls = new Set(prev.map(asset => asset.url));
+          const unique = attachments.filter(asset => asset.url && !existingUrls.has(asset.url));
+          return unique.length > 0 ? [...prev, ...unique] : prev;
+        });
+      }
+      setPrompt(prev => prev + (prev ? '\n' : '') + `[Edit Requested: ${instructions}]`);
       return;
     }
 
@@ -758,7 +924,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setErrorMsg(null);
 
     try {
-      const { promise, cancel } = ai.edit(activeDraftId, instructions, newAsset);
+      const { promise, cancel } = ai.edit(activeDraftId, instructions, newAsset, attachments);
       cancelRef.current = cancel;
       const res = await promise as any;
       cancelRef.current = null;
@@ -773,8 +939,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         throw new Error(res.error || 'Failed to modify game.');
       }
     } catch (err: any) {
-      if (err.message !== 'aborted') {
-        setErrorMsg(err.message || 'Check your connection and try again.');
+      const friendlyMessage = formatDreamError(err, 'edit');
+      if (friendlyMessage) {
+        setErrorMsg(friendlyMessage);
         setPhase('preview'); // Stay on preview instead of going to idle — the original game is still playable
       }
     }
@@ -784,6 +951,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setActiveHtml(null);
     setActiveDraftId(null);
     setGameTitle('');
+    setGameConfig({});
+    setEditableSlots([]);
+    setErrorMsg(null);
     setPhase('idle');
   };
 
@@ -821,8 +991,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         handleRegenerate();
         onClose();
       }
-    } catch (e) {
-      console.error(e.message || e);
+    } catch (e: any) {
+      console.error(e?.message || e);
     }
   };
 
@@ -1552,9 +1722,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             allowUniversalAccessFromFileURLs={true}
             allowFileAccessFromFileURLs={true}
             injectedJavaScript={BRIDGE_INJECT_JS}
+            onLoadStart={() => setErrorMsg(null)}
             onMessage={handleWebViewMessage}
-            onError={(e) => console.log('WebView Error: code', e.nativeEvent.code)}
-            onHttpError={(e) => console.log('WebView HTTP Error: code', e.nativeEvent.statusCode)}
+            onError={(e) => {
+              console.log('WebView Error: code', e.nativeEvent.code);
+              showPreviewError(`Preview WebView failed to load (code ${e.nativeEvent.code}).`);
+            }}
+            onHttpError={(e) => {
+              console.log('WebView HTTP Error: code', e.nativeEvent.statusCode);
+              showPreviewError(`Preview HTTP error ${e.nativeEvent.statusCode}.`);
+            }}
           />
           {keyboardVisible && (
             <Pressable style={[StyleSheet.absoluteFill, { zIndex: 999 }]} onPress={() => Keyboard.dismiss()} />
@@ -1639,41 +1816,127 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   if (phase === 'generating') {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <LinearGradient
+          colors={labsMode ? ['#0b1f17', '#143a2d', '#10231d'] : ['#2a1207', '#4a1d0c', '#120f18']}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.forgeBackdropGlow} />
+
         <View style={styles.genHeader}>
           <Pressable style={styles.closeBtn} onPress={handleCancel}>
             <Ionicons name="close" size={22} color="#FFF" />
           </Pressable>
-          <Text style={styles.genHeaderTitle}>{labsMode ? 'Labs Engine' : 'DreamStream'}</Text>
+          <View style={styles.forgeHeaderChip}>
+            <Text style={styles.forgeHeaderChipText}>{labsMode ? 'Labs Forge' : 'Dream Forge'}</Text>
+          </View>
           <View style={{ width: 40 }} />
         </View>
 
         <View style={styles.generatingContainer}>
-          {/* Pulsating energy orb */}
-          <Animated.View style={[styles.orbOuter, animatedOrbStyle]}>
+          <Text style={styles.genTitle}>Protect The Forge</Text>
+          <Text style={styles.genSubtitle}>Move the knight between lanes while the wizard cooks your game.</Text>
+
+          <View style={styles.promptSnippetCard}>
+            <Text style={styles.promptSnippetLabel}>CURRENT SPELL</Text>
+            <Text style={styles.promptSnippetText}>"{prompt.length > 86 ? prompt.substring(0, 86) + '...' : prompt}"</Text>
+          </View>
+
+          <View style={styles.forgeSceneCard}>
             <LinearGradient
-              colors={labsMode ? ['#34C759', '#00E5FF', '#4CAF50'] : [colors.primary, '#00E5FF', '#B026FF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.orbGradient}
+              colors={labsMode ? ['rgba(27,74,56,0.9)', 'rgba(15,34,28,0.96)'] : ['rgba(73,34,15,0.92)', 'rgba(22,18,28,0.98)']}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
             />
-          </Animated.View>
 
-          {/* Ambient glow beneath orb */}
-          <View style={[styles.orbGlow, { backgroundColor: labsMode ? '#34C759' : colors.primary }]} />
+            <View style={styles.forgeSkyRunes}>
+              <Text style={styles.forgeRune}>+</Text>
+              <Text style={styles.forgeRune}>{"{}"}</Text>
+              <Text style={styles.forgeRune}>*</Text>
+            </View>
 
-          <Text style={styles.genTitle}>{labsMode ? 'Gemma 4 is cooking...' : 'Building your universe...'}</Text>
-          <Text style={styles.genSubtitle}>"{prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt}"</Text>
+            <View style={styles.forgeLanes}>
+              {[0, 1, 2].map((lane) => (
+                <View key={lane} style={styles.forgeLaneLine} />
+              ))}
+            </View>
 
-          {/* Step indicators */}
-          <View style={styles.stepsContainer}>
-            {GENERATION_STEPS.map((step, i) => (
-              <StepIndicator
-                key={i}
-                step={step}
-                isActive={i === activeStep}
-                isComplete={i < activeStep}
-              />
+            <Animated.View
+              style={[
+                styles.wizardAura,
+                animatedOrbStyle,
+                { backgroundColor: labsMode ? 'rgba(91, 214, 153, 0.24)' : 'rgba(255, 153, 72, 0.22)' },
+              ]}
+            />
+
+            <View style={styles.wizardStation}>
+              <Text style={styles.wizardEmoji}>🧙</Text>
+              <View style={styles.cauldron}>
+                <View style={[styles.cauldronGlow, { opacity: 0.45 + wizardHeat / 220 }]} />
+                <View style={styles.cauldronPot} />
+              </View>
+            </View>
+
+            {sceneEnemies.map((enemy) => (
+              <View
+                key={enemy.id}
+                style={[
+                  styles.enemyDot,
+                  {
+                    left: `${18 + enemy.lane * 31}%`,
+                    top: `${8 + enemy.depth * 11}%`,
+                    backgroundColor: enemy.kind === 'ghoul' ? '#B0FF61' : '#72E05D',
+                    transform: [{ rotate: enemy.kind === 'ghoul' ? '-8deg' : '6deg' }],
+                  },
+                ]}
+              >
+                <Text style={styles.enemyFace}>{enemy.kind === 'ghoul' ? '☠︎' : '✕✕'}</Text>
+              </View>
             ))}
+
+            <View
+              style={[
+                styles.knightBody,
+                { left: `${18 + knightLane * 31}%` },
+              ]}
+            >
+              <View style={styles.knightHelmet} />
+              <View style={[styles.knightSword, swingTick % 2 === 0 ? styles.knightSwordLeft : styles.knightSwordRight]} />
+              <Text style={styles.knightShield}>🛡️</Text>
+            </View>
+
+            <View style={styles.forgeHud}>
+              <View style={styles.forgeStatPill}>
+                <Text style={styles.forgeStatLabel}>KILLS</Text>
+                <Text style={styles.forgeStatValue}>{defeatedEnemies}</Text>
+              </View>
+              <View style={styles.forgeStatPill}>
+                <Text style={styles.forgeStatLabel}>HEAT</Text>
+                <Text style={styles.forgeStatValue}>{wizardHeat}%</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.laneControlRow}>
+            {['LEFT', 'MID', 'RIGHT'].map((label, index) => (
+              <Pressable
+                key={label}
+                style={[styles.laneControlBtn, knightLane === index && styles.laneControlBtnActive]}
+                onPress={() => setKnightLane(index)}
+              >
+                <Text style={[styles.laneControlText, knightLane === index && styles.laneControlTextActive]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.stepsContainer}>
+            <View style={styles.statusCard}>
+              <Text style={styles.statusEyebrow}>FORGE STATUS</Text>
+              <Text style={styles.statusHeadline}>{COOKING_STATUS_LINES[activeStep % COOKING_STATUS_LINES.length]}</Text>
+              <Text style={styles.statusMeta}>{GENERATION_STEPS[activeStep]?.text || 'Finishing the last pass...'}</Text>
+            </View>
           </View>
 
           {/* Cancel button */}
@@ -1730,7 +1993,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             onPress={() => setLabsMode(prev => !prev)}
           >
             <Ionicons name="flask" size={14} color={labsMode ? '#34C759' : '#888'} style={{ marginRight: 6 }} />
-            <Text style={{ color: labsMode ? '#34C759' : '#888', fontSize: 13, fontWeight: '700' }}>{labsMode ? 'Gemma 4' : 'Labs'}</Text>
+            <Text style={{ color: labsMode ? '#34C759' : '#888', fontSize: 13, fontWeight: '700' }}>{labsMode ? 'Qwen Solo' : 'Labs'}</Text>
           </Pressable>
         </View>
       ) : studioTab === 'drafts' ? (
@@ -2363,11 +2626,35 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  forgeBackdropGlow: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(255,140,65,0.14)',
+    top: SCREEN_HEIGHT * 0.08,
+    alignSelf: 'center',
+  },
+  forgeHeaderChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  forgeHeaderChipText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
   generatingContainer: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 24,
+    paddingTop: 8,
   },
   orbOuter: {
     width: 100,
@@ -2390,24 +2677,257 @@ const styles = StyleSheet.create({
   },
   genTitle: {
     color: '#FFF',
-    fontSize: 24,
-    fontWeight: '800',
-    marginTop: 24,
+    fontSize: 30,
+    fontWeight: '900',
+    marginTop: 8,
     textAlign: 'center',
   },
   genSubtitle: {
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500',
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 15,
+    fontWeight: '600',
     marginTop: 8,
     textAlign: 'center',
-    fontStyle: 'italic',
     maxWidth: '90%',
   },
+  promptSnippetCard: {
+    width: '100%',
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  promptSnippetLabel: {
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  promptSnippetText: {
+    color: '#FFF',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  forgeSceneCard: {
+    width: '100%',
+    height: SCREEN_HEIGHT * 0.38,
+    marginTop: 18,
+    borderRadius: 28,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#20130f',
+    justifyContent: 'flex-end',
+    paddingBottom: 22,
+  },
+  forgeSkyRunes: {
+    position: 'absolute',
+    top: 18,
+    left: 18,
+    right: 18,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    opacity: 0.35,
+  },
+  forgeRune: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  forgeLanes: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: '16%',
+    paddingVertical: '12%',
+  },
+  forgeLaneLine: {
+    width: 2,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+  },
+  wizardAura: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: 34,
+    alignSelf: 'center',
+  },
+  wizardStation: {
+    position: 'absolute',
+    bottom: 26,
+    alignSelf: 'center',
+    alignItems: 'center',
+  },
+  wizardEmoji: {
+    fontSize: 34,
+    marginBottom: 2,
+  },
+  cauldron: {
+    width: 88,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  cauldronGlow: {
+    position: 'absolute',
+    width: 66,
+    height: 18,
+    borderRadius: 12,
+    backgroundColor: '#FFB860',
+    top: 0,
+  },
+  cauldronPot: {
+    width: 74,
+    height: 24,
+    borderRadius: 14,
+    backgroundColor: '#1D2530',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  enemyDot: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(9,18,7,0.28)',
+  },
+  enemyFace: {
+    color: '#173113',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  knightBody: {
+    position: 'absolute',
+    bottom: '24%',
+    marginLeft: -22,
+    width: 44,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  knightHelmet: {
+    width: 28,
+    height: 30,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+  },
+  knightSword: {
+    position: 'absolute',
+    width: 36,
+    height: 6,
+    borderRadius: 4,
+    backgroundColor: '#FDE68A',
+    top: 22,
+  },
+  knightSwordLeft: {
+    transform: [{ rotate: '-32deg' }, { translateX: -18 }],
+  },
+  knightSwordRight: {
+    transform: [{ rotate: '28deg' }, { translateX: 18 }],
+  },
+  knightShield: {
+    position: 'absolute',
+    bottom: -2,
+    fontSize: 18,
+  },
+  forgeHud: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    gap: 10,
+  },
+  forgeStatPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 14,
+    backgroundColor: 'rgba(12,12,18,0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  forgeStatLabel: {
+    color: 'rgba(255,255,255,0.54)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  forgeStatValue: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  laneControlRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  laneControlBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+  },
+  laneControlBtnActive: {
+    backgroundColor: 'rgba(255,173,92,0.2)',
+    borderColor: 'rgba(255,200,120,0.45)',
+  },
+  laneControlText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  laneControlTextActive: {
+    color: '#FFF4D4',
+  },
   stepsContainer: {
-    marginTop: 40,
+    marginTop: 16,
     width: '100%',
     gap: 16,
+  },
+  statusCard: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  statusEyebrow: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+    marginBottom: 6,
+  },
+  statusHeadline: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 24,
+  },
+  statusMeta: {
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
   },
   stepRow: {
     flexDirection: 'row',
@@ -2432,7 +2952,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 40,
+    marginTop: 24,
     paddingVertical: 14,
     paddingHorizontal: 28,
     borderRadius: 30,
