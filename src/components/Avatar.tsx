@@ -11,6 +11,21 @@ interface AvatarProps {
   style?: ViewStyle;
 }
 
+export const isSupportedAvatarUri = (uri?: string | null) => {
+  if (!uri || typeof uri !== 'string') return false;
+  const normalized = uri.trim().toLowerCase();
+  return (
+    normalized.startsWith('http://') ||
+    normalized.startsWith('https://') ||
+    normalized.startsWith('file://') ||
+    normalized.startsWith('data:image/')
+  );
+};
+
+export const resolveAvatarSource = (uri?: string | null) => {
+  return isSupportedAvatarUri(uri) ? { uri: String(uri).trim() } : DEFAULT_AVATAR;
+};
+
 /**
  * Avatar component with a simple default fallback.
  */
@@ -20,10 +35,7 @@ export const Avatar: React.FC<AvatarProps> = ({ uri, size = 40, style }) => {
     height: size,
     borderRadius: size / 2,
   };
-  let imageSource: any = DEFAULT_AVATAR;
-  if (uri && typeof uri === 'string') {
-    imageSource = { uri };
-  }
+  const imageSource = resolveAvatarSource(uri);
 
   return (
     <View style={[avatarStyle, styles.container, style]}>

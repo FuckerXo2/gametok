@@ -17,6 +17,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LoopsColors, SemanticColors, LoopsGradients } from '../constants/LoopsColors';
+import { resolveAvatarSource } from './Avatar';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.75;
@@ -174,7 +175,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         {getRankBadge()}
         
         <Image
-          source={player.avatar ? { uri: player.avatar } : require('../../assets/icon.png')}
+          source={resolveAvatarSource(player.avatar)}
           style={[styles.avatar, isMe && { borderColor: LoopsColors.mainGreen, borderWidth: 2 }]}
         />
         

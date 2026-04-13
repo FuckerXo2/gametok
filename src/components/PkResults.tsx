@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { LoopsColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
 import { useAuth } from '../hooks/useAuth';
+import { resolveAvatarSource } from './Avatar';
 
 interface Props {
   matchId: number;
@@ -51,7 +52,7 @@ export const PkResults: React.FC<Props> = ({
           {/* My Score */}
           <View style={styles.playerCard}>
             <Image 
-              source={{ uri: user?.avatar || 'https://via.placeholder.com/80' }} 
+              source={resolveAvatarSource(user?.avatar || null)} 
               style={styles.playerAvatar} 
             />
             <Text style={styles.playerName} numberOfLines={1}>You</Text>
@@ -66,7 +67,7 @@ export const PkResults: React.FC<Props> = ({
           {/* Opponent Score */}
           <View style={styles.playerCard}>
             <Image 
-              source={{ uri: opponent.avatar }} 
+              source={resolveAvatarSource(opponent.avatar)} 
               style={styles.playerAvatar} 
             />
             <Text style={styles.playerName} numberOfLines={1}>{opponent.username}</Text>

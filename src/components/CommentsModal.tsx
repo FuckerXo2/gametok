@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { comments as commentsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Avatar } from './Avatar';
+import { Avatar, resolveAvatarSource, isSupportedAvatarUri } from './Avatar';
 
 interface Comment {
   id: string;
@@ -111,8 +111,8 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const renderComment = useCallback(
     ({ item }: { item: Comment }) => (
       <View style={styles.commentItem}>
-        {item.avatar ? (
-          <Image source={{ uri: item.avatar }} style={styles.avatar} />
+        {isSupportedAvatarUri(item.avatar) ? (
+          <Image source={resolveAvatarSource(item.avatar)} style={styles.avatar} />
         ) : (
           <Avatar uri={item.avatar} userId={item.userId} size={40} />
         )}
@@ -198,8 +198,8 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
           <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 8, borderTopColor: colors.border }]}>
             {user ? (
               <>
-                {user.avatar ? (
-                  <Image source={{ uri: user.avatar }} style={styles.inputAvatar} />
+                {isSupportedAvatarUri(user.avatar) ? (
+                  <Image source={resolveAvatarSource(user.avatar)} style={styles.inputAvatar} />
                 ) : (
                   <Avatar uri={user.avatar} userId={user.id} size={32} />
                 )}

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LoopsColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
+import { resolveAvatarSource } from './Avatar';
 
 interface Props {
   myScore: number;
@@ -28,7 +29,7 @@ export const PkOverlay: React.FC<Props> = ({ myScore, opponentScore, opponent })
 
       {/* Opponent Score */}
       <View style={[styles.scoreCard, styles.opponentScore]}>
-        <Image source={{ uri: opponent.avatar }} style={styles.avatar} />
+        <Image source={resolveAvatarSource(opponent.avatar)} style={styles.avatar} />
         <Text style={styles.scoreLabel} numberOfLines={1}>{opponent.username}</Text>
         <Text style={styles.scoreValue}>{opponentScore}</Text>
       </View>
