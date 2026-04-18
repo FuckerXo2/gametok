@@ -534,34 +534,98 @@ const WORLD_KEYWORDS = {
   ],
 } as const;
 
+const CHIP_KEYWORDS = {
+  Explore: {
+    'For You': ['creative', 'arcade', 'simulation', 'tool', 'puzzle'],
+    Brainrot: ['crazy', 'weird', 'funny', 'meme', 'cat', 'fruit', 'io', 'chaos'],
+    Casual: ['casual', 'arcade', 'hypercasual', 'tap', 'idle'],
+    '67 Energy': ['speed', 'rush', 'fast', 'run', 'chaos', 'action'],
+    Meme: ['meme', 'funny', 'cat', 'brainrot', 'joke'],
+    'NPC Core': ['story', 'simulation', 'dress', 'date', 'character'],
+    Satisfying: ['puzzle', 'match', 'idle', 'slice', 'merge', 'sort'],
+  },
+  Games: {
+    'For You': ['action', 'arcade', 'puzzle', 'racing', 'simulation'],
+    Arcade: ['arcade', 'io', 'runner', 'retro', 'hypercasual'],
+    'Boss Rush': ['action', 'shooter', 'combat', 'fight', 'war', 'survival'],
+    Cozy: ['idle', 'farm', 'merge', 'decorate', 'dress', 'puzzle'],
+    Chaotic: ['crazy', 'chaos', 'fight', 'battle', 'rush'],
+    Speedrun: ['run', 'runner', 'speed', 'dash', 'parkour', 'jump'],
+    Simulator: ['simulation', 'simulator', 'drive', 'car', 'truck', 'tycoon', 'manage'],
+  },
+  Horror: {
+    'For You': ['horror', 'escape', 'dark', 'night'],
+    'Found Footage': ['camera', 'footage', 'survival', 'escape'],
+    'Cursed Feed': ['story', 'social', 'weird', 'meme', 'dark'],
+    Psychological: ['puzzle', 'brain', 'dark', 'story', 'mystery'],
+    Paranormal: ['ghost', 'haunted', 'monster', 'demon'],
+    Escape: ['escape', 'survival', 'puzzle', 'maze'],
+    'Night Shift': ['night', 'survival', 'manager', 'shop', 'simulation'],
+  },
+  Quiz: {
+    'For You': ['quiz', 'trivia', 'puzzle', 'word'],
+    Trivia: ['quiz', 'trivia', 'guess', 'answer'],
+    Geography: ['geo', 'map', 'country', 'flag'],
+    Anime: ['anime', 'character', 'dress', 'story'],
+    'Brain Tease': ['puzzle', 'brain', 'logic', 'memory'],
+    Impossible: ['brain', 'puzzle', 'trick', 'hard'],
+    'School Break': ['quiz', 'casual', 'word', 'trivia'],
+  },
+  Roleplay: {
+    Recommend: ['story', 'romance', 'fashion', 'anime'],
+    'Immersive Worlds': ['story', 'fantasy', 'simulation', 'world'],
+    Boyfriend: ['boyfriend', 'date', 'romance', 'love'],
+    Girlfriend: ['girlfriend', 'date', 'romance', 'love'],
+    Romance: ['romance', 'love', 'story', 'date'],
+    Drama: ['story', 'school', 'episode', 'simulation'],
+    Fantasy: ['fantasy', 'princess', 'magic', 'anime', 'story'],
+  },
+} as const;
+
 const countKeywordHits = (haystack: string, keywords: readonly string[]) =>
   keywords.reduce((count, keyword) => count + (haystack.includes(keyword) ? 1 : 0), 0);
 
-const matchesWorld = (activeTab: (typeof PRIMARY_TABS)[number], game: ExploreGameRecord) => {
+const getWorldScore = (
+  activeTab: (typeof PRIMARY_TABS)[number],
+  activeChip: string,
+  game: ExploreGameRecord,
+) => {
   const category = (game.category || '').toLowerCase();
   const name = (game.name || '').toLowerCase();
   const haystack = `${name} ${category}`;
+  const chipKeywords =
+    activeTab in CHIP_KEYWORDS
+      ? (CHIP_KEYWORDS[activeTab as keyof typeof CHIP_KEYWORDS] as Record<string, readonly string[]>)[activeChip] || []
+      : [];
+  const playsScore = game.plays ? Math.min(8, Math.round(game.plays / 50000)) : 0;
+  const chipScore = countKeywordHits(haystack, chipKeywords) * 3;
 
   switch (activeTab) {
     case 'Games':
-      return true;
+      return chipScore + playsScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
     case 'Horror':
       return (
-        countKeywordHits(haystack, WORLD_KEYWORDS.Horror) > 0 ||
-        /horror|escape|adventure|action|arcade/.test(category)
+        countKeywordHits(haystack, WORLD_KEYWORDS.Horror) * 4 +
+        chipScore +
+        (/horror|escape|adventure|action|arcade/.test(category) ? 5 : 0) +
+        playsScore
       );
     case 'Quiz':
       return (
-        countKeywordHits(haystack, WORLD_KEYWORDS.Quiz) > 0 ||
-        /quiz|puzzle|education|word|trivia/.test(category)
+        countKeywordHits(haystack, WORLD_KEYWORDS.Quiz) * 4 +
+        chipScore +
+        (/quiz|puzzle|education|word|trivia/.test(category) ? 5 : 0) +
+        playsScore
       );
     case 'Roleplay':
       return (
-        countKeywordHits(haystack, WORLD_KEYWORDS.Roleplay) > 0 ||
-        /dress|girls|story|simulation|beauty|social/.test(category)
+        countKeywordHits(haystack, WORLD_KEYWORDS.Roleplay) * 4 +
+        chipScore +
+        (/dress|girls|story|simulation|beauty|social/.test(category) ? 5 : 0) +
+        playsScore
       );
     default:
-      return true;
+      return chipScore + playsScore + countKeywordHits(haystack, ['arcade', 'simulation', 'puzzle', 'story', 'io']) * 2;
   }
 };
 
@@ -575,8 +639,15 @@ const mergeLiveGamesIntoWorld = (
   const sourceGames = activeChip === 'Trending' && trendingGames.length ? trendingGames : liveGames;
   if (!sourceGames.length) return world;
 
-  const matching = sourceGames.filter((game) => matchesWorld(activeTab, game));
-  const fallback = matching.length ? matching : sourceGames;
+  const ranked = sourceGames
+    .map((game) => ({
+      game,
+      score: getWorldScore(activeTab, activeChip, game),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const matching = ranked.filter((entry) => entry.score > (activeTab === 'Explore' ? 0 : 2)).map((entry) => entry.game);
+  const fallback = matching.length ? matching : ranked.map((entry) => entry.game);
   let cursor = 0;
 
   const nextGame = () => {
