@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ResizeMode, Video } from 'expo-av';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen } from '../../App';
 import { feed, games as gamesApi } from '../services/api';
@@ -339,6 +340,13 @@ const CARD_METRICS = [
   { likes: '5.9K', plays: '176K' },
 ];
 
+const SAMPLE_PREVIEW_VIDEOS = [
+  'https://cdn.pixabay.com/video/2020/09/20/50531-460875411_tiny.mp4',
+  'https://cdn.pixabay.com/video/2021/04/16/71239-537446549_tiny.mp4',
+  'https://cdn.pixabay.com/video/2021/08/04/83896-584742491_tiny.mp4',
+  'https://cdn.pixabay.com/video/2019/12/17/30419-380962372_tiny.mp4',
+];
+
 const getSeedFromText = (value: string) =>
   value.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
 
@@ -346,9 +354,9 @@ const getMockCreator = (key: string) => CREATOR_HANDLES[getSeedFromText(key) % C
 
 const getMockMetrics = (key: string) => CARD_METRICS[getSeedFromText(key) % CARD_METRICS.length];
 
-const getPreviewLabel = (activeTab: (typeof PRIMARY_TABS)[number], activeChip: string) => {
-  if (activeChip === 'Trending') return 'Live';
+const getMockPreviewVideo = (key: string) => SAMPLE_PREVIEW_VIDEOS[getSeedFromText(key) % SAMPLE_PREVIEW_VIDEOS.length];
 
+const getPreviewLabel = (activeTab: (typeof PRIMARY_TABS)[number], activeChip: string) => {
   switch (activeTab) {
     case 'Horror':
       return 'Preview';
@@ -373,6 +381,7 @@ type ExploreCardRecord = {
   plays: string;
   mediaKind: ExploreMediaKind;
   imageUrl?: string;
+  videoUrl?: string;
 };
 
 type ExploreSectionRecord = {
@@ -390,6 +399,7 @@ type ExploreHeroRecord = {
   plays: string;
   mediaKind: ExploreMediaKind;
   imageUrl?: string;
+  videoUrl?: string;
 };
 
 type ExploreWorldRecord = {
@@ -448,6 +458,7 @@ const buildExploreCard = (
   creator: getMockCreator(card.id),
   ...getMockMetrics(card.id),
   mediaKind: pickMediaKind(activeTab, activeChip, card.id),
+  videoUrl: pickMediaKind(activeTab, activeChip, card.id) === 'video' ? getMockPreviewVideo(card.id) : undefined,
 });
 
 const buildExploreHero = (
@@ -463,6 +474,7 @@ const buildExploreHero = (
   creator: getMockCreator(hero.id),
   ...getMockMetrics(hero.id),
   mediaKind: activeTab === 'Games' || activeTab === 'Roleplay' ? 'video' : 'fallback',
+  videoUrl: activeTab === 'Games' || activeTab === 'Roleplay' ? getMockPreviewVideo(hero.id) : undefined,
 });
 
 const buildWorldRecord = (
@@ -718,11 +730,16 @@ type ExploreMediaStageProps = {
   accent: string;
   mediaKind: ExploreMediaKind;
   imageUrl?: string;
+  videoUrl?: string;
   previewLabel: string;
   badgeLabel: string;
   badgeTone: string;
   badgeBackground: string;
   fullBleed?: boolean;
+  titleOverlay: string;
+  subtitleOverlay: string;
+  creatorOverlay: string;
+  metricsOverlay: string;
 };
 
 const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
@@ -730,19 +747,40 @@ const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
   accent,
   mediaKind,
   imageUrl,
+  videoUrl,
   previewLabel,
   badgeLabel,
   badgeTone,
   badgeBackground,
   fullBleed = false,
+  titleOverlay,
+  subtitleOverlay,
+  creatorOverlay,
+  metricsOverlay,
 }) => {
   const seed = getSeedFromText(title);
   const showImage = mediaKind === 'image' && !!imageUrl;
   const motionPreview = mediaKind === 'video';
+  const showVideo = motionPreview && !!videoUrl;
 
   return (
     <View style={[styles.cardMediaArea, fullBleed && styles.cardMediaAreaFullBleed, showImage && styles.cardMediaAreaImage]}>
-      {showImage ? (
+      {showVideo ? (
+        <>
+          <Video
+            source={{ uri: videoUrl }}
+            style={styles.cardMediaImage}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay
+            isLooping
+            isMuted
+          />
+          <LinearGradient
+            colors={['rgba(0,0,0,0.14)', 'rgba(0,0,0,0.02)', 'rgba(0,0,0,0.46)']}
+            style={styles.cardMediaImageOverlay}
+          />
+        </>
+      ) : showImage ? (
         <>
           <Image source={{ uri: imageUrl }} style={styles.cardMediaImage} resizeMode="cover" />
           <LinearGradient
@@ -816,6 +854,15 @@ const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
           <Text style={styles.cardPreviewBadgeText}>{previewLabel}</Text>
         </View>
       </View>
+      <LinearGradient
+        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0.84)']}
+        style={styles.cardTextOverlay}
+      >
+        <Text style={styles.cardOverlayTitle} numberOfLines={2}>{titleOverlay}</Text>
+        <Text style={styles.cardOverlaySubtitle} numberOfLines={1}>{subtitleOverlay}</Text>
+        <Text style={styles.cardOverlayCreator} numberOfLines={1}>{creatorOverlay}</Text>
+        <Text style={styles.cardOverlayMetrics} numberOfLines={1}>{metricsOverlay}</Text>
+      </LinearGradient>
     </View>
   );
 };
@@ -844,8 +891,8 @@ export const ExploreScreen: React.FC = () => {
 
   const radarEyebrow =
     activeTab === 'Explore'
-      ? 'A live read on what the culture is doing right now.'
-      : `A live read on what ${activeTab.toLowerCase()} culture is doing right now.`;
+      ? 'What the culture is surfacing right now.'
+      : `What ${activeTab.toLowerCase()} culture is surfacing right now.`;
 
   const trendingChallengesTitle =
     activeTab === 'Explore' ? 'Challenges' : `${activeTab} Challenges`;
@@ -1117,12 +1164,6 @@ export const ExploreScreen: React.FC = () => {
             placeholderTextColor={isTrendingView ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.35)'}
             style={[styles.searchInput, isTrendingView && styles.searchInputTrending]}
           />
-          {isTrendingView ? (
-            <View style={[styles.searchLiveBadge, { backgroundColor: tabWorld.accentSoft, borderColor: tabWorld.modeBannerBorder }]}>
-              <View style={[styles.searchLiveDot, { backgroundColor: tabWorld.accent }]} />
-              <Text style={[styles.searchLiveText, { color: tabWorld.accent }]}>Live</Text>
-            </View>
-          ) : null}
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.primaryTabsRow}>
@@ -1186,18 +1227,6 @@ export const ExploreScreen: React.FC = () => {
           </View>
         ) : null}
 
-        {isTrendingView ? (
-          <View style={[styles.trendingStatusBar, { backgroundColor: tabWorld.modeBannerBg, borderColor: tabWorld.modeBannerBorder }]}>
-            <View style={styles.trendingStatusLeft}>
-              <View style={[styles.trendingStatusDot, { backgroundColor: tabWorld.accent }]} />
-              <Text style={[styles.trendingStatusLabel, { color: tabWorld.accent }]}>{activeTab} live</Text>
-            </View>
-            <Text style={styles.trendingStatusMeta}>Updated now</Text>
-            <Text style={styles.trendingStatusDivider}>•</Text>
-            <Text style={styles.trendingStatusMeta}>Signals + charts</Text>
-          </View>
-        ) : null}
-
         {!isSearchMode && !isTrendingView ? (
           <TouchableOpacity activeOpacity={0.9} onPress={() => setHeroIndex((current) => current + 1)} style={styles.heroWrap}>
             <LinearGradient colors={hero.colors} style={styles.heroCard}>
@@ -1244,22 +1273,17 @@ export const ExploreScreen: React.FC = () => {
                       accent={item.accent}
                       mediaKind={item.mediaKind}
                       imageUrl={item.imageUrl}
+                      videoUrl={item.videoUrl}
                       previewLabel={previewLabel}
                       badgeLabel={item.source}
                       badgeTone={tabWorld.accent}
                       badgeBackground={tabWorld.accentSoft}
                       fullBleed
+                      titleOverlay={item.title}
+                      subtitleOverlay={item.subtitle}
+                      creatorOverlay={item.creator}
+                      metricsOverlay={`${item.likes} likes · ${item.plays}`}
                     />
-                    <View style={styles.trendingCardFooter}>
-                      <Text style={styles.trendingCardTitle}>{item.title}</Text>
-                      <Text style={styles.trendingCardSubtitle}>{item.subtitle}</Text>
-                      <View style={styles.cardMetricsRow}>
-                        <Text style={styles.cardCreatorText}>{item.creator}</Text>
-                        <Text style={styles.cardMetricsText}>
-                          {item.likes} likes · {item.plays}
-                        </Text>
-                      </View>
-                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1344,22 +1368,17 @@ export const ExploreScreen: React.FC = () => {
                       accent={item.accent}
                       mediaKind={item.mediaKind}
                       imageUrl={item.imageUrl}
+                      videoUrl={item.videoUrl}
                       previewLabel={previewLabel}
                       badgeLabel={tabWorld.cardLabel}
                       badgeTone={tabWorld.accent}
                       badgeBackground={tabWorld.accentSoft}
                       fullBleed
+                      titleOverlay={item.title}
+                      subtitleOverlay={item.subtitle}
+                      creatorOverlay={item.creator}
+                      metricsOverlay={`${item.likes} likes · ${item.plays}`}
                     />
-                    <View style={styles.trendingCardFooter}>
-                      <Text style={styles.trendingCardTitle}>{item.title}</Text>
-                      <Text style={styles.trendingCardSubtitle}>{item.subtitle}</Text>
-                      <View style={styles.cardMetricsRow}>
-                        <Text style={styles.cardCreatorText}>{item.creator}</Text>
-                        <Text style={styles.cardMetricsText}>
-                          {item.likes} likes · {item.plays}
-                        </Text>
-                      </View>
-                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1414,22 +1433,17 @@ export const ExploreScreen: React.FC = () => {
                         accent={card.accent}
                         mediaKind={card.mediaKind}
                         imageUrl={card.imageUrl}
+                        videoUrl={card.videoUrl}
                         previewLabel={previewLabel}
                         badgeLabel={tabWorld.cardLabel}
                         badgeTone={tabWorld.accent}
                         badgeBackground={tabWorld.accentSoft}
                         fullBleed
+                        titleOverlay={card.title}
+                        subtitleOverlay={card.subtitle}
+                        creatorOverlay={card.creator}
+                        metricsOverlay={`${card.likes} likes · ${card.plays}`}
                       />
-                      <View style={styles.discoveryCardFooter}>
-                        <Text style={styles.discoveryCardTitle}>{card.title}</Text>
-                        <Text style={styles.discoveryCardSubtitle}>{card.subtitle}</Text>
-                        <View style={styles.cardMetricsRow}>
-                          <Text style={styles.cardCreatorText}>{card.creator}</Text>
-                          <Text style={styles.cardMetricsText}>
-                            {card.likes} likes · {card.plays}
-                          </Text>
-                        </View>
-                      </View>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -1458,22 +1472,17 @@ export const ExploreScreen: React.FC = () => {
                       accent={item.accent}
                       mediaKind={item.mediaKind}
                       imageUrl={item.imageUrl}
+                      videoUrl={item.videoUrl}
                       previewLabel={previewLabel}
                       badgeLabel={tabWorld.cardLabel}
                       badgeTone={tabWorld.accent}
                       badgeBackground={tabWorld.accentSoft}
                       fullBleed
+                      titleOverlay={item.title}
+                      subtitleOverlay={item.subtitle}
+                      creatorOverlay={item.creator}
+                      metricsOverlay={`${item.likes} likes · ${item.plays}`}
                     />
-                    <View style={styles.trendingCardFooter}>
-                      <Text style={styles.trendingCardTitle}>{item.title}</Text>
-                      <Text style={styles.trendingCardSubtitle}>{item.subtitle}</Text>
-                      <View style={styles.cardMetricsRow}>
-                        <Text style={styles.cardCreatorText}>{item.creator}</Text>
-                        <Text style={styles.cardMetricsText}>
-                          {item.likes} likes · {item.plays}
-                        </Text>
-                      </View>
-                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1534,27 +1543,6 @@ const styles = StyleSheet.create({
   },
   searchInputTrending: {
     color: '#FFF',
-  },
-  searchLiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-    marginLeft: 10,
-  },
-  searchLiveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  searchLiveText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
   },
   primaryTabsRow: {
     gap: 22,
@@ -1675,44 +1663,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
-  },
-  trendingStatusBar: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  trendingStatusLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  trendingStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  trendingStatusLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  trendingStatusMeta: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  trendingStatusDivider: {
-    color: 'rgba(255,255,255,0.28)',
-    marginHorizontal: 8,
-    fontSize: 12,
-    fontWeight: '800',
   },
   heroWrap: {
     marginHorizontal: 16,
@@ -2049,12 +1999,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
   },
   discoveryCardWide: {
-    width: 180,
-    height: 210,
+    width: 194,
+    height: 238,
   },
   discoveryCardTall: {
-    width: 180,
-    height: 250,
+    width: 194,
+    height: 278,
   },
   discoveryCardGames: {
     borderWidth: 1,
@@ -2066,12 +2016,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#120E10',
   },
   discoveryCardHorrorStandard: {
-    width: 180,
-    height: 240,
+    width: 194,
+    height: 266,
   },
   discoveryCardHorrorHero: {
-    width: 180,
-    height: 270,
+    width: 194,
+    height: 302,
   },
   discoveryCardQuiz: {
     borderWidth: 1,
@@ -2079,8 +2029,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#15232A',
   },
   discoveryCardQuizUniform: {
-    width: 180,
-    height: 214,
+    width: 194,
+    height: 234,
   },
   discoveryCardRoleplay: {
     borderWidth: 1,
@@ -2088,8 +2038,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#1F1821',
   },
   discoveryCardRoleplayPoster: {
-    width: 180,
-    height: 278,
+    width: 194,
+    height: 316,
   },
   cardTopPill: {
     alignSelf: 'flex-start',
@@ -2122,34 +2072,39 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  discoveryCardFooter: {
+  cardTextOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: 14,
-    gap: 4,
+    paddingTop: 30,
+    paddingBottom: 14,
   },
-  discoveryCardTitle: {
+  cardOverlayTitle: {
     color: '#FFF',
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: '900',
   },
-  discoveryCardSubtitle: {
-    color: 'rgba(255,255,255,0.72)',
+  cardOverlaySubtitle: {
+    color: 'rgba(255,255,255,0.78)',
     fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '600',
-  },
-  cardMetricsRow: {
-    marginTop: 9,
-    gap: 3,
-  },
-  cardCreatorText: {
-    color: '#FFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  cardMetricsText: {
-    color: 'rgba(255,255,255,0.58)',
-    fontSize: 10,
     fontWeight: '700',
+    marginTop: 6,
+    textTransform: 'lowercase',
+  },
+  cardOverlayCreator: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 10,
+  },
+  cardOverlayMetrics: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
   },
   chartRow: {
     paddingHorizontal: 16,
@@ -2371,19 +2326,19 @@ const styles = StyleSheet.create({
     rowGap: 12,
   },
   trendingCard: {
-    width: '48.2%',
+    width: '48.9%',
     borderRadius: 18,
     overflow: 'hidden',
     justifyContent: 'space-between',
     paddingTop: 0,
     paddingHorizontal: 0,
-    paddingBottom: 14,
+    paddingBottom: 0,
   },
   trendingCardTall: {
-    height: 236,
+    height: 278,
   },
   trendingCardShort: {
-    height: 188,
+    height: 228,
   },
   trendingCardGames: {
     borderWidth: 1,
@@ -2395,7 +2350,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#120E10',
   },
   trendingCardHorrorTall: {
-    height: 238,
+    height: 288,
   },
   trendingCardQuiz: {
     borderWidth: 1,
@@ -2403,7 +2358,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#15232A',
   },
   trendingCardQuizUniform: {
-    height: 208,
+    height: 240,
   },
   trendingCardRoleplay: {
     borderWidth: 1,
@@ -2411,21 +2366,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1F1821',
   },
   trendingCardRoleplayPoster: {
-    height: 278,
-  },
-  trendingCardFooter: {
-    paddingHorizontal: 14,
-    gap: 4,
-  },
-  trendingCardTitle: {
-    color: '#FFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  trendingCardSubtitle: {
-    color: 'rgba(255,255,255,0.68)',
-    fontSize: 12,
-    fontWeight: '600',
+    height: 324,
   },
   authGate: {
     flex: 1,
