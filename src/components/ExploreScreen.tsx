@@ -748,13 +748,8 @@ const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
   mediaKind,
   imageUrl,
   videoUrl,
-  previewLabel,
-  badgeLabel,
-  badgeTone,
-  badgeBackground,
   fullBleed = false,
   titleOverlay,
-  subtitleOverlay,
   creatorOverlay,
   metricsOverlay,
 }) => {
@@ -845,21 +840,11 @@ const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
         </View>
       ) : null}
 
-      <View style={styles.cardMediaHeader}>
-        <View style={[styles.cardTopPill, { backgroundColor: badgeBackground, borderColor: badgeTone }]}>
-          <Text style={[styles.cardTopPillText, { color: badgeTone }]}>{badgeLabel}</Text>
-        </View>
-        <View style={styles.cardPreviewBadge}>
-          <Ionicons name={motionPreview ? 'play' : 'image'} size={10} color="#FFF" />
-          <Text style={styles.cardPreviewBadgeText}>{previewLabel}</Text>
-        </View>
-      </View>
       <LinearGradient
         colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0.84)']}
         style={styles.cardTextOverlay}
       >
         <Text style={styles.cardOverlayTitle} numberOfLines={2}>{titleOverlay}</Text>
-        <Text style={styles.cardOverlaySubtitle} numberOfLines={1}>{subtitleOverlay}</Text>
         <Text style={styles.cardOverlayCreator} numberOfLines={1}>{creatorOverlay}</Text>
         <Text style={styles.cardOverlayMetrics} numberOfLines={1}>{metricsOverlay}</Text>
       </LinearGradient>
@@ -2219,23 +2204,16 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 999,
   },
-  cardMediaHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingTop: 10,
-  },
   cardVideoPulse: {
     position: 'absolute',
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     right: 12,
-    bottom: 12,
-    backgroundColor: 'rgba(0,0,0,0.26)',
+    top: 12,
+    backgroundColor: 'rgba(0,0,0,0.34)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
@@ -2282,64 +2260,26 @@ const styles = StyleSheet.create({
     width: 194,
     height: 316,
   },
-  cardTopPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  cardTopPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  cardPreviewBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.24)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  cardPreviewBadgeText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
   cardTextOverlay: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     paddingHorizontal: 14,
-    paddingTop: 30,
+    paddingTop: 46,
     paddingBottom: 14,
   },
   cardOverlayTitle: {
     color: '#FFF',
-    fontSize: 20,
-    lineHeight: 22,
+    fontSize: 19,
+    lineHeight: 21,
     fontWeight: '900',
-  },
-  cardOverlaySubtitle: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 6,
-    textTransform: 'lowercase',
   },
   cardOverlayCreator: {
     color: '#FFF',
     fontSize: 12,
     fontWeight: '800',
-    marginTop: 10,
+    marginTop: 9,
   },
   cardOverlayMetrics: {
     color: 'rgba(255,255,255,0.66)',
