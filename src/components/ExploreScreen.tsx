@@ -340,21 +340,12 @@ const CARD_METRICS = [
   { likes: '5.9K', plays: '176K' },
 ];
 
-const SAMPLE_PREVIEW_VIDEOS = [
-  'https://cdn.pixabay.com/video/2020/09/20/50531-460875411_tiny.mp4',
-  'https://cdn.pixabay.com/video/2021/04/16/71239-537446549_tiny.mp4',
-  'https://cdn.pixabay.com/video/2021/08/04/83896-584742491_tiny.mp4',
-  'https://cdn.pixabay.com/video/2019/12/17/30419-380962372_tiny.mp4',
-];
-
 const getSeedFromText = (value: string) =>
   value.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
 
 const getMockCreator = (key: string) => CREATOR_HANDLES[getSeedFromText(key) % CREATOR_HANDLES.length];
 
 const getMockMetrics = (key: string) => CARD_METRICS[getSeedFromText(key) % CARD_METRICS.length];
-
-const getMockPreviewVideo = (key: string) => SAMPLE_PREVIEW_VIDEOS[getSeedFromText(key) % SAMPLE_PREVIEW_VIDEOS.length];
 
 const getPreviewLabel = (activeTab: (typeof PRIMARY_TABS)[number], activeChip: string) => {
   switch (activeTab) {
@@ -421,27 +412,13 @@ type ExploreGameRecord = {
   id: string;
   name: string;
   thumbnail?: string;
+  previewVideoUrl?: string;
+  preview_video_url?: string;
+  videoUrl?: string;
+  video_url?: string;
   color?: string;
   category?: string;
   plays?: number;
-};
-
-const pickMediaKind = (
-  activeTab: (typeof PRIMARY_TABS)[number],
-  activeChip: string,
-  key: string,
-): ExploreMediaKind => {
-  const seed = getSeedFromText(`${activeTab}-${activeChip}-${key}`);
-
-  if (activeChip === 'Trending' || activeTab === 'Games' || activeTab === 'Roleplay') {
-    return seed % 3 === 0 ? 'video' : 'fallback';
-  }
-
-  if (activeTab === 'Quiz') {
-    return seed % 4 === 0 ? 'video' : 'fallback';
-  }
-
-  return 'fallback';
 };
 
 const buildExploreCard = (
@@ -457,8 +434,7 @@ const buildExploreCard = (
   ...card,
   creator: getMockCreator(card.id),
   ...getMockMetrics(card.id),
-  mediaKind: pickMediaKind(activeTab, activeChip, card.id),
-  videoUrl: pickMediaKind(activeTab, activeChip, card.id) === 'video' ? getMockPreviewVideo(card.id) : undefined,
+  mediaKind: 'fallback',
 });
 
 const buildExploreHero = (
@@ -473,8 +449,7 @@ const buildExploreHero = (
   ...hero,
   creator: getMockCreator(hero.id),
   ...getMockMetrics(hero.id),
-  mediaKind: activeTab === 'Games' || activeTab === 'Roleplay' ? 'video' : 'fallback',
-  videoUrl: activeTab === 'Games' || activeTab === 'Roleplay' ? getMockPreviewVideo(hero.id) : undefined,
+  mediaKind: 'fallback',
 });
 
 const buildWorldRecord = (
@@ -495,6 +470,9 @@ const buildSlotKey = (scope: string, sourceId: string, index: number) => `${scop
 
 const getGameThumbnail = (game: ExploreGameRecord) =>
   game.thumbnail || `https://games.gametok.co/thumbnails/${game.id}.png`;
+
+const getGamePreviewVideo = (game: ExploreGameRecord) =>
+  game.previewVideoUrl || game.preview_video_url || game.videoUrl || game.video_url;
 
 const WORLD_KEYWORDS = {
   Horror: [
@@ -671,6 +649,7 @@ const mergeLiveGamesIntoWorld = (
   const injectGame = (card: ExploreCardRecord): ExploreCardRecord => {
     const game = nextGame();
     if (!game) return card;
+    const previewVideoUrl = getGamePreviewVideo(game);
 
     return {
       ...card,
@@ -680,8 +659,9 @@ const mergeLiveGamesIntoWorld = (
       accent: game.color || card.accent,
       likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : card.likes,
       plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : card.plays,
-      mediaKind: 'image',
+      mediaKind: previewVideoUrl ? 'video' : 'image',
       imageUrl: getGameThumbnail(game),
+      videoUrl: previewVideoUrl,
     };
   };
 
@@ -690,6 +670,7 @@ const mergeLiveGamesIntoWorld = (
     heroes: world.heroes.map((hero, index) => {
       const game = nextGame();
       if (!game) return hero;
+      const previewVideoUrl = getGamePreviewVideo(game);
       return {
         ...hero,
         id: buildSlotKey('hero', game.id, index),
@@ -698,8 +679,9 @@ const mergeLiveGamesIntoWorld = (
         creator: hero.creator,
         likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : hero.likes,
         plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : hero.plays,
-        mediaKind: 'image',
+        mediaKind: previewVideoUrl ? 'video' : 'image',
         imageUrl: getGameThumbnail(game),
+        videoUrl: previewVideoUrl,
       };
     }),
     sections: world.sections.map((section) => ({
@@ -1109,6 +1091,10 @@ export const ExploreScreen: React.FC = () => {
             id: game.id,
             name: game.name,
             thumbnail: game.thumbnail,
+            previewVideoUrl: game.previewVideoUrl,
+            preview_video_url: game.preview_video_url,
+            videoUrl: game.videoUrl,
+            video_url: game.video_url,
             color: game.color,
             plays: undefined,
           });
