@@ -888,6 +888,25 @@ export const ExploreScreen: React.FC = () => {
   const activeChipDescription = tabWorld.chipDescriptions[activeChip as keyof typeof tabWorld.chipDescriptions] || '';
   const trimmedSearch = searchQuery.trim().toLowerCase();
   const isSearchMode = trimmedSearch.length > 0;
+  const isExploreEditorialView = activeTab === 'Explore' && !isSearchMode && !isTrendingView;
+  const exploreLeadCards = activeTab === 'Explore' ? tabWorld.sections[0]?.cards ?? [] : [];
+  const exploreSpotlightCard = exploreLeadCards[0];
+  const exploreSecondaryCards =
+    activeTab === 'Explore'
+      ? [
+          ...exploreLeadCards.slice(1, 3),
+          ...(tabWorld.sections[1]?.cards.slice(0, 1) ?? []),
+        ].slice(0, 3)
+      : [];
+  const exploreRabbitCards =
+    activeTab === 'Explore'
+      ? [
+          ...(tabWorld.sections[1]?.cards ?? []),
+          ...tabWorld.grid.slice(0, 2),
+        ].slice(0, 5)
+      : [];
+  const exploreGridLeadCard = activeTab === 'Explore' ? tabWorld.grid[0] : undefined;
+  const exploreGridCards = activeTab === 'Explore' ? tabWorld.grid.slice(1) : [];
 
   const radarEyebrow =
     activeTab === 'Explore'
@@ -1040,6 +1059,7 @@ export const ExploreScreen: React.FC = () => {
           plays: card.plays,
           mediaKind: card.mediaKind,
           imageUrl: card.imageUrl,
+          videoUrl: card.videoUrl,
           source: section.title,
         })),
       ),
@@ -1053,6 +1073,7 @@ export const ExploreScreen: React.FC = () => {
         plays: item.plays,
         mediaKind: item.mediaKind,
         imageUrl: item.imageUrl,
+        videoUrl: item.videoUrl,
         source: tabWorld.discoverTitle,
       })),
       ...tabWorld.heroes.map((item) => ({
@@ -1065,6 +1086,7 @@ export const ExploreScreen: React.FC = () => {
         plays: item.plays,
         mediaKind: item.mediaKind,
         imageUrl: item.imageUrl,
+        videoUrl: item.videoUrl,
         source: `${activeTab} Hero`,
       })),
     ];
@@ -1406,6 +1428,176 @@ export const ExploreScreen: React.FC = () => {
                   </View>
                 </TouchableOpacity>
               ))}
+            </View>
+          </>
+        ) : isExploreEditorialView ? (
+          <>
+            {exploreSpotlightCard ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Editor&apos;s Picks</Text>
+                    <Text style={styles.sectionEyebrow}>The strongest weird worlds, tools, and concepts bubbling up right now.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={[styles.editorialSpotlightCard, { backgroundColor: getCardSurfaceTone(exploreSpotlightCard) }]}
+                >
+                  <ExploreMediaStage
+                    title={exploreSpotlightCard.title}
+                    accent={exploreSpotlightCard.accent}
+                    mediaKind={exploreSpotlightCard.mediaKind}
+                    imageUrl={exploreSpotlightCard.imageUrl}
+                    videoUrl={exploreSpotlightCard.videoUrl}
+                    previewLabel={previewLabel}
+                    badgeLabel="Featured"
+                    badgeTone={tabWorld.accent}
+                    badgeBackground={tabWorld.accentSoft}
+                    fullBleed
+                    titleOverlay={exploreSpotlightCard.title}
+                    subtitleOverlay={exploreSpotlightCard.subtitle}
+                    creatorOverlay={exploreSpotlightCard.creator}
+                    metricsOverlay={`${exploreSpotlightCard.likes} likes · ${exploreSpotlightCard.plays}`}
+                  />
+                </TouchableOpacity>
+                <View style={styles.editorialSecondaryGrid}>
+                  {exploreSecondaryCards.map((card, index) => (
+                    <TouchableOpacity
+                      key={card.id}
+                      activeOpacity={0.92}
+                      style={[
+                        styles.editorialSecondaryCard,
+                        index === 0 ? styles.editorialSecondaryCardWide : styles.editorialSecondaryCardTall,
+                        { backgroundColor: getCardSurfaceTone(card) },
+                      ]}
+                    >
+                      <ExploreMediaStage
+                        title={card.title}
+                        accent={card.accent}
+                        mediaKind={card.mediaKind}
+                        imageUrl={card.imageUrl}
+                        videoUrl={card.videoUrl}
+                        previewLabel={previewLabel}
+                        badgeLabel="Picked"
+                        badgeTone={tabWorld.accent}
+                        badgeBackground={tabWorld.accentSoft}
+                        fullBleed
+                        titleOverlay={card.title}
+                        subtitleOverlay={card.subtitle}
+                        creatorOverlay={card.creator}
+                        metricsOverlay={`${card.likes} likes · ${card.plays}`}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Rabbit Holes</Text>
+                  <Text style={styles.sectionEyebrow}>Small experiments, strange loops, and ideas worth disappearing into.</Text>
+                </View>
+                <TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editorialRailRow}>
+                {exploreRabbitCards.map((card, index) => (
+                  <TouchableOpacity
+                    key={card.id}
+                    activeOpacity={0.9}
+                    style={[
+                      styles.editorialRailCard,
+                      index % 3 === 0 ? styles.editorialRailCardTall : styles.editorialRailCardShort,
+                      { backgroundColor: getCardSurfaceTone(card) },
+                    ]}
+                  >
+                    <ExploreMediaStage
+                      title={card.title}
+                      accent={card.accent}
+                      mediaKind={card.mediaKind}
+                      imageUrl={card.imageUrl}
+                      videoUrl={card.videoUrl}
+                      previewLabel={previewLabel}
+                      badgeLabel="Dive in"
+                      badgeTone={tabWorld.accent}
+                      badgeBackground={tabWorld.accentSoft}
+                      fullBleed
+                      titleOverlay={card.title}
+                      subtitleOverlay={card.subtitle}
+                      creatorOverlay={card.creator}
+                      metricsOverlay={`${card.likes} likes · ${card.plays}`}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>{tabWorld.discoverTitle}</Text>
+                  <Text style={styles.sectionEyebrow}>Broader discovery once the hero cards have done their job.</Text>
+                </View>
+                <TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              </View>
+              {exploreGridLeadCard ? (
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={[styles.editorialGridLeadCard, { backgroundColor: getCardSurfaceTone(exploreGridLeadCard) }]}
+                >
+                  <ExploreMediaStage
+                    title={exploreGridLeadCard.title}
+                    accent={exploreGridLeadCard.accent}
+                    mediaKind={exploreGridLeadCard.mediaKind}
+                    imageUrl={exploreGridLeadCard.imageUrl}
+                    videoUrl={exploreGridLeadCard.videoUrl}
+                    previewLabel={previewLabel}
+                    badgeLabel="Keep exploring"
+                    badgeTone={tabWorld.accent}
+                    badgeBackground={tabWorld.accentSoft}
+                    fullBleed
+                    titleOverlay={exploreGridLeadCard.title}
+                    subtitleOverlay={exploreGridLeadCard.subtitle}
+                    creatorOverlay={exploreGridLeadCard.creator}
+                    metricsOverlay={`${exploreGridLeadCard.likes} likes · ${exploreGridLeadCard.plays}`}
+                  />
+                </TouchableOpacity>
+              ) : null}
+              <View style={styles.trendingGrid}>
+                {exploreGridCards.map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    activeOpacity={0.9}
+                    style={[
+                      ...getGridCardStyles(index, false),
+                      { backgroundColor: getCardSurfaceTone(item) },
+                    ]}
+                  >
+                    <ExploreMediaStage
+                      title={item.title}
+                      accent={item.accent}
+                      mediaKind={item.mediaKind}
+                      imageUrl={item.imageUrl}
+                      videoUrl={item.videoUrl}
+                      previewLabel={previewLabel}
+                      badgeLabel={tabWorld.cardLabel}
+                      badgeTone={tabWorld.accent}
+                      badgeBackground={tabWorld.accentSoft}
+                      fullBleed
+                      titleOverlay={item.title}
+                      subtitleOverlay={item.subtitle}
+                      creatorOverlay={item.creator}
+                      metricsOverlay={`${item.likes} likes · ${item.plays}`}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </>
         ) : (
@@ -1913,6 +2105,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingRight: 24,
     gap: 12,
+  },
+  editorialSpotlightCard: {
+    marginHorizontal: 16,
+    height: 340,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  editorialSecondaryGrid: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+  },
+  editorialSecondaryCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  editorialSecondaryCardWide: {
+    width: '100%',
+    height: 214,
+  },
+  editorialSecondaryCardTall: {
+    width: '48.4%',
+    height: 262,
+  },
+  editorialRailRow: {
+    paddingHorizontal: 16,
+    paddingRight: 28,
+    gap: 12,
+  },
+  editorialRailCard: {
+    width: 220,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  editorialRailCardTall: {
+    height: 296,
+  },
+  editorialRailCardShort: {
+    height: 244,
+  },
+  editorialGridLeadCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    height: 250,
+    borderRadius: 22,
+    overflow: 'hidden',
   },
   discoveryCard: {
     borderRadius: 20,
