@@ -32,6 +32,7 @@ import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import * as ImagePicker from 'expo-image-picker';
+import { ExploreLegacyScreen } from './ExploreLegacyScreen';
 
 const GAMES_HOST = 'https://games.gametok.co';
 
@@ -752,102 +753,7 @@ const MessagesTab: React.FC = () => {
 
 // Play Together Tab
 const PlayTogetherTab: React.FC = () => {
-  const { colors } = useTheme();
-
-  // Animated values for the illustration
-  const avatar1Scale = useSharedValue(0);
-  const avatar2Scale = useSharedValue(0);
-  const trophyScale = useSharedValue(0);
-  const trophyRotate = useSharedValue(0);
-
-  useEffect(() => {
-    // Staggered entrance animations
-    avatar1Scale.value = withDelay(200, withSpring(1, { damping: 12, stiffness: 100 }));
-    avatar2Scale.value = withDelay(400, withSpring(1, { damping: 12, stiffness: 100 }));
-    trophyScale.value = withDelay(600, withSpring(1, { damping: 10, stiffness: 80 }));
-    trophyRotate.value = withDelay(800, withSpring(10, { damping: 8, stiffness: 60 }));
-  }, []);
-
-  const avatar1Style = useAnimatedStyle(() => ({
-    transform: [{ scale: avatar1Scale.value }],
-  }));
-
-  const avatar2Style = useAnimatedStyle(() => ({
-    transform: [{ scale: avatar2Scale.value }],
-  }));
-
-  const trophyStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: trophyScale.value },
-      { rotate: `${trophyRotate.value}deg` },
-    ],
-  }));
-
-  return (
-    <View style={styles.comingSoonContainer}>
-      {/* Animated Illustration */}
-      <View style={styles.illustrationContainer}>
-        {/* Left Avatar (purple) */}
-        <Animated.View style={[styles.avatarCircle, styles.avatarLeft, avatar1Style]}>
-          <View style={[styles.avatarInner, { backgroundColor: '#8B5CF6' }]}>
-            <Ionicons name="person" size={32} color="#fff" />
-          </View>
-        </Animated.View>
-
-        {/* Trophy in the middle */}
-        <Animated.View style={[styles.trophyContainer, trophyStyle]}>
-          <Text style={styles.trophyEmoji}>🏆</Text>
-        </Animated.View>
-
-        {/* Right Avatar (pink) */}
-        <Animated.View style={[styles.avatarCircle, styles.avatarRight, avatar2Style]}>
-          <View style={[styles.avatarInner, { backgroundColor: '#EC4899' }]}>
-            <Ionicons name="person" size={32} color="#fff" />
-          </View>
-        </Animated.View>
-      </View>
-
-      {/* Title */}
-      <Animated.Text 
-        entering={FadeInUp.delay(800).springify()}
-        style={[styles.comingSoonTitle, { color: colors.text }]}
-      >
-        Play Together
-      </Animated.Text>
-
-      {/* Coming Soon Badge */}
-      <Animated.View 
-        entering={FadeInUp.delay(900).springify()}
-        style={styles.comingSoonBadge}
-      >
-        <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-        <Text style={[styles.comingSoonBadgeText, { color: colors.textSecondary }]}>
-          Coming Soon
-        </Text>
-      </Animated.View>
-
-      {/* Description */}
-      <Animated.Text 
-        entering={FadeInUp.delay(1000).springify()}
-        style={[styles.comingSoonText, { color: colors.textSecondary }]}
-      >
-        Challenge friends to multiplayer games,{'\n'}
-        compete in real-time, and climb the{'\n'}
-        leaderboards together!
-      </Animated.Text>
-
-      {/* Notification prompt */}
-      <Animated.View 
-        entering={FadeInUp.delay(1100).springify()}
-        style={[styles.notifyPrompt, { backgroundColor: colors.surface }]}
-      >
-        <Ionicons name="notifications-outline" size={18} color={colors.textSecondary} />
-        <Text style={[styles.notifyPromptText, { color: colors.textSecondary }]}>
-          We'll notify you when it's ready!
-        </Text>
-      </Animated.View>
-    </View>
-  );
+  return <ExploreLegacyScreen showHeader={false} />;
 };
 
 export const ConnectScreen: React.FC = () => {
