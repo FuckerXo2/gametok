@@ -175,8 +175,13 @@ export const users = {
 
 // Games API
 export const games = {
-  list: async (limit = 10, offset = 0) => {
-    return request(`/games?limit=${limit}&offset=${offset}`);
+  list: async (limit = 10, offset = 0, options?: { sort?: string }) => {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (options?.sort) params.set('sort', options.sort);
+    return request(`/games?${params.toString()}`);
   },
 
   // Get multiplayer-only games (for Connect screen)
@@ -623,6 +628,12 @@ export const ai = {
   },
   publish: async (draftId: string) => {
     return request(`/ai/publish/${draftId}`, { method: 'POST' });
+  },
+  reclassifyPublished: async (draftId?: string, limit = 20) => {
+    return request('/ai/reclassify-published', {
+      method: 'POST',
+      body: JSON.stringify({ draftId, limit }),
+    });
   },
   templates: async () => {
     return request('/ai/templates');

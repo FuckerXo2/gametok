@@ -23,7 +23,6 @@ const SIGNAL_PULSES = [
   { id: 'pulse-2', label: 'Creators rising', value: '1.8K', tone: '#3B82F6' },
   { id: 'pulse-3', label: 'Games popping', value: '312', tone: '#F59E0B' },
 ];
-
 const CHART_COLUMNS = [
   {
     title: 'Top Searches',
@@ -412,6 +411,7 @@ type ExploreWorldRecord = {
 type ExploreGameRecord = {
   id: string;
   name: string;
+  description?: string;
   thumbnail?: string;
   previewVideoUrl?: string;
   preview_video_url?: string;
@@ -419,7 +419,59 @@ type ExploreGameRecord = {
   video_url?: string;
   color?: string;
   category?: string;
+  primaryTab?: string;
+  interactionType?: string;
+  classificationTags?: string[];
   plays?: number;
+};
+
+const WORLD_CATEGORY_HINTS = {
+  Explore: ['arcade', 'simulation', 'puzzle', 'story', 'io', 'creative', 'tool', 'music', 'drawing'],
+  Games: ['action', 'arcade', 'runner', 'shooter', 'simulation', 'driving', 'sports', 'platformer', 'racing'],
+  Horror: ['horror', 'scary', 'creepy', 'escape', 'dark', 'haunted', 'monster', 'ghost', 'survival'],
+  Quiz: ['quiz', 'puzzle', 'education', 'word', 'trivia', 'memory', 'geography', 'math'],
+  Roleplay: ['dress', 'girls', 'story', 'simulation', 'beauty', 'social', 'romance', 'anime', 'dating', 'fashion'],
+} as const;
+
+const inferSemanticCategory = (game: ExploreGameRecord) => {
+  const rawCategory = (game.category || '').toLowerCase().trim();
+  if (rawCategory && rawCategory !== 'ai-remix') {
+    return rawCategory;
+  }
+
+  const primaryTab = String(game.primaryTab || '').trim();
+  if (primaryTab === 'Horror') return 'horror';
+  if (primaryTab === 'Quiz') return 'quiz';
+  if (primaryTab === 'Roleplay') return 'roleplay';
+  if (primaryTab === 'Games') return 'arcade';
+
+  const tagText = Array.isArray(game.classificationTags) ? game.classificationTags.join(' ') : '';
+  const interactionType = String(game.interactionType || '');
+  const text = `${game.name || ''} ${game.description || ''} ${tagText} ${interactionType}`.toLowerCase();
+  const bestMatch = Object.entries(WORLD_CATEGORY_HINTS)
+    .filter(([world]) => world !== 'Explore')
+    .map(([world, keywords]) => ({
+      world,
+      score: countKeywordHits(text, keywords),
+    }))
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (!bestMatch || bestMatch.score === 0) {
+    return rawCategory || 'creative';
+  }
+
+  switch (bestMatch.world) {
+    case 'Games':
+      return 'arcade';
+    case 'Horror':
+      return 'horror';
+    case 'Quiz':
+      return 'quiz';
+    case 'Roleplay':
+      return 'roleplay';
+    default:
+      return rawCategory || 'creative';
+  }
 };
 
 const buildExploreCard = (
@@ -581,21 +633,33 @@ const getWorldScore = (
   activeChip: string,
   game: ExploreGameRecord,
 ) => {
-  const category = (game.category || '').toLowerCase();
+  const category = inferSemanticCategory(game);
+  const primaryTab = String(game.primaryTab || '').toLowerCase();
   const name = (game.name || '').toLowerCase();
-  const haystack = `${name} ${category}`;
+  const description = (game.description || '').toLowerCase();
+  const tagText = Array.isArray(game.classificationTags) ? game.classificationTags.join(' ').toLowerCase() : '';
+  const interactionType = String(game.interactionType || '').toLowerCase();
+  const haystack = `${name} ${category} ${description} ${tagText} ${interactionType} ${primaryTab}`;
   const chipKeywords =
     activeTab in CHIP_KEYWORDS
       ? (CHIP_KEYWORDS[activeTab as keyof typeof CHIP_KEYWORDS] as Record<string, readonly string[]>)[activeChip] || []
       : [];
   const playsScore = game.plays ? Math.min(8, Math.round(game.plays / 50000)) : 0;
   const chipScore = countKeywordHits(haystack, chipKeywords) * 3;
+  const explicitTabBoost =
+    (activeTab === 'Games' && primaryTab === 'games') ||
+    (activeTab === 'Horror' && primaryTab === 'horror') ||
+    (activeTab === 'Quiz' && primaryTab === 'quiz') ||
+    (activeTab === 'Roleplay' && primaryTab === 'roleplay')
+      ? 8
+      : 0;
 
   switch (activeTab) {
     case 'Games':
-      return chipScore + playsScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
+      return explicitTabBoost + chipScore + playsScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
     case 'Horror':
       return (
+        explicitTabBoost +
         countKeywordHits(haystack, WORLD_KEYWORDS.Horror) * 4 +
         chipScore +
         (/horror|escape|adventure|action|arcade/.test(category) ? 5 : 0) +
@@ -603,6 +667,7 @@ const getWorldScore = (
       );
     case 'Quiz':
       return (
+        explicitTabBoost +
         countKeywordHits(haystack, WORLD_KEYWORDS.Quiz) * 4 +
         chipScore +
         (/quiz|puzzle|education|word|trivia/.test(category) ? 5 : 0) +
@@ -610,6 +675,7 @@ const getWorldScore = (
       );
     case 'Roleplay':
       return (
+        explicitTabBoost +
         countKeywordHits(haystack, WORLD_KEYWORDS.Roleplay) * 4 +
         chipScore +
         (/dress|girls|story|simulation|beauty|social/.test(category) ? 5 : 0) +
@@ -637,12 +703,19 @@ const mergeLiveGamesIntoWorld = (
     }))
     .sort((a, b) => b.score - a.score);
 
-  const matching = ranked.filter((entry) => entry.score > (activeTab === 'Explore' ? 0 : 2)).map((entry) => entry.game);
-  const fallback = matching.length ? matching : ranked.map((entry) => entry.game);
+  const minimumScore = activeTab === 'Explore' ? 1 : 3;
+  const matching = ranked.filter((entry) => entry.score >= minimumScore).map((entry) => entry.game);
+  const fallback = activeTab === 'Explore'
+    ? (matching.length ? matching : ranked.map((entry) => entry.game))
+    : matching;
+
+  if (!fallback.length) return world;
+
   let cursor = 0;
 
   const nextGame = () => {
-    const game = fallback[cursor % fallback.length];
+    if (cursor >= fallback.length) return undefined;
+    const game = fallback[cursor];
     cursor += 1;
     return game;
   };
@@ -656,7 +729,7 @@ const mergeLiveGamesIntoWorld = (
       ...card,
       id: game.id,
       title: game.name,
-      subtitle: game.category ? game.category : card.subtitle,
+      subtitle: inferSemanticCategory(game) || card.subtitle,
       accent: game.color || card.accent,
       likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : card.likes,
       plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : card.plays,
@@ -676,7 +749,7 @@ const mergeLiveGamesIntoWorld = (
         ...hero,
         id: buildSlotKey('hero', game.id, index),
         title: game.name,
-        subtitle: game.category ? `${game.category} right now` : hero.subtitle,
+        subtitle: `${inferSemanticCategory(game)} right now`,
         creator: hero.creator,
         likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : hero.likes,
         plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : hero.plays,
@@ -877,11 +950,6 @@ export const ExploreScreen: React.FC = () => {
   const exploreGridLeadCard = activeTab === 'Explore' ? tabWorld.grid[0] : undefined;
   const exploreGridCards = activeTab === 'Explore' ? tabWorld.grid.slice(1) : [];
 
-  const radarEyebrow =
-    activeTab === 'Explore'
-      ? 'What the culture is surfacing right now.'
-      : `What ${activeTab.toLowerCase()} culture is surfacing right now.`;
-
   const trendingChallengesTitle =
     activeTab === 'Explore' ? 'Challenges' : `${activeTab} Challenges`;
 
@@ -974,27 +1042,6 @@ export const ExploreScreen: React.FC = () => {
     }
   };
 
-  const renderTrendingPulseLabel = () => {
-    switch (activeTab) {
-      case 'Games':
-        return 'Mechanics rising';
-      case 'Horror':
-        return 'Fear spikes';
-      case 'Quiz':
-        return 'Brain heat';
-      case 'Roleplay':
-        return 'Ship energy';
-      default:
-        return 'Search heat';
-    }
-  };
-
-  const radarPulses = [
-    { ...SIGNAL_PULSES[0], label: renderTrendingPulseLabel(), tone: tabWorld.accent },
-    SIGNAL_PULSES[1],
-    SIGNAL_PULSES[2],
-  ];
-
   const getChartCardStyle = () => {
     switch (activeTab) {
       case 'Games':
@@ -1011,6 +1058,25 @@ export const ExploreScreen: React.FC = () => {
   };
 
   const chartCardTone = getChartCardStyle();
+  const radarPulses = [
+    {
+      ...SIGNAL_PULSES[0],
+      label:
+        activeTab === 'Games'
+          ? 'Mechanics rising'
+          : activeTab === 'Horror'
+            ? 'Fear spikes'
+            : activeTab === 'Quiz'
+              ? 'Brain heat'
+              : activeTab === 'Roleplay'
+                ? 'Ship energy'
+                : SIGNAL_PULSES[0].label,
+      tone: tabWorld.accent,
+    },
+    SIGNAL_PULSES[1],
+    SIGNAL_PULSES[2],
+  ];
+
   const previewLabel = getPreviewLabel(activeTab, activeChip);
 
   const searchResults = useMemo(() => {
@@ -1076,25 +1142,33 @@ export const ExploreScreen: React.FC = () => {
   const loadLiveGames = async () => {
     try {
       const [gamesData, feedData] = await Promise.all([
-        gamesApi.list(60, 0),
+        gamesApi.list(120, 0, { sort: 'discover' }),
         feed.global(40).catch(() => ({ activity: [] })),
       ]);
-      setLiveGames((gamesData.games || []) as ExploreGameRecord[]);
+      const allGames = (gamesData.games || []) as ExploreGameRecord[];
+      setLiveGames(allGames);
+      const gamesById = new Map(allGames.map((game) => [game.id, game]));
 
       const dedupedTrending = new Map<string, ExploreGameRecord>();
       for (const item of feedData.activity || []) {
         const game = item?.game;
         if (!game?.id || dedupedTrending.has(game.id)) continue;
+        const enriched = gamesById.get(game.id);
         dedupedTrending.set(game.id, {
           id: game.id,
-          name: game.name,
-          thumbnail: game.thumbnail,
-          previewVideoUrl: game.previewVideoUrl,
-          preview_video_url: game.preview_video_url,
-          videoUrl: game.videoUrl,
-          video_url: game.video_url,
-          color: game.color,
-          plays: undefined,
+          name: enriched?.name || game.name,
+          description: enriched?.description,
+          thumbnail: enriched?.thumbnail || game.thumbnail,
+          previewVideoUrl: enriched?.previewVideoUrl || game.previewVideoUrl,
+          preview_video_url: enriched?.preview_video_url || game.preview_video_url,
+          videoUrl: enriched?.videoUrl || game.videoUrl,
+          video_url: enriched?.video_url || game.video_url,
+          color: enriched?.color || game.color,
+          category: enriched?.category,
+          primaryTab: enriched?.primaryTab,
+          interactionType: enriched?.interactionType,
+          classificationTags: enriched?.classificationTags,
+          plays: enriched?.plays,
         });
       }
       setTrendingGames(Array.from(dedupedTrending.values()));
@@ -1119,26 +1193,34 @@ export const ExploreScreen: React.FC = () => {
     const bootstrap = async () => {
       try {
         const [gamesData, feedData] = await Promise.all([
-          gamesApi.list(60, 0),
+          gamesApi.list(120, 0, { sort: 'discover' }),
           feed.global(40).catch(() => ({ activity: [] })),
         ]);
         if (!active) return;
-        setLiveGames((gamesData.games || []) as ExploreGameRecord[]);
+        const allGames = (gamesData.games || []) as ExploreGameRecord[];
+        setLiveGames(allGames);
+        const gamesById = new Map(allGames.map((game) => [game.id, game]));
 
         const dedupedTrending = new Map<string, ExploreGameRecord>();
         for (const item of feedData.activity || []) {
           const game = item?.game;
           if (!game?.id || dedupedTrending.has(game.id)) continue;
+          const enriched = gamesById.get(game.id);
           dedupedTrending.set(game.id, {
             id: game.id,
-            name: game.name,
-            thumbnail: game.thumbnail,
-            previewVideoUrl: game.previewVideoUrl,
-            preview_video_url: game.preview_video_url,
-            videoUrl: game.videoUrl,
-            video_url: game.video_url,
-            color: game.color,
-            plays: undefined,
+            name: enriched?.name || game.name,
+            description: enriched?.description,
+            thumbnail: enriched?.thumbnail || game.thumbnail,
+            previewVideoUrl: enriched?.previewVideoUrl || game.previewVideoUrl,
+            preview_video_url: enriched?.preview_video_url || game.preview_video_url,
+            videoUrl: enriched?.videoUrl || game.videoUrl,
+            video_url: enriched?.video_url || game.video_url,
+            color: enriched?.color || game.color,
+            category: enriched?.category,
+            primaryTab: enriched?.primaryTab,
+            interactionType: enriched?.interactionType,
+            classificationTags: enriched?.classificationTags,
+            plays: enriched?.plays,
           });
         }
         setTrendingGames(Array.from(dedupedTrending.values()));
@@ -1348,10 +1430,7 @@ export const ExploreScreen: React.FC = () => {
           <>
             <View style={[styles.section, styles.leadSection]}>
               <View style={styles.sectionHeader}>
-                <View>
-                  <Text style={styles.sectionTitle}>On The Radar</Text>
-                  <Text style={styles.sectionEyebrow}>{radarEyebrow}</Text>
-                </View>
+                <Text style={styles.sectionTitle}>On The Radar</Text>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.signalPulseRow}>
                 {radarPulses.map((pulse) => (
@@ -2331,37 +2410,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 12,
   },
-  signalPulseRow: {
-    paddingHorizontal: 16,
-    gap: 10,
-    paddingBottom: 12,
-  },
-  signalPulse: {
-    minWidth: 126,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  signalPulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 10,
-  },
-  signalPulseLabel: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.76)',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  signalPulseValue: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
   chartCard: {
     width: 220,
     borderRadius: 20,
@@ -2425,6 +2473,37 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  signalPulseRow: {
+    paddingHorizontal: 16,
+    gap: 10,
+    paddingBottom: 12,
+  },
+  signalPulse: {
+    minWidth: 126,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  signalPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  signalPulseLabel: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  signalPulseValue: {
+    fontSize: 13,
+    fontWeight: '900',
   },
   chartAccentOrb: {
     position: 'absolute',
