@@ -625,8 +625,67 @@ const CHIP_KEYWORDS = {
   },
 } as const;
 
+const CHIP_CLASSIFIER_HINTS = {
+  Explore: {
+    'For You': ['interactive', 'playful', 'creative', 'experimental'],
+    Brainrot: ['absurd', 'chaotic', 'meme', 'brainrot'],
+    Casual: ['casual', 'lightweight', 'cozy', 'quick'],
+    '67 Energy': ['fast', 'adrenaline', 'arcade', 'chaotic'],
+    Meme: ['meme', 'funny', 'absurd', 'shitpost'],
+    'NPC Core': ['character', 'social', 'story', 'roleplay'],
+    Satisfying: ['satisfying', 'pattern', 'drawing_tool', 'music_toy', 'puzzle'],
+  },
+  Games: {
+    'For You': ['playable', 'loop', 'interactive', 'arcade_loop'],
+    Arcade: ['arcade_loop', 'arcade', 'score', 'reflex'],
+    'Boss Rush': ['combat', 'boss', 'enemy', 'action'],
+    Cozy: ['cozy', 'gentle', 'soft', 'relaxing'],
+    Chaotic: ['chaotic', 'adrenaline', 'action', 'wild'],
+    Speedrun: ['speed', 'runner', 'dash', 'timed'],
+    Simulator: ['simulator', 'simulation', 'sandbox', 'driving', 'management'],
+  },
+  Horror: {
+    'For You': ['horror', 'dark', 'psychological', 'horror_vignette'],
+    'Found Footage': ['found-footage', 'camera', 'glitch', 'surveillance'],
+    'Cursed Feed': ['feed', 'social', 'text-based', 'ui-horror'],
+    Psychological: ['psychological', 'choice-based', 'text-based', 'mind-bending'],
+    Paranormal: ['ghost', 'haunted', 'paranormal', 'supernatural'],
+    Escape: ['escape', 'survival', 'locked-room', 'puzzle'],
+    'Night Shift': ['night-shift', 'late-night', 'workplace', 'shift'],
+  },
+  Quiz: {
+    'For You': ['quiz', 'trivia', 'brain', 'quiz_challenge'],
+    Trivia: ['trivia', 'question-based', 'facts'],
+    Geography: ['geography', 'country', 'map', 'atlas'],
+    Anime: ['anime', 'fandom', 'character'],
+    'Brain Tease': ['brain', 'logic', 'puzzle', 'memory'],
+    Impossible: ['impossible', 'trick', 'hard', 'bait'],
+    'School Break': ['casual', 'social', 'quick', 'classroom'],
+  },
+  Roleplay: {
+    Recommend: ['story', 'character', 'social', 'roleplay_story'],
+    'Immersive Worlds': ['world', 'fantasy', 'immersive', 'universe'],
+    Boyfriend: ['boyfriend', 'dating', 'romance', 'male-lead'],
+    Girlfriend: ['girlfriend', 'dating', 'romance', 'female-lead'],
+    Romance: ['romance', 'love', 'chemistry', 'dating'],
+    Drama: ['drama', 'conflict', 'school', 'episode'],
+    Fantasy: ['fantasy', 'magic', 'mythic', 'princess'],
+  },
+} as const;
+
 const countKeywordHits = (haystack: string, keywords: readonly string[]) =>
   keywords.reduce((count, keyword) => count + (haystack.includes(keyword) ? 1 : 0), 0);
+
+const getClassifierSignalText = (game: ExploreGameRecord) => {
+  const tags = Array.isArray(game.classificationTags)
+    ? game.classificationTags.map((tag) => String(tag || '').trim().toLowerCase())
+    : [];
+  const interactionType = String(game.interactionType || '').trim().toLowerCase().replace(/_/g, '-');
+  const category = String(game.category || '').trim().toLowerCase();
+  const primaryTab = String(game.primaryTab || '').trim().toLowerCase();
+
+  return [primaryTab, category, interactionType, ...tags].filter(Boolean).join(' ');
+};
 
 const getWorldScore = (
   activeTab: (typeof PRIMARY_TABS)[number],
@@ -640,12 +699,18 @@ const getWorldScore = (
   const tagText = Array.isArray(game.classificationTags) ? game.classificationTags.join(' ').toLowerCase() : '';
   const interactionType = String(game.interactionType || '').toLowerCase();
   const haystack = `${name} ${category} ${description} ${tagText} ${interactionType} ${primaryTab}`;
+  const classifierSignals = getClassifierSignalText(game);
   const chipKeywords =
     activeTab in CHIP_KEYWORDS
       ? (CHIP_KEYWORDS[activeTab as keyof typeof CHIP_KEYWORDS] as Record<string, readonly string[]>)[activeChip] || []
       : [];
+  const chipClassifierHints =
+    activeTab in CHIP_CLASSIFIER_HINTS
+      ? (CHIP_CLASSIFIER_HINTS[activeTab as keyof typeof CHIP_CLASSIFIER_HINTS] as Record<string, readonly string[]>)[activeChip] || []
+      : [];
   const playsScore = game.plays ? Math.min(8, Math.round(game.plays / 50000)) : 0;
   const chipScore = countKeywordHits(haystack, chipKeywords) * 3;
+  const classifierChipScore = countKeywordHits(classifierSignals, chipClassifierHints) * 6;
   const explicitTabBoost =
     (activeTab === 'Games' && primaryTab === 'games') ||
     (activeTab === 'Horror' && primaryTab === 'horror') ||
@@ -656,10 +721,11 @@ const getWorldScore = (
 
   switch (activeTab) {
     case 'Games':
-      return explicitTabBoost + chipScore + playsScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
+      return explicitTabBoost + chipScore + classifierChipScore + playsScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
     case 'Horror':
       return (
         explicitTabBoost +
+        classifierChipScore +
         countKeywordHits(haystack, WORLD_KEYWORDS.Horror) * 4 +
         chipScore +
         (/horror|escape|adventure|action|arcade/.test(category) ? 5 : 0) +
@@ -668,6 +734,7 @@ const getWorldScore = (
     case 'Quiz':
       return (
         explicitTabBoost +
+        classifierChipScore +
         countKeywordHits(haystack, WORLD_KEYWORDS.Quiz) * 4 +
         chipScore +
         (/quiz|puzzle|education|word|trivia/.test(category) ? 5 : 0) +
@@ -676,13 +743,14 @@ const getWorldScore = (
     case 'Roleplay':
       return (
         explicitTabBoost +
+        classifierChipScore +
         countKeywordHits(haystack, WORLD_KEYWORDS.Roleplay) * 4 +
         chipScore +
         (/dress|girls|story|simulation|beauty|social/.test(category) ? 5 : 0) +
         playsScore
       );
     default:
-      return chipScore + playsScore + countKeywordHits(haystack, ['arcade', 'simulation', 'puzzle', 'story', 'io']) * 2;
+      return chipScore + classifierChipScore + playsScore + countKeywordHits(haystack, ['arcade', 'simulation', 'puzzle', 'story', 'io']) * 2;
   }
 };
 
