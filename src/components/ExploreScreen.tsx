@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -844,6 +845,7 @@ export const ExploreScreen: React.FC = () => {
   const [heroIndex, setHeroIndex] = useState(0);
   const [liveGames, setLiveGames] = useState<ExploreGameRecord[]>([]);
   const [trendingGames, setTrendingGames] = useState<ExploreGameRecord[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const tabWorld = useMemo(() => {
     const shaped = buildWorldRecord(activeTab, activeChip, TAB_WORLDS[activeTab]);
@@ -1071,10 +1073,50 @@ export const ExploreScreen: React.FC = () => {
     setActiveChip(tabWorld.defaultChip);
   }, [activeTab]);
 
+  const loadLiveGames = async () => {
+    try {
+      const [gamesData, feedData] = await Promise.all([
+        gamesApi.list(60, 0),
+        feed.global(40).catch(() => ({ activity: [] })),
+      ]);
+      setLiveGames((gamesData.games || []) as ExploreGameRecord[]);
+
+      const dedupedTrending = new Map<string, ExploreGameRecord>();
+      for (const item of feedData.activity || []) {
+        const game = item?.game;
+        if (!game?.id || dedupedTrending.has(game.id)) continue;
+        dedupedTrending.set(game.id, {
+          id: game.id,
+          name: game.name,
+          thumbnail: game.thumbnail,
+          previewVideoUrl: game.previewVideoUrl,
+          preview_video_url: game.preview_video_url,
+          videoUrl: game.videoUrl,
+          video_url: game.video_url,
+          color: game.color,
+          plays: undefined,
+        });
+      }
+      setTrendingGames(Array.from(dedupedTrending.values()));
+    } catch (error) {
+      setLiveGames([]);
+      setTrendingGames([]);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadLiveGames();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
-    const loadLiveGames = async () => {
+    const bootstrap = async () => {
       try {
         const [gamesData, feedData] = await Promise.all([
           gamesApi.list(60, 0),
@@ -1108,7 +1150,7 @@ export const ExploreScreen: React.FC = () => {
       }
     };
 
-    loadLiveGames();
+    bootstrap();
 
     return () => {
       active = false;
@@ -1140,7 +1182,19 @@ export const ExploreScreen: React.FC = () => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: '#050505' }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FFFFFF"
+            colors={['#FFFFFF']}
+            progressBackgroundColor="#111111"
+          />
+        }
+      >
         <View style={styles.header}>
           <Text style={styles.logoTitle}>EXPLORE</Text>
           <TouchableOpacity style={[styles.headerIcon, isTrendingView && { borderColor: tabWorld.modeBannerBorder, backgroundColor: tabWorld.modeBannerBg }]}>
