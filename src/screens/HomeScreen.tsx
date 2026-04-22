@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
-import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress } from '../services/api';
+import { API_URL, games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress } from '../services/api';
 import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
 import { CommentsSheet } from '../components/CommentsSheet';
@@ -26,6 +26,7 @@ import { LoopsAnimations } from '../constants/LoopsAnimations';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://games.gametok.co';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
 const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
 const TOP_ZONE_HEIGHT = 0; // Removed top scroll zone so taps at the top of the game work
@@ -34,10 +35,20 @@ const SWIPE_THRESHOLD = 50;
 interface Game {
   id: string;
   name: string;
+  description?: string;
   embedUrl?: string;
   thumbnail?: string;
+  previewVideoUrl?: string | null;
   likes?: number;
+  plays?: number;
+  saves?: number;
   color?: string;
+  category?: string | null;
+  subcategory?: string | null;
+  primaryTab?: string | null;
+  discoveryChips?: string[];
+  creatorDisplayName?: string | null;
+  creatorUsername?: string | null;
 }
 
 // Feed contains games and native ad placeholders every AD_FREQUENCY games
@@ -48,21 +59,36 @@ interface FeedItem {
 }
 
 const getGameUrl = (game: Game) => {
-  if (game.embedUrl) {
-    const separator = game.embedUrl.includes('?') ? '&' : '?';
-    return `${game.embedUrl}${separator}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
-  }
-  return `${GAMES_HOST}/${game.id}/`;
+  const rawUrl = game.embedUrl
+    ? (game.embedUrl.startsWith('/') ? `${API_ORIGIN}${game.embedUrl}` : game.embedUrl)
+    : `${GAMES_HOST}/${game.id}/`;
+  const separator = rawUrl.includes('?') ? '&' : '?';
+  return `${rawUrl}${separator}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
 };
 
 const getThumbnailUrl = (game: Game) => {
   if (game.thumbnail) {
-    return game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`;
+    if (game.thumbnail.startsWith('http') || game.thumbnail.startsWith('data:')) {
+      return game.thumbnail;
+    }
+    if (game.thumbnail.startsWith('/')) {
+      return `${API_ORIGIN}${game.thumbnail}`;
+    }
+    return `${GAMES_HOST}${game.thumbnail}`;
   }
   return `${GAMES_HOST}/thumbnails/${game.id}.png`;
 };
 
+const getFeedBackdropColor = () => '#050505';
+
 const isExternalGame = (game: Game) => !!game.embedUrl;
+
+const shouldUseWebViewBackdrop = (game: Game) => {
+  if (!game.embedUrl) return false;
+  if (game.embedUrl.startsWith('/')) return false;
+  if (game.embedUrl.startsWith(API_ORIGIN)) return false;
+  return true;
+};
 
 // Domains to block at request level
 const AD_DOMAINS = [
@@ -1264,31 +1290,6 @@ const GAME_READY_SCRIPT = `
 true;
 `;
 
-// Random taglines for games
-const GAME_TAGLINES = [
-  "So addicting 🔥",
-  "Can you beat this?",
-  "Try not to rage quit 😤",
-  "One more game...",
-  "Warning: highly addictive",
-  "Brain melting fun",
-  "Simple but deadly",
-  "You won't put it down",
-  "Challenge accepted? 💪",
-  "Pure chaos",
-  "Satisfying af",
-  "Quick dopamine hit",
-  "Lowkey fire 🔥",
-  "Trust me on this one",
-  "Your new obsession",
-];
-
-const getRandomTagline = (gameId: string) => {
-  // Use gameId to get consistent tagline per game
-  const hash = gameId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-  return GAME_TAGLINES[hash % GAME_TAGLINES.length];
-};
-
 // Format count like TikTok (1.2K, 3.4M, etc)
 const formatCount = (count: number): string => {
   if (count >= 1000000) {
@@ -2160,6 +2161,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Gamification - track play time for current game
   const gameStartTimeRef = useRef<number | null>(null);
   const lastTrackedGameRef = useRef<string | null>(null);
+  const playRecordedForSessionRef = useRef<Set<string>>(new Set());
+  const playRecordTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Live session points counter (ticks up every 5 seconds)
   const [sessionPoints, setSessionPoints] = useState(0);
@@ -2475,6 +2478,57 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
+  useEffect(() => {
+    if (playRecordTimeoutRef.current) {
+      clearTimeout(playRecordTimeoutRef.current);
+      playRecordTimeoutRef.current = null;
+    }
+
+    if (!isFocused) return;
+    if (currentIndex < 0) return;
+
+    const currentItem = feed[currentIndex];
+    if (!currentItem || currentItem.isAd || !currentItem.game?.id) return;
+
+    const gameId = currentItem.game.id;
+    if (playRecordedForSessionRef.current.has(gameId)) return;
+
+    // Count a play only after the user has actually stayed on the game briefly.
+    playRecordTimeoutRef.current = setTimeout(() => {
+      gamesApi.recordPlay(gameId)
+        .then((result) => {
+          if (result?.counted === false) {
+            return;
+          }
+          playRecordedForSessionRef.current.add(gameId);
+          setFeed((prev) => prev.map((entry) => (
+            entry.game?.id === gameId
+              ? {
+                  ...entry,
+                  game: {
+                    ...entry.game,
+                    plays: (entry.game.plays || 0) + 1,
+                  },
+                }
+              : entry
+          )));
+        })
+        .catch((error) => {
+          console.log('[HomeScreen] recordPlay error:', error?.message || error);
+        })
+        .finally(() => {
+          playRecordTimeoutRef.current = null;
+        });
+    }, 1800);
+
+    return () => {
+      if (playRecordTimeoutRef.current) {
+        clearTimeout(playRecordTimeoutRef.current);
+        playRecordTimeoutRef.current = null;
+      }
+    };
+  }, [currentIndex, feed, isFocused]);
+
   // Track game play time for gamification
   useEffect(() => {
     const currentItem = currentIndex >= 0 ? feed[currentIndex] : null;
@@ -2591,7 +2645,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       // Fetch games immediately (don't wait for ads)
       console.log('[HomeScreen] Fetching games...');
       try {
-        const data = await gamesApi.list(50);
+        const data = await gamesApi.list(50, 0, { sort: 'discover' });
         console.log('[HomeScreen] Games fetched:', data?.games?.length || 0);
         if (data.games?.length > 0) {
           allGamesRef.current = data.games;
@@ -2657,7 +2711,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     // Otherwise fetch fresh
     setLoading(true);
     try {
-      const data = await gamesApi.list(50);
+      const data = await gamesApi.list(50, 0, { sort: 'discover' });
       if (data.games?.length > 0) {
         allGamesRef.current = data.games;
         setFeed(createFeed(data.games));
@@ -2698,7 +2752,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       } else {
         // Game not in current feed - try to fetch it and add to front
         console.log('[DeepLink] Game not in feed, fetching...');
-        gamesApi.list(100).then(data => {
+        gamesApi.list(100, 0, { sort: 'discover' }).then(data => {
           const game = data.games?.find((g: Game) =>
             g.id === sharedGameId || g.id?.toLowerCase() === sharedGameId.toLowerCase()
           );
@@ -2723,7 +2777,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       // Fetch fresh random games from server
       const fetchMoreGames = async () => {
         try {
-          const data = await gamesApi.list(50);
+          const data = await gamesApi.list(50, 0, { sort: 'discover' });
           if (data.games?.length > 0) {
             feedCycleRef.current += 1;
             const cycle = feedCycleRef.current;
@@ -3080,16 +3134,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
             </Animated.View>
           ) : (
             // Game screen - natively tracks edge panning around the webview
-            <Animated.View {...edgePanResponder.panHandlers} style={{ flex: 1, backgroundColor: item!.game?.color || '#1a1a2e' }} pointerEvents="box-none" collapsable={false}>
-              {/* Blurred thumbnail background for letterboxed games */}
-              {item!.game && (
-                <Image
-                  source={{ uri: getThumbnailUrl(item!.game) }}
-                  style={[StyleSheet.absoluteFillObject, { opacity: 0.45 }]}
-                  blurRadius={40}
-                />
-              )}
-
+            <Animated.View {...edgePanResponder.panHandlers} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
               <Animated.View style={{ flex: 1 }}>
                 <WebView
                   ref={(ref) => { webViewRefs.current[item!.id] = ref; }}
@@ -3110,7 +3155,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   thirdPartyCookiesEnabled={false}
                   sharedCookiesEnabled={false}
                   injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT : EDGE_BLOCK_SCRIPT}
-                  injectedJavaScript={createBlurBgScript(getThumbnailUrl(item!.game!), item!.game?.color || '#1a1a2e')}
+                  injectedJavaScript={shouldUseWebViewBackdrop(item!.game!) ? createBlurBgScript(getThumbnailUrl(item!.game!), getFeedBackdropColor()) : undefined}
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
@@ -3130,18 +3175,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   setSupportMultipleWindows={false}
                   onLoadEnd={async () => {
                     // Inject blurred thumbnail bg after page fully loads (backup)
-                    const thumbUrl = getThumbnailUrl(item!.game!);
-                    const fallback = item!.game?.color || '#1a1a2e';
-                    webViewRefs.current[item!.id]?.injectJavaScript(`
-                      document.documentElement.style.setProperty('background', '${fallback}', 'important');
-                      document.body.style.setProperty('background', 'transparent', 'important');
-                      if(!document.getElementById('_gt_blur_bg')){
-                        var s=document.createElement('style');s.id='_gt_blur_bg';
-                        s.textContent='body::before{content:"";position:fixed;top:-20px;left:-20px;right:-20px;bottom:-20px;background:url(${thumbUrl}) center/cover no-repeat;filter:blur(30px);-webkit-filter:blur(30px);opacity:0.5;z-index:-1;pointer-events:none;}';
-                        document.head.appendChild(s);
-                      }
-                      true;
-                    `);
+                    if (shouldUseWebViewBackdrop(item!.game!)) {
+                      const thumbUrl = getThumbnailUrl(item!.game!);
+                      const fallback = getFeedBackdropColor();
+                      webViewRefs.current[item!.id]?.injectJavaScript(`
+                        document.documentElement.style.setProperty('background', '${fallback}', 'important');
+                        document.body.style.setProperty('background', 'transparent', 'important');
+                        if(!document.getElementById('_gt_blur_bg')){
+                          var s=document.createElement('style');s.id='_gt_blur_bg';
+                          s.textContent='body::before{content:"";position:fixed;top:-20px;left:-20px;right:-20px;bottom:-20px;background:url(${thumbUrl}) center/cover no-repeat;filter:blur(30px);-webkit-filter:blur(30px);opacity:0.5;z-index:-1;pointer-events:none;}';
+                          document.head.appendChild(s);
+                        }
+                        true;
+                      `);
+                    }
 
                     // Page fully loaded — wait 3s for game to render, then mark ready
                     setTimeout(() => {
@@ -3193,19 +3240,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                 {!item!.isAd && (
                   <>
                     {/* TikTok-style action buttons - right side */}
-                    <View style={styles.actionButtons}>
-                      {/* Session Points Counter - tap for leaderboard */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleOpenLeaderboard(item!.game!.id, item!.game!.name);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="trophy" size={32} color={LoopsColors.coinGold} />
-                        <Text style={[styles.actionCount, { color: LoopsColors.coinGold }]}>+{sessionPoints}</Text>
-                      </TouchableOpacity>
+                    <View style={[styles.actionButtons, { bottom: 64 }]}>
+
 
                       <AnimatedLikeButton
                         isLiked={likedGames.has(item!.game!.id)}
@@ -3261,12 +3297,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     {/* Game info - bottom left */}
                     <View style={styles.gameInfo} pointerEvents="none">
                       <View style={styles.gameNameRow}>
-                        <Text style={styles.gameName}>{item!.game!.name}</Text>
+                        <Text style={styles.gameName} numberOfLines={2}>{item!.game!.name}</Text>
                         <View style={styles.gameBadge}>
-                          <Ionicons name="game-controller" size={12} color={LoopsColors.white} />
+                          <Ionicons name="game-controller" size={11} color={LoopsColors.white} />
                         </View>
                       </View>
-                      <Text style={styles.gameTagline}>{getRandomTagline(item!.game!.id)}</Text>
+                      {!!item!.game!.creatorDisplayName && (
+                        <View style={styles.creatorRow}>
+                          <Text style={styles.creatorDisplayName} numberOfLines={1}>{item!.game!.creatorDisplayName}</Text>
+                        </View>
+                      )}
+                      <View style={styles.gameMetaRow}>
+                        <View style={styles.gameMetaPill}>
+                          <Ionicons name="play" size={12} color={LoopsColors.white80} />
+                          <Text style={styles.gameMetaText}>{formatCount(item!.game!.plays || 0)} plays</Text>
+                        </View>
+                      </View>
                     </View>
                   </>
                 )}
@@ -3283,13 +3329,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       {/* For You header - tappable to refresh, swipes pass through around it */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
-        <TouchableOpacity
-          onPress={refreshFeed}
-          activeOpacity={0.7}
-          style={styles.forYouButton}
-        >
-          <Text style={styles.forYouText}>For You</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRail}>
+          <TouchableOpacity
+            onPress={refreshFeed}
+            activeOpacity={0.8}
+            style={styles.feedModePill}
+          >
+            <View style={styles.feedModeDot} />
+            <Text style={styles.forYouText}>For You</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={refreshFeed}
+            activeOpacity={0.8}
+            style={styles.feedRefreshBtn}
+          >
+            <Ionicons name="sparkles-outline" size={16} color={LoopsColors.white} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Scroll overlay - only visible when scroll mode is active */}
@@ -3390,14 +3447,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10000,
   },
+  headerRail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  feedModePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(10,10,10,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  feedModeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: LoopsColors.mainPink,
+    marginRight: 8,
+  },
   forYouText: {
     color: LoopsColors.white,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
   },
-  forYouButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 6,
+  feedRefreshBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10,10,10,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   gameContainer: {
     position: 'absolute',
@@ -3492,7 +3577,7 @@ const styles = StyleSheet.create({
   actionButtons: {
     position: 'absolute',
     right: 8,
-    top: '50%',
+    bottom: 24,
     alignItems: 'center',
     zIndex: 10,
   },
@@ -3519,29 +3604,64 @@ const styles = StyleSheet.create({
   gameNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  creatorRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 6,
+    marginLeft: 4,
+  },
+  creatorDisplayName: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.05,
+    textShadowColor: LoopsColors.black90,
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    flexShrink: 1,
   },
   gameName: {
     color: LoopsColors.white,
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.4,
     textShadowColor: LoopsColors.black90,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   gameBadge: {
-    backgroundColor: LoopsColors.mainPink,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    marginLeft: 8,
+    backgroundColor: 'rgba(255, 64, 151, 0.82)',
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  gameTagline: {
+  gameMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  gameMetaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginRight: 8,
+    marginBottom: 8,
+    backgroundColor: 'rgba(10,10,10,0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  gameMetaText: {
     color: LoopsColors.white80,
-    fontSize: 14,
-    textShadowColor: LoopsColors.black80,
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   gameLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,

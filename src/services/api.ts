@@ -2,6 +2,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
+const CLIENT_ID_STORAGE_KEY = 'clientId';
+
+const createClientId = () => `gtk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+
+const getClientId = async () => {
+  let clientId = await AsyncStorage.getItem(CLIENT_ID_STORAGE_KEY);
+  if (!clientId) {
+    clientId = createClientId();
+    await AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
+  }
+  return clientId;
+};
 
 // Token management - always read from AsyncStorage to avoid stale cache
 export const setToken = async (token: string | null) => {
@@ -22,8 +34,10 @@ export const getToken = async () => {
 
 const headers = async () => {
   const token = await getToken();
+  const clientId = await getClientId();
   return {
     'Content-Type': 'application/json',
+    'X-Client-Id': clientId,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 };
@@ -182,6 +196,28 @@ export const games = {
     });
     if (options?.sort) params.set('sort', options.sort);
     return request(`/games?${params.toString()}`);
+  },
+
+  discoverLanes: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 12,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    return request(`/games/discover-lanes?${params.toString()}`);
+  },
+
+  discoverDebug: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 25,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    return request(`/games/discover-debug?${params.toString()}`);
   },
 
   // Get multiplayer-only games (for Connect screen)
@@ -380,6 +416,47 @@ export const moderation = {
 // Gamification API
 // Gamification API - REMOVED
 // All gamification endpoints have been removed
+export const gamification = {
+  getStats: async () => ({
+    points: {
+      balance: 0,
+      lifetimeEarned: 0,
+      usdValue: 0,
+      coinsPerUsd: 5667,
+    },
+    streak: {
+      current: 0,
+      longest: 0,
+      lastClaimDate: null,
+      multiplier: 1,
+    },
+  }),
+  getChallenges: async () => ({
+    challenges: [],
+  }),
+  getAchievements: async () => ({
+    achievements: [],
+  }),
+  getRewards: async () => ({
+    rewards: [],
+  }),
+  claimChallenge: async (_challengeId: string) => ({
+    success: true,
+    pointsEarned: 0,
+  }),
+  claimReward: async (_rewardId: string) => ({
+    success: true,
+    newBalance: 0,
+  }),
+  claimAdReward: async () => ({
+    success: true,
+    pointsEarned: 0,
+    newBalance: 0,
+  }),
+  getGameLeaderboard: async (_gameId: string, _limit = 100) => ({
+    leaderboard: [],
+  }),
+};
 
 // Multiplayer API
 export const multiplayer = {
@@ -462,7 +539,11 @@ export const multiplayer = {
 
 // // DreamStream AI Engine API
 export const ai = {
-  dreamLabs: (prompt: string, attachments: any[] = []) => {
+  dreamLabs: (
+    prompt: string,
+    attachments: any[] = [],
+    options?: { onJobStarted?: (jobId: string) => void },
+  ) => {
     const controller = new AbortController();
     
     const promise = new Promise(async (resolve, reject) => {
@@ -479,6 +560,9 @@ export const ai = {
         }
 
         const jobId = res.jobId;
+        if (jobId) {
+          options?.onJobStarted?.(jobId);
+        }
         console.log(`[DreamLabs] Background Job ${jobId} initiated. Polling status...`);
 
         const interval = setInterval(async () => {
@@ -512,7 +596,11 @@ export const ai = {
 
     return { promise, cancel: () => controller.abort() };
   },
-  dream: (prompt: string, attachments: any[] = []) => {
+  dream: (
+    prompt: string,
+    attachments: any[] = [],
+    options?: { onJobStarted?: (jobId: string) => void },
+  ) => {
     const controller = new AbortController();
     
     const promise = new Promise(async (resolve, reject) => {
@@ -531,6 +619,9 @@ export const ai = {
         }
 
         const jobId = res.jobId;
+        if (jobId) {
+          options?.onJobStarted?.(jobId);
+        }
         console.log(`[DreamStream] Background Job ${jobId} initiated. Polling status...`);
 
         // Step 2: Poll the backend every 5 seconds until generation finishes
@@ -561,6 +652,54 @@ export const ai = {
 
         controller.signal.addEventListener('abort', () => clearInterval(interval));
         
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort() };
+  },
+  resumeDreamJob: (jobId: string) => {
+    const controller = new AbortController();
+
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const checkStatus = async () => {
+          const statusRes = await request(`/ai/dream/status/${jobId}`);
+          if (statusRes.status === 'complete') {
+            resolve(statusRes);
+            return true;
+          }
+          if (statusRes.status === 'error') {
+            reject(new Error(statusRes.error || 'Unknown AI server error'));
+            return true;
+          }
+          return false;
+        };
+
+        const resolvedImmediately = await checkStatus();
+        if (resolvedImmediately) {
+          return;
+        }
+
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const resolved = await checkStatus();
+            if (resolved) {
+              clearInterval(interval);
+            }
+          } catch (pollingErr: any) {
+            console.warn('[DreamStream] Resume polling blip (ignoring):', pollingErr.message);
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
       } catch (err) {
         reject(err);
       }
