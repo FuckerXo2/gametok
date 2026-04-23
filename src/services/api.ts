@@ -99,6 +99,34 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: 
   }
 };
 
+const requestJsonIfAvailable = async (endpoint: string, options: RequestInit = {}) => {
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers: await headers(),
+    });
+
+    const text = await response.text();
+    const trimmed = text.trim();
+
+    if (!response.ok) {
+      return null;
+    }
+
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+};
+
 // Auth API
 export const auth = {
   signup: async (username: string, password: string, displayName?: string, email?: string) => {
@@ -235,6 +263,21 @@ export const games = {
 
   recordPlay: async (gameId: string) => {
     return request(`/games/${gameId}/play`, { method: 'POST' });
+  },
+};
+
+export const search = {
+  trending: async (limit = 12) => {
+    const data = await requestJsonIfAvailable(`/search/trending?limit=${limit}`);
+    return data || { topics: [] };
+  },
+
+  track: async (query: string, source = 'explore') => {
+    const data = await requestJsonIfAvailable('/search/track', {
+      method: 'POST',
+      body: JSON.stringify({ query, source }),
+    });
+    return data || { success: false, tracked: false };
   },
 };
 

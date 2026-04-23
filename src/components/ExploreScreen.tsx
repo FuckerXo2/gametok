@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
+  Dimensions,
   Image,
+  Keyboard,
+  PanResponder,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -14,10 +19,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ResizeMode, Video } from 'expo-av';
 import { useAuth } from '../context/AuthContext';
-import { useAuthScreen } from '../../App';
-import { feed, games as gamesApi } from '../services/api';
+import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
+import { UserProfileModal } from './UserProfileModal';
+import { API_URL, feed, games as gamesApi, search as searchApi, users } from '../services/api';
 
 const PRIMARY_TABS = ['Explore', 'Games', 'Horror', 'Quiz', 'Roleplay'] as const;
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
+const CDN_ORIGIN = 'https://games.gametok.co';
 const SIGNAL_PULSES = [
   { id: 'pulse-1', label: 'Search heat', value: '49K+', tone: '#8B5CF6' },
   { id: 'pulse-2', label: 'Creators rising', value: '1.8K', tone: '#3B82F6' },
@@ -76,7 +84,20 @@ const CHALLENGES = [
   },
 ];
 
-const SEARCH_QUICK_TERMS = ['horror', 'romance', 'simulator', 'trivia', 'brainrot', 'fantasy'];
+const SEARCH_TREND_FALLBACKS = [
+  'roblox',
+  'minecraft',
+  'goon',
+  'ishowspeed',
+  'poppy playtime',
+  'fnaf',
+  'sonic',
+  'israel',
+  'gugugaga',
+  'trump',
+  'cortisol',
+  'uh uh',
+] as const;
 
 const TRENDING_GRID = [
   { id: 'trend-1', title: 'VELVET ASCENT', subtitle: '@Bongani Sivakuma', accent: '#3A272B' },
@@ -320,17 +341,6 @@ const TAB_WORLDS = {
   },
 } as const;
 
-const CREATOR_HANDLES = [
-  '@latefeed',
-  '@omnitrivia',
-  '@playline',
-  '@voidcraft',
-  '@dreamloop',
-  '@nightpatch',
-  '@hushlab',
-  '@spiralsystem',
-];
-
 const CARD_METRICS = [
   { likes: '8.5K', plays: '221K' },
   { likes: '3.2K', plays: '96K' },
@@ -342,8 +352,6 @@ const CARD_METRICS = [
 
 const getSeedFromText = (value: string) =>
   value.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-
-const getMockCreator = (key: string) => CREATOR_HANDLES[getSeedFromText(key) % CREATOR_HANDLES.length];
 
 const getMockMetrics = (key: string) => CARD_METRICS[getSeedFromText(key) % CARD_METRICS.length];
 
@@ -364,10 +372,11 @@ type ExploreMediaKind = 'image' | 'video' | 'fallback';
 
 type ExploreCardRecord = {
   id: string;
+  gameId?: string;
   title: string;
   subtitle: string;
   accent: string;
-  creator: string;
+  creator?: string;
   likes: string;
   plays: string;
   mediaKind: ExploreMediaKind;
@@ -382,10 +391,11 @@ type ExploreSectionRecord = {
 
 type ExploreHeroRecord = {
   id: string;
+  gameId?: string;
   title: string;
   subtitle: string;
   colors: readonly [string, string];
-  creator: string;
+  creator?: string;
   likes: string;
   plays: string;
   mediaKind: ExploreMediaKind;
@@ -413,16 +423,93 @@ type ExploreGameRecord = {
   name: string;
   description?: string;
   thumbnail?: string;
+  thumbnailUrl?: string;
+  thumbnail_url?: string;
   previewVideoUrl?: string;
   preview_video_url?: string;
   videoUrl?: string;
   video_url?: string;
   color?: string;
   category?: string;
+  subcategory?: string;
   primaryTab?: string;
   interactionType?: string;
   classificationTags?: string[];
+  discoveryChips?: string[];
   plays?: number;
+  createdAt?: string;
+  recentActivityCount?: number;
+  recentActivityScore?: number;
+  recentScoreEvents?: number;
+  recentUniqueScorers?: number;
+  discoverScore?: number;
+  creatorDisplayName?: string | null;
+  creatorUsername?: string | null;
+};
+
+type ExploreFeedActivityRecord = {
+  game?: Partial<ExploreGameRecord> & { id?: string };
+  createdAt?: string;
+  user?: { id?: string };
+};
+
+type ExploreRowMode =
+  | 'featured'
+  | 'rising'
+  | 'evergreen'
+  | 'sleepers'
+  | 'fresh'
+  | 'niche'
+  | 'worldbuilding';
+
+type ExploreRowIntent = {
+  mode: ExploreRowMode;
+  lane?: ExploreLaneBucketKey;
+  keywords?: readonly string[];
+};
+
+type ExploreLaneBucketKey = 'rising' | 'fresh' | 'sleepers' | 'evergreen' | 'featured' | 'worldbuilding';
+
+type ExploreLaneBuckets = Record<ExploreLaneBucketKey, ExploreGameRecord[]>;
+
+type ExploreCreatorRecord = {
+  id: string;
+  username: string;
+  displayName?: string | null;
+  avatar?: string | null;
+};
+
+type ExploreSearchTab = 'All' | 'Creators' | 'Games';
+
+type ExploreSearchTopic = {
+  id: string;
+  label: string;
+  meta: string;
+  hot?: boolean;
+  rawCount?: number;
+};
+
+type SearchProfileUser = {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar: string | null;
+  bio?: string;
+  status: string;
+  isOnline: boolean;
+  isFriend: boolean;
+};
+
+type ExploreDiscoverDebugResponse = {
+  tab: (typeof PRIMARY_TABS)[number];
+  count: number;
+  games: Array<{
+    game: ExploreGameRecord;
+    scores: Record<string, number>;
+    ranks: Record<string, number>;
+    laneMemberships: string[];
+    signals: Record<string, unknown>;
+  }>;
 };
 
 const WORLD_CATEGORY_HINTS = {
@@ -434,6 +521,11 @@ const WORLD_CATEGORY_HINTS = {
 } as const;
 
 const inferSemanticCategory = (game: ExploreGameRecord) => {
+  const rawSubcategory = (game.subcategory || '').toLowerCase().trim();
+  if (rawSubcategory) {
+    return rawSubcategory;
+  }
+
   const rawCategory = (game.category || '').toLowerCase().trim();
   if (rawCategory && rawCategory !== 'ai-remix') {
     return rawCategory;
@@ -447,7 +539,7 @@ const inferSemanticCategory = (game: ExploreGameRecord) => {
 
   const tagText = Array.isArray(game.classificationTags) ? game.classificationTags.join(' ') : '';
   const interactionType = String(game.interactionType || '');
-  const text = `${game.name || ''} ${game.description || ''} ${tagText} ${interactionType}`.toLowerCase();
+  const text = `${game.name || ''} ${game.description || ''} ${tagText} ${interactionType} ${rawSubcategory}`.toLowerCase();
   const bestMatch = Object.entries(WORLD_CATEGORY_HINTS)
     .filter(([world]) => world !== 'Explore')
     .map(([world, keywords]) => ({
@@ -474,6 +566,132 @@ const inferSemanticCategory = (game: ExploreGameRecord) => {
   }
 };
 
+const getCreatorLabel = (game?: ExploreGameRecord) => {
+  const username = game?.creatorUsername?.trim();
+  if (!username) return '';
+  return username.startsWith('@') ? username : `@${username}`;
+};
+
+const formatCompactCount = (value?: number) => {
+  const safe = Number(value || 0);
+  if (!Number.isFinite(safe) || safe <= 0) return '0';
+  if (safe >= 1000000) return `${(safe / 1000000).toFixed(safe >= 10000000 ? 0 : 1).replace(/\.0$/, '')}M`;
+  if (safe >= 1000) return `${(safe / 1000).toFixed(safe >= 100000 ? 0 : 1).replace(/\.0$/, '')}K`;
+  return `${safe}`;
+};
+
+const formatSearchCount = (value: number) => {
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  return `${value}`;
+};
+
+const buildHeroSearchCount = (label: string) => {
+  const seed = getSeedFromText(label);
+  const base = 4200 + (seed % 42000);
+  return `${formatSearchCount(base * 10)} searches`;
+};
+
+const prettifySearchTerm = (value: string) =>
+  value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const buildSearchGameCard = (game: ExploreGameRecord): ExploreCardRecord => {
+  const imageUrl = getGameThumbnail(game);
+  const videoUrl = getGamePreviewVideo(game);
+  const supportingText =
+    game.description?.trim() ||
+    game.subcategory?.replace(/[_-]+/g, ' ') ||
+    game.category?.replace(/[_-]+/g, ' ') ||
+    'Playable world';
+
+  return {
+    id: `search-game:${game.id}`,
+    gameId: game.id,
+    title: game.name,
+    subtitle: supportingText,
+    accent: game.color || '#1B2334',
+    creator: getCreatorLabel(game),
+    likes: '',
+    plays: formatCompactCount(game.plays),
+    mediaKind: videoUrl ? 'video' : imageUrl ? 'image' : 'fallback',
+    imageUrl,
+    videoUrl,
+  };
+};
+
+const buildTrendingSearchTopics = (
+  liveGames: ExploreGameRecord[],
+  laneBuckets: ExploreLaneBuckets,
+  trackedTopics: Array<{ query: string; count?: number }> = [],
+): ExploreSearchTopic[] => {
+  const scoreMap = new Map<string, { label: string; score: number; related: Set<string>; hot: boolean; rawCount?: number }>();
+  const lanePriority = [
+    ...(laneBuckets.rising || []),
+    ...(laneBuckets.featured || []),
+    ...(laneBuckets.worldbuilding || []),
+    ...(laneBuckets.evergreen || []),
+    ...liveGames,
+  ].filter((game, index, array) => !!game?.id && array.findIndex((item) => item.id === game.id) === index);
+
+  const pushTerm = (rawLabel: string | undefined, gameId: string, weight: number, hot = false, rawCount?: number) => {
+    const label = (rawLabel || '').trim();
+    if (!label) return;
+    const normalized = label.toLowerCase();
+    if (normalized.length < 3) return;
+    if (['for you', 'recommend', 'trending', 'all'].includes(normalized)) return;
+
+    const existing = scoreMap.get(normalized);
+    if (existing) {
+      existing.score += weight;
+      existing.related.add(gameId);
+      existing.hot = existing.hot || hot;
+      existing.rawCount = Math.max(existing.rawCount || 0, rawCount || 0);
+      return;
+    }
+
+    scoreMap.set(normalized, {
+      label,
+      score: weight,
+      related: new Set([gameId]),
+      hot,
+      rawCount,
+    });
+  };
+
+  lanePriority.forEach((game, index) => {
+    const gameId = game.id;
+    const hot = index < 6;
+    pushTerm(game.name, gameId, hot ? 8 : 5, hot);
+    pushTerm(game.subcategory && prettifySearchTerm(game.subcategory), gameId, 6, hot);
+    pushTerm(game.category && prettifySearchTerm(game.category), gameId, 4);
+    (game.discoveryChips || []).slice(0, 3).forEach((chip) => pushTerm(chip, gameId, 3));
+    (game.classificationTags || []).slice(0, 2).forEach((tag) => pushTerm(prettifySearchTerm(tag), gameId, 2));
+  });
+
+  trackedTopics.forEach((topic, index) => {
+    pushTerm(topic.query, `tracked:${index}`, 18 - index, index < 3, topic.count);
+  });
+
+  return Array.from(scoreMap.entries())
+    .sort((a, b) => {
+      const scoreDiff = b[1].score - a[1].score;
+      if (scoreDiff !== 0) return scoreDiff;
+      return b[1].related.size - a[1].related.size;
+    })
+    .slice(0, 12)
+    .map(([key, entry]) => ({
+      id: key,
+      label: entry.label,
+      meta: buildHeroSearchCount(entry.label),
+      hot: entry.hot,
+      rawCount: entry.rawCount,
+    }));
+};
+
 const buildExploreCard = (
   activeTab: (typeof PRIMARY_TABS)[number],
   activeChip: string,
@@ -485,7 +703,6 @@ const buildExploreCard = (
   },
 ): ExploreCardRecord => ({
   ...card,
-  creator: getMockCreator(card.id),
   ...getMockMetrics(card.id),
   mediaKind: 'fallback',
 });
@@ -500,7 +717,6 @@ const buildExploreHero = (
   },
 ): ExploreHeroRecord => ({
   ...hero,
-  creator: getMockCreator(hero.id),
   ...getMockMetrics(hero.id),
   mediaKind: 'fallback',
 });
@@ -521,11 +737,18 @@ const buildWorldRecord = (
 
 const buildSlotKey = (scope: string, sourceId: string, index: number) => `${scope}:${sourceId}:${index}`;
 
+const resolveMediaUrl = (value: string | undefined, fallbackOrigin: string) => {
+  if (!value) return undefined;
+  if (value.startsWith('http') || value.startsWith('data:')) return value;
+  if (value.startsWith('/')) return `${API_ORIGIN}${value}`;
+  return `${fallbackOrigin}/${value.replace(/^\/+/, '')}`;
+};
+
 const getGameThumbnail = (game: ExploreGameRecord) =>
-  game.thumbnail || `https://games.gametok.co/thumbnails/${game.id}.png`;
+  resolveMediaUrl(game.thumbnail || game.thumbnailUrl || game.thumbnail_url, CDN_ORIGIN) || `${CDN_ORIGIN}/thumbnails/${game.id}.png`;
 
 const getGamePreviewVideo = (game: ExploreGameRecord) =>
-  game.previewVideoUrl || game.preview_video_url || game.videoUrl || game.video_url;
+  resolveMediaUrl(game.previewVideoUrl || game.preview_video_url || game.videoUrl || game.video_url, API_ORIGIN);
 
 const WORLD_KEYWORDS = {
   Horror: [
@@ -673,8 +896,291 @@ const CHIP_CLASSIFIER_HINTS = {
   },
 } as const;
 
+const CHIP_SUBCATEGORY_MATCHES = {
+  Explore: {
+    'For You': ['creative_tool', 'experimental', 'casual', 'satisfying'],
+    Brainrot: ['brainrot', 'meme'],
+    Casual: ['casual', 'satisfying'],
+    '67 Energy': ['brainrot', 'arcade', 'runner'],
+    Meme: ['meme', 'brainrot'],
+    'NPC Core': ['immersive_world', 'romance', 'boyfriend', 'girlfriend'],
+    Satisfying: ['satisfying', 'creative_tool'],
+  },
+  Games: {
+    'For You': ['arcade', 'runner', 'racing', 'simulator', 'platformer', 'shooter'],
+    Arcade: ['arcade', 'runner', 'platformer'],
+    'Boss Rush': ['shooter', 'platformer'],
+    Cozy: ['casual', 'simulator'],
+    Chaotic: ['brainrot', 'arcade', 'runner', 'shooter'],
+    Speedrun: ['runner', 'platformer', 'racing'],
+    Simulator: ['simulator', 'racing'],
+  },
+  Horror: {
+    'For You': ['psychological', 'paranormal', 'escape', 'cursed_feed'],
+    'Found Footage': ['found_footage'],
+    'Cursed Feed': ['cursed_feed'],
+    Psychological: ['psychological'],
+    Paranormal: ['paranormal'],
+    Escape: ['escape'],
+    'Night Shift': ['night_shift'],
+  },
+  Quiz: {
+    'For You': ['trivia', 'geography', 'anime', 'word', 'memory', 'impossible'],
+    Trivia: ['trivia'],
+    Geography: ['geography'],
+    Anime: ['anime'],
+    'Brain Tease': ['memory', 'impossible', 'word'],
+    Impossible: ['impossible'],
+    'School Break': ['trivia', 'anime'],
+  },
+  Roleplay: {
+    Recommend: ['romance', 'immersive_world', 'fantasy'],
+    'Immersive Worlds': ['immersive_world', 'fantasy'],
+    Boyfriend: ['boyfriend'],
+    Girlfriend: ['girlfriend'],
+    Romance: ['romance'],
+    Drama: ['school_drama'],
+    Fantasy: ['fantasy'],
+  },
+} as const;
+
+const ROW_INTENTS = {
+  Explore: {
+    "We're Obsessed": { mode: 'featured', lane: 'featured', keywords: ['creative_tool', 'experimental', 'meme', 'brainrot'] },
+    'Blowing Up': { mode: 'rising', lane: 'rising', keywords: ['arcade', 'satisfying', 'brainrot', 'casual'] },
+    'Discover More': { mode: 'fresh', lane: 'fresh', keywords: ['creative_tool', 'experimental', 'satisfying'] },
+  },
+  Games: {
+    "Everyone's Playing": { mode: 'rising', lane: 'rising', keywords: ['arcade', 'runner', 'racing', 'simulator', 'platformer', 'shooter'] },
+    'Deep Cuts': { mode: 'sleepers', lane: 'sleepers', keywords: ['arcade', 'platformer', 'simulator', 'shooter'] },
+    'More Games': { mode: 'fresh', lane: 'fresh', keywords: ['arcade', 'runner', 'racing', 'simulator'] },
+  },
+  Horror: {
+    'For You': { mode: 'featured', lane: 'featured', keywords: ['psychological', 'paranormal', 'escape', 'cursed_feed'] },
+    'Late Night Finds': { mode: 'niche', lane: 'sleepers', keywords: ['found_footage', 'cursed_feed', 'night_shift', 'paranormal'] },
+    'More Horror': { mode: 'fresh', lane: 'fresh', keywords: ['psychological', 'paranormal', 'escape', 'found_footage'] },
+  },
+  Quiz: {
+    'Sharpest Picks': { mode: 'featured', lane: 'featured', keywords: ['trivia', 'geography', 'anime', 'memory'] },
+    'Study Break': { mode: 'sleepers', lane: 'sleepers', keywords: ['anime', 'trivia', 'word', 'memory'] },
+    'More Quiz': { mode: 'fresh', lane: 'fresh', keywords: ['trivia', 'geography', 'anime', 'impossible'] },
+  },
+  Roleplay: {
+    Recommend: { mode: 'featured', lane: 'featured', keywords: ['romance', 'fantasy', 'immersive_world', 'school_drama'] },
+    'Immersive Worlds': { mode: 'worldbuilding', lane: 'worldbuilding', keywords: ['immersive_world', 'fantasy'] },
+    'More Roleplay': { mode: 'fresh', lane: 'fresh', keywords: ['romance', 'boyfriend', 'girlfriend', 'fantasy'] },
+  },
+} as const satisfies Record<(typeof PRIMARY_TABS)[number], Record<string, ExploreRowIntent>>;
+
+const HERO_LANE_BY_TAB = {
+  Explore: 'rising',
+  Games: 'rising',
+  Horror: 'featured',
+  Quiz: 'featured',
+  Roleplay: 'worldbuilding',
+} as const satisfies Record<(typeof PRIMARY_TABS)[number], ExploreLaneBucketKey>;
+
+const EMPTY_LANE_BUCKETS: ExploreLaneBuckets = {
+  rising: [],
+  fresh: [],
+  sleepers: [],
+  evergreen: [],
+  featured: [],
+  worldbuilding: [],
+};
+
+const logDiscoverDebugSummary = (
+  tab: (typeof PRIMARY_TABS)[number],
+  debugData: ExploreDiscoverDebugResponse,
+) => {
+  const topByLane = (lane: ExploreLaneBucketKey) =>
+    debugData.games
+      .filter((entry) => entry.laneMemberships.includes(lane))
+      .sort((a, b) => (a.ranks?.[lane] || 9999) - (b.ranks?.[lane] || 9999))
+      .slice(0, 3)
+      .map((entry) => ({
+        name: entry.game.name,
+        subcategory: entry.game.subcategory || entry.game.category || null,
+        score: entry.scores?.[lane] || 0,
+        rank: entry.ranks?.[lane] || null,
+      }));
+
+  console.log(`[ExploreDebug] ${tab}`, {
+    heroLane: HERO_LANE_BY_TAB[tab],
+    rising: topByLane('rising'),
+    fresh: topByLane('fresh'),
+    sleepers: topByLane('sleepers'),
+    evergreen: topByLane('evergreen'),
+    featured: topByLane('featured'),
+    worldbuilding: topByLane('worldbuilding'),
+  });
+};
+
 const countKeywordHits = (haystack: string, keywords: readonly string[]) =>
   keywords.reduce((count, keyword) => count + (haystack.includes(keyword) ? 1 : 0), 0);
+
+const getActivityWeight = (createdAt?: string) => {
+  if (!createdAt) return 1;
+  const timestamp = Date.parse(createdAt);
+  if (Number.isNaN(timestamp)) return 1;
+  const ageHours = Math.max(0, (Date.now() - timestamp) / (1000 * 60 * 60));
+  if (ageHours <= 6) return 8;
+  if (ageHours <= 24) return 6;
+  if (ageHours <= 72) return 4;
+  if (ageHours <= 168) return 2;
+  return 1;
+};
+
+const buildActivityMetricsMap = (activity: ExploreFeedActivityRecord[]) => {
+  const metrics = new Map<string, { count: number; score: number; users: Set<string> }>();
+
+  for (const item of activity) {
+    const gameId = String(item?.game?.id || '').trim();
+    if (!gameId) continue;
+
+    const entry = metrics.get(gameId) || { count: 0, score: 0, users: new Set<string>() };
+    entry.count += 1;
+    entry.score += getActivityWeight(item?.createdAt);
+    const userId = String(item?.user?.id || '').trim();
+    if (userId) {
+      entry.users.add(userId);
+      entry.score += 1;
+    }
+    metrics.set(gameId, entry);
+  }
+
+  return metrics;
+};
+
+const applyActivityMetricsToGames = (
+  games: ExploreGameRecord[],
+  activityMetrics: Map<string, { count: number; score: number; users: Set<string> }>,
+) =>
+  games.map((game) => {
+    const metrics = activityMetrics.get(game.id);
+    if (!metrics) {
+      return {
+        ...game,
+        recentActivityCount: game.recentActivityCount || 0,
+        recentActivityScore: game.recentActivityScore || 0,
+      };
+    }
+
+    return {
+      ...game,
+      recentActivityCount: Math.max(game.recentActivityCount || 0, metrics.count),
+      recentActivityScore: Math.max(game.recentActivityScore || 0, metrics.score + metrics.users.size),
+    };
+  });
+
+const buildTrendingGamesFromActivity = (
+  activity: ExploreFeedActivityRecord[],
+  gamesById: Map<string, ExploreGameRecord>,
+) => {
+  const activityMetrics = buildActivityMetricsMap(activity);
+  const trendingById = new Map<string, ExploreGameRecord>();
+
+  for (const item of activity) {
+    const gameId = String(item?.game?.id || '').trim();
+    if (!gameId || trendingById.has(gameId)) continue;
+
+    const enriched = gamesById.get(gameId);
+    const game = item.game || {};
+    const metrics = activityMetrics.get(gameId);
+
+    trendingById.set(gameId, {
+      id: gameId,
+      name: enriched?.name || game.name || 'Untitled',
+      description: enriched?.description,
+      thumbnail: enriched?.thumbnail || game.thumbnail,
+      thumbnailUrl: enriched?.thumbnailUrl || game.thumbnailUrl,
+      thumbnail_url: enriched?.thumbnail_url || game.thumbnail_url,
+      previewVideoUrl: enriched?.previewVideoUrl || game.previewVideoUrl,
+      preview_video_url: enriched?.preview_video_url || game.preview_video_url,
+      videoUrl: enriched?.videoUrl || game.videoUrl,
+      video_url: enriched?.video_url || game.video_url,
+      color: enriched?.color || game.color,
+      category: enriched?.category,
+      subcategory: enriched?.subcategory,
+      primaryTab: enriched?.primaryTab,
+      interactionType: enriched?.interactionType,
+      classificationTags: enriched?.classificationTags,
+      discoveryChips: enriched?.discoveryChips,
+      plays: enriched?.plays,
+      createdAt: enriched?.createdAt,
+      recentActivityCount: metrics?.count || enriched?.recentActivityCount || 0,
+      recentActivityScore: metrics?.score ? metrics.score + metrics.users.size : enriched?.recentActivityScore || 0,
+      recentScoreEvents: enriched?.recentScoreEvents,
+      recentUniqueScorers: enriched?.recentUniqueScorers,
+      discoverScore: enriched?.discoverScore,
+    });
+  }
+
+  return Array.from(trendingById.values()).sort((a, b) => {
+    const activityDelta = (b.recentActivityScore || 0) - (a.recentActivityScore || 0);
+    if (activityDelta !== 0) return activityDelta;
+    const countDelta = (b.recentActivityCount || 0) - (a.recentActivityCount || 0);
+    if (countDelta !== 0) return countDelta;
+    return (b.plays || 0) - (a.plays || 0);
+  });
+};
+
+const getGameAgeHours = (game: ExploreGameRecord) => {
+  if (!game.createdAt) return null;
+  const timestamp = Date.parse(game.createdAt);
+  if (Number.isNaN(timestamp)) return null;
+  return Math.max(0, (Date.now() - timestamp) / (1000 * 60 * 60));
+};
+
+const getFreshnessScore = (game: ExploreGameRecord) => {
+  const ageHours = getGameAgeHours(game);
+  if (ageHours === null) return 0;
+  if (ageHours <= 24) return 12;
+  if (ageHours <= 72) return 9;
+  if (ageHours <= 168) return 5;
+  return 0;
+};
+
+const getMomentumScore = (game: ExploreGameRecord) => {
+  const plays = game.plays || 0;
+  const ageHours = getGameAgeHours(game);
+  const playPressure = Math.min(14, Math.round(plays / 18000));
+  const activityPressure = Math.min(
+    20,
+    Math.round((game.recentActivityScore || 0) * 1.5) +
+      (game.recentActivityCount || 0) +
+      Math.min(8, game.recentScoreEvents || 0) +
+      Math.min(6, game.recentUniqueScorers || 0),
+  );
+  if (ageHours === null) return playPressure + activityPressure;
+  if (ageHours <= 72) return playPressure + activityPressure + 8;
+  if (ageHours <= 168) return playPressure + activityPressure + 4;
+  return playPressure + activityPressure;
+};
+
+const getEvergreenScore = (game: ExploreGameRecord) => {
+  const plays = game.plays || 0;
+  const ageHours = getGameAgeHours(game);
+  const base = Math.min(16, Math.round(plays / 30000));
+  if (ageHours === null) return base;
+  return ageHours >= 168 ? base + 4 : base;
+};
+
+const qualifiesForHero = (
+  activeTab: (typeof PRIMARY_TABS)[number],
+  game: ExploreGameRecord,
+) => {
+  const plays = game.plays || 0;
+  const recentScoreEvents = game.recentScoreEvents || 0;
+  const recentUniqueScorers = game.recentUniqueScorers || 0;
+  const recentActivityScore = game.recentActivityScore || 0;
+
+  if (activeTab === 'Explore' || activeTab === 'Games') {
+    return plays >= 3000 && recentScoreEvents >= 3 && recentUniqueScorers >= 2 && recentActivityScore >= 12;
+  }
+
+  return plays >= 1500 && (recentScoreEvents >= 2 || recentActivityScore >= 10);
+};
 
 const getClassifierSignalText = (game: ExploreGameRecord) => {
   const tags = Array.isArray(game.classificationTags)
@@ -682,9 +1188,10 @@ const getClassifierSignalText = (game: ExploreGameRecord) => {
     : [];
   const interactionType = String(game.interactionType || '').trim().toLowerCase().replace(/_/g, '-');
   const category = String(game.category || '').trim().toLowerCase();
+  const subcategory = String(game.subcategory || '').trim().toLowerCase();
   const primaryTab = String(game.primaryTab || '').trim().toLowerCase();
 
-  return [primaryTab, category, interactionType, ...tags].filter(Boolean).join(' ');
+  return [primaryTab, category, subcategory, interactionType, ...tags].filter(Boolean).join(' ');
 };
 
 const getWorldScore = (
@@ -693,12 +1200,13 @@ const getWorldScore = (
   game: ExploreGameRecord,
 ) => {
   const category = inferSemanticCategory(game);
+  const subcategory = String(game.subcategory || '').toLowerCase();
   const primaryTab = String(game.primaryTab || '').toLowerCase();
   const name = (game.name || '').toLowerCase();
   const description = (game.description || '').toLowerCase();
   const tagText = Array.isArray(game.classificationTags) ? game.classificationTags.join(' ').toLowerCase() : '';
   const interactionType = String(game.interactionType || '').toLowerCase();
-  const haystack = `${name} ${category} ${description} ${tagText} ${interactionType} ${primaryTab}`;
+  const haystack = `${name} ${category} ${subcategory} ${description} ${tagText} ${interactionType} ${primaryTab}`;
   const classifierSignals = getClassifierSignalText(game);
   const chipKeywords =
     activeTab in CHIP_KEYWORDS
@@ -708,9 +1216,19 @@ const getWorldScore = (
     activeTab in CHIP_CLASSIFIER_HINTS
       ? (CHIP_CLASSIFIER_HINTS[activeTab as keyof typeof CHIP_CLASSIFIER_HINTS] as Record<string, readonly string[]>)[activeChip] || []
       : [];
+  const chipSubcategoryMatches =
+    activeTab in CHIP_SUBCATEGORY_MATCHES
+      ? (CHIP_SUBCATEGORY_MATCHES[activeTab as keyof typeof CHIP_SUBCATEGORY_MATCHES] as Record<string, readonly string[]>)[activeChip] || []
+      : [];
+  const discoveryChipMatches = Array.isArray(game.discoveryChips)
+    ? game.discoveryChips.filter((chip) => String(chip || '').trim().toLowerCase() === activeChip.toLowerCase()).length
+    : 0;
   const playsScore = game.plays ? Math.min(8, Math.round(game.plays / 50000)) : 0;
+  const discoverScore = game.discoverScore ? Math.min(18, Math.round(game.discoverScore / 10)) : 0;
   const chipScore = countKeywordHits(haystack, chipKeywords) * 3;
   const classifierChipScore = countKeywordHits(classifierSignals, chipClassifierHints) * 6;
+  const subcategoryScore = chipSubcategoryMatches.includes(subcategory) ? 12 : 0;
+  const discoveryChipScore = discoveryChipMatches > 0 ? 14 : 0;
   const explicitTabBoost =
     (activeTab === 'Games' && primaryTab === 'games') ||
     (activeTab === 'Horror' && primaryTab === 'horror') ||
@@ -718,23 +1236,35 @@ const getWorldScore = (
     (activeTab === 'Roleplay' && primaryTab === 'roleplay')
       ? 8
       : 0;
+  const hasExplicitPrimaryTab = ['games', 'horror', 'quiz', 'roleplay'].includes(primaryTab);
+  const activeTabKey = activeTab.toLowerCase();
+
+  if (activeTab !== 'Explore' && hasExplicitPrimaryTab && primaryTab !== activeTabKey) {
+    return -100;
+  }
 
   switch (activeTab) {
     case 'Games':
-      return explicitTabBoost + chipScore + classifierChipScore + playsScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
+      return explicitTabBoost + discoveryChipScore + subcategoryScore + chipScore + classifierChipScore + playsScore + discoverScore + countKeywordHits(haystack, ['action', 'arcade', 'runner', 'shooter', 'simulation']) * 2;
     case 'Horror':
       return (
         explicitTabBoost +
+        discoveryChipScore +
+        subcategoryScore +
         classifierChipScore +
+        discoverScore +
         countKeywordHits(haystack, WORLD_KEYWORDS.Horror) * 4 +
         chipScore +
-        (/horror|escape|adventure|action|arcade/.test(category) ? 5 : 0) +
+        (/horror|escape|survival|paranormal|haunted/.test(category) ? 5 : 0) +
         playsScore
       );
     case 'Quiz':
       return (
         explicitTabBoost +
+        discoveryChipScore +
+        subcategoryScore +
         classifierChipScore +
+        discoverScore +
         countKeywordHits(haystack, WORLD_KEYWORDS.Quiz) * 4 +
         chipScore +
         (/quiz|puzzle|education|word|trivia/.test(category) ? 5 : 0) +
@@ -743,15 +1273,122 @@ const getWorldScore = (
     case 'Roleplay':
       return (
         explicitTabBoost +
+        discoveryChipScore +
+        subcategoryScore +
         classifierChipScore +
+        discoverScore +
         countKeywordHits(haystack, WORLD_KEYWORDS.Roleplay) * 4 +
         chipScore +
         (/dress|girls|story|simulation|beauty|social/.test(category) ? 5 : 0) +
         playsScore
       );
     default:
-      return chipScore + classifierChipScore + playsScore + countKeywordHits(haystack, ['arcade', 'simulation', 'puzzle', 'story', 'io']) * 2;
+      return discoveryChipScore + subcategoryScore + chipScore + classifierChipScore + playsScore + discoverScore + countKeywordHits(haystack, ['arcade', 'simulation', 'puzzle', 'story', 'io']) * 2;
   }
+};
+
+const getGameHaystack = (game: ExploreGameRecord) => {
+  const category = inferSemanticCategory(game);
+  const primaryTab = String(game.primaryTab || '').toLowerCase();
+  const name = (game.name || '').toLowerCase();
+  const description = (game.description || '').toLowerCase();
+  const tagText = Array.isArray(game.classificationTags) ? game.classificationTags.join(' ').toLowerCase() : '';
+  const interactionType = String(game.interactionType || '').toLowerCase();
+  const discoveryChips = Array.isArray(game.discoveryChips) ? game.discoveryChips.join(' ').toLowerCase() : '';
+  return `${name} ${category} ${description} ${tagText} ${interactionType} ${primaryTab} ${discoveryChips}`;
+};
+
+const getRowIntent = (
+  activeTab: (typeof PRIMARY_TABS)[number],
+  sectionTitle: string,
+): ExploreRowIntent => {
+  const explicitIntent = ROW_INTENTS[activeTab][sectionTitle as keyof (typeof ROW_INTENTS)[typeof activeTab]];
+  if (explicitIntent) {
+    return explicitIntent;
+  }
+
+  const normalized = sectionTitle.toLowerCase();
+  if (/playing|blowing up|trending|obsessed/.test(normalized)) return { mode: 'rising' };
+  if (/deep cuts|late night|study break/.test(normalized)) return { mode: 'sleepers' };
+  if (/immersive/.test(normalized)) return { mode: 'worldbuilding' };
+  if (/more|discover/.test(normalized)) return { mode: 'fresh' };
+  if (/for you|recommend|sharpest/.test(normalized)) return { mode: 'featured' };
+  return { mode: 'featured' };
+};
+
+const scoreGameForSection = (
+  activeTab: (typeof PRIMARY_TABS)[number],
+  activeChip: string,
+  game: ExploreGameRecord,
+  sectionTitle: string,
+  card: Pick<ExploreCardRecord, 'title' | 'subtitle'>,
+  laneBucketSets?: Record<ExploreLaneBucketKey, Set<string>>,
+) => {
+  const baseScore = getWorldScore(activeTab, activeChip, game);
+  if (baseScore < 0) return baseScore;
+
+  const haystack = getGameHaystack(game);
+  const sectionText = `${sectionTitle} ${card.title} ${card.subtitle}`.toLowerCase();
+  const plays = game.plays || 0;
+  const sectionKeywordScore = countKeywordHits(haystack, sectionText.split(/[^a-z0-9]+/).filter((token) => token.length > 2)) * 2;
+  const freshnessScore = getFreshnessScore(game);
+  const momentumScore = getMomentumScore(game);
+  const evergreenScore = getEvergreenScore(game);
+  const rowIntent = getRowIntent(activeTab, sectionTitle);
+  const subcategory = String(game.subcategory || '').toLowerCase();
+  const rowKeywordBoost = rowIntent.keywords?.includes(subcategory) ? 12 : 0;
+  const laneModeBoost =
+    rowIntent.lane === 'rising' && laneBucketSets?.rising.has(game.id)
+      ? 16
+      : rowIntent.lane === 'fresh' && laneBucketSets?.fresh.has(game.id)
+        ? 16
+      : rowIntent.lane === 'sleepers' && laneBucketSets?.sleepers.has(game.id)
+          ? 14
+          : rowIntent.lane === 'evergreen' && laneBucketSets?.evergreen.has(game.id)
+            ? 14
+            : rowIntent.lane === 'featured' && laneBucketSets?.featured.has(game.id)
+              ? 16
+              : rowIntent.lane === 'worldbuilding' && laneBucketSets?.worldbuilding.has(game.id)
+                ? 18
+            : 0;
+
+  let modeScore = 0;
+
+  switch (rowIntent.mode) {
+    case 'rising':
+      modeScore += Math.min(28, momentumScore + Math.round((game.discoverScore || 0) / 14));
+      modeScore += Math.round(freshnessScore / 2);
+      break;
+    case 'evergreen':
+      modeScore += evergreenScore * 2 + Math.min(8, Math.round(plays / 70000));
+      break;
+    case 'sleepers':
+      modeScore += Math.max(0, evergreenScore - Math.round(freshnessScore / 2));
+      modeScore += plays > 0 ? Math.max(0, 12 - Math.min(12, Math.round(plays / 35000))) : 5;
+      break;
+    case 'fresh':
+      modeScore += freshnessScore * 2 + Math.min(10, Math.round(momentumScore / 3));
+      break;
+    case 'niche':
+      modeScore += Math.round(momentumScore / 2) + Math.max(0, 8 - Math.min(8, Math.round(plays / 50000)));
+      break;
+    case 'worldbuilding':
+      modeScore += evergreenScore + countKeywordHits(haystack, ['story', 'world', 'fantasy', 'character', 'dialogue', 'episode']) * 3;
+      break;
+    case 'featured':
+    default:
+      modeScore += Math.min(14, Math.round(momentumScore / 2)) + Math.round(freshnessScore / 2);
+      break;
+  }
+
+  return baseScore + sectionKeywordScore + rowKeywordBoost + laneModeBoost + modeScore;
+};
+
+const getSectionDiversityKey = (game: ExploreGameRecord) => {
+  const semanticCategory = inferSemanticCategory(game);
+  const interactionType = String(game.interactionType || '').trim().toLowerCase();
+  const primaryTab = String(game.primaryTab || '').trim().toLowerCase();
+  return `${primaryTab}|${semanticCategory}|${interactionType}`;
 };
 
 const mergeLiveGamesIntoWorld = (
@@ -760,6 +1397,7 @@ const mergeLiveGamesIntoWorld = (
   liveGames: ExploreGameRecord[],
   trendingGames: ExploreGameRecord[],
   activeChip: string,
+  laneBuckets?: ExploreLaneBuckets,
 ) => {
   const sourceGames = activeChip === 'Trending' && trendingGames.length ? trendingGames : liveGames;
   if (!sourceGames.length) return world;
@@ -777,72 +1415,181 @@ const mergeLiveGamesIntoWorld = (
     ? (matching.length ? matching : ranked.map((entry) => entry.game))
     : matching;
 
-  if (!fallback.length) return world;
+  const laneGames = Object.values(laneBuckets || EMPTY_LANE_BUCKETS).flat();
+  const laneCandidateGames = laneGames.filter((game, index, array) => !!game?.id && array.findIndex((item) => item.id === game.id) === index);
+  const allCandidates = [...fallback, ...laneCandidateGames];
 
-  let cursor = 0;
+  if (!allCandidates.length) return world;
 
-  const nextGame = () => {
-    if (cursor >= fallback.length) return undefined;
-    const game = fallback[cursor];
-    cursor += 1;
-    return game;
+  const availableGames = allCandidates.filter((game, index, array) => !!game?.id && array.findIndex((item) => item.id === game.id) === index);
+  const assignedIds = new Set<string>();
+  const rowSlots = world.sections.reduce((count, section) => count + section.cards.length, 0) + world.grid.length;
+  const laneBucketSets = {
+    rising: new Set((laneBuckets?.rising || []).map((game) => game.id)),
+    fresh: new Set((laneBuckets?.fresh || []).map((game) => game.id)),
+    sleepers: new Set((laneBuckets?.sleepers || []).map((game) => game.id)),
+    evergreen: new Set((laneBuckets?.evergreen || []).map((game) => game.id)),
+    featured: new Set((laneBuckets?.featured || []).map((game) => game.id)),
+    worldbuilding: new Set((laneBuckets?.worldbuilding || []).map((game) => game.id)),
   };
 
-  const injectGame = (card: ExploreCardRecord): ExploreCardRecord => {
-    const game = nextGame();
+  const claimBestGame = (
+    scoreFn: (game: ExploreGameRecord) => number,
+    options?: { blockedDiversityKeys?: Set<string>; preferredGames?: ExploreGameRecord[] },
+  ) => {
+    let bestGame: ExploreGameRecord | undefined;
+    let bestScore = -Infinity;
+    let fallbackGame: ExploreGameRecord | undefined;
+    let fallbackScore = -Infinity;
+    const blockedDiversityKeys = options?.blockedDiversityKeys;
+    const candidatePool = options?.preferredGames?.length
+      ? [
+          ...options.preferredGames.filter((game, index, array) => !!game?.id && array.findIndex((item) => item.id === game.id) === index),
+          ...availableGames,
+        ]
+      : availableGames;
+
+    for (const game of candidatePool) {
+      if (!game?.id || assignedIds.has(game.id)) continue;
+      const score = scoreFn(game);
+      if (score > fallbackScore) {
+        fallbackScore = score;
+        fallbackGame = game;
+      }
+
+      const diversityKey = getSectionDiversityKey(game);
+      if (blockedDiversityKeys?.has(diversityKey)) continue;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestGame = game;
+      }
+    }
+
+    const pickedGame = bestGame && bestScore >= minimumScore
+      ? bestGame
+      : fallbackGame && fallbackScore >= minimumScore
+        ? fallbackGame
+        : undefined;
+
+    if (!pickedGame) return undefined;
+    assignedIds.add(pickedGame.id);
+    return pickedGame;
+  };
+
+  const injectGame = (
+    card: ExploreCardRecord,
+    sectionTitle: string,
+    sectionDiversityKeys: Set<string>,
+  ): ExploreCardRecord => {
+    const rowIntent = getRowIntent(activeTab, sectionTitle);
+    const preferredLaneGames =
+      rowIntent.lane === 'rising'
+        ? laneBuckets?.rising
+        : rowIntent.lane === 'fresh'
+          ? laneBuckets?.fresh
+          : rowIntent.lane === 'sleepers'
+            ? laneBuckets?.sleepers
+            : rowIntent.lane === 'evergreen'
+              ? laneBuckets?.evergreen
+              : rowIntent.lane === 'featured'
+                ? laneBuckets?.featured
+                : rowIntent.lane === 'worldbuilding'
+                  ? laneBuckets?.worldbuilding
+              : undefined;
+    const game = claimBestGame(
+      (candidate) => scoreGameForSection(activeTab, activeChip, candidate, sectionTitle, card, laneBucketSets),
+      { blockedDiversityKeys: sectionDiversityKeys, preferredGames: preferredLaneGames },
+    );
     if (!game) return card;
     const previewVideoUrl = getGamePreviewVideo(game);
+    sectionDiversityKeys.add(getSectionDiversityKey(game));
 
     return {
       ...card,
       id: game.id,
+      gameId: game.id,
       title: game.name,
       subtitle: inferSemanticCategory(game) || card.subtitle,
       accent: game.color || card.accent,
+      creator: getCreatorLabel(game),
       likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : card.likes,
       plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : card.plays,
-      mediaKind: previewVideoUrl ? 'video' : 'image',
+      mediaKind: (previewVideoUrl ? 'video' : 'image') as ExploreMediaKind,
       imageUrl: getGameThumbnail(game),
       videoUrl: previewVideoUrl,
     };
   };
 
+  const preferredHeroLaneGames = (laneBuckets?.[HERO_LANE_BY_TAB[activeTab]] || []).filter((game) =>
+    qualifiesForHero(activeTab, game),
+  );
+
+  const heroCandidates = preferredHeroLaneGames
+    .sort((a, b) => {
+      const heroScoreA = getEvergreenScore(a) + Math.round(getMomentumScore(a) / 2) + getFreshnessScore(a);
+      const heroScoreB = getEvergreenScore(b) + Math.round(getMomentumScore(b) / 2) + getFreshnessScore(b);
+      const heroDelta = heroScoreB - heroScoreA;
+      if (heroDelta !== 0) return heroDelta;
+      const playDelta = (b.plays || 0) - (a.plays || 0);
+      if (playDelta !== 0) return playDelta;
+      return getWorldScore(activeTab, activeChip, b) - getWorldScore(activeTab, activeChip, a);
+    })
+    .filter((game, index, array) => !!game?.id && !assignedIds.has(game.id) && array.findIndex((item) => item.id === game.id) === index);
+
+  const shouldInjectHeroes = heroCandidates.length >= Math.min(world.heroes.length, 2);
+  let heroCursor = 0;
+
+  const nextHeroGame = () => {
+    if (!shouldInjectHeroes || heroCursor >= heroCandidates.length) return undefined;
+    const game = heroCandidates[heroCursor];
+    heroCursor += 1;
+    return game;
+  };
+
   return {
     ...world,
     heroes: world.heroes.map((hero, index) => {
-      const game = nextGame();
+      const game = nextHeroGame();
       if (!game) return hero;
       const previewVideoUrl = getGamePreviewVideo(game);
       return {
         ...hero,
         id: buildSlotKey('hero', game.id, index),
+        gameId: game.id,
         title: game.name,
         subtitle: `${inferSemanticCategory(game)} right now`,
-        creator: hero.creator,
+        creator: getCreatorLabel(game),
         likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : hero.likes,
         plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : hero.plays,
-        mediaKind: previewVideoUrl ? 'video' : 'image',
+        mediaKind: (previewVideoUrl ? 'video' : 'image') as ExploreMediaKind,
         imageUrl: getGameThumbnail(game),
         videoUrl: previewVideoUrl,
       };
     }),
-    sections: world.sections.map((section) => ({
-      ...section,
-      cards: section.cards.map((card, index) => {
-        const injected = injectGame(card);
-        return {
-          ...injected,
-          id: buildSlotKey(`section:${section.title}`, injected.id, index),
-        };
-      }),
-    })),
-    grid: world.grid.map((card, index) => {
-      const injected = injectGame(card);
+    sections: world.sections.map((section) => {
+      const diversityKeys = new Set<string>();
+      return {
+        ...section,
+        cards: section.cards.map((card, index) => {
+          const injected = injectGame(card, section.title, diversityKeys);
+          return {
+            ...injected,
+            id: buildSlotKey(`section:${section.title}`, injected.id, index),
+          };
+        }),
+      };
+    }),
+    grid: (() => {
+      const diversityKeys = new Set<string>();
+      return world.grid.map((card, index) => {
+      const injected = injectGame(card, world.discoverTitle, diversityKeys);
       return {
         ...injected,
         id: buildSlotKey('grid', injected.id, index),
       };
-    }),
+      });
+    })(),
   };
 };
 
@@ -862,7 +1609,7 @@ type ExploreMediaStageProps = {
   fullBleed?: boolean;
   titleOverlay: string;
   subtitleOverlay: string;
-  creatorOverlay: string;
+  creatorOverlay?: string;
   metricsOverlay: string;
 };
 
@@ -969,7 +1716,9 @@ const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
         style={styles.cardTextOverlay}
       >
         <Text style={styles.cardOverlayTitle} numberOfLines={2}>{titleOverlay}</Text>
-        <Text style={styles.cardOverlayCreator} numberOfLines={1}>{creatorOverlay}</Text>
+        {!!creatorOverlay && (
+          <Text style={styles.cardOverlayCreator} numberOfLines={1}>{creatorOverlay}</Text>
+        )}
         <Text style={styles.cardOverlayMetrics} numberOfLines={1}>{metricsOverlay}</Text>
       </LinearGradient>
     </View>
@@ -978,26 +1727,63 @@ const ExploreMediaStage: React.FC<ExploreMediaStageProps> = ({
 
 export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { setActiveTab: setRootTab } = useNavigation();
+  const { openSharedGame } = useDeepLink();
   const [activeTab, setActiveTab] = useState<(typeof PRIMARY_TABS)[number]>('Explore');
   const [activeChip, setActiveChip] = useState('For You');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchTab, setSearchTab] = useState<ExploreSearchTab>('All');
+  const [searchCreators, setSearchCreators] = useState<ExploreCreatorRecord[]>([]);
+  const [searchGames, setSearchGames] = useState<ExploreGameRecord[]>([]);
+  const [trackedSearchTopics, setTrackedSearchTopics] = useState<Array<{ query: string; count?: number }>>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [followLoadingIds, setFollowLoadingIds] = useState<Set<string>>(new Set());
+  const [followedCreatorIds, setFollowedCreatorIds] = useState<Set<string>>(new Set());
+  const [selectedSearchProfile, setSelectedSearchProfile] = useState<SearchProfileUser | null>(null);
   const [heroIndex, setHeroIndex] = useState(0);
+  const [incomingHeroIndex, setIncomingHeroIndex] = useState<number | null>(null);
   const [liveGames, setLiveGames] = useState<ExploreGameRecord[]>([]);
   const [trendingGames, setTrendingGames] = useState<ExploreGameRecord[]>([]);
+  const [discoverLaneBuckets, setDiscoverLaneBuckets] = useState<ExploreLaneBuckets>(EMPTY_LANE_BUCKETS);
   const [refreshing, setRefreshing] = useState(false);
+  const heroTranslateX = useRef(new Animated.Value(0)).current;
+  const heroOpacity = useRef(new Animated.Value(1)).current;
+  const heroIncomingTranslateX = useRef(new Animated.Value(0)).current;
+  const heroIncomingOpacity = useRef(new Animated.Value(1)).current;
+  const heroAnimatingRef = useRef(false);
+  const heroAutoPlayPausedRef = useRef(false);
+  const heroResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTrackedSearchRef = useRef('');
 
   const tabWorld = useMemo(() => {
     const shaped = buildWorldRecord(activeTab, activeChip, TAB_WORLDS[activeTab]);
-    return mergeLiveGamesIntoWorld(shaped, activeTab, liveGames, trendingGames, activeChip);
-  }, [activeTab, activeChip, liveGames, trendingGames]);
-  const hero = useMemo(() => tabWorld.heroes[heroIndex % tabWorld.heroes.length], [heroIndex, tabWorld]);
+    return mergeLiveGamesIntoWorld(shaped, activeTab, liveGames, trendingGames, activeChip, discoverLaneBuckets);
+  }, [activeTab, activeChip, liveGames, trendingGames, discoverLaneBuckets]);
+  const heroCount = tabWorld.heroes.length;
+  const safeHeroIndex = heroCount ? ((heroIndex % heroCount) + heroCount) % heroCount : 0;
+  const hero =
+    tabWorld.heroes[safeHeroIndex] ||
+    tabWorld.heroes[0] ||
+    buildExploreHero(activeTab, {
+      id: 'hero-fallback',
+      title: 'Explore',
+      subtitle: 'Discover interactive worlds',
+      colors: ['#121A2A', '#090B10'] as const,
+    });
+  const incomingHero =
+    incomingHeroIndex !== null
+      ? tabWorld.heroes[incomingHeroIndex] || null
+      : null;
   const isTrendingView = activeChip === 'Trending';
   const trendingSectionTitle = activeTab === 'Explore' ? 'Trending Right Now' : `${activeTab} Trending`;
   const activeChipDescription = tabWorld.chipDescriptions[activeChip as keyof typeof tabWorld.chipDescriptions] || '';
-  const trimmedSearch = searchQuery.trim().toLowerCase();
+  const trimmedSearchText = searchQuery.trim();
+  const trimmedSearch = trimmedSearchText.toLowerCase();
   const isSearchMode = trimmedSearch.length > 0;
+  const showSearchExperience = searchActive || isSearchMode;
   const isExploreEditorialView = activeTab === 'Explore' && !isSearchMode && !isTrendingView;
   const exploreLeadCards = activeTab === 'Explore' ? tabWorld.sections[0]?.cards ?? [] : [];
   const exploreSpotlightCard = exploreLeadCards[0];
@@ -1020,6 +1806,222 @@ export const ExploreScreen: React.FC = () => {
 
   const trendingChallengesTitle =
     activeTab === 'Explore' ? 'Challenges' : `${activeTab} Challenges`;
+
+  const openGameFromExplore = (gameId?: string) => {
+    if (!gameId) return;
+    openSharedGame(gameId);
+    setRootTab('home');
+  };
+
+  const activateSearch = () => {
+    setSearchActive(true);
+  };
+
+  const cancelSearch = () => {
+    Keyboard.dismiss();
+    setSearchActive(false);
+    setSearchQuery('');
+    setSearchTab('All');
+    setSearchLoading(false);
+    setSearchCreators([]);
+    setSearchGames([]);
+  };
+
+  const handleSearchTopicPress = (label: string) => {
+    setSearchActive(true);
+    setSearchQuery(label);
+    setSearchTab('All');
+  };
+
+  const openSearchProfile = (creator: ExploreCreatorRecord) => {
+    setSelectedSearchProfile({
+      id: creator.id,
+      username: creator.username,
+      displayName: creator.displayName || undefined,
+      avatar: creator.avatar || null,
+      bio: '',
+      status: '',
+      isOnline: false,
+      isFriend: followedCreatorIds.has(creator.id),
+    });
+  };
+
+  const handleFollowCreator = async (creatorId: string) => {
+    if (!creatorId || creatorId === user?.id || followedCreatorIds.has(creatorId) || followLoadingIds.has(creatorId)) {
+      return;
+    }
+
+    setFollowLoadingIds((prev) => new Set(prev).add(creatorId));
+    try {
+      await users.follow(creatorId);
+      setFollowedCreatorIds((prev) => new Set(prev).add(creatorId));
+    } catch (error) {
+      // Keep this silent for now; search should stay lightweight.
+    } finally {
+      setFollowLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(creatorId);
+        return next;
+      });
+    }
+  };
+
+  const pauseHeroAutoPlay = () => {
+    heroAutoPlayPausedRef.current = true;
+    if (heroResumeTimeoutRef.current) {
+      clearTimeout(heroResumeTimeoutRef.current);
+      heroResumeTimeoutRef.current = null;
+    }
+  };
+
+  const resumeHeroAutoPlaySoon = () => {
+    if (heroResumeTimeoutRef.current) {
+      clearTimeout(heroResumeTimeoutRef.current);
+    }
+    heroResumeTimeoutRef.current = setTimeout(() => {
+      heroAutoPlayPausedRef.current = false;
+      heroResumeTimeoutRef.current = null;
+    }, 2600);
+  };
+
+  const animateHeroToIndex = (targetIndex: number, direction: 1 | -1) => {
+    if (!heroCount || targetIndex === safeHeroIndex || heroAnimatingRef.current) return;
+    heroAnimatingRef.current = true;
+    setIncomingHeroIndex(targetIndex);
+    heroTranslateX.setValue(0);
+    heroOpacity.setValue(1);
+    heroIncomingTranslateX.setValue(direction > 0 ? 110 : -110);
+    heroIncomingOpacity.setValue(0.2);
+
+    Animated.parallel([
+      Animated.timing(heroTranslateX, {
+        toValue: direction > 0 ? -110 : 110,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+      Animated.timing(heroOpacity, {
+        toValue: 0,
+        duration: 145,
+        useNativeDriver: true,
+      }),
+      Animated.spring(heroIncomingTranslateX, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 120,
+        friction: 12,
+      }),
+      Animated.timing(heroIncomingOpacity, {
+        toValue: 1,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setHeroIndex(targetIndex);
+      setIncomingHeroIndex(null);
+      heroTranslateX.setValue(0);
+      heroOpacity.setValue(1);
+      heroIncomingTranslateX.setValue(0);
+      heroIncomingOpacity.setValue(1);
+      heroAnimatingRef.current = false;
+    });
+  };
+
+  const shiftHero = (direction: 1 | -1) => {
+    if (!heroCount) return;
+    const nextIndex = (safeHeroIndex + direction + heroCount) % heroCount;
+    animateHeroToIndex(nextIndex, direction);
+  };
+
+  const heroPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onPanResponderGrant: () => {
+          pauseHeroAutoPlay();
+        },
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 18 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onPanResponderRelease: (_, gestureState) => {
+          resumeHeroAutoPlaySoon();
+          if (Math.abs(gestureState.dx) < 42 || Math.abs(gestureState.dx) < Math.abs(gestureState.dy)) {
+            return;
+          }
+          shiftHero(gestureState.dx < 0 ? 1 : -1);
+        },
+        onPanResponderTerminate: () => {
+          resumeHeroAutoPlaySoon();
+        },
+      }),
+    [safeHeroIndex, heroCount],
+  );
+
+  const heroAnimatedStyle = {
+    opacity: heroOpacity,
+    transform: [{ translateX: heroTranslateX }],
+  };
+  const heroIncomingAnimatedStyle = {
+    opacity: heroIncomingOpacity,
+    transform: [{ translateX: heroIncomingTranslateX }],
+  };
+
+  const renderHeroInner = (item: ExploreHeroRecord, indicatorIndex = safeHeroIndex) => (
+    <LinearGradient colors={item.colors} style={styles.heroCard}>
+      {item.mediaKind === 'video' && item.videoUrl ? (
+        <>
+          <Video
+            source={{ uri: item.videoUrl }}
+            style={styles.heroMedia}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay
+            isLooping
+            isMuted
+          />
+          <LinearGradient
+            colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0.04)', 'rgba(0,0,0,0.72)']}
+            style={styles.heroMediaOverlay}
+          />
+        </>
+      ) : item.mediaKind === 'image' && item.imageUrl ? (
+        <>
+          <Image source={{ uri: item.imageUrl }} style={styles.heroMedia} resizeMode="cover" />
+          <LinearGradient
+            colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.04)', 'rgba(0,0,0,0.76)']}
+            style={styles.heroMediaOverlay}
+          />
+        </>
+      ) : null}
+      <View style={[styles.heroAccentPill, { backgroundColor: tabWorld.accentSoft, borderColor: tabWorld.accent }]}>
+        <View style={[styles.heroAccentDot, { backgroundColor: tabWorld.accent }]} />
+        <Text style={[styles.heroAccentText, { color: tabWorld.accent }]}>{activeTab}</Text>
+      </View>
+      {renderHeroChrome()}
+      <Text style={styles.heroClock}>10:16 PM</Text>
+      <Text style={styles.heroTitle}>{item.title}</Text>
+      <Text style={styles.heroSubtitle}>{item.subtitle}</Text>
+      <View style={styles.heroFooter}>
+        <View style={styles.heroMetaBlock}>
+          {!!item.creator && <Text style={styles.heroMetaCreator}>{item.creator}</Text>}
+          <Text style={styles.heroMetaStats}>
+            {item.likes} likes · {item.plays} plays
+          </Text>
+        </View>
+        <View style={styles.heroDots}>
+          {tabWorld.heroes.map((dotItem, index) => (
+            <TouchableOpacity
+              key={dotItem.id}
+              activeOpacity={0.85}
+              onPress={() => {
+                const direction = index >= safeHeroIndex ? 1 : -1;
+                animateHeroToIndex(index, direction);
+              }}
+              style={[styles.heroDotButton, index === indicatorIndex && styles.heroDotButtonActive]}
+            >
+              <View style={[styles.heroDot, index === indicatorIndex && styles.heroDotActive]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </LinearGradient>
+  );
 
   const getDiscoveryCardStyles = (index: number) => {
     switch (activeTab) {
@@ -1147,60 +2149,67 @@ export const ExploreScreen: React.FC = () => {
 
   const previewLabel = getPreviewLabel(activeTab, activeChip);
 
-  const searchResults = useMemo(() => {
-    if (!trimmedSearch) return [];
+  const searchGameCards = useMemo(() => searchGames.map((game) => buildSearchGameCard(game)), [searchGames]);
+  const searchTopTopics = useMemo(() => {
+    const seeded = buildTrendingSearchTopics(liveGames, discoverLaneBuckets, trackedSearchTopics);
+    const labels = new Set(seeded.map((topic) => topic.label.toLowerCase()));
+    const fallbackTopics = SEARCH_TREND_FALLBACKS.filter((term) => !labels.has(term.toLowerCase())).map((term) => ({
+      id: `fallback:${term}`,
+      label: term,
+      meta: buildHeroSearchCount(term),
+      hot: ['roblox', 'minecraft', 'goon'].includes(term),
+    }));
+    return [...seeded, ...fallbackTopics].slice(0, 12);
+  }, [liveGames, discoverLaneBuckets, trackedSearchTopics]);
 
-    const worldItems = [
-      ...tabWorld.sections.flatMap((section) =>
-        section.cards.map((card) => ({
-          id: `${section.title}-${card.id}`,
-          title: card.title,
-          subtitle: card.subtitle,
-          accent: card.accent,
-          creator: card.creator,
-          likes: card.likes,
-          plays: card.plays,
-          mediaKind: card.mediaKind,
-          imageUrl: card.imageUrl,
-          videoUrl: card.videoUrl,
-          source: section.title,
-        })),
-      ),
-      ...tabWorld.grid.map((item) => ({
-        id: `grid-${item.id}`,
-        title: item.title,
-        subtitle: item.subtitle,
-        accent: item.accent,
-        creator: item.creator,
-        likes: item.likes,
-        plays: item.plays,
-        mediaKind: item.mediaKind,
-        imageUrl: item.imageUrl,
-        videoUrl: item.videoUrl,
-        source: tabWorld.discoverTitle,
-      })),
-      ...tabWorld.heroes.map((item) => ({
-        id: `hero-${item.id}`,
-        title: item.title,
-        subtitle: item.subtitle,
-        accent: item.colors[0],
-        creator: item.creator,
-        likes: item.likes,
-        plays: item.plays,
-        mediaKind: item.mediaKind,
-        imageUrl: item.imageUrl,
-        videoUrl: item.videoUrl,
-        source: `${activeTab} Hero`,
-      })),
-    ];
+  const allSearchResultCount = searchCreators.length + searchGames.length;
 
-    const matches = worldItems.filter((item) => {
-      const haystack = `${item.title} ${item.subtitle} ${item.source}`.toLowerCase();
-      return haystack.includes(trimmedSearch);
-    });
+  useEffect(() => {
+    let cancelled = false;
 
-    return matches.slice(0, 12);
-  }, [trimmedSearch, tabWorld, activeTab]);
+    if (!showSearchExperience) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (trimmedSearch.length < 2) {
+      setSearchLoading(false);
+      setSearchCreators([]);
+      setSearchGames([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSearchLoading(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const [creatorData, gameData] = await Promise.all([
+          users.search(trimmedSearchText),
+          gamesApi.search(trimmedSearchText, 24),
+        ]);
+
+        if (cancelled) return;
+        setSearchCreators(Array.isArray(creatorData?.users) ? creatorData.users : []);
+        setSearchGames(Array.isArray(gameData?.games) ? gameData.games : []);
+      } catch (error) {
+        if (!cancelled) {
+          setSearchCreators([]);
+          setSearchGames([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSearchLoading(false);
+        }
+      }
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [showSearchExperience, trimmedSearch, trimmedSearchText]);
 
   useEffect(() => {
     setHeroIndex(0);
@@ -1213,43 +2222,49 @@ export const ExploreScreen: React.FC = () => {
         gamesApi.list(120, 0, { sort: 'discover' }),
         feed.global(40).catch(() => ({ activity: [] })),
       ]);
-      const allGames = (gamesData.games || []) as ExploreGameRecord[];
+      const activity = (feedData.activity || []) as ExploreFeedActivityRecord[];
+      const allGames = applyActivityMetricsToGames(
+        (gamesData.games || []) as ExploreGameRecord[],
+        buildActivityMetricsMap(activity),
+      );
       setLiveGames(allGames);
       const gamesById = new Map(allGames.map((game) => [game.id, game]));
-
-      const dedupedTrending = new Map<string, ExploreGameRecord>();
-      for (const item of feedData.activity || []) {
-        const game = item?.game;
-        if (!game?.id || dedupedTrending.has(game.id)) continue;
-        const enriched = gamesById.get(game.id);
-        dedupedTrending.set(game.id, {
-          id: game.id,
-          name: enriched?.name || game.name,
-          description: enriched?.description,
-          thumbnail: enriched?.thumbnail || game.thumbnail,
-          previewVideoUrl: enriched?.previewVideoUrl || game.previewVideoUrl,
-          preview_video_url: enriched?.preview_video_url || game.preview_video_url,
-          videoUrl: enriched?.videoUrl || game.videoUrl,
-          video_url: enriched?.video_url || game.video_url,
-          color: enriched?.color || game.color,
-          category: enriched?.category,
-          primaryTab: enriched?.primaryTab,
-          interactionType: enriched?.interactionType,
-          classificationTags: enriched?.classificationTags,
-          plays: enriched?.plays,
-        });
-      }
-      setTrendingGames(Array.from(dedupedTrending.values()));
+      setTrendingGames(buildTrendingGamesFromActivity(activity, gamesById));
     } catch (error) {
       setLiveGames([]);
       setTrendingGames([]);
     }
   };
 
+  const loadDiscoverLanes = async (tab: (typeof PRIMARY_TABS)[number]) => {
+    try {
+      const laneData = await gamesApi.discoverLanes(tab, 12);
+      setDiscoverLaneBuckets({
+        rising: Array.isArray(laneData?.lanes?.rising) ? laneData.lanes.rising : [],
+        fresh: Array.isArray(laneData?.lanes?.fresh) ? laneData.lanes.fresh : [],
+        sleepers: Array.isArray(laneData?.lanes?.sleepers) ? laneData.lanes.sleepers : [],
+        evergreen: Array.isArray(laneData?.lanes?.evergreen) ? laneData.lanes.evergreen : [],
+        featured: Array.isArray(laneData?.lanes?.featured) ? laneData.lanes.featured : [],
+        worldbuilding: Array.isArray(laneData?.lanes?.worldbuilding) ? laneData.lanes.worldbuilding : [],
+      });
+    } catch (error) {
+      setDiscoverLaneBuckets(EMPTY_LANE_BUCKETS);
+    }
+  };
+
+  const loadTrendingSearchTopics = async () => {
+    try {
+      const data = await searchApi.trending(12);
+      setTrackedSearchTopics(Array.isArray(data?.topics) ? data.topics : []);
+    } catch (error) {
+      setTrackedSearchTopics([]);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadLiveGames();
+      await Promise.all([loadLiveGames(), loadDiscoverLanes(activeTab), loadTrendingSearchTopics()]);
     } finally {
       setRefreshing(false);
     }
@@ -1260,42 +2275,26 @@ export const ExploreScreen: React.FC = () => {
 
     const bootstrap = async () => {
       try {
-        const [gamesData, feedData] = await Promise.all([
+        const [gamesData, feedData, trendingSearchData] = await Promise.all([
           gamesApi.list(120, 0, { sort: 'discover' }),
           feed.global(40).catch(() => ({ activity: [] })),
+          searchApi.trending(12).catch(() => ({ topics: [] })),
         ]);
         if (!active) return;
-        const allGames = (gamesData.games || []) as ExploreGameRecord[];
+        const activity = (feedData.activity || []) as ExploreFeedActivityRecord[];
+        const allGames = applyActivityMetricsToGames(
+          (gamesData.games || []) as ExploreGameRecord[],
+          buildActivityMetricsMap(activity),
+        );
         setLiveGames(allGames);
         const gamesById = new Map(allGames.map((game) => [game.id, game]));
-
-        const dedupedTrending = new Map<string, ExploreGameRecord>();
-        for (const item of feedData.activity || []) {
-          const game = item?.game;
-          if (!game?.id || dedupedTrending.has(game.id)) continue;
-          const enriched = gamesById.get(game.id);
-          dedupedTrending.set(game.id, {
-            id: game.id,
-            name: enriched?.name || game.name,
-            description: enriched?.description,
-            thumbnail: enriched?.thumbnail || game.thumbnail,
-            previewVideoUrl: enriched?.previewVideoUrl || game.previewVideoUrl,
-            preview_video_url: enriched?.preview_video_url || game.preview_video_url,
-            videoUrl: enriched?.videoUrl || game.videoUrl,
-            video_url: enriched?.video_url || game.video_url,
-            color: enriched?.color || game.color,
-            category: enriched?.category,
-            primaryTab: enriched?.primaryTab,
-            interactionType: enriched?.interactionType,
-            classificationTags: enriched?.classificationTags,
-            plays: enriched?.plays,
-          });
-        }
-        setTrendingGames(Array.from(dedupedTrending.values()));
+        setTrendingGames(buildTrendingGamesFromActivity(activity, gamesById));
+        setTrackedSearchTopics(Array.isArray(trendingSearchData?.topics) ? trendingSearchData.topics : []);
       } catch (error) {
         if (active) {
           setLiveGames([]);
           setTrendingGames([]);
+          setTrackedSearchTopics([]);
         }
       }
     };
@@ -1304,6 +2303,64 @@ export const ExploreScreen: React.FC = () => {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    loadDiscoverLanes(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!showSearchExperience || trimmedSearch.length < 2) return;
+    if (lastTrackedSearchRef.current === trimmedSearch) return;
+
+    lastTrackedSearchRef.current = trimmedSearch;
+    searchApi.track(trimmedSearchText, 'explore').catch(() => {});
+  }, [showSearchExperience, trimmedSearch, trimmedSearchText]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+
+    let cancelled = false;
+
+    const inspectDiscover = async () => {
+      try {
+        const debugData = (await gamesApi.discoverDebug(activeTab, 18)) as ExploreDiscoverDebugResponse;
+        if (cancelled) return;
+        logDiscoverDebugSummary(activeTab, debugData);
+      } catch (error) {
+        if (!cancelled) {
+          console.log(`[ExploreDebug] ${activeTab} debug fetch failed`);
+        }
+      }
+    };
+
+    inspectDiscover();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!heroCount || showSearchExperience || isTrendingView) return;
+
+    const interval = setInterval(() => {
+      if (heroAutoPlayPausedRef.current || heroAnimatingRef.current) return;
+      const nextIndex = (safeHeroIndex + 1) % heroCount;
+      animateHeroToIndex(nextIndex, 1);
+    }, 5200);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [safeHeroIndex, heroCount, showSearchExperience, isTrendingView]);
+
+  useEffect(() => {
+    return () => {
+      if (heroResumeTimeoutRef.current) {
+        clearTimeout(heroResumeTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -1345,77 +2402,263 @@ export const ExploreScreen: React.FC = () => {
           />
         }
       >
-        <View style={styles.header}>
-          <Text style={styles.logoTitle}>EXPLORE</Text>
-          <TouchableOpacity style={[styles.headerIcon, isTrendingView && { borderColor: tabWorld.modeBannerBorder, backgroundColor: tabWorld.modeBannerBg }]}>
-            <Ionicons name="search" size={20} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.searchWrap, isTrendingView && { backgroundColor: tabWorld.modeBannerBg, borderColor: tabWorld.modeBannerBorder }]}>
-          <Ionicons name="search" size={18} color={isTrendingView ? tabWorld.accent : 'rgba(255,255,255,0.5)'} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder={isTrendingView ? `Search ${activeTab.toLowerCase()} trends...` : 'Search your favorite games...'}
-            placeholderTextColor={isTrendingView ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.35)'}
-            style={[styles.searchInput, isTrendingView && styles.searchInputTrending]}
-          />
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.primaryTabsRow}>
-          {PRIMARY_TABS.map((tab) => {
-            const active = tab === activeTab;
-            return (
-              <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={styles.primaryTabBtn}>
-                <Text style={[styles.primaryTabText, active && styles.primaryTabTextActive]}>{tab}</Text>
-                {active ? <View style={styles.primaryTabUnderline} /> : null}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-          {tabWorld.chips.map((chip) => {
-            const active = chip === activeChip;
-            return (
-              <TouchableOpacity
-                key={chip}
-                onPress={() => setActiveChip(chip)}
-                style={[
-                  styles.chip,
-                  active && styles.chipActive,
-                  active && { backgroundColor: tabWorld.accent },
-                ]}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{chip}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {isSearchMode ? (
-          <View style={styles.searchSummaryCard}>
-            <View style={styles.searchMetaRow}>
-              <Text style={styles.searchMetaTitle}>Results for “{searchQuery.trim()}”</Text>
-              <Text style={styles.searchMetaCount}>{searchResults.length} found</Text>
-            </View>
-            <Text style={styles.searchSummaryText}>
-              Searching across {activeTab.toLowerCase()} heroes, sections, and discovery picks.
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchSuggestionRow}>
-              {SEARCH_QUICK_TERMS.map((term) => (
-                <TouchableOpacity
-                  key={term}
-                  onPress={() => setSearchQuery(term)}
-                  style={[styles.searchSuggestionChip, { borderColor: tabWorld.modeBannerBorder, backgroundColor: tabWorld.modeBannerBg }]}
-                >
-                  <Text style={[styles.searchSuggestionText, { color: tabWorld.accent }]}>
-                    {term}
-                  </Text>
+        {showSearchExperience ? (
+          <View style={styles.searchExperienceHeader}>
+            <View style={styles.searchWrapActiveShell}>
+              <Ionicons name="search" size={18} color="rgba(255,255,255,0.52)" />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onFocus={activateSearch}
+                autoFocus={searchActive}
+                placeholder="Search creators & games"
+                placeholderTextColor="rgba(255,255,255,0.34)"
+                style={[styles.searchInput, styles.searchInputActive]}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 ? (
+                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchClearBtn}>
+                  <Ionicons name="close" size={16} color="#0A0A0A" />
                 </TouchableOpacity>
-              ))}
+              ) : null}
+            </View>
+            <TouchableOpacity onPress={cancelSearch} style={styles.searchCancelBtn}>
+              <Text style={styles.searchCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <View style={styles.header}>
+              <Text style={styles.logoTitle}>EXPLORE</Text>
+              <TouchableOpacity
+                style={[styles.headerIcon, isTrendingView && { borderColor: tabWorld.modeBannerBorder, backgroundColor: tabWorld.modeBannerBg }]}
+                onPress={activateSearch}
+              >
+                <Ionicons name="search" size={20} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.searchWrap, isTrendingView && { backgroundColor: tabWorld.modeBannerBg, borderColor: tabWorld.modeBannerBorder }]}>
+              <Ionicons name="search" size={18} color={isTrendingView ? tabWorld.accent : 'rgba(255,255,255,0.5)'} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onFocus={activateSearch}
+                placeholder="Search creators & games"
+                placeholderTextColor={isTrendingView ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.35)'}
+                style={[styles.searchInput, isTrendingView && styles.searchInputTrending]}
+              />
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.primaryTabsRow}>
+              {PRIMARY_TABS.map((tab) => {
+                const active = tab === activeTab;
+                return (
+                  <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={styles.primaryTabBtn}>
+                    <Text style={[styles.primaryTabText, active && styles.primaryTabTextActive]}>{tab}</Text>
+                    {active ? <View style={styles.primaryTabUnderline} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+              {tabWorld.chips.map((chip) => {
+                const active = chip === activeChip;
+                return (
+                  <TouchableOpacity
+                    key={chip}
+                    onPress={() => setActiveChip(chip)}
+                    style={[
+                      styles.chip,
+                      active && styles.chipActive,
+                      active && { backgroundColor: tabWorld.accent },
+                    ]}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{chip}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </>
+        )}
+
+        {showSearchExperience ? (
+          <View style={styles.searchExperience}>
+            {trimmedSearch.length >= 2 ? (
+              <>
+                <View style={styles.searchSummaryCard}>
+                  <View style={styles.searchMetaRow}>
+                    <Text style={styles.searchMetaTitle}>Results for “{trimmedSearchText}”</Text>
+                    <Text style={styles.searchMetaCount}>{allSearchResultCount} found</Text>
+                  </View>
+                  <Text style={styles.searchSummaryText}>
+                    Search is now looking across real creator accounts and published games, not the editorial Explore mock cards.
+                  </Text>
+                </View>
+
+                <View style={styles.searchTabsBar}>
+                  {(['All', 'Creators', 'Games'] as ExploreSearchTab[]).map((tab) => {
+                    const active = searchTab === tab;
+                    return (
+                      <TouchableOpacity
+                        key={tab}
+                        onPress={() => setSearchTab(tab)}
+                        style={[styles.searchModeTab, active && styles.searchModeTabActive]}
+                      >
+                        <Text style={[styles.searchModeTabText, active && styles.searchModeTabTextActive]}>
+                          {tab}
+                        </Text>
+                        {active ? <View style={styles.searchModeTabUnderline} /> : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {searchLoading ? (
+                  <View style={styles.searchLoadingState}>
+                    <ActivityIndicator size="small" color={tabWorld.accent} />
+                    <Text style={styles.searchLoadingText}>Searching the app...</Text>
+                  </View>
+                ) : allSearchResultCount > 0 ? (
+                  <>
+                    {(searchTab === 'All' || searchTab === 'Creators') && searchCreators.length > 0 ? (
+                      <View style={[styles.section, styles.leadSection]}>
+                        <View style={styles.sectionHeader}>
+                          <Text style={styles.sectionTitle}>Creators</Text>
+                        </View>
+                        <View style={styles.creatorResultsList}>
+                          {(searchTab === 'Creators' ? searchCreators : searchCreators.slice(0, 4)).map((creator) => {
+                            const isSelf = creator.id === user?.id;
+                            const isFollowed = followedCreatorIds.has(creator.id);
+                            const isFollowBusy = followLoadingIds.has(creator.id);
+                            return (
+                              <TouchableOpacity key={creator.id} activeOpacity={0.88} onPress={() => openSearchProfile(creator)} style={styles.creatorResultRow}>
+                                {creator.avatar ? (
+                                  <Image source={{ uri: creator.avatar }} style={styles.creatorAvatar} />
+                                ) : (
+                                  <View style={styles.creatorAvatarFallback}>
+                                    <Text style={styles.creatorAvatarInitial}>
+                                      {(creator.username || creator.displayName || '?').charAt(0).toUpperCase()}
+                                    </Text>
+                                  </View>
+                                )}
+                                <View style={styles.creatorCopy}>
+                                  <Text style={styles.creatorUsername} numberOfLines={1}>
+                                    @{creator.username}
+                                  </Text>
+                                  {!!creator.displayName && creator.displayName !== creator.username ? (
+                                    <Text style={styles.creatorDisplayName} numberOfLines={1}>
+                                      {creator.displayName}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                                <TouchableOpacity
+                                  disabled={isSelf || isFollowed || isFollowBusy}
+                                  onPress={() => handleFollowCreator(creator.id)}
+                                  style={[
+                                    styles.followButton,
+                                    (isSelf || isFollowed) && styles.followButtonMuted,
+                                  ]}
+                                >
+                                  <Text style={[styles.followButtonText, (isSelf || isFollowed) && styles.followButtonTextMuted]}>
+                                    {isSelf ? 'You' : isFollowed ? 'Following' : isFollowBusy ? '...' : 'Follow'}
+                                  </Text>
+                                </TouchableOpacity>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {(searchTab === 'All' || searchTab === 'Games') && searchGameCards.length > 0 ? (
+                      <View style={[styles.section, styles.leadSection]}>
+                        <View style={styles.sectionHeader}>
+                          <Text style={styles.sectionTitle}>Games</Text>
+                        </View>
+                        <View style={styles.searchGrid}>
+                          {(searchTab === 'Games' ? searchGameCards : searchGameCards.slice(0, 6)).map((item, index) => (
+                            <TouchableOpacity
+                              key={item.id}
+                              activeOpacity={0.9}
+                              onPress={() => openGameFromExplore(item.gameId)}
+                              style={[
+                                ...getGridCardStyles(index, false),
+                                { backgroundColor: getCardSurfaceTone(item) },
+                              ]}
+                            >
+                              <ExploreMediaStage
+                                title={item.title}
+                                accent={item.accent}
+                                mediaKind={item.mediaKind}
+                                imageUrl={item.imageUrl}
+                                videoUrl={item.videoUrl}
+                                previewLabel={previewLabel}
+                                badgeLabel="Game"
+                                badgeTone={tabWorld.accent}
+                                badgeBackground={tabWorld.accentSoft}
+                                fullBleed
+                                titleOverlay={item.title}
+                                subtitleOverlay={item.subtitle}
+                                creatorOverlay={item.creator}
+                                metricsOverlay={`${item.plays} plays`}
+                              />
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <View style={styles.searchEmptyState}>
+                    <Ionicons name="search-outline" size={28} color="rgba(255,255,255,0.34)" />
+                    <Text style={styles.searchEmptyTitle}>Nothing matched yet</Text>
+                    <Text style={styles.searchEmptyText}>
+                      Try a creator username, game title, or a topic like horror, romance, simulator, or trivia.
+                    </Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <>
+                <View style={styles.searchSummaryCard}>
+                  <View style={styles.searchMetaRow}>
+                    <Text style={styles.searchMetaTitle}>Search creators and games</Text>
+                  </View>
+                  <Text style={styles.searchSummaryText}>
+                    This should feel like a real discovery surface, not just filtering whatever Explore already had on screen.
+                  </Text>
+                </View>
+
+                <View style={[styles.section, styles.leadSection]}>
+                  <View style={styles.sectionHeader}>
+                    <View>
+                      <Text style={styles.sectionTitle}>Top Searches</Text>
+                      <Text style={styles.searchSectionEyebrow}>Hot Search Trends</Text>
+                    </View>
+                  </View>
+                  <View style={styles.searchTrendList}>
+                    {searchTopTopics.map((topic) => (
+                      <TouchableOpacity key={topic.id} onPress={() => handleSearchTopicPress(topic.label)} style={styles.searchTrendRow}>
+                        <View style={styles.searchTrendIconWrap}>
+                          <Ionicons
+                            name={topic.hot ? 'flame' : 'search'}
+                            size={18}
+                            color={topic.hot ? '#FB923C' : 'rgba(255,255,255,0.72)'}
+                          />
+                        </View>
+                        <View style={styles.searchTrendCopy}>
+                          <Text style={styles.searchTrendLabel}>{topic.label}</Text>
+                          <Text style={styles.searchTrendMeta}>{topic.meta}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </>
+            )}
           </View>
         ) : !isTrendingView ? (
           <View style={[styles.modeBanner, { backgroundColor: tabWorld.modeBannerBg, borderColor: tabWorld.modeBannerBorder }]}>
@@ -1424,77 +2667,24 @@ export const ExploreScreen: React.FC = () => {
           </View>
         ) : null}
 
-        {!isSearchMode && !isTrendingView ? (
-          <TouchableOpacity activeOpacity={0.9} onPress={() => setHeroIndex((current) => current + 1)} style={styles.heroWrap}>
-            <LinearGradient colors={hero.colors} style={styles.heroCard}>
-              <View style={[styles.heroAccentPill, { backgroundColor: tabWorld.accentSoft, borderColor: tabWorld.accent }]}>
-                <View style={[styles.heroAccentDot, { backgroundColor: tabWorld.accent }]} />
-                <Text style={[styles.heroAccentText, { color: tabWorld.accent }]}>{activeTab}</Text>
+        {!showSearchExperience && !isTrendingView ? (
+          <View style={styles.heroWrap} {...heroPanResponder.panHandlers}>
+            <TouchableOpacity activeOpacity={0.9} onPress={() => openGameFromExplore(hero.gameId)}>
+              <View style={styles.heroCardFrame}>
+                <Animated.View style={[styles.heroAnimatedStage, heroAnimatedStyle]}>
+                  {renderHeroInner(hero, incomingHeroIndex ?? safeHeroIndex)}
+                </Animated.View>
+                {incomingHero ? (
+                  <Animated.View style={[styles.heroAnimatedStage, heroIncomingAnimatedStyle]}>
+                    {renderHeroInner(incomingHero, incomingHeroIndex ?? safeHeroIndex)}
+                  </Animated.View>
+                ) : null}
               </View>
-              {renderHeroChrome()}
-              <Text style={styles.heroClock}>10:16 PM</Text>
-              <Text style={styles.heroTitle}>{hero.title}</Text>
-              <Text style={styles.heroSubtitle}>{hero.subtitle}</Text>
-              <View style={styles.heroFooter}>
-                <View style={styles.heroMetaBlock}>
-                  <Text style={styles.heroMetaCreator}>{hero.creator}</Text>
-                  <Text style={styles.heroMetaStats}>
-                    {hero.likes} likes · {hero.plays} plays
-                  </Text>
-                </View>
-                <View style={styles.heroDots}>
-                  {tabWorld.heroes.map((item, index) => (
-                    <View key={item.id} style={[styles.heroDot, index === heroIndex % tabWorld.heroes.length && styles.heroDotActive]} />
-                  ))}
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
-        {isSearchMode ? (
-          <View style={[styles.section, styles.leadSection]}>
-            {searchResults.length > 0 ? (
-              <View style={styles.searchGrid}>
-                {searchResults.map((item, index) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    activeOpacity={0.9}
-                    style={[
-                      ...getGridCardStyles(index, false),
-                      { backgroundColor: getCardSurfaceTone(item) },
-                    ]}
-                  >
-                    <ExploreMediaStage
-                      title={item.title}
-                      accent={item.accent}
-                      mediaKind={item.mediaKind}
-                      imageUrl={item.imageUrl}
-                      videoUrl={item.videoUrl}
-                      previewLabel={previewLabel}
-                      badgeLabel={item.source}
-                      badgeTone={tabWorld.accent}
-                      badgeBackground={tabWorld.accentSoft}
-                      fullBleed
-                      titleOverlay={item.title}
-                      subtitleOverlay={item.subtitle}
-                      creatorOverlay={item.creator}
-                      metricsOverlay={`${item.likes} likes · ${item.plays}`}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <View style={styles.searchEmptyState}>
-                <Ionicons name="search-outline" size={28} color="rgba(255,255,255,0.34)" />
-                <Text style={styles.searchEmptyTitle}>Nothing matched yet</Text>
-                <Text style={styles.searchEmptyText}>
-                  Try a title, vibe, creator name, or mode like horror, romance, simulator, or trivia.
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : isTrendingView ? (
+        {!showSearchExperience && isTrendingView ? (
           <>
             <View style={[styles.section, styles.leadSection]}>
               <View style={styles.sectionHeader}>
@@ -1552,6 +2742,7 @@ export const ExploreScreen: React.FC = () => {
                   <TouchableOpacity
                     key={item.id}
                     activeOpacity={0.9}
+                    onPress={() => openGameFromExplore(item.gameId)}
                     style={[
                       ...getGridCardStyles(index, true),
                       { backgroundColor: getCardSurfaceTone(item) },
@@ -1614,6 +2805,7 @@ export const ExploreScreen: React.FC = () => {
                 </View>
                 <TouchableOpacity
                   activeOpacity={0.92}
+                  onPress={() => openGameFromExplore(exploreSpotlightCard.gameId)}
                   style={[styles.editorialSpotlightCard, { backgroundColor: getCardSurfaceTone(exploreSpotlightCard) }]}
                 >
                   <ExploreMediaStage
@@ -1638,6 +2830,7 @@ export const ExploreScreen: React.FC = () => {
                     <TouchableOpacity
                       key={card.id}
                       activeOpacity={0.92}
+                      onPress={() => openGameFromExplore(card.gameId)}
                       style={[
                         styles.editorialSecondaryCard,
                         index === 0 ? styles.editorialSecondaryCardWide : styles.editorialSecondaryCardTall,
@@ -1681,6 +2874,7 @@ export const ExploreScreen: React.FC = () => {
                   <TouchableOpacity
                     key={card.id}
                     activeOpacity={0.9}
+                    onPress={() => openGameFromExplore(card.gameId)}
                     style={[
                       styles.editorialRailCard,
                       index % 3 === 0 ? styles.editorialRailCardTall : styles.editorialRailCardShort,
@@ -1721,6 +2915,7 @@ export const ExploreScreen: React.FC = () => {
               {exploreGridLeadCard ? (
                 <TouchableOpacity
                   activeOpacity={0.92}
+                  onPress={() => openGameFromExplore(exploreGridLeadCard.gameId)}
                   style={[styles.editorialGridLeadCard, { backgroundColor: getCardSurfaceTone(exploreGridLeadCard) }]}
                 >
                   <ExploreMediaStage
@@ -1746,6 +2941,7 @@ export const ExploreScreen: React.FC = () => {
                   <TouchableOpacity
                     key={item.id}
                     activeOpacity={0.9}
+                    onPress={() => openGameFromExplore(item.gameId)}
                     style={[
                       ...getGridCardStyles(index, false),
                       { backgroundColor: getCardSurfaceTone(item) },
@@ -1787,6 +2983,7 @@ export const ExploreScreen: React.FC = () => {
                     <TouchableOpacity
                       key={card.id}
                       activeOpacity={0.9}
+                      onPress={() => openGameFromExplore(card.gameId)}
                       style={[
                         ...getDiscoveryCardStyles(index),
                         { backgroundColor: getCardSurfaceTone(card) },
@@ -1826,6 +3023,7 @@ export const ExploreScreen: React.FC = () => {
                   <TouchableOpacity
                     key={item.id}
                     activeOpacity={0.9}
+                    onPress={() => openGameFromExplore(item.gameId)}
                     style={[
                       ...getGridCardStyles(index, false),
                       { backgroundColor: getCardSurfaceTone(item) },
@@ -1854,6 +3052,20 @@ export const ExploreScreen: React.FC = () => {
           </>
         )}
       </ScrollView>
+      <UserProfileModal
+        visible={!!selectedSearchProfile}
+        onClose={() => setSelectedSearchProfile(null)}
+        user={selectedSearchProfile}
+        onFriendStatusChange={(userId, isFriend) => {
+          setFollowedCreatorIds((prev) => {
+            const next = new Set(prev);
+            if (isFriend) next.add(userId);
+            else next.delete(userId);
+            return next;
+          });
+          setSelectedSearchProfile((prev) => (prev && prev.id === userId ? { ...prev, isFriend } : prev));
+        }}
+      />
     </View>
   );
 };
@@ -1898,6 +3110,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
+  searchExperienceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+  },
+  searchWrapActiveShell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderRadius: 22,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 14,
+  },
+  searchInputActive: {
+    color: '#FFF',
+    fontSize: 15,
+  },
+  searchCancelBtn: {
+    paddingVertical: 8,
+  },
+  searchCancelText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  searchClearBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   searchInput: {
     flex: 1,
     marginLeft: 8,
@@ -1907,6 +3157,9 @@ const styles = StyleSheet.create({
   },
   searchInputTrending: {
     color: '#FFF',
+  },
+  searchExperience: {
+    paddingTop: 10,
   },
   primaryTabsRow: {
     gap: 22,
@@ -1940,7 +3193,7 @@ const styles = StyleSheet.create({
   },
   searchSummaryCard: {
     marginHorizontal: 16,
-    marginTop: 10,
+    marginTop: 2,
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 14,
@@ -1987,6 +3240,172 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'capitalize',
   },
+  searchTabsBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  searchModeTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  searchModeTabText: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  searchModeTabTextActive: {
+    color: '#FF922E',
+  },
+  searchModeTabUnderline: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: -1,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#FF922E',
+  },
+  searchModeTabActive: {},
+  searchLoadingState: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 18,
+    paddingVertical: 24,
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchLoadingText: {
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  creatorResultsList: {
+    marginHorizontal: 16,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#0F0F10',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  creatorResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  creatorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#202020',
+  },
+  creatorAvatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#232323',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorAvatarInitial: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  creatorCopy: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  creatorUsername: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  creatorDisplayName: {
+    color: 'rgba(255,255,255,0.52)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  followButton: {
+    minWidth: 92,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF8A2A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  followButtonMuted: {
+    backgroundColor: '#232323',
+  },
+  followButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  followButtonTextMuted: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  searchTrendList: {
+    marginHorizontal: 16,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#0F0F10',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  searchTrendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  searchTrendIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchTrendCopy: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  searchTrendLabel: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  searchSectionEyebrow: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  searchTrendMeta: {
+    color: 'rgba(255,255,255,0.46)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   chip: {
     backgroundColor: '#1A1A1A',
     paddingHorizontal: 14,
@@ -2032,12 +3451,26 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 10,
   },
-  heroCard: {
+  heroCardFrame: {
     height: 300,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  heroAnimatedStage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroCard: {
+    height: '100%',
     borderRadius: 24,
     padding: 22,
     justifyContent: 'space-between',
     overflow: 'hidden',
+  },
+  heroMedia: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroMediaOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   heroClock: {
     color: 'rgba(255,255,255,0.88)',
@@ -2207,7 +3640,15 @@ const styles = StyleSheet.create({
   },
   heroDots: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
+  },
+  heroDotButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 3,
+  },
+  heroDotButtonActive: {
+    transform: [{ scale: 1.02 }],
   },
   heroFooter: {
     flexDirection: 'row',
