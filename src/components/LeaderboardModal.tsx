@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LoopsColors, SemanticColors, LoopsGradients } from '../constants/LoopsColors';
 import { resolveAvatarSource } from './Avatar';
+import { gamification } from '../services/api';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.75;
@@ -43,6 +44,7 @@ interface LeaderboardModalProps {
     displayName?: string | null;
     avatar?: string | null;
   } | null;
+  sessionPoints?: number;
   sessionPlayTime: number;
 }
 

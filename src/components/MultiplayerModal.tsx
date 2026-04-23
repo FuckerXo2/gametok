@@ -250,7 +250,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
             <View style={styles.emptyLobby}>
               <Animated.View entering={ZoomIn.delay(200).springify()}>
                 <View style={styles.emptyLobbyCircle}>
-                  <Ionicons name="radar-outline" size={48} color="#a855f7" />
+                  <Ionicons name="radio-outline" size={48} color="#a855f7" />
                 </View>
               </Animated.View>
               <Text style={styles.emptyTitle}>

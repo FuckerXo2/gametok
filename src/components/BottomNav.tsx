@@ -91,14 +91,14 @@ const AnimatedTab = ({
           <Ionicons
             name={isActive ? tab.iconActive : tab.icon}
             size={24}
-            color={isActive ? colors.primary : colors.textSecondary}
+            color={isActive ? colors.primary : '#888'}
           />
         )}
       </Animated.View>
       <Animated.Text style={[
         styles.label,
         animatedTextStyle,
-        { color: isActive ? colors.primary : colors.textSecondary }
+        { color: isActive ? colors.primary : '#888' }
       ]}>
         {tab.label}
       </Animated.Text>
@@ -132,8 +132,8 @@ const CreateButton = ({ onPress, colors, isDark }: { onPress: () => void, colors
         <View style={[styles.createButtonGlitch, { backgroundColor: colors.primary, right: -3 }]} />
         
         {/* High Contrast Core */}
-        <View style={[styles.createButton, { backgroundColor: isDark ? '#FFF' : '#000' }]}>
-          <Ionicons name="add" size={24} color={isDark ? '#000' : '#FFF'} />
+        <View style={[styles.createButton, { backgroundColor: '#FFF' }]}>
+          <Ionicons name="add" size={24} color="#000" />
         </View>
       </Animated.View>
     </Pressable>
@@ -157,8 +157,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
       styles.container,
       {
         paddingBottom: insets.bottom || 8,
-        backgroundColor: colors.background,
-        borderTopColor: colors.border,
+        backgroundColor: '#000',
+        borderTopColor: '#333',
       }
     ]}>
       {tabs.slice(0, 2).map((tab) => (

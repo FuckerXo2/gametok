@@ -5,7 +5,7 @@ import { usePkMode } from '../hooks/usePkMode';
 import { PkOverlay } from '../components/PkOverlay';
 import { PkCountdown } from '../components/PkCountdown';
 import { PkResults } from '../components/PkResults';
-import { LoopsColors } from '../constants/LoopsColors';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
 
 interface Props {
@@ -113,7 +113,6 @@ export const PkModeScreen: React.FC<Props> = ({ route, navigation }) => {
   if (matchEnded) {
     return (
       <PkResults
-        matchId={matchId}
         myScore={myScore}
         opponentScore={opponentScore}
         winner={winner}
@@ -131,7 +130,7 @@ export const PkModeScreen: React.FC<Props> = ({ route, navigation }) => {
       
       {!gameStarted && countdown === null && (
         <View style={styles.waitingContainer}>
-          <ActivityIndicator size="large" color={LoopsColors.primary} />
+          <ActivityIndicator size="large" color={LoopsColors.mainPink} />
           <Text style={styles.waitingText}>Waiting for opponent...</Text>
         </View>
       )}
@@ -160,7 +159,7 @@ export const PkModeScreen: React.FC<Props> = ({ route, navigation }) => {
           
           {loading && (
             <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color={LoopsColors.primary} />
+              <ActivityIndicator size="large" color={LoopsColors.mainPink} />
             </View>
           )}
         </>
@@ -172,7 +171,7 @@ export const PkModeScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: LoopsColors.background
+    backgroundColor: LoopsColors.black
   },
   webview: {
     flex: 1
@@ -181,16 +180,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: LoopsColors.background
+    backgroundColor: LoopsColors.black
   },
   waitingText: {
     ...FontStyles.body,
-    color: LoopsColors.textSecondary,
+    color: SemanticColors.textSecondary,
     marginTop: 16
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: LoopsColors.background,
+    backgroundColor: LoopsColors.black,
     justifyContent: 'center',
     alignItems: 'center'
   }

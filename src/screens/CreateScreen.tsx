@@ -17,6 +17,7 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -42,6 +43,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -96,8 +98,11 @@ interface CreateScreenProps {
   onClose: () => void;
 }
 
+const PENDING_CREATE_JOB_KEY = 'createScreenPendingDreamJob';
+
 type StructuredAttachment = {
   type: string;
+  role: AttachmentRole;
   url: string;
   thumb?: string;
   thumbnail?: string;
@@ -106,6 +111,16 @@ type StructuredAttachment = {
   instruction: string;
   duration?: string;
 };
+
+type AttachmentRole =
+  | 'hero'
+  | 'background'
+  | 'overlay'
+  | 'panel'
+  | 'prop'
+  | 'bgm'
+  | 'sfx'
+  | 'reference';
 
 // =============================================
 // GENRE CHIP DATA
@@ -192,6 +207,31 @@ const COOKING_STATUS_LINES = [
   'Sanding the rough edges off the fun...',
 ];
 
+const ATTACHMENT_ROLE_OPTIONS: Record<string, Array<{ role: AttachmentRole; label: string }>> = {
+  image: [
+    { role: 'hero', label: 'Hero' },
+    { role: 'background', label: 'Background' },
+    { role: 'overlay', label: 'Overlay' },
+    { role: 'panel', label: 'Panel' },
+    { role: 'prop', label: 'Prop' },
+    { role: 'reference', label: 'Reference' },
+  ],
+  video: [
+    { role: 'background', label: 'Background' },
+    { role: 'panel', label: 'Panel' },
+    { role: 'overlay', label: 'Overlay' },
+    { role: 'reference', label: 'Reference' },
+  ],
+  bgm: [
+    { role: 'bgm', label: 'BGM' },
+    { role: 'reference', label: 'Reference' },
+  ],
+  sfx: [
+    { role: 'sfx', label: 'SFX' },
+    { role: 'reference', label: 'Reference' },
+  ],
+};
+
 // =============================================
 // STEP INDICATOR COMPONENT (for generation phase)
 // =============================================
@@ -222,6 +262,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const detachPendingDreamRef = useRef(false);
+  const resumingPendingJobRef = useRef<string | null>(null);
   const webviewRef = useRef<WebView>(null);
   const enemyIdRef = useRef(0);
 
@@ -268,7 +310,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [selectedAudio, setSelectedAudio] = useState<any | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
   const [selectedCommunityImage, setSelectedCommunityImage] = useState<any | null>(null);
-  const [attachedAssets, setAttachedAssets] = useState<any[]>([]);
+  const [attachedAssets, setAttachedAssets] = useState<StructuredAttachment[]>([]);
+  const [showAssetIntentModal, setShowAssetIntentModal] = useState(false);
+  const [pendingAssetIntent, setPendingAssetIntent] = useState<StructuredAttachment | null>(null);
+  const [assetIntentRole, setAssetIntentRole] = useState<AttachmentRole>('hero');
+  const [assetIntentText, setAssetIntentText] = useState('');
+  const [editingAttachedAssetIndex, setEditingAttachedAssetIndex] = useState<number | null>(null);
   const [memeTab, setMemeTab] = useState<'gif' | 'stickers'>('gif');
   const [memeSearchQuery, setMemeSearchQuery] = useState('');
   const [isMemeSearching, setIsMemeSearching] = useState(false);
@@ -295,6 +342,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
   // This JavaScript is injected into the WebView after the game HTML loads.
@@ -455,6 +503,133 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   }, []);
 
+  const persistPendingDreamJob = useCallback(async (payload: { jobId: string; prompt: string; labsMode: boolean }) => {
+    setPendingJobId(payload.jobId);
+    try {
+      await AsyncStorage.setItem(
+        PENDING_CREATE_JOB_KEY,
+        JSON.stringify({
+          ...payload,
+          savedAt: new Date().toISOString(),
+        }),
+      );
+    } catch (e) {
+      console.warn('Failed to persist pending dream job:', e);
+    }
+  }, []);
+
+  const clearPendingDreamJob = useCallback(async () => {
+    setPendingJobId(null);
+    try {
+      await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+    } catch (e) {
+      console.warn('Failed to clear pending dream job:', e);
+    }
+  }, []);
+
+  const stopLocalDreamPolling = useCallback(() => {
+    if (cancelRef.current) {
+      cancelRef.current();
+      cancelRef.current = null;
+    }
+    resumingPendingJobRef.current = null;
+  }, []);
+
+  const formatDreamError = useCallback((error: any, mode: 'generate' | 'edit' = 'generate') => {
+    const fallback = mode === 'edit'
+      ? 'Could not update the game right now. Please try again.'
+      : 'Could not generate the game right now. Please try again.';
+
+    if (!error) return fallback;
+
+    const message = String(error.message || error);
+    if (error.name === 'AbortError' || message.includes('aborted')) {
+      return null;
+    }
+
+    if (error.code === 'REQUEST_TIMEOUT' || /timed out/i.test(message)) {
+      return mode === 'edit'
+        ? 'The update request took too long to start. Railway may be cold or the AI backend is overloaded. Try again in a moment.'
+        : 'The generation request took too long to start. Railway may be cold or the AI backend is overloaded. Try again in a moment.';
+    }
+
+    if (/network request failed/i.test(message)) {
+      return 'Could not reach the AI backend. Check your connection and try again.';
+    }
+
+    return message || fallback;
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    if (phase === 'preview') return;
+    if (cancelRef.current) return;
+    if (resumingPendingJobRef.current) return;
+
+    let cancelled = false;
+    let resumeCancel: (() => void) | null = null;
+
+    const resumePendingDream = async () => {
+      try {
+        const rawPending = await AsyncStorage.getItem(PENDING_CREATE_JOB_KEY);
+        if (!rawPending || cancelled) return;
+
+        const pending = JSON.parse(rawPending);
+        if (!pending?.jobId) return;
+        if (resumingPendingJobRef.current === pending.jobId) return;
+
+        resumingPendingJobRef.current = pending.jobId;
+        setPendingJobId(pending.jobId);
+        if (pending.prompt && !prompt.trim()) {
+          setPrompt(pending.prompt);
+        }
+        setPhase('generating');
+        setErrorMsg(null);
+
+        const { promise, cancel } = ai.resumeDreamJob(pending.jobId);
+        resumeCancel = cancel;
+        cancelRef.current = cancel;
+        const res = await promise as any;
+        if (cancelled) return;
+        cancelRef.current = null;
+        resumingPendingJobRef.current = null;
+
+        if (res.success && res.htmlPreview) {
+          await clearPendingDreamJob();
+          setGameConfig({});
+          setEditableSlots([]);
+          setActiveHtml(res.htmlPreview);
+          setActiveDraftId(res.draftId);
+          setGameTitle(res.title || 'Untitled Dream');
+          setPhase('preview');
+          await fetchDrafts();
+        }
+      } catch (error: any) {
+        if (cancelled) return;
+        cancelRef.current = null;
+        resumingPendingJobRef.current = null;
+        const friendlyMessage = formatDreamError(error, 'generate');
+        if (!friendlyMessage) {
+          return;
+        }
+        setErrorMsg(friendlyMessage);
+        setPhase('idle');
+        await clearPendingDreamJob();
+      }
+    };
+
+    resumePendingDream();
+
+    return () => {
+      cancelled = true;
+      if (resumeCancel) {
+        resumingPendingJobRef.current = null;
+        cancelRef.current = null;
+        resumeCancel();
+      }
+    };
+  }, [isActive, phase, prompt, clearPendingDreamJob, fetchDrafts, formatDreamError]);
+
   // Orb animation during generation
   useEffect(() => {
     if (phase === 'generating') {
@@ -562,31 +737,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setPrompt(randomPrompt);
   };
 
-  const formatDreamError = useCallback((error: any, mode: 'generate' | 'edit' = 'generate') => {
-    const fallback = mode === 'edit'
-      ? 'Could not update the game right now. Please try again.'
-      : 'Could not generate the game right now. Please try again.';
-
-    if (!error) return fallback;
-
-    const message = String(error.message || error);
-    if (error.name === 'AbortError' || message.includes('aborted')) {
-      return null;
-    }
-
-    if (error.code === 'REQUEST_TIMEOUT' || /timed out/i.test(message)) {
-      return mode === 'edit'
-        ? 'The update request took too long to start. Railway may be cold or the AI backend is overloaded. Try again in a moment.'
-        : 'The generation request took too long to start. Railway may be cold or the AI backend is overloaded. Try again in a moment.';
-    }
-
-    if (/network request failed/i.test(message)) {
-      return 'Could not reach the AI backend. Check your connection and try again.';
-    }
-
-    return message || fallback;
-  }, []);
-
   const handleDream = async () => {
     const finalPrompt = prompt.trim();
     if (!finalPrompt || phase === 'generating') return;
@@ -595,8 +745,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setErrorMsg(null);
 
     try {
-      const attachments = attachedAssets.map(({ type, url, thumb, thumbnail, title, label, instruction, duration }) => ({
+      const attachments = attachedAssets.map(({ type, role, url, thumb, thumbnail, title, label, instruction, duration }) => ({
         type,
+        role,
         url,
         thumb,
         thumbnail,
@@ -605,11 +756,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         instruction,
         duration,
       }));
-      const { promise, cancel } = labsMode ? ai.dreamLabs(finalPrompt, attachments) : ai.dream(finalPrompt, attachments);
+      const onJobStarted = (jobId: string) => {
+        persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode });
+      };
+      const { promise, cancel } = labsMode
+        ? ai.dreamLabs(finalPrompt, attachments, { onJobStarted })
+        : ai.dream(finalPrompt, attachments, { onJobStarted });
       cancelRef.current = cancel;
       const res = await promise as any;
       cancelRef.current = null;
+      detachPendingDreamRef.current = false;
       if (res.success && res.htmlPreview) {
+        await clearPendingDreamJob();
         setGameConfig({});
         setEditableSlots([]);
         setActiveHtml(res.htmlPreview);
@@ -624,10 +782,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       cancelRef.current = null;
       const friendlyMessage = formatDreamError(error, 'generate');
       if (!friendlyMessage) {
-        // User cancelled — no error message needed
+        if (detachPendingDreamRef.current) {
+          detachPendingDreamRef.current = false;
+          setPhase('idle');
+          return;
+        }
+        await clearPendingDreamJob();
         return;
       }
+      detachPendingDreamRef.current = false;
       console.warn('AI Generation Warning:', error?.message || error);
+      await clearPendingDreamJob();
       setErrorMsg(friendlyMessage);
       setPhase('idle');
     }
@@ -689,6 +854,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const url = `https://api.giphy.com/v1/${type}/${endpoint}?api_key=${GIPHY_API_KEY}&limit=20&offset=${offset}${qParam}`;
       
       const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Giphy API error: ${response.status}`);
+      }
       const data = await response.json();
       
       const formatted = (data.data || []).map((item: any) => ({
@@ -702,7 +870,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         setGiphyStickers(prev => offset === 0 ? formatted : [...prev, ...formatted]);
       }
     } catch (error) {
-      console.error('Error fetching Giphy:', error);
+      console.warn('Error fetching Giphy:', error);
     } finally {
       setIsGiphyLoading(false);
       setIsGiphyLoadingMore(false);
@@ -720,6 +888,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const url = `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(actualQuery)}&token=${FREESOUND_API_KEY}${filter}&fields=id,name,previews,duration&page_size=20&page=${offset}`;
 
       const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Freesound API error: ${response.status}`);
+      }
       const data = await response.json();
 
       const formatted = (data.results || []).map((item: any) => {
@@ -741,7 +912,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         setFreesoundSfx(prev => offset === 1 ? formatted : [...prev, ...formatted]);
       }
     } catch (error) {
-      console.error('Error fetching Freesound:', error);
+      console.warn('Error fetching Freesound:', error);
     } finally {
       setIsFreesoundLoading(false);
       setIsFreesoundLoadingMore(false);
@@ -853,10 +1024,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   };
 
   const handleCancel = () => {
-    if (cancelRef.current) {
-      cancelRef.current();
-      cancelRef.current = null;
-    }
+    detachPendingDreamRef.current = false;
+    stopLocalDreamPolling();
+    clearPendingDreamJob();
     setPhase('idle');
   };
 
@@ -876,8 +1046,58 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   };
 
+  const inferAttachmentRole = (type: string): AttachmentRole => {
+    switch (normalizeAttachmentType(type)) {
+      case 'video':
+        return 'background';
+      case 'bgm':
+        return 'bgm';
+      case 'sfx':
+        return 'sfx';
+      default:
+        return 'hero';
+    }
+  };
+
+  const getRoleOptionsForType = (type: string) => {
+    return ATTACHMENT_ROLE_OPTIONS[normalizeAttachmentType(type)] || ATTACHMENT_ROLE_OPTIONS.image;
+  };
+
+  const buildAssetInstruction = (attachment: StructuredAttachment, role: AttachmentRole, note: string) => {
+    const url = attachment.url;
+    const title = attachment.title || attachment.label || 'selected asset';
+    const trimmedNote = note.trim();
+
+    const roleInstruction = (() => {
+      switch (role) {
+        case 'hero':
+          return `Use this ${attachment.type} as the main hero object or focal visual in the experience: ${url}`;
+        case 'background':
+          return `Use this ${attachment.type} as the main background or atmospheric scene layer: ${url}`;
+        case 'overlay':
+          return `Use this ${attachment.type} as an overlay, meme, sticker, decal, or reaction layer: ${url}`;
+        case 'panel':
+          return `Use this ${attachment.type} inside a framed panel, screen, card, or in-world display: ${url}`;
+        case 'prop':
+          return `Use this ${attachment.type} as a prop, collectible, ingredient, tool, or object the player interacts with: ${url}`;
+        case 'bgm':
+          return `Use this audio as the main looping background music: ${url}`;
+        case 'sfx':
+          return `Use this audio as a triggered sound effect or moment cue: ${url}`;
+        case 'reference':
+        default:
+          return `Use this ${attachment.type} as a style or content reference when building the experience: ${url}`;
+      }
+    })();
+
+    return trimmedNote
+      ? `${roleInstruction}. User note for "${title}": ${trimmedNote}`
+      : roleInstruction;
+  };
+
   const toStructuredAttachment = (item: any, fallbackInstruction: string): StructuredAttachment => ({
     type: normalizeAttachmentType(item?.type),
+    role: inferAttachmentRole(item?.type),
     url: String(item?.url || '').trim(),
     thumb: item?.thumb || item?.thumbnail || item?.url,
     thumbnail: item?.thumbnail || item?.thumb || item?.url,
@@ -887,17 +1107,50 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     duration: item?.duration || '',
   });
 
+  const openAssetIntentModal = (attachment: StructuredAttachment, index: number | null = null) => {
+    const defaultRole = attachment.role || inferAttachmentRole(attachment.type);
+    setPendingAssetIntent({ ...attachment, role: defaultRole });
+    setAssetIntentRole(defaultRole);
+    setAssetIntentText('');
+    setEditingAttachedAssetIndex(index);
+    setShowAssetIntentModal(true);
+  };
+
   const handleAssetSelect = (item: any, fallbackInstruction: string) => {
     const attachment = toStructuredAttachment(item, fallbackInstruction);
-    if (!attachment.url || !attachment.instruction) return;
+    if (!attachment.url) return;
+    openAssetIntentModal(attachment, null);
+  };
 
-    if (!activeDraftId) {
-      if (!attachedAssets.find(a => a.url === attachment.url)) {
-        setAttachedAssets(prev => [...prev, attachment]);
-      }
+  const handleConfirmAssetIntent = () => {
+    if (!pendingAssetIntent?.url) return;
+
+    const finalizedAttachment: StructuredAttachment = {
+      ...pendingAssetIntent,
+      role: assetIntentRole,
+      instruction: buildAssetInstruction(pendingAssetIntent, assetIntentRole, assetIntentText),
+    };
+
+    if (editingAttachedAssetIndex !== null) {
+      setAttachedAssets(prev => prev.map((asset, index) => (
+        index === editingAttachedAssetIndex ? finalizedAttachment : asset
+      )));
+    } else if (!activeDraftId) {
+      setAttachedAssets(prev => {
+        const existingIndex = prev.findIndex(asset => asset.url === finalizedAttachment.url);
+        if (existingIndex >= 0) {
+          return prev.map((asset, index) => (index === existingIndex ? finalizedAttachment : asset));
+        }
+        return [...prev, finalizedAttachment];
+      });
     } else {
-      handleEdit(attachment.instruction, undefined, [attachment]);
+      handleEdit(finalizedAttachment.instruction, undefined, [finalizedAttachment]);
     }
+
+    setShowAssetIntentModal(false);
+    setPendingAssetIntent(null);
+    setAssetIntentText('');
+    setEditingAttachedAssetIndex(null);
   };
 
   const handleEdit = async (
@@ -948,6 +1201,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   };
 
   const handleRegenerate = () => {
+    detachPendingDreamRef.current = false;
+    stopLocalDreamPolling();
+    clearPendingDreamJob();
     setActiveHtml(null);
     setActiveDraftId(null);
     setGameTitle('');
@@ -959,8 +1215,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const handleIntentClose = (actionType: 'discard' | 'closeApp' = 'closeApp') => {
     if (phase === 'generating') {
-      // If generating, don't show exit modal, just drop back to idle/close 
-      // (Keep cooking handles the background logic inherently)
+      detachPendingDreamRef.current = true;
+      stopLocalDreamPolling();
+      // Drop local polling but keep the backend job alive and resumable.
       if (actionType === 'closeApp') onClose();
       else setPhase('idle');
       return;
@@ -1009,6 +1266,105 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const renderSharedModals = () => (
     <>
+      <Modal visible={showAssetIntentModal} transparent animationType="fade" onRequestClose={() => { setShowAssetIntentModal(false); setPendingAssetIntent(null); setEditingAttachedAssetIndex(null); }}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => { setShowAssetIntentModal(false); setPendingAssetIntent(null); setEditingAttachedAssetIndex(null); }}>
+          <Animated.View entering={FadeInUp.duration(220)} style={{ width: '100%', maxWidth: 380, backgroundColor: '#141416', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }} onStartShouldSetResponder={() => true}>
+            <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center' }}>
+              What should this asset do?
+            </Text>
+            {pendingAssetIntent && (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 18 }}>
+                  <View style={{ width: 64, height: 64, borderRadius: 16, overflow: 'hidden', backgroundColor: '#222' }}>
+                    {pendingAssetIntent.type === 'bgm' || pendingAssetIntent.type === 'sfx' ? (
+                      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="musical-notes" size={26} color="#FFF" />
+                      </View>
+                    ) : (
+                      <Image source={{ uri: pendingAssetIntent.thumb || pendingAssetIntent.thumbnail || pendingAssetIntent.url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
+                      {pendingAssetIntent.title || pendingAssetIntent.label || 'Selected asset'}
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4, textTransform: 'capitalize' }}>
+                      {pendingAssetIntent.type}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', marginTop: 20, marginBottom: 10 }}>
+                  Asset role
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                  {getRoleOptionsForType(pendingAssetIntent.type).map((option) => {
+                    const active = assetIntentRole === option.role;
+                    return (
+                      <Pressable
+                        key={option.role}
+                        onPress={() => setAssetIntentRole(option.role)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderRadius: 999,
+                          backgroundColor: active ? '#a855f7' : 'rgba(255,255,255,0.06)',
+                          borderWidth: 1,
+                          borderColor: active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>{option.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', marginTop: 20, marginBottom: 10 }}>
+                  Tell the AI what to do with it
+                </Text>
+                <TextInput
+                  value={assetIntentText}
+                  onChangeText={setAssetIntentText}
+                  placeholder="Example: make this the face on the main character, use this as the room background, use this as a meme popup..."
+                  placeholderTextColor="rgba(255,255,255,0.28)"
+                  multiline
+                  style={{
+                    minHeight: 110,
+                    borderRadius: 18,
+                    backgroundColor: 'rgba(255,255,255,0.04)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.08)',
+                    paddingHorizontal: 14,
+                    paddingVertical: 14,
+                    color: '#FFF',
+                    textAlignVertical: 'top',
+                    fontSize: 14,
+                    lineHeight: 20,
+                  }}
+                />
+
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+                  <Pressable
+                    style={{ flex: 1, paddingVertical: 15, borderRadius: 18, backgroundColor: '#555', alignItems: 'center' }}
+                    onPress={() => { setShowAssetIntentModal(false); setPendingAssetIntent(null); setEditingAttachedAssetIndex(null); }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{ flex: 1, paddingVertical: 15, borderRadius: 18, backgroundColor: '#a855f7', alignItems: 'center' }}
+                    onPress={handleConfirmAssetIntent}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>
+                      {activeDraftId && editingAttachedAssetIndex === null ? 'Apply' : 'Attach'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Animated.View>
+        </Pressable>
+      </Modal>
+
       {/* === MODIFY MODAL === */}
               <Modal visible={showModifyModal} transparent animationType="fade" onRequestClose={() => setShowModifyModal(false)}>
                 <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }} onPress={() => setShowModifyModal(false)}>
@@ -1815,157 +2171,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // ======================
   if (phase === 'generating') {
     return (
-      <View style={[styles.screen, { paddingTop: insets.top }]}>
-        <LinearGradient
-          colors={labsMode ? ['#0b1f17', '#143a2d', '#10231d'] : ['#2a1207', '#4a1d0c', '#120f18']}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <View style={styles.forgeBackdropGlow} />
-
-        <View style={styles.genHeader}>
-          <Pressable style={styles.closeBtn} onPress={handleCancel}>
-            <Ionicons name="close" size={22} color="#FFF" />
-          </Pressable>
-          <View style={styles.forgeHeaderChip}>
-            <Text style={styles.forgeHeaderChipText}>{labsMode ? 'Labs Forge' : 'Dream Forge'}</Text>
-          </View>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <View style={styles.generatingContainer}>
-          <Text style={styles.genTitle}>Protect The Forge</Text>
-          <Text style={styles.genSubtitle}>Move the knight between lanes while the wizard cooks your game.</Text>
-
-          <View style={styles.promptSnippetCard}>
-            <Text style={styles.promptSnippetLabel}>CURRENT SPELL</Text>
-            <Text style={styles.promptSnippetText}>"{prompt.length > 86 ? prompt.substring(0, 86) + '...' : prompt}"</Text>
-          </View>
-
-          <View style={styles.forgeSceneCard}>
-            <LinearGradient
-              colors={labsMode ? ['rgba(27,74,56,0.9)', 'rgba(15,34,28,0.96)'] : ['rgba(73,34,15,0.92)', 'rgba(22,18,28,0.98)']}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-
-            <View style={styles.forgeSkyRunes}>
-              <Text style={styles.forgeRune}>+</Text>
-              <Text style={styles.forgeRune}>{"{}"}</Text>
-              <Text style={styles.forgeRune}>*</Text>
-            </View>
-
-            <View style={styles.forgeLanes}>
-              {[0, 1, 2].map((lane) => (
-                <View key={lane} style={styles.forgeLaneLine} />
-              ))}
-            </View>
-
-            <Animated.View
-              style={[
-                styles.wizardAura,
-                animatedOrbStyle,
-                { backgroundColor: labsMode ? 'rgba(91, 214, 153, 0.24)' : 'rgba(255, 153, 72, 0.22)' },
-              ]}
-            />
-
-            <View style={styles.wizardStation}>
-              <Text style={styles.wizardEmoji}>🧙</Text>
-              <View style={styles.cauldron}>
-                <View style={[styles.cauldronGlow, { opacity: 0.45 + wizardHeat / 220 }]} />
-                <View style={styles.cauldronPot} />
-              </View>
-            </View>
-
-            {sceneEnemies.map((enemy) => (
-              <View
-                key={enemy.id}
-                style={[
-                  styles.enemyDot,
-                  {
-                    left: `${18 + enemy.lane * 31}%`,
-                    top: `${8 + enemy.depth * 11}%`,
-                    backgroundColor: enemy.kind === 'ghoul' ? '#B0FF61' : '#72E05D',
-                    transform: [{ rotate: enemy.kind === 'ghoul' ? '-8deg' : '6deg' }],
-                  },
-                ]}
-              >
-                <Text style={styles.enemyFace}>{enemy.kind === 'ghoul' ? '☠︎' : '✕✕'}</Text>
-              </View>
-            ))}
-
-            <View
-              style={[
-                styles.knightBody,
-                { left: `${18 + knightLane * 31}%` },
-              ]}
-            >
-              <View style={styles.knightHelmet} />
-              <View style={[styles.knightSword, swingTick % 2 === 0 ? styles.knightSwordLeft : styles.knightSwordRight]} />
-              <Text style={styles.knightShield}>🛡️</Text>
-            </View>
-
-            <View style={styles.forgeHud}>
-              <View style={styles.forgeStatPill}>
-                <Text style={styles.forgeStatLabel}>KILLS</Text>
-                <Text style={styles.forgeStatValue}>{defeatedEnemies}</Text>
-              </View>
-              <View style={styles.forgeStatPill}>
-                <Text style={styles.forgeStatLabel}>HEAT</Text>
-                <Text style={styles.forgeStatValue}>{wizardHeat}%</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.laneControlRow}>
-            {['LEFT', 'MID', 'RIGHT'].map((label, index) => (
-              <Pressable
-                key={label}
-                style={[styles.laneControlBtn, knightLane === index && styles.laneControlBtnActive]}
-                onPress={() => setKnightLane(index)}
-              >
-                <Text style={[styles.laneControlText, knightLane === index && styles.laneControlTextActive]}>{label}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={styles.stepsContainer}>
-            <View style={styles.statusCard}>
-              <Text style={styles.statusEyebrow}>FORGE STATUS</Text>
-              <Text style={styles.statusHeadline}>{COOKING_STATUS_LINES[activeStep % COOKING_STATUS_LINES.length]}</Text>
-              <Text style={styles.statusMeta}>{GENERATION_STEPS[activeStep]?.text || 'Finishing the last pass...'}</Text>
-            </View>
-          </View>
-
-          {/* Cancel button */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.cancelBtn,
-              pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] },
-            ]}
-            onPress={handleCancel}
-          >
-            <Ionicons name="stop-circle-outline" size={18} color="#FF6B6B" style={{ marginRight: 6 }} />
-            <Text style={styles.cancelBtnText}>Stop Generation</Text>
-          </Pressable>
-        </View>
-
-        {/* Keep cooking in background */}
-        <Pressable
-          style={{ position: 'absolute', bottom: Math.max(insets.bottom + 12, 30), left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF', paddingVertical: 16, paddingHorizontal: 24, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 8 }}
-          onPress={() => {
-            // Don't cancel the backend job — just return user to idle
-            // The polling mechanism will still pick up the result later
-            setPhase('idle');
-          }}
-        >
-          <Text style={{ fontSize: 20, marginRight: 10 }}>🔥</Text>
-          <Text style={{ color: '#000', fontSize: 16, fontWeight: '800', flex: 1 }}>Keep cooking in background</Text>
-          <Ionicons name="chevron-down-outline" size={18} color="#666" />
-        </Pressable>
-      </View>
+      <ForgeDefenseGame
+        prompt={prompt}
+        activeStep={activeStep}
+        labsMode={labsMode}
+        onCancel={handleCancel}
+        onMinimize={() => setPhase('idle')}
+        generationSteps={GENERATION_STEPS}
+        cookingStatusLines={COOKING_STATUS_LINES}
+      />
     );
   }
 
@@ -2041,7 +2255,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                     {attachedAssets.map((asset, i) => (
-                      <View key={`attached-${i}`} style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', backgroundColor: '#333' }}>
+                      <Pressable key={`attached-${i}`} onPress={() => openAssetIntentModal(asset, i)} style={{ width: 56 }}>
+                      <View style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', backgroundColor: '#333' }}>
                         <Image source={{ uri: asset.thumb || asset.thumbnail || asset.url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                         {asset.type?.includes('audio') || asset.type?.includes('bgm') || asset.type?.includes('sfx') ? (
                           <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' }}>
@@ -2058,6 +2273,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                           <Ionicons name="close" size={10} color="#FFF" />
                         </Pressable>
                       </View>
+                      <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10, fontWeight: '700', marginTop: 4, textTransform: 'capitalize' }}>
+                        {asset.role}
+                      </Text>
+                      </Pressable>
                     ))}
                   </ScrollView>
                 </View>

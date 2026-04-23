@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { pkSocket } from '../services/pk-socket';
-import { useAuth } from './useAuth';
+import { useAuth } from '../context/AuthContext';
 
 interface PkPlayer {
   id: number;
@@ -22,10 +22,12 @@ export const usePkMode = (matchId: number) => {
 
   useEffect(() => {
     if (!user) return;
+    const numericUserId = Number(user.id);
+    if (Number.isNaN(numericUserId)) return;
 
     // Connect socket
     pkSocket.connect();
-    pkSocket.joinMatch(matchId, user.id);
+    pkSocket.joinMatch(matchId, numericUserId);
 
     // Set up listeners
     pkSocket.onPlayerJoined((data) => {
@@ -57,7 +59,7 @@ export const usePkMode = (matchId: number) => {
     });
 
     pkSocket.onScoreUpdate((data) => {
-      if (data.userId === user.id) {
+      if (data.userId === numericUserId) {
         setMyScore(data.score);
       } else {
         setOpponentScore(data.score);
@@ -82,23 +84,31 @@ export const usePkMode = (matchId: number) => {
 
   const setReady = useCallback(() => {
     if (!user) return;
-    pkSocket.setReady(matchId, user.id);
+    const numericUserId = Number(user.id);
+    if (Number.isNaN(numericUserId)) return;
+    pkSocket.setReady(matchId, numericUserId);
   }, [matchId, user]);
 
   const updateScore = useCallback((score: number) => {
     if (!user) return;
+    const numericUserId = Number(user.id);
+    if (Number.isNaN(numericUserId)) return;
     setMyScore(score);
-    pkSocket.updateScore(matchId, user.id, score);
+    pkSocket.updateScore(matchId, numericUserId, score);
   }, [matchId, user]);
 
   const endGame = useCallback((finalScore: number) => {
     if (!user) return;
-    pkSocket.gameOver(matchId, user.id, finalScore);
+    const numericUserId = Number(user.id);
+    if (Number.isNaN(numericUserId)) return;
+    pkSocket.gameOver(matchId, numericUserId, finalScore);
   }, [matchId, user]);
 
   const sendChat = useCallback((message: string) => {
     if (!user) return;
-    pkSocket.sendChat(matchId, user.id, message);
+    const numericUserId = Number(user.id);
+    if (Number.isNaN(numericUserId)) return;
+    pkSocket.sendChat(matchId, numericUserId, message);
   }, [matchId, user]);
 
   return {

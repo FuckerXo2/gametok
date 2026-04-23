@@ -27,12 +27,14 @@ import { startGameDownload } from './src/services/gameDownloader';
 // Prevent native splash from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
+
 // Deep link context - to pass shared game ID to HomeScreen
 interface DeepLinkContextType {
   sharedGameId: string | null;
   clearSharedGame: () => void;
+  openSharedGame: (gameId: string) => void;
 }
-const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => { } });
+const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => { }, openSharedGame: () => { } });
 export const useDeepLink = () => useContext(DeepLinkContext);
 
 // Auth screen context - to show login/signup from anywhere
@@ -239,6 +241,7 @@ const AppContent = () => {
   };
 
   const clearSharedGame = () => setSharedGameId(null);
+  const openSharedGame = (gameId: string) => setSharedGameId(gameId);
 
   const handleOnboardingComplete = () => {
     AsyncStorage.setItem('hasSeenOnboarding', 'true');
@@ -275,7 +278,7 @@ const AppContent = () => {
       showLoginScreen: () => { setStartWithLogin(true); setShowAuth(true); },
       hideAuthScreen: () => setShowAuth(false)
     }}>
-      <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
+      <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame, openSharedGame }}>
         <View style={{ flex: 1 }}>
           <MainApp />
         </View>

@@ -13,7 +13,6 @@ import Svg, { Path, G } from 'react-native-svg';
 import { API_URL, games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress } from '../services/api';
 import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
-import { CommentsSheet } from '../components/CommentsSheet';
 import { LeaderboardModal } from '../components/LeaderboardModal';
 import { GameLoadingScreen } from '../components/GameLoadingScreen';
 import NativeAdView from '../components/NativeAdView';
@@ -1160,6 +1159,64 @@ const createCloudSaveScript = (gameId: string, initialData: Record<string, strin
 true;
 `;
 
+const HUD_INTERACTION_BRIDGE_SCRIPT = `
+(function() {
+  if (window._hudInteractionBridgeActive) return;
+  window._hudInteractionBridgeActive = true;
+
+  let lastHudPing = 0;
+  let swipeStartY = null;
+  let swipeStartX = null;
+  const notifyInteraction = (type) => {
+    const now = Date.now();
+    if (now - lastHudPing < 1200) return;
+    lastHudPing = now;
+    window.ReactNativeWebView?.postMessage(JSON.stringify({
+      type,
+      ts: now
+    }));
+  };
+
+  const handleTouchStart = (event) => {
+    const point = event.touches && event.touches[0];
+    if (!point) return;
+    swipeStartY = point.clientY;
+    swipeStartX = point.clientX;
+  };
+
+  const handleTouchMove = (event) => {
+    const point = event.touches && event.touches[0];
+    if (!point || swipeStartY == null || swipeStartX == null) return;
+    const dy = point.clientY - swipeStartY;
+    const dx = point.clientX - swipeStartX;
+    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx)) {
+      notifyInteraction('USER_SWIPE_INTENT');
+    }
+  };
+
+  const resetSwipe = () => {
+    swipeStartY = null;
+    swipeStartX = null;
+  };
+
+  ['touchstart'].forEach((eventName) => {
+    window.addEventListener(eventName, handleTouchStart, { passive: true });
+    document.addEventListener(eventName, handleTouchStart, { passive: true });
+  });
+
+  ['touchmove'].forEach((eventName) => {
+    window.addEventListener(eventName, handleTouchMove, { passive: true });
+    document.addEventListener(eventName, handleTouchMove, { passive: true });
+  });
+
+  ['touchend', 'touchcancel'].forEach((eventName) => {
+    window.addEventListener(eventName, resetSwipe, { passive: true });
+    document.addEventListener(eventName, resetSwipe, { passive: true });
+  });
+})();
+true;
+`;
+
 // Intelligent game ready detection script
 // Monitors multiple signals to determine when a game is actually playable
 const GAME_READY_SCRIPT = `
@@ -1311,31 +1368,6 @@ const hashString = (str: string): number => {
     hash = hash & hash; // Convert to 32bit integer
   }
   return Math.abs(hash);
-};
-
-// Session jitter — random offset generated once per app launch
-const SESSION_JITTER = Math.random();
-
-const getFakeCount = (gameId: string, type: 'likes' | 'comments' | 'saves' | 'shares'): number => {
-  const dayOfYear = Math.floor(Date.now() / 86400000); // changes daily
-  const baseSeed = hashString(gameId + type);
-  const dailySeed = hashString(gameId + type + dayOfYear);
-
-  const ranges: Record<string, [number, number]> = {
-    likes: [800, 86000],
-    comments: [20, 4800],
-    saves: [100, 15000],
-    shares: [50, 9000],
-  };
-  const [min, max] = ranges[type];
-  const baseCount = min + (baseSeed % (max - min));
-
-  // Daily drift: ±5% based on day
-  const dailyDrift = ((dailySeed % 100) - 50) / 1000; // -0.05 to +0.05
-  // Session jitter: ±2%
-  const sessionDrift = (SESSION_JITTER - 0.5) * 0.04; // -0.02 to +0.02
-
-  return Math.max(min, Math.round(baseCount * (1 + dailyDrift + sessionDrift)));
 };
 
 // Shuffle array randomly (Fisher-Yates)
@@ -1532,36 +1564,6 @@ const AnimatedLikeButton = ({
         />
       </Animated.View>
       <Text style={styles.actionCount}>{formatCount(likeCount)}</Text>
-    </TouchableOpacity>
-  );
-};
-
-const AnimatedCommentButton = ({
-  onPress,
-  commentCount,
-  styles
-}: {
-  onPress: (e: any) => void;
-  commentCount: number;
-  styles: any;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePress = (e: any) => {
-    onPress(e);
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 0.75, duration: 100, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1.15, friction: 3, tension: 40, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
-    ]).start();
-  };
-
-  return (
-    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons name="chatbubble-ellipses" size={32} color={LoopsColors.white} />
-      </Animated.View>
-      <Text style={styles.actionCount}>{formatCount(commentCount)}</Text>
     </TouchableOpacity>
   );
 };
@@ -2120,6 +2122,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const swipeHintOpacity = useRef(new Animated.Value(0)).current;
   const [gestureKey, setGestureKey] = useState(0);
+  const hudHintOpacity = useRef(new Animated.Value(0.82)).current;
+  const hideHintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Track which games have finished loading (ready to play)
   const [readyGames, setReadyGames] = useState<Set<string>>(new Set());
@@ -2179,11 +2183,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Click animation state - track position of last tap
   const [clickAnimations, setClickAnimations] = useState<Array<{ id: string; x: number; y: number }>>([]);
 
-  // Comments sheet state
-  const [showComments, setShowComments] = useState(false);
-  const [commentsGameId, setCommentsGameId] = useState<string>('');
-  const [commentsGameName, setCommentsGameName] = useState<string>('');
-
   // Leaderboard modal state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardGameId, setLeaderboardGameId] = useState<string>('');
@@ -2232,6 +2231,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       setClickAnimations(prev => prev.filter(anim => anim.id !== id));
     }, 500);
   };
+
+  const clearHudTimers = useCallback(() => {
+    if (hideHintTimeoutRef.current) {
+      clearTimeout(hideHintTimeoutRef.current);
+      hideHintTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleImmersiveHud = useCallback(() => {
+    clearHudTimers();
+
+    hideHintTimeoutRef.current = setTimeout(() => {
+      Animated.timing(hudHintOpacity, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    }, 7000);
+  }, [clearHudTimers, hudHintOpacity]);
+
+  const restoreHud = useCallback((reschedule: boolean = true) => {
+    clearHudTimers();
+    Animated.timing(hudHintOpacity, {
+      toValue: 0.82,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+
+    if (reschedule) {
+      scheduleImmersiveHud();
+    }
+  }, [clearHudTimers, hudHintOpacity, scheduleImmersiveHud]);
 
   // Handle like - calls API and updates count
   const handleLike = async (gameId: string) => {
@@ -2370,6 +2403,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       console.error('Failed to send game:', e);
     }
   };
+
+  const getFeedCount = useCallback((gameId: string, type: 'likes' | 'saves' | 'shares') => {
+    if (type === 'likes') {
+      return Math.max(0, likeCounts[gameId] ?? 0);
+    }
+    if (type === 'saves') {
+      return Math.max(0, saveCounts[gameId] ?? 0);
+    }
+    return Math.max(0, shareCounts[gameId] ?? 0);
+  }, [likeCounts, saveCounts, shareCounts]);
 
   const currentIndexRef = useRef(0);
   const feedRef = useRef<FeedItem[]>([]);
@@ -2623,6 +2666,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   }, [feed]);
 
   useEffect(() => {
+    if (!isFocused || currentIndex < 0 || !feed[currentIndex] || feed[currentIndex]?.isAd) {
+      clearHudTimers();
+      return;
+    }
+
+    restoreHud();
+
+    return () => {
+      clearHudTimers();
+    };
+  }, [clearHudTimers, currentIndex, feed, isFocused, restoreHud]);
+
+  useEffect(() => {
     const init = async () => {
       console.log('[HomeScreen] Starting init...');
 
@@ -2654,12 +2710,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           // Store initial like and save counts from API
           const likeCnts: { [id: string]: number } = {};
           const saveCnts: { [id: string]: number } = {};
+          const shareCnts: { [id: string]: number } = {};
           data.games.forEach((g: any) => {
             likeCnts[g.id] = g.likes || 0;
             saveCnts[g.id] = g.saves || 0;
+            shareCnts[g.id] = 0;
           });
           setLikeCounts(likeCnts);
           setSaveCounts(saveCnts);
+          setShareCounts(shareCnts);
 
           // Check which games user has liked (fire and forget)
           const gameIds = data.games.map((g: Game) => g.id);
@@ -2717,13 +2776,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         setFeed(createFeed(data.games));
         setCurrentIndex(0);
         translateY.setValue(0);
+
+        const likeCnts: { [id: string]: number } = {};
+        const saveCnts: { [id: string]: number } = {};
+        const shareCnts: { [id: string]: number } = {};
+        data.games.forEach((g: any) => {
+          likeCnts[g.id] = g.likes || 0;
+          saveCnts[g.id] = g.saves || 0;
+          shareCnts[g.id] = shareCounts[g.id] ?? 0;
+        });
+        setLikeCounts(likeCnts);
+        setSaveCounts(saveCnts);
+        setShareCounts(shareCnts);
       }
     } catch (e: any) {
       console.log('[HomeScreen] Refresh error:', e?.message || e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [shareCounts]);
 
   // Handle refreshTrigger from parent (home button re-tap)
   const lastRefreshTrigger = useRef(0);
@@ -2913,6 +2984,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     PanResponder.create({
       onStartShouldSetPanResponderCapture: (e) => {
         touchStartY.current = e.nativeEvent.pageY;
+        const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT;
+        if (isBottomEdge) restoreHud();
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
@@ -2921,6 +2994,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT; 
         const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT; 
         const isEdge = isBottomEdge || isTopEdge;
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
@@ -2930,6 +3004,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT;
         const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT;
         const isEdge = isBottomEdge || isTopEdge;
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         return isEdge && isVerticalSwipe;
@@ -2973,11 +3048,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const overlayPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => {
+        restoreHud();
         // Tap disables scroll mode
         setScrollEnabled(false);
         return false; // Don't capture the tap, let it pass through after disabling
       },
       onMoveShouldSetPanResponder: (_, gesture) => {
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         return Math.abs(gesture.dy) > 10;
       },
       onPanResponderMove: (_, gesture) => {
@@ -3018,10 +3095,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => false, // Let taps pass through to buttons
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         return Math.abs(gesture.dy) > 15; // Take over aggressively in capture phase if vertical swipe
       },
       onStartShouldSetPanResponder: () => false, // Let taps pass through to buttons
       onMoveShouldSetPanResponder: (_, gesture) => {
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         return Math.abs(gesture.dy) > 15; // Only take over if it's a clear vertical swipe
       },
       onPanResponderMove: (_, gesture) => {
@@ -3059,8 +3138,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     })
   ).current;
 
-  // Only keep current + 1 ahead. NO position 2 preload.
-  // This limits live WebViews to 1 (only position 0 gets a real WebView).
+  // Keep current plus two items ahead so swipes feel more immediate.
   const visibleItems = useMemo(() => {
     const result: { item: FeedItem | null; position: number; isWelcome: boolean }[] = [];
 
@@ -3088,9 +3166,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         result.push({ item: feed[currentIndex + 1], position: 1, isWelcome: false });
       }
 
-      // One more ahead (position +2) — only if an ad is nearby (ads are empty off-screen, so we have memory room)
-      const hasNearbyAd = (feed[currentIndex - 1]?.isAd) || (feed[currentIndex]?.isAd) || (feed[currentIndex + 1]?.isAd);
-      if (feed[currentIndex + 2] && hasNearbyAd) {
+      // One more ahead (position +2)
+      if (feed[currentIndex + 2]) {
         result.push({ item: feed[currentIndex + 2], position: 2, isWelcome: false });
       }
     }
@@ -3108,6 +3185,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   return (
     <View style={styles.container}>
+      <View style={{ flex: 1 }}>
       {visibleItems.map(({ item, position, isWelcome }) => (
         <Animated.View
           key={isWelcome ? 'welcome' : item!.id}
@@ -3154,11 +3232,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   nestedScrollEnabled={false}
                   thirdPartyCookiesEnabled={false}
                   sharedCookiesEnabled={false}
-                  injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT : EDGE_BLOCK_SCRIPT}
+                  injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT : EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT}
                   injectedJavaScript={shouldUseWebViewBackdrop(item!.game!) ? createBlurBgScript(getThumbnailUrl(item!.game!), getFeedBackdropColor()) : undefined}
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
+                      if (data.type === 'USER_INTERACTION') return;
+                      if (data.type === 'USER_SWIPE_INTENT') {
+                        restoreHud();
+                        return;
+                      }
                       if (data.type === 'CLOUD_SAVE' && user) {
                         try {
                           await gameProgress.save(data.gameId, data.storageData);
@@ -3240,7 +3323,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                 {!item!.isAd && (
                   <>
                     {/* TikTok-style action buttons - right side */}
-                    <View style={[styles.actionButtons, { bottom: 64 }]}>
+                    <Animated.View style={[styles.actionButtons, { bottom: 64 }]}>
 
 
                       <AnimatedLikeButton
@@ -3249,23 +3332,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           triggerClickAnimation(e);
                           handleLike(item!.game!.id);
                         }}
-                        likeCount={getFakeCount(item!.game!.id, 'likes') + (likedGames.has(item!.game!.id) ? 1 : 0)}
+                        likeCount={getFeedCount(item!.game!.id, 'likes')}
                         styles={styles}
                       />
-
-                      {/* Comments */}
-                      <AnimatedCommentButton
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setCommentsGameId(item!.game!.id);
-                          setCommentsGameName(item!.game!.name);
-                          setShowComments(true);
-                        }}
-                        commentCount={getFakeCount(item!.game!.id, 'comments')}
-                        styles={styles}
-                      />
-
                       {/* Bookmark/Save */}
                       <TouchableOpacity
                         style={styles.actionButton}
@@ -3280,7 +3349,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           size={32}
                           color={savedGames.has(item!.game!.id) ? LoopsColors.coinGold : LoopsColors.white}
                         />
-                        <Text style={styles.actionCount}>{formatCount(getFakeCount(item!.game!.id, 'saves') + (savedGames.has(item!.game!.id) ? 1 : 0))}</Text>
+                        <Text style={styles.actionCount}>{formatCount(getFeedCount(item!.game!.id, 'saves'))}</Text>
                       </TouchableOpacity>
 
                       {/* Share */}
@@ -3289,13 +3358,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           triggerClickAnimation(e);
                           handleShare(item!.game!);
                         }}
-                        shareCount={getFakeCount(item!.game!.id, 'shares')}
+                        shareCount={getFeedCount(item!.game!.id, 'shares')}
                         styles={styles}
                       />
-                    </View>
+                    </Animated.View>
 
                     {/* Game info - bottom left */}
-                    <View style={styles.gameInfo} pointerEvents="none">
+                    <Animated.View style={styles.gameInfo} pointerEvents="none">
                       <View style={styles.gameNameRow}>
                         <Text style={styles.gameName} numberOfLines={2}>{item!.game!.name}</Text>
                         <View style={styles.gameBadge}>
@@ -3313,7 +3382,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           <Text style={styles.gameMetaText}>{formatCount(item!.game!.plays || 0)} plays</Text>
                         </View>
                       </View>
-                    </View>
+                    </Animated.View>
                   </>
                 )}
             </Animated.View>
@@ -3328,7 +3397,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       />
 
       {/* For You header - tappable to refresh, swipes pass through around it */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
+      <Animated.View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
         <View style={styles.headerRail}>
           <TouchableOpacity
             onPress={refreshFeed}
@@ -3338,16 +3407,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
             <View style={styles.feedModeDot} />
             <Text style={styles.forYouText}>For You</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={refreshFeed}
-            activeOpacity={0.8}
-            style={styles.feedRefreshBtn}
-          >
-            <Ionicons name="sparkles-outline" size={16} color={LoopsColors.white} />
-          </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Scroll overlay - only visible when scroll mode is active */}
       {scrollEnabled && (
@@ -3363,15 +3424,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       <Animated.View
         style={[
           styles.hintContainer,
-          currentIndex !== -1 && { opacity: 0.8 }
+          currentIndex !== -1 && { opacity: hudHintOpacity }
         ]}
         pointerEvents="none"
       >
         {currentIndex !== -1 && (
-          <View style={styles.hintGlow} />
+          <>
+            <View style={styles.hintGlow} />
+            <View style={styles.hintSheen} />
+          </>
         )}
+        <View style={styles.hintHandle}>
+          <View style={styles.hintHandleCore} />
+        </View>
         <Text style={styles.hintText}>Swipe up to browse</Text>
       </Animated.View>
+      </View>
 
       {/* Share Sheet */}
       <ShareSheet
@@ -3380,14 +3448,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         gameId={shareGameId}
         gameName={shareGameName}
         onSendToFriend={handleSendToFriend}
-      />
-
-      {/* Comments Sheet */}
-      <CommentsSheet
-        visible={showComments}
-        onClose={() => setShowComments(false)}
-        gameId={commentsGameId}
-        gameName={commentsGameName}
       />
 
       {/* Leaderboard Modal */}
@@ -3474,16 +3534,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  feedRefreshBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(10,10,10,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
   gameContainer: {
     position: 'absolute',
     top: 0,
@@ -3539,18 +3589,44 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(168, 85, 247, 0.15)',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: 'rgba(110, 78, 255, 0.08)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(168, 85, 247, 0.3)',
+    borderTopColor: 'rgba(173, 157, 255, 0.16)',
+  },
+  hintSheen: {
+    position: 'absolute',
+    bottom: BOTTOM_ZONE_HEIGHT * 0.18,
+    left: SCREEN_WIDTH * 0.18,
+    right: SCREEN_WIDTH * 0.18,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
+  hintHandle: {
+    width: 64,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,8,12,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 8,
+  },
+  hintHandleCore: {
+    width: 28,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.55)',
   },
   hintText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.74)',
+    fontSize: 13,
     fontWeight: '500',
-    letterSpacing: 2,
-    marginBottom: 10,
+    letterSpacing: 1.6,
+    marginBottom: 12,
   },
   errorContainer: {
     flex: 1,
@@ -3610,7 +3686,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     marginBottom: 6,
-    marginLeft: 4,
+    marginLeft: 10,
   },
   creatorDisplayName: {
     color: 'rgba(255,255,255,0.88)',

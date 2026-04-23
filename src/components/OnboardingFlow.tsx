@@ -288,8 +288,8 @@ const AnimatedButton: React.FC<{
   }));
 
   // Ensure colors are always valid strings
-  const safeColors = gradColors && gradColors.length >= 2 
-    ? gradColors.map(c => c || '#333') 
+  const safeColors: [string, string] = gradColors && gradColors.length >= 2
+    ? [gradColors[0] || '#333', gradColors[1] || '#333']
     : ['#a855f7', '#ec4899'];
 
   return (
