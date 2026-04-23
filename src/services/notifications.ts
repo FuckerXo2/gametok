@@ -25,6 +25,18 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
   }
 
   try {
+    // Android needs a channel before notifications are posted. Keeping this early
+    // makes real-device Android less flaky than configuring it after token fetch.
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'GameTok',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#A855F7',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+    }
+
     // Check existing permissions
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -44,16 +56,6 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 'a8a4606e-1211-4011-ab35-08afb8194d9d';
     const token = await Notifications.getExpoPushTokenAsync({ projectId });
     console.log('[Notifications] Push token:', token.data);
-
-    // Configure Android channel
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
-    }
 
     return token.data;
   } catch (error) {
@@ -122,4 +124,55 @@ export const getBadgeCount = async (): Promise<number> => {
 // Set badge count
 export const setBadgeCount = async (count: number): Promise<void> => {
   await Notifications.setBadgeCountAsync(count);
+};
+
+export const scheduleCookingNotification = async (jobId: string, prompt?: string): Promise<string | null> => {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return null;
+
+    const shortPrompt = (prompt || 'your game').trim().slice(0, 64);
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Cooking your game',
+        body: `"${shortPrompt}" is assembling in the background.`,
+        data: { type: 'creation', action: 'game_cooking', jobId },
+      },
+      trigger: Platform.OS === 'android' ? ({ seconds: 1, channelId: 'default' } as any) : null,
+    });
+  } catch (error) {
+    console.log('[Notifications] Failed to schedule cooking notification:', error);
+    return null;
+  }
+};
+
+export const scheduleGameReadyNotification = async (draftId: string, title?: string): Promise<string | null> => {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return null;
+
+    const gameTitle = (title || 'Your game').trim().slice(0, 64);
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Game ready',
+        body: `${gameTitle} is done cooking. Tap to open the forge.`,
+        data: { type: 'creation', action: 'game_ready', draftId },
+        sound: 'default',
+      },
+      trigger: Platform.OS === 'android' ? ({ seconds: 1, channelId: 'default' } as any) : null,
+    });
+  } catch (error) {
+    console.log('[Notifications] Failed to schedule ready notification:', error);
+    return null;
+  }
+};
+
+export const cancelLocalNotification = async (notificationId: string | null): Promise<void> => {
+  if (!notificationId) return;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    await Notifications.dismissNotificationAsync(notificationId);
+  } catch (error) {
+    console.log('[Notifications] Failed to cancel local notification:', error);
+  }
 };

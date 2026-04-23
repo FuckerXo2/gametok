@@ -38,6 +38,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { ai, API_URL, getToken } from '../services/api';
+import { cancelLocalNotification, scheduleCookingNotification, scheduleGameReadyNotification } from '../services/notifications';
 import * as ImagePicker from 'expo-image-picker';
 
 import { useTheme } from '../context/ThemeContext';
@@ -264,6 +265,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const cancelRef = useRef<(() => void) | null>(null);
   const detachPendingDreamRef = useRef(false);
   const resumingPendingJobRef = useRef<string | null>(null);
+  const cookingNotificationRef = useRef<string | null>(null);
   const webviewRef = useRef<WebView>(null);
   const enemyIdRef = useRef(0);
 
@@ -503,8 +505,26 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   }, []);
 
+  const clearPendingDreamJob = useCallback(async () => {
+    setPendingJobId(null);
+    await cancelLocalNotification(cookingNotificationRef.current);
+    cookingNotificationRef.current = null;
+    try {
+      await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+    } catch (e) {
+      console.warn('Failed to clear pending dream job:', e);
+    }
+  }, []);
+
+  const armCookingNotification = useCallback(async (jobId?: string | null, jobPrompt?: string) => {
+    if (!jobId) return;
+    await cancelLocalNotification(cookingNotificationRef.current);
+    cookingNotificationRef.current = await scheduleCookingNotification(jobId, jobPrompt);
+  }, []);
+
   const persistPendingDreamJob = useCallback(async (payload: { jobId: string; prompt: string; labsMode: boolean }) => {
     setPendingJobId(payload.jobId);
+    await armCookingNotification(payload.jobId, payload.prompt);
     try {
       await AsyncStorage.setItem(
         PENDING_CREATE_JOB_KEY,
@@ -516,16 +536,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     } catch (e) {
       console.warn('Failed to persist pending dream job:', e);
     }
-  }, []);
+  }, [armCookingNotification]);
 
-  const clearPendingDreamJob = useCallback(async () => {
-    setPendingJobId(null);
-    try {
-      await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
-    } catch (e) {
-      console.warn('Failed to clear pending dream job:', e);
+  const completePendingDreamJob = useCallback(async (title?: string, draftId?: string | null) => {
+    const hadCookingStatus = Boolean(cookingNotificationRef.current);
+    await clearPendingDreamJob();
+    if (hadCookingStatus && draftId) {
+      await scheduleGameReadyNotification(draftId, title);
     }
-  }, []);
+  }, [clearPendingDreamJob]);
 
   const stopLocalDreamPolling = useCallback(() => {
     if (cancelRef.current) {
@@ -595,7 +614,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         resumingPendingJobRef.current = null;
 
         if (res.success && res.htmlPreview) {
-          await clearPendingDreamJob();
+          await completePendingDreamJob(res.title || 'Untitled Dream', res.draftId);
           setGameConfig({});
           setEditableSlots([]);
           setActiveHtml(res.htmlPreview);
@@ -628,7 +647,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         resumeCancel();
       }
     };
-  }, [isActive, phase, prompt, clearPendingDreamJob, fetchDrafts, formatDreamError]);
+  }, [isActive, phase, prompt, clearPendingDreamJob, completePendingDreamJob, fetchDrafts, formatDreamError]);
 
   // Orb animation during generation
   useEffect(() => {
@@ -767,7 +786,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       cancelRef.current = null;
       detachPendingDreamRef.current = false;
       if (res.success && res.htmlPreview) {
-        await clearPendingDreamJob();
+        await completePendingDreamJob(res.title || 'Untitled Dream', res.draftId);
         setGameConfig({});
         setEditableSlots([]);
         setActiveHtml(res.htmlPreview);

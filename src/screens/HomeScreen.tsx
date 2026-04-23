@@ -2443,6 +2443,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           webView.injectJavaScript(PAUSE_SCRIPT);
         }
       });
+      webViewRefs.current = {};
 
       // Record play time when leaving tab
       if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
@@ -3182,11 +3183,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   if (feed.length === 0 && currentIndex !== -1) return null;
 
   const isCurrentAd = currentIndex > -1 && feed[currentIndex] && feed[currentIndex].isAd;
+  const renderedItems = isFocused ? visibleItems : [];
 
   return (
     <View style={styles.container}>
       <View style={{ flex: 1 }}>
-      {visibleItems.map(({ item, position, isWelcome }) => (
+      {renderedItems.map(({ item, position, isWelcome }) => (
         <Animated.View
           key={isWelcome ? 'welcome' : item!.id}
           style={[
