@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Image,
 } from 'react-native';
 import { SlideRightModal } from './SlideRightModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { users } from '../services/api';
-import { Avatar } from './Avatar';
+import { Avatar, AVATAR_BACKGROUNDS, AVATAR_PRESETS, getAvatarCreatorConfig, makeAvatarCreatorUri } from './Avatar';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -32,6 +31,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar || '');
+  const [avatarBg, setAvatarBg] = useState(AVATAR_BACKGROUNDS[0]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Reset form when modal opens
@@ -40,8 +40,22 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
       setDisplayName(user.displayName || '');
       setBio(user.bio || '');
       setAvatarUrl(user.avatar || '');
+      setAvatarBg(getAvatarCreatorConfig(user.avatar)?.bg || AVATAR_BACKGROUNDS[0]);
     }
   }, [visible, user]);
+
+  const selectedAvatarId = getAvatarCreatorConfig(avatarUrl)?.id || '';
+
+  const handleSelectAvatar = (id: string) => {
+    setAvatarUrl(makeAvatarCreatorUri(id, avatarBg));
+  };
+
+  const handleSelectAvatarBg = (bg: string) => {
+    setAvatarBg(bg);
+    if (selectedAvatarId) {
+      setAvatarUrl(makeAvatarCreatorUri(selectedAvatarId, bg));
+    }
+  };
 
   const handleSave = async () => {
     if (!user) return;
@@ -95,6 +109,49 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
             {renderAvatarPreview()}
+            <Text style={[styles.avatarTitle, { color: colors.text }]}>Choose your look</Text>
+            <Text style={[styles.avatarSubtitle, { color: colors.textSecondary }]}>
+              These show everywhere people see you.
+            </Text>
+
+            <View style={styles.avatarGrid}>
+              {AVATAR_PRESETS.map((preset) => {
+                const isSelected = selectedAvatarId === preset.id;
+                return (
+                  <TouchableOpacity
+                    key={preset.id}
+                    activeOpacity={0.85}
+                    onPress={() => handleSelectAvatar(preset.id)}
+                    style={[
+                      styles.avatarPreset,
+                      {
+                        borderColor: isSelected ? colors.primary : colors.border,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                  >
+                    <Avatar uri={makeAvatarCreatorUri(preset.id, avatarBg)} size={52} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.avatarBgRow}>
+              {AVATAR_BACKGROUNDS.map((bg) => (
+                <TouchableOpacity
+                  key={bg}
+                  activeOpacity={0.85}
+                  onPress={() => handleSelectAvatarBg(bg)}
+                  style={[
+                    styles.avatarBgChip,
+                    {
+                      backgroundColor: bg,
+                      borderColor: avatarBg === bg ? colors.text : 'rgba(255,255,255,0.25)',
+                    },
+                  ]}
+                />
+              ))}
+            </View>
           </View>
 
           {/* Display Name */}
@@ -148,6 +205,35 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 20 },
   avatarSection: { alignItems: 'center', marginBottom: 32 },
   avatarWrapper: { position: 'relative', marginBottom: 12 },
+  avatarTitle: { fontSize: 18, fontWeight: '800', marginTop: 4 },
+  avatarSubtitle: { fontSize: 13, marginTop: 4, marginBottom: 18 },
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  avatarPreset: {
+    width: 68,
+    height: 68,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  avatarBgRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 18,
+  },
+  avatarBgChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+  },
   section: { marginBottom: 28 },
   sectionTitle: { fontSize: 15, fontWeight: '600', marginBottom: 12 },
   input: {

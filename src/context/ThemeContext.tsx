@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Appearance } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ThemeColors {
   background: string;
@@ -38,19 +38,33 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const THEME_STORAGE_KEY = 'gametok_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState(Appearance.getColorScheme() === 'dark');
+  const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
-    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      setIsDark(colorScheme === 'dark');
-    });
-    return () => subscription.remove();
+    let mounted = true;
+    AsyncStorage.getItem(THEME_STORAGE_KEY)
+      .then((storedTheme) => {
+        if (!mounted) return;
+        if (storedTheme === 'dark' || storedTheme === 'light') {
+          setIsDark(storedTheme === 'dark');
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const toggleTheme = () => {
-    setIsDark(prev => !prev);
+    setIsDark(prev => {
+      const next = !prev;
+      AsyncStorage.setItem(THEME_STORAGE_KEY, next ? 'dark' : 'light').catch(() => {});
+      return next;
+    });
   };
 
   const colors = isDark ? darkColors : lightColors;

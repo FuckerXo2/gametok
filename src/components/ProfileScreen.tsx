@@ -20,7 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { useAuthScreen } from '../../App';
+import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
 import { auth, savedGames as savedGamesApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
@@ -55,6 +55,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const { colors, isDark, toggleTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { openSharedGame } = useDeepLink();
+  const { setActiveTab } = useNavigation();
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -112,8 +114,17 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     }
   };
 
+  const openSavedGame = (game: Game) => {
+    openSharedGame(game.id);
+    setActiveTab('home');
+  };
+
   const renderGameTile = ({ item }: { item: Game }) => (
-    <TouchableOpacity style={{ width: TILE_SIZE, height: TILE_SIZE, margin: GRID_GAP / 2 }} activeOpacity={0.9}>
+    <TouchableOpacity
+      style={{ width: TILE_SIZE, height: TILE_SIZE, margin: GRID_GAP / 2 }}
+      activeOpacity={0.9}
+      onPress={() => openSavedGame(item)}
+    >
       <Image source={{ uri: getThumbnailUrl(item) }} style={{ width: '100%', height: '100%', backgroundColor: colors.surface }} resizeMode="cover" />
     </TouchableOpacity>
   );
