@@ -13,9 +13,10 @@ import {
   FlatList,
   RefreshControl,
   StyleSheet,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
@@ -25,7 +26,6 @@ import { auth, savedGames as savedGamesApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
-import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FollowListModal } from './FollowListModal';
 import { UserProfileModal } from './UserProfileModal';
 
@@ -36,18 +36,14 @@ const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 const GAMES_HOST = 'https://games.gametok.co';
 
 interface Game { id: string; name: string; thumbnail?: string; }
-interface GamificationStats {
-  points: { balance: number; lifetimeEarned: number; usdValue?: number };
-  streak: { current: number; longest: number; lastClaimDate: string | null; multiplier: number };
-  level?: { current: number; xp: number; currentXp: number; xpForNextLevel: number; progress: number };
-}
-
 const getThumbnailUrl = (game: Game) => game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png`;
 const formatNumber = (num: number): string => {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
   return num.toString();
 };
+
+type ProfileContentTab = 'created' | 'saved' | 'liked';
 
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
@@ -60,9 +56,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [stats, setStats] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
+  const [profileTab, setProfileTab] = useState<ProfileContentTab>('saved');
   const [socialStats, setSocialStats] = useState({ followers: 0, following: 0 });
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
@@ -119,6 +115,16 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     setActiveTab('home');
   };
 
+  const handleShareProfile = async () => {
+    try {
+      await Share.share({
+        message: `Check out @${username} on GameTok: https://games.gametok.co/u/${username}`,
+      });
+    } catch (e) {
+      console.log('Failed to share profile:', e);
+    }
+  };
+
   const renderGameTile = ({ item }: { item: Game }) => (
     <TouchableOpacity
       style={{ width: TILE_SIZE, height: TILE_SIZE, margin: GRID_GAP / 2 }}
@@ -128,6 +134,53 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       <Image source={{ uri: getThumbnailUrl(item) }} style={{ width: '100%', height: '100%', backgroundColor: colors.surface }} resizeMode="cover" />
     </TouchableOpacity>
   );
+
+  const renderEmptyState = (icon: string, title: string, subtitle: string) => (
+    <View style={styles.emptyState}>
+      <View style={[styles.emptyIconBubble, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Ionicons name={icon as any} size={32} color={colors.textSecondary} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+    </View>
+  );
+
+  const renderProfileContent = () => {
+    if (profileTab === 'created') {
+      return renderEmptyState(
+        'sparkles-outline',
+        'No published games yet',
+        'When your own worlds go live, they should sit here first.',
+      );
+    }
+
+    if (profileTab === 'liked') {
+      return renderEmptyState(
+        'heart-outline',
+        'No liked games yet',
+        'The weird stuff you love can live here when likes are wired in.',
+      );
+    }
+
+    if (savedGamesList.length === 0) {
+      return renderEmptyState(
+        'bookmark-outline',
+        'Your vault is empty',
+        'Save a game from the feed and it will land here.',
+      );
+    }
+
+    return (
+      <FlatList
+        data={savedGamesList}
+        renderItem={renderGameTile}
+        keyExtractor={item => item.id}
+        numColumns={NUM_COLUMNS}
+        scrollEnabled={false}
+        contentContainerStyle={{ paddingHorizontal: 1, paddingTop: 2 }}
+      />
+    );
+  };
 
   if (!isAuthenticated) {
     // Show a preview profile with auth overlay
@@ -205,78 +258,108 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#a855f7" />}
       >
-        {/* Header */}
-        <View style={{ paddingHorizontal: 16, paddingTop: insets.top + 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={() => setShowAddFriends(true)}>
-              <Ionicons name="person-add-outline" size={22} color={colors.text} />
+        <View style={[styles.profileShell, { paddingTop: insets.top + 10 }]}>
+          <View style={styles.profileTopBar}>
+            <TouchableOpacity
+              style={[styles.topIconButton, { backgroundColor: colors.surface }]}
+              onPress={() => setShowAddFriends(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="person-add-outline" size={21} color={colors.text} />
             </TouchableOpacity>
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@{username}</Text>
-            <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={() => setShowSettings(true)}>
+            <Text style={[styles.topUsername, { color: colors.text }]}>@{username}</Text>
+            <TouchableOpacity
+              style={[styles.topIconButton, { backgroundColor: colors.surface }]}
+              onPress={() => setShowSettings(true)}
+              activeOpacity={0.85}
+            >
               <Ionicons name="menu-outline" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
-          {/* Profile Info Row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-            <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9}>
-              <Avatar uri={avatar} size={86} />
-            </TouchableOpacity>
+          <View style={styles.heroCard}>
+            <LinearGradient
+              colors={isDark ? ['rgba(168,85,247,0.18)', 'rgba(0,229,255,0.08)', 'rgba(255,255,255,0.02)'] : ['rgba(168,85,247,0.16)', 'rgba(0,229,255,0.12)', 'rgba(0,0,0,0.03)']}
+              style={[styles.heroGlow, { borderColor: colors.border }]}
+            >
+              <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9} style={styles.avatarHitbox}>
+                <View style={[styles.avatarRing, { borderColor: colors.primary }]}>
+                  <Avatar uri={avatar} size={98} />
+                </View>
+                <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="pencil" size={13} color="#fff" />
+                </View>
+              </TouchableOpacity>
 
-            <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>
-              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(socialStats.followers)}</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Followers</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(socialStats.following)}</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Following</Text>
-              </TouchableOpacity>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(savedGamesList.length)}</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Saved</Text>
+              <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+                {displayName || username}
+              </Text>
+              <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{username}</Text>
+              <Text style={[styles.bioText, { color: bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
+                {bio || 'No bio yet. Make this little corner of the internet yours.'}
+              </Text>
+
+              <View style={styles.statsRow}>
+                <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(socialStats.following)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(socialStats.followers)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+                </TouchableOpacity>
+                <View style={styles.statItem}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(savedGamesList.length)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Saved</Text>
+                </View>
               </View>
-            </View>
-          </View>
 
-          {/* Name & Bio */}
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{displayName || username}</Text>
-            {bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{bio}</Text> : null}
+              <View style={styles.profileActions}>
+                <TouchableOpacity
+                  style={[styles.primaryAction, { backgroundColor: colors.text }]}
+                  onPress={() => setShowEditProfile(true)}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.primaryActionText, { color: colors.background }]}>Edit profile</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                  onPress={handleShareProfile}
+                  activeOpacity={0.9}
+                >
+                  <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
+                  <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
           </View>
-
-          {/* Edit Profile Button */}
-          <TouchableOpacity
-            style={{ backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: colors.border }}
-            onPress={() => setShowEditProfile(true)}
-          >
-            <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Edit Profile</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Saved Games */}
-        <View style={{ marginTop: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
-            <Ionicons name="bookmark" size={18} color={colors.text} />
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Saved Games</Text>
-          </View>
-
-          {savedGamesList.length === 0 ? (
-            <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-              <Ionicons name="bookmark-outline" size={48} color={colors.textSecondary} />
-              <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 12 }}>No saved games yet</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={savedGamesList}
-              renderItem={renderGameTile}
-              keyExtractor={item => item.id}
-              numColumns={NUM_COLUMNS}
-              scrollEnabled={false}
-              contentContainerStyle={{ paddingHorizontal: 1 }}
-            />
-          )}
+        <View style={[styles.contentTabs, { borderTopColor: colors.border, borderBottomColor: colors.border }]}>
+          {[
+            { key: 'created', label: 'Created', icon: 'grid-outline' },
+            { key: 'saved', label: 'Saved', icon: 'bookmark-outline' },
+            { key: 'liked', label: 'Liked', icon: 'heart-outline' },
+          ].map((tab) => {
+            const isSelected = profileTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.contentTab}
+                onPress={() => setProfileTab(tab.key as ProfileContentTab)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name={tab.icon as any} size={18} color={isSelected ? colors.text : colors.textSecondary} />
+                <Text style={[styles.contentTabText, { color: isSelected ? colors.text : colors.textSecondary }]}>
+                  {tab.label}
+                </Text>
+                {isSelected && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {renderProfileContent()}
       </ScrollView>
 
       <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
@@ -377,3 +460,180 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  profileShell: {
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+  },
+  profileTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  topIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topUsername: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  heroCard: {
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  heroGlow: {
+    alignItems: 'center',
+    borderRadius: 30,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    paddingBottom: 20,
+  },
+  avatarHitbox: {
+    marginBottom: 12,
+  },
+  avatarRing: {
+    padding: 4,
+    borderWidth: 2,
+    borderRadius: 58,
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 2,
+    bottom: 5,
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  displayName: {
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    maxWidth: '90%',
+  },
+  handleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  bioText: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 12,
+    textAlign: 'center',
+    maxWidth: 290,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 30,
+    marginTop: 20,
+    marginBottom: 18,
+  },
+  statItem: {
+    minWidth: 72,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  profileActions: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 10,
+  },
+  primaryAction: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryActionText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  secondaryAction: {
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  contentTabs: {
+    flexDirection: 'row',
+    borderTopWidth: 0.5,
+    borderBottomWidth: 0.5,
+  },
+  contentTab: {
+    flex: 1,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  contentTabText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  activeTabBar: {
+    position: 'absolute',
+    bottom: 0,
+    width: 34,
+    height: 3,
+    borderRadius: 2,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingHorizontal: 34,
+    paddingTop: 62,
+    paddingBottom: 90,
+  },
+  emptyIconBubble: {
+    width: 78,
+    height: 78,
+    borderRadius: 26,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+});
