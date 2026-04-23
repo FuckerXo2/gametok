@@ -248,6 +248,23 @@ export const games = {
     return request(`/games/discover-debug?${params.toString()}`);
   },
 
+  trendingSummary: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 5,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    return requestJsonIfAvailable(`/games/trending-summary?${params.toString()}`) || {
+      tab,
+      pulses: { searchHeat: 0, creatorsRising: 0, gamesPopping: 0 },
+      topSearches: [],
+      topCreators: [],
+      topGames: [],
+    };
+  },
+
   // Get multiplayer-only games (for Connect screen)
   multiplayer: async (limit = 50, offset = 0) => {
     return request(`/games/multiplayer?limit=${limit}&offset=${offset}`);

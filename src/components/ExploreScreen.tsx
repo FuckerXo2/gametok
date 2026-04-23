@@ -27,9 +27,9 @@ const PRIMARY_TABS = ['Explore', 'Games', 'Horror', 'Quiz', 'Roleplay'] as const
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 const CDN_ORIGIN = 'https://games.gametok.co';
 const SIGNAL_PULSES = [
-  { id: 'pulse-1', label: 'Search heat', value: '49K+', tone: '#8B5CF6' },
-  { id: 'pulse-2', label: 'Creators rising', value: '1.8K', tone: '#3B82F6' },
-  { id: 'pulse-3', label: 'Games popping', value: '312', tone: '#F59E0B' },
+  { id: 'pulse-1', label: 'Search heat', value: '0', tone: '#8B5CF6' },
+  { id: 'pulse-2', label: 'Creators rising', value: '0', tone: '#3B82F6' },
+  { id: 'pulse-3', label: 'Games popping', value: '0', tone: '#F59E0B' },
 ];
 const CHART_COLUMNS = [
   {
@@ -37,74 +37,39 @@ const CHART_COLUMNS = [
     eyebrow: 'What everyone is typing',
     icon: 'search',
     colors: ['#2B3458', '#1C223A'] as const,
-    rows: [
-      { label: 'roblox', meta: '49K searches' },
-      { label: 'minecraft', meta: '44K searches' },
-      { label: 'goon', meta: '44K searches' },
-      { label: 'ishowspeed', meta: '43K searches' },
-      { label: 'poppy playtime', meta: '40K searches' },
-    ],
+    rows: [],
   },
   {
     title: 'Top Creators',
     eyebrow: 'People setting the tone',
     icon: 'sparkles',
     colors: ['#55328A', '#2A1747'] as const,
-    rows: [
-      { label: 'CookedBro', meta: 'building weird tiny worlds' },
-      { label: 'Ospan Iskenderov', meta: 'simple tools and late-night ideas' },
-      { label: 'nancy', meta: 'small things with big hooks' },
-      { label: 'Sandra Velazquez', meta: 'turning caffeine into features' },
-      { label: 'Lucifer sss', meta: 'exploring ideas at 3am' },
-    ],
+    rows: [],
   },
   {
     title: 'Top Games',
     eyebrow: 'What the feed can’t stop pushing',
     icon: 'trending-up',
     colors: ['#314A80', '#1D294A'] as const,
-    rows: [
-      { label: 'Shut up Meg', meta: '551K plays' },
-      { label: 'Trump Trump Escape', meta: '494K plays' },
-      { label: 'Good Morning', meta: '415K plays' },
-      { label: 'Flappy Hajimi', meta: '388K plays' },
-      { label: 'Diddy Calling', meta: '353K plays' },
-    ],
+    rows: [],
   },
 ];
 
-const CHALLENGES = [
-  {
-    title: '#Dopamine farming until it hits',
-    subtitle: '33 items · 129K played',
-  },
-  {
-    title: '#This felt like a brain hack',
-    subtitle: '78 items · 195K played',
-  },
-];
+const createHeroSlots = (prefix: string, colors: Array<readonly [string, string]>) =>
+  colors.map((pair, index) => ({
+    id: `${prefix}-hero-${index + 1}`,
+    title: '',
+    subtitle: '',
+    colors: pair,
+  }));
 
-const SEARCH_TREND_FALLBACKS = [
-  'roblox',
-  'minecraft',
-  'goon',
-  'ishowspeed',
-  'poppy playtime',
-  'fnaf',
-  'sonic',
-  'israel',
-  'gugugaga',
-  'trump',
-  'cortisol',
-  'uh uh',
-] as const;
-
-const TRENDING_GRID = [
-  { id: 'trend-1', title: 'VELVET ASCENT', subtitle: '@Bongani Sivakuma', accent: '#3A272B' },
-  { id: 'trend-2', title: 'surviving dog', subtitle: '@Francisco Mano', accent: '#2A2A2A' },
-  { id: 'trend-3', title: 'Cat TV', subtitle: '@doppii', accent: '#3B332D' },
-  { id: 'trend-4', title: 'babysit SpongeBob', subtitle: '@Tarius Blyther', accent: '#403129' },
-];
+const createCardSlots = (prefix: string, count: number, accents: string[]) =>
+  Array.from({ length: count }, (_, index) => ({
+    id: `${prefix}-slot-${index + 1}`,
+    title: '',
+    subtitle: '',
+    accent: accents[index % accents.length] || '#1B2334',
+  }));
 
 const TAB_WORLDS = {
   Explore: {
@@ -125,31 +90,23 @@ const TAB_WORLDS = {
       Satisfying: 'Pattern toys, tactile loops, and experiences that feel good immediately.',
       Trending: 'A live read on what the culture is doing right now.',
     },
-    heroes: [
-      { id: 'hero-1', title: 'SekaiPhone OS', subtitle: 'Immersive worlds with strong identities', colors: ['#203A43', '#2C5364'] as const },
-      { id: 'hero-2', title: 'Mirror Draw', subtitle: 'Creative tools that feel alive instantly', colors: ['#241E4E', '#0F3460'] as const },
-      { id: 'hero-3', title: 'Void Survey', subtitle: 'Minimal experiences with a strong first frame', colors: ['#1E1E1E', '#090909'] as const },
-    ],
+    heroes: createHeroSlots('explore', [
+      ['#203A43', '#2C5364'] as const,
+      ['#241E4E', '#0F3460'] as const,
+      ['#1E1E1E', '#090909'] as const,
+    ]),
     sections: [
       {
         title: "We're Obsessed",
-        cards: [
-          { id: 'obs-1', title: 'totaly legit.', subtitle: 'Wild interaction toys with strong hooks', accent: '#2A3142' },
-          { id: 'obs-2', title: 'fusion unlocked', subtitle: 'Mashup systems and weird generators', accent: '#2E3E52' },
-          { id: 'obs-3', title: 'draw your beat', subtitle: 'Creative tools worth replaying', accent: '#1E2C40' },
-        ],
+        cards: createCardSlots('explore-obsessed', 3, ['#2A3142', '#2E3E52', '#1E2C40']),
       },
       {
         title: 'Blowing Up',
-        cards: [
-          { id: 'blow-1', title: 'The Toy Box 2', subtitle: 'Satisfying game loops', accent: '#18283A' },
-          { id: 'blow-2', title: 'Tap Me!', subtitle: 'One strong mechanic, high replayability', accent: '#6E6047' },
-          { id: 'blow-3', title: 'Canvas Symphony', subtitle: 'Tools, rhythm, and pattern builders', accent: '#182236' },
-        ],
+        cards: createCardSlots('explore-blowing-up', 3, ['#18283A', '#6E6047', '#182236']),
       },
     ],
     discoverTitle: 'Discover More',
-    grid: TRENDING_GRID,
+    grid: createCardSlots('explore-grid', 4, ['#3A272B', '#2A2A2A', '#3B332D', '#403129']),
   },
   Games: {
     cardLabel: 'Playable',
@@ -168,35 +125,22 @@ const TAB_WORLDS = {
       Speedrun: 'Fast restart loops, timer pressure, and skill expression up front.',
       Simulator: 'Role fantasy first: drive it, run it, manage it, or break it.',
     },
-    heroes: [
-      { id: 'games-1', title: 'Retro Future Night Drive', subtitle: 'Fast loops, dashboard fantasy, and bigger worlds to sink into', colors: ['#30003C', '#0F101D'] as const },
-      { id: 'games-2', title: 'Toy Box Arena', subtitle: 'Playable mechanics with strong first-frame hooks', colors: ['#16314A', '#0A1724'] as const },
-    ],
+    heroes: createHeroSlots('games', [
+      ['#30003C', '#0F101D'] as const,
+      ['#16314A', '#0A1724'] as const,
+    ]),
     sections: [
       {
         title: "Everyone's Playing",
-        cards: [
-          { id: 'games-play-1', title: 'Shut up Meg', subtitle: 'Chaotic picks the feed keeps resurfacing', accent: '#25324A' },
-          { id: 'games-play-2', title: 'Flappy Hajimi', subtitle: 'Simple loops with meme gravity', accent: '#3A3649' },
-          { id: 'games-play-3', title: 'Good Morning', subtitle: 'Low-friction, high-replay game ideas', accent: '#273D43' },
-        ],
+        cards: createCardSlots('games-playing', 3, ['#25324A', '#3A3649', '#273D43']),
       },
       {
         title: 'Deep Cuts',
-        cards: [
-          { id: 'games-cut-1', title: 'boss room', subtitle: 'Stronger mechanics with bolder staging', accent: '#1C2438' },
-          { id: 'games-cut-2', title: 'button war', subtitle: 'One mechanic, all commitment', accent: '#514A36' },
-          { id: 'games-cut-3', title: 'night runner', subtitle: 'Cleaner skill loops and stronger control fantasy', accent: '#222F49' },
-        ],
+        cards: createCardSlots('games-deep-cuts', 3, ['#1C2438', '#514A36', '#222F49']),
       },
     ],
     discoverTitle: 'More Games',
-    grid: [
-      { id: 'game-grid-1', title: 'Orchard Tycoon', subtitle: '@mexico man', accent: '#533331' },
-      { id: 'game-grid-2', title: 'VELVET ASCENT', subtitle: '@Bongani Sivakuma', accent: '#3A272B' },
-      { id: 'game-grid-3', title: 'KUROMI OBBY', subtitle: '@Pakeeza Arzoo', accent: '#493040' },
-      { id: 'game-grid-4', title: 'babysit SpongeBob', subtitle: '@Tarius Blyther', accent: '#403129' },
-    ],
+    grid: createCardSlots('games-grid', 4, ['#533331', '#3A272B', '#493040', '#403129']),
   },
   Horror: {
     cardLabel: 'Unsettling',
@@ -215,35 +159,22 @@ const TAB_WORLDS = {
       Escape: 'Pressure, locked spaces, clues, and survival through interaction.',
       'Night Shift': 'Late-night jobs, strange customers, and the feeling that something is off.',
     },
-    heroes: [
-      { id: 'horror-1', title: 'Void Survey', subtitle: 'Low light, strong prompts, and unsettling interaction', colors: ['#181818', '#050505'] as const },
-      { id: 'horror-2', title: 'TokFeed Report', subtitle: 'Creepy feeds, fake systems, and dangerous little choices', colors: ['#260B0C', '#090909'] as const },
-    ],
+    heroes: createHeroSlots('horror', [
+      ['#181818', '#050505'] as const,
+      ['#260B0C', '#090909'] as const,
+    ]),
     sections: [
       {
         title: 'For You',
-        cards: [
-          { id: 'horror-fy-1', title: 'TokFeed', subtitle: 'Signals, suspicion, and UI horror', accent: '#1D1214' },
-          { id: 'horror-fy-2', title: 'Please be careful', subtitle: 'Minimal dread with stronger narrative restraint', accent: '#1E2734' },
-          { id: 'horror-fy-3', title: 'The Demon Night', subtitle: 'Poster-like horror cards with dark gravity', accent: '#281E1A' },
-        ],
+        cards: createCardSlots('horror-for-you', 3, ['#1D1214', '#1E2734', '#281E1A']),
       },
       {
         title: 'Late Night Finds',
-        cards: [
-          { id: 'horror-late-1', title: 'ghost_id_0x7f', subtitle: 'Glitch aesthetics and cult feed energy', accent: '#24090A' },
-          { id: 'horror-late-2', title: 'TRC: The Puzzle', subtitle: 'Single-room unease and staged danger', accent: '#1E2028' },
-          { id: 'horror-late-3', title: 'well at midnight', subtitle: 'Textured emptiness and strong first frames', accent: '#2B1E18' },
-        ],
+        cards: createCardSlots('horror-late-night', 3, ['#24090A', '#1E2028', '#2B1E18']),
       },
     ],
     discoverTitle: 'More Horror',
-    grid: [
-      { id: 'horror-grid-1', title: 'Shawarma Sentinel', subtitle: 'Please be careful', accent: '#21273B' },
-      { id: 'horror-grid-2', title: 'Ran away from diddy', subtitle: '@devlooping', accent: '#3B3025' },
-      { id: 'horror-grid-3', title: 'TRC: The Puzzle', subtitle: '@horrorlab', accent: '#29312C' },
-      { id: 'horror-grid-4', title: 'The Demon Night', subtitle: '@latefeed', accent: '#2D1A14' },
-    ],
+    grid: createCardSlots('horror-grid', 4, ['#21273B', '#3B3025', '#29312C', '#2D1A14']),
   },
   Quiz: {
     cardLabel: 'Challenge',
@@ -262,35 +193,22 @@ const TAB_WORLDS = {
       Impossible: 'Bait answers, fake logic, and frustration engineered to be funny.',
       'School Break': 'Quick, social, pass-the-phone quiz energy with low commitment.',
     },
-    heroes: [
-      { id: 'quiz-1', title: 'OmniTrivia', subtitle: 'Readable systems, bright cards, and addicting answer loops', colors: ['#11233C', '#0A101C'] as const },
-      { id: 'quiz-2', title: 'GeoTouch Atlas', subtitle: 'Maps, categories, and fast pattern recognition', colors: ['#1C4E58', '#10202A'] as const },
-    ],
+    heroes: createHeroSlots('quiz', [
+      ['#11233C', '#0A101C'] as const,
+      ['#1C4E58', '#10202A'] as const,
+    ]),
     sections: [
       {
         title: 'Sharpest Picks',
-        cards: [
-          { id: 'quiz-sharp-1', title: 'GeoTouch Atlas', subtitle: 'Interactive geography and quick recall', accent: '#2A5863' },
-          { id: 'quiz-sharp-2', title: 'Impossible 50', subtitle: 'Bait answers and playful frustration', accent: '#514348' },
-          { id: 'quiz-sharp-3', title: 'Answer Trivia', subtitle: 'Minimal layouts with strong answer hierarchy', accent: '#24405B' },
-        ],
+        cards: createCardSlots('quiz-sharpest', 3, ['#2A5863', '#514348', '#24405B']),
       },
       {
         title: 'Study Break',
-        cards: [
-          { id: 'quiz-break-1', title: 'Guess the Vocaloid', subtitle: 'Character cards and fan quiz energy', accent: '#3E405A' },
-          { id: 'quiz-break-2', title: 'brain test', subtitle: 'Impossible questions with social replay value', accent: '#4B5B32' },
-          { id: 'quiz-break-3', title: 'currency duel', subtitle: 'Short loops that still feel designed', accent: '#263A4B' },
-        ],
+        cards: createCardSlots('quiz-study-break', 3, ['#3E405A', '#4B5B32', '#263A4B']),
       },
     ],
     discoverTitle: 'More Quiz',
-    grid: [
-      { id: 'quiz-grid-1', title: 'GeoTouch Atlas', subtitle: '53 playing', accent: '#2A5863' },
-      { id: 'quiz-grid-2', title: 'OmniTrivia', subtitle: '54 playing', accent: '#252E58' },
-      { id: 'quiz-grid-3', title: 'Project Sekai Guess', subtitle: 'Virtual singers edition', accent: '#4D5166' },
-      { id: 'quiz-grid-4', title: 'Japan currency?', subtitle: 'Answer fast', accent: '#34526A' },
-    ],
+    grid: createCardSlots('quiz-grid', 4, ['#2A5863', '#252E58', '#4D5166', '#34526A']),
   },
   Roleplay: {
     cardLabel: 'Story',
@@ -309,51 +227,27 @@ const TAB_WORLDS = {
       Drama: 'Higher stakes, conflict, secrets, and bigger social tension.',
       Fantasy: 'Mythic settings, magical aesthetics, and larger-than-life roleplay worlds.',
     },
-    heroes: [
-      { id: 'roleplay-1', title: 'Spirit Blossom Festival', subtitle: 'Poster-rich worlds, big emotional tone, strong fantasy staging', colors: ['#6A2B56', '#1A1829'] as const },
-      { id: 'roleplay-2', title: 'TRIAD COUPLE', subtitle: 'Character-forward stories with dramatic cover art', colors: ['#1F514A', '#132326'] as const },
-    ],
+    heroes: createHeroSlots('roleplay', [
+      ['#6A2B56', '#1A1829'] as const,
+      ['#1F514A', '#132326'] as const,
+    ]),
     sections: [
       {
         title: 'Recommend',
-        cards: [
-          { id: 'role-reco-1', title: 'TRIAD COUPLE', subtitle: 'Character art and dangerous classroom drama', accent: '#315C55' },
-          { id: 'role-reco-2', title: 'HIGHSCHOOL NEW FACES', subtitle: 'Romance, tension, and clean cover staging', accent: '#4A3846' },
-          { id: 'role-reco-3', title: 'Spirit Blossom', subtitle: 'Big fantasy worlds with poster energy', accent: '#5A3852' },
-        ],
+        cards: createCardSlots('roleplay-recommend', 3, ['#315C55', '#4A3846', '#5A3852']),
       },
       {
         title: 'Immersive Worlds',
-        cards: [
-          { id: 'role-imm-1', title: 'Championship Bonds', subtitle: 'Fan universes made social and playable', accent: '#4B2530' },
-          { id: 'role-imm-2', title: 'academy letters', subtitle: 'Dialogue-first worlds with strong hooks', accent: '#3C4B63' },
-          { id: 'role-imm-3', title: 'midnight vow', subtitle: 'Aesthetic roleplay spaces with more depth', accent: '#43324D' },
-        ],
+        cards: createCardSlots('roleplay-immersive', 3, ['#4B2530', '#3C4B63', '#43324D']),
       },
     ],
     discoverTitle: 'More Roleplay',
-    grid: [
-      { id: 'role-grid-1', title: 'TRIAD COUPLE', subtitle: 'A new transfer student arrives', accent: '#315C55' },
-      { id: 'role-grid-2', title: 'HIGHSCHOOL NEW FACES', subtitle: 'Rinse and Yuki', accent: '#4A3846' },
-      { id: 'role-grid-3', title: 'Hololive: Championship Bonds', subtitle: 'Rivals, teammates, champions', accent: '#4B2530' },
-      { id: 'role-grid-4', title: 'Spirit Blossom Festival', subtitle: 'League of Legends', accent: '#5A3852' },
-    ],
+    grid: createCardSlots('roleplay-grid', 4, ['#315C55', '#4A3846', '#4B2530', '#5A3852']),
   },
 } as const;
 
-const CARD_METRICS = [
-  { likes: '8.5K', plays: '221K' },
-  { likes: '3.2K', plays: '96K' },
-  { likes: '1.4K', plays: '58K' },
-  { likes: '12K', plays: '401K' },
-  { likes: '742', plays: '18K' },
-  { likes: '5.9K', plays: '176K' },
-];
-
 const getSeedFromText = (value: string) =>
   value.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-
-const getMockMetrics = (key: string) => CARD_METRICS[getSeedFromText(key) % CARD_METRICS.length];
 
 const getPreviewLabel = (activeTab: (typeof PRIMARY_TABS)[number], activeChip: string) => {
   switch (activeTab) {
@@ -500,6 +394,50 @@ type SearchProfileUser = {
   isFriend: boolean;
 };
 
+type TrendingSummaryResponse = {
+  tab: (typeof PRIMARY_TABS)[number];
+  pulses?: {
+    searchHeat?: number;
+    creatorsRising?: number;
+    gamesPopping?: number;
+  };
+  topSearches?: Array<{
+    query: string;
+    normalizedQuery?: string;
+    count: number;
+  }>;
+  topCreators?: Array<{
+    id: string;
+    username: string;
+    displayName?: string | null;
+    avatar?: string | null;
+    gameCount?: number;
+    totalPlays?: number;
+    recentActivityScore?: number;
+  }>;
+  topGames?: Array<{
+    game: ExploreGameRecord;
+    recentActivityScore?: number;
+    discoverScore?: number;
+    risingScore?: number;
+  }>;
+};
+
+type TrendingChartRow = {
+  label: string;
+  meta: string;
+  action?: () => void;
+};
+
+type TrendingChallengeRecord = {
+  title: string;
+  subtitle: string;
+  action?: () => void;
+  thumbColors: string[];
+};
+
+type TrendingDetailMode = 'searches' | 'creators' | 'games' | null;
+
 type ExploreDiscoverDebugResponse = {
   tab: (typeof PRIMARY_TABS)[number];
   count: number;
@@ -586,10 +524,9 @@ const formatSearchCount = (value: number) => {
   return `${value}`;
 };
 
-const buildHeroSearchCount = (label: string) => {
-  const seed = getSeedFromText(label);
-  const base = 4200 + (seed % 42000);
-  return `${formatSearchCount(base * 10)} searches`;
+const formatPulseCount = (value: number) => {
+  const compact = formatSearchCount(value);
+  return value >= 1000 ? `${compact}+` : compact;
 };
 
 const prettifySearchTerm = (value: string) =>
@@ -623,75 +560,6 @@ const buildSearchGameCard = (game: ExploreGameRecord): ExploreCardRecord => {
   };
 };
 
-const buildTrendingSearchTopics = (
-  liveGames: ExploreGameRecord[],
-  laneBuckets: ExploreLaneBuckets,
-  trackedTopics: Array<{ query: string; count?: number }> = [],
-): ExploreSearchTopic[] => {
-  const scoreMap = new Map<string, { label: string; score: number; related: Set<string>; hot: boolean; rawCount?: number }>();
-  const lanePriority = [
-    ...(laneBuckets.rising || []),
-    ...(laneBuckets.featured || []),
-    ...(laneBuckets.worldbuilding || []),
-    ...(laneBuckets.evergreen || []),
-    ...liveGames,
-  ].filter((game, index, array) => !!game?.id && array.findIndex((item) => item.id === game.id) === index);
-
-  const pushTerm = (rawLabel: string | undefined, gameId: string, weight: number, hot = false, rawCount?: number) => {
-    const label = (rawLabel || '').trim();
-    if (!label) return;
-    const normalized = label.toLowerCase();
-    if (normalized.length < 3) return;
-    if (['for you', 'recommend', 'trending', 'all'].includes(normalized)) return;
-
-    const existing = scoreMap.get(normalized);
-    if (existing) {
-      existing.score += weight;
-      existing.related.add(gameId);
-      existing.hot = existing.hot || hot;
-      existing.rawCount = Math.max(existing.rawCount || 0, rawCount || 0);
-      return;
-    }
-
-    scoreMap.set(normalized, {
-      label,
-      score: weight,
-      related: new Set([gameId]),
-      hot,
-      rawCount,
-    });
-  };
-
-  lanePriority.forEach((game, index) => {
-    const gameId = game.id;
-    const hot = index < 6;
-    pushTerm(game.name, gameId, hot ? 8 : 5, hot);
-    pushTerm(game.subcategory && prettifySearchTerm(game.subcategory), gameId, 6, hot);
-    pushTerm(game.category && prettifySearchTerm(game.category), gameId, 4);
-    (game.discoveryChips || []).slice(0, 3).forEach((chip) => pushTerm(chip, gameId, 3));
-    (game.classificationTags || []).slice(0, 2).forEach((tag) => pushTerm(prettifySearchTerm(tag), gameId, 2));
-  });
-
-  trackedTopics.forEach((topic, index) => {
-    pushTerm(topic.query, `tracked:${index}`, 18 - index, index < 3, topic.count);
-  });
-
-  return Array.from(scoreMap.entries())
-    .sort((a, b) => {
-      const scoreDiff = b[1].score - a[1].score;
-      if (scoreDiff !== 0) return scoreDiff;
-      return b[1].related.size - a[1].related.size;
-    })
-    .slice(0, 12)
-    .map(([key, entry]) => ({
-      id: key,
-      label: entry.label,
-      meta: buildHeroSearchCount(entry.label),
-      hot: entry.hot,
-      rawCount: entry.rawCount,
-    }));
-};
-
 const buildExploreCard = (
   activeTab: (typeof PRIMARY_TABS)[number],
   activeChip: string,
@@ -703,7 +571,8 @@ const buildExploreCard = (
   },
 ): ExploreCardRecord => ({
   ...card,
-  ...getMockMetrics(card.id),
+  likes: '0',
+  plays: '0',
   mediaKind: 'fallback',
 });
 
@@ -717,7 +586,8 @@ const buildExploreHero = (
   },
 ): ExploreHeroRecord => ({
   ...hero,
-  ...getMockMetrics(hero.id),
+  likes: '0',
+  plays: '0',
   mediaKind: 'fallback',
 });
 
@@ -1513,8 +1383,8 @@ const mergeLiveGamesIntoWorld = (
       subtitle: inferSemanticCategory(game) || card.subtitle,
       accent: game.color || card.accent,
       creator: getCreatorLabel(game),
-      likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : card.likes,
-      plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : card.plays,
+      likes: '0',
+      plays: formatCompactCount(game.plays),
       mediaKind: (previewVideoUrl ? 'video' : 'image') as ExploreMediaKind,
       imageUrl: getGameThumbnail(game),
       videoUrl: previewVideoUrl,
@@ -1560,8 +1430,8 @@ const mergeLiveGamesIntoWorld = (
         title: game.name,
         subtitle: `${inferSemanticCategory(game)} right now`,
         creator: getCreatorLabel(game),
-        likes: game.plays ? `${Math.max(1, Math.round(game.plays / 1200))}K` : hero.likes,
-        plays: game.plays ? `${Math.max(1, Math.round(game.plays / 1000))}K` : hero.plays,
+        likes: '0',
+        plays: formatCompactCount(game.plays),
         mediaKind: (previewVideoUrl ? 'video' : 'image') as ExploreMediaKind,
         imageUrl: getGameThumbnail(game),
         videoUrl: previewVideoUrl,
@@ -1740,6 +1610,7 @@ export const ExploreScreen: React.FC = () => {
   const [searchGames, setSearchGames] = useState<ExploreGameRecord[]>([]);
   const [trackedSearchTopics, setTrackedSearchTopics] = useState<Array<{ query: string; count?: number }>>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [trendingDetailMode, setTrendingDetailMode] = useState<TrendingDetailMode>(null);
   const [followLoadingIds, setFollowLoadingIds] = useState<Set<string>>(new Set());
   const [followedCreatorIds, setFollowedCreatorIds] = useState<Set<string>>(new Set());
   const [selectedSearchProfile, setSelectedSearchProfile] = useState<SearchProfileUser | null>(null);
@@ -1748,6 +1619,7 @@ export const ExploreScreen: React.FC = () => {
   const [liveGames, setLiveGames] = useState<ExploreGameRecord[]>([]);
   const [trendingGames, setTrendingGames] = useState<ExploreGameRecord[]>([]);
   const [discoverLaneBuckets, setDiscoverLaneBuckets] = useState<ExploreLaneBuckets>(EMPTY_LANE_BUCKETS);
+  const [trendingSummary, setTrendingSummary] = useState<TrendingSummaryResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const heroTranslateX = useRef(new Animated.Value(0)).current;
   const heroOpacity = useRef(new Animated.Value(1)).current;
@@ -1762,20 +1634,13 @@ export const ExploreScreen: React.FC = () => {
     const shaped = buildWorldRecord(activeTab, activeChip, TAB_WORLDS[activeTab]);
     return mergeLiveGamesIntoWorld(shaped, activeTab, liveGames, trendingGames, activeChip, discoverLaneBuckets);
   }, [activeTab, activeChip, liveGames, trendingGames, discoverLaneBuckets]);
-  const heroCount = tabWorld.heroes.length;
+  const visibleHeroes = useMemo(() => tabWorld.heroes.filter((item) => !!item.gameId), [tabWorld.heroes]);
+  const heroCount = visibleHeroes.length;
   const safeHeroIndex = heroCount ? ((heroIndex % heroCount) + heroCount) % heroCount : 0;
-  const hero =
-    tabWorld.heroes[safeHeroIndex] ||
-    tabWorld.heroes[0] ||
-    buildExploreHero(activeTab, {
-      id: 'hero-fallback',
-      title: 'Explore',
-      subtitle: 'Discover interactive worlds',
-      colors: ['#121A2A', '#090B10'] as const,
-    });
+  const hero = visibleHeroes[safeHeroIndex];
   const incomingHero =
     incomingHeroIndex !== null
-      ? tabWorld.heroes[incomingHeroIndex] || null
+      ? visibleHeroes[incomingHeroIndex] || null
       : null;
   const isTrendingView = activeChip === 'Trending';
   const trendingSectionTitle = activeTab === 'Explore' ? 'Trending Right Now' : `${activeTab} Trending`;
@@ -1785,27 +1650,28 @@ export const ExploreScreen: React.FC = () => {
   const isSearchMode = trimmedSearch.length > 0;
   const showSearchExperience = searchActive || isSearchMode;
   const isExploreEditorialView = activeTab === 'Explore' && !isSearchMode && !isTrendingView;
-  const exploreLeadCards = activeTab === 'Explore' ? tabWorld.sections[0]?.cards ?? [] : [];
+  const exploreLeadCards = activeTab === 'Explore' ? (tabWorld.sections[0]?.cards ?? []).filter((card) => !!card.gameId) : [];
   const exploreSpotlightCard = exploreLeadCards[0];
   const exploreSecondaryCards =
     activeTab === 'Explore'
       ? [
           ...exploreLeadCards.slice(1, 3),
-          ...(tabWorld.sections[1]?.cards.slice(0, 1) ?? []),
+          ...((tabWorld.sections[1]?.cards ?? []).filter((card) => !!card.gameId).slice(0, 1)),
         ].slice(0, 3)
       : [];
   const exploreRabbitCards =
     activeTab === 'Explore'
       ? [
-          ...(tabWorld.sections[1]?.cards ?? []),
-          ...tabWorld.grid.slice(0, 2),
+          ...(tabWorld.sections[1]?.cards ?? []).filter((card) => !!card.gameId),
+          ...tabWorld.grid.filter((card) => !!card.gameId).slice(0, 2),
         ].slice(0, 5)
       : [];
-  const exploreGridLeadCard = activeTab === 'Explore' ? tabWorld.grid[0] : undefined;
-  const exploreGridCards = activeTab === 'Explore' ? tabWorld.grid.slice(1) : [];
+  const exploreVisibleGrid = activeTab === 'Explore' ? tabWorld.grid.filter((card) => !!card.gameId) : [];
+  const exploreGridLeadCard = exploreVisibleGrid[0];
+  const exploreGridCards = exploreVisibleGrid.slice(1);
 
   const trendingChallengesTitle =
-    activeTab === 'Explore' ? 'Challenges' : `${activeTab} Challenges`;
+    activeTab === 'Explore' ? 'Trend Missions' : `${activeTab} Missions`;
 
   const openGameFromExplore = (gameId?: string) => {
     if (!gameId) return;
@@ -2005,7 +1871,7 @@ export const ExploreScreen: React.FC = () => {
           </Text>
         </View>
         <View style={styles.heroDots}>
-          {tabWorld.heroes.map((dotItem, index) => (
+          {visibleHeroes.map((dotItem, index) => (
             <TouchableOpacity
               key={dotItem.id}
               activeOpacity={0.85}
@@ -2141,26 +2007,120 @@ export const ExploreScreen: React.FC = () => {
               : activeTab === 'Roleplay'
                 ? 'Ship energy'
                 : SIGNAL_PULSES[0].label,
+      value: formatPulseCount(trendingSummary?.pulses?.searchHeat || 0),
       tone: tabWorld.accent,
     },
-    SIGNAL_PULSES[1],
-    SIGNAL_PULSES[2],
+    {
+      ...SIGNAL_PULSES[1],
+      value: formatPulseCount(trendingSummary?.pulses?.creatorsRising || 0),
+    },
+    {
+      ...SIGNAL_PULSES[2],
+      value: formatPulseCount(trendingSummary?.pulses?.gamesPopping || 0),
+    },
   ];
+
+  const chartColumns = useMemo(() => {
+    const topSearchRows: TrendingChartRow[] = trendingSummary?.topSearches?.length
+      ? trendingSummary.topSearches.map((item) => ({
+          label: item.query,
+          meta: `${formatSearchCount(item.count)} searches`,
+          action: () => handleSearchTopicPress(item.query),
+        }))
+      : [];
+
+    const topCreatorRows: TrendingChartRow[] = trendingSummary?.topCreators?.length
+      ? trendingSummary.topCreators.map((item) => ({
+          label: item.displayName || item.username,
+          meta:
+            item.recentActivityScore && item.recentActivityScore > 0
+              ? `${formatSearchCount(item.recentActivityScore)} recent heat`
+              : `${formatSearchCount(item.totalPlays || 0)} plays`,
+          action: () =>
+            openSearchProfile({
+              id: item.id,
+              username: item.username,
+              displayName: item.displayName || undefined,
+              avatar: item.avatar || null,
+            }),
+        }))
+      : [];
+
+    const topGameRows: TrendingChartRow[] = trendingSummary?.topGames?.length
+      ? trendingSummary.topGames.map((item) => ({
+          label: item.game.name,
+          meta: `${formatSearchCount(item.game.plays || 0)} plays`,
+          action: () => openGameFromExplore(item.game.id),
+        }))
+      : [];
+
+    return [
+      { ...CHART_COLUMNS[0], rows: topSearchRows },
+      { ...CHART_COLUMNS[1], rows: topCreatorRows },
+      { ...CHART_COLUMNS[2], rows: topGameRows },
+    ];
+  }, [trendingSummary, activeTab, tabWorld.accent]);
+
+  const trendingGridCards = useMemo(() => {
+    if (trendingSummary?.topGames?.length) {
+      return trendingSummary.topGames.map((item) => buildSearchGameCard(item.game));
+    }
+    return [];
+  }, [trendingSummary, tabWorld.grid]);
+
+  const trendingChallengeCards = useMemo<TrendingChallengeRecord[]>(() => {
+    const liveSearchChallenges =
+      trendingSummary?.topSearches?.slice(0, 2).map((item, index) => ({
+        title:
+          index === 0
+            ? `#Make something for ${item.query}`
+            : `#Remix the ${item.query} wave`,
+        subtitle: `${formatSearchCount(item.count)} searches · jump into the trend`,
+        action: () => handleSearchTopicPress(item.query),
+        thumbColors:
+          index === 0
+            ? ['#5D6B34', '#8E7A40', '#A95A4E', '#4E5E9B']
+            : ['#3A5A8F', '#8F4E69', '#4B7A59', '#7A5C3E'],
+      })) || [];
+
+    const liveGameChallenges =
+      trendingSummary?.topGames?.slice(0, 2).map((item, index) => ({
+        title:
+          index === 0
+            ? `#Beat ${item.game.name} before it cools`
+            : `#Can you top ${item.game.name}?`,
+        subtitle: `${formatSearchCount(item.game.plays || 0)} plays · open the hot game`,
+        action: () => openGameFromExplore(item.game.id),
+        thumbColors:
+          index === 0
+            ? ['#5B3F7A', '#3D6C8F', '#8B5A42', '#556B3D']
+            : ['#314A80', '#6D3E6D', '#516B40', '#7A5A3A'],
+      })) || [];
+
+    return [...liveSearchChallenges, ...liveGameChallenges].slice(0, 2);
+  }, [trendingSummary]);
+
+  const trendingDetailTitle =
+    trendingDetailMode === 'searches'
+      ? 'Top Searches'
+      : trendingDetailMode === 'creators'
+        ? 'Top Creators'
+        : trendingDetailMode === 'games'
+          ? trendingSectionTitle
+          : '';
 
   const previewLabel = getPreviewLabel(activeTab, activeChip);
 
   const searchGameCards = useMemo(() => searchGames.map((game) => buildSearchGameCard(game)), [searchGames]);
   const searchTopTopics = useMemo(() => {
-    const seeded = buildTrendingSearchTopics(liveGames, discoverLaneBuckets, trackedSearchTopics);
-    const labels = new Set(seeded.map((topic) => topic.label.toLowerCase()));
-    const fallbackTopics = SEARCH_TREND_FALLBACKS.filter((term) => !labels.has(term.toLowerCase())).map((term) => ({
-      id: `fallback:${term}`,
-      label: term,
-      meta: buildHeroSearchCount(term),
-      hot: ['roblox', 'minecraft', 'goon'].includes(term),
+    return trackedSearchTopics.slice(0, 12).map((topic, index) => ({
+      id: `tracked:${topic.query}`,
+      label: topic.query,
+      meta: `${formatSearchCount(topic.count || 0)} searches`,
+      hot: index < 3,
+      rawCount: topic.count,
     }));
-    return [...seeded, ...fallbackTopics].slice(0, 12);
-  }, [liveGames, discoverLaneBuckets, trackedSearchTopics]);
+  }, [trackedSearchTopics]);
 
   const allSearchResultCount = searchCreators.length + searchGames.length;
 
@@ -2214,6 +2174,7 @@ export const ExploreScreen: React.FC = () => {
   useEffect(() => {
     setHeroIndex(0);
     setActiveChip(tabWorld.defaultChip);
+    setTrendingDetailMode(null);
   }, [activeTab]);
 
   const loadLiveGames = async () => {
@@ -2252,6 +2213,15 @@ export const ExploreScreen: React.FC = () => {
     }
   };
 
+  const loadTrendingSummary = async (tab: (typeof PRIMARY_TABS)[number]) => {
+    try {
+      const summary = (await gamesApi.trendingSummary(tab, 5)) as TrendingSummaryResponse;
+      setTrendingSummary(summary);
+    } catch (error) {
+      setTrendingSummary(null);
+    }
+  };
+
   const loadTrendingSearchTopics = async () => {
     try {
       const data = await searchApi.trending(12);
@@ -2264,7 +2234,7 @@ export const ExploreScreen: React.FC = () => {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadLiveGames(), loadDiscoverLanes(activeTab), loadTrendingSearchTopics()]);
+      await Promise.all([loadLiveGames(), loadDiscoverLanes(activeTab), loadTrendingSearchTopics(), loadTrendingSummary(activeTab)]);
     } finally {
       setRefreshing(false);
     }
@@ -2275,10 +2245,11 @@ export const ExploreScreen: React.FC = () => {
 
     const bootstrap = async () => {
       try {
-        const [gamesData, feedData, trendingSearchData] = await Promise.all([
+        const [gamesData, feedData, trendingSearchData, trendingSummaryData] = await Promise.all([
           gamesApi.list(120, 0, { sort: 'discover' }),
           feed.global(40).catch(() => ({ activity: [] })),
           searchApi.trending(12).catch(() => ({ topics: [] })),
+          gamesApi.trendingSummary(activeTab, 5).catch(() => null),
         ]);
         if (!active) return;
         const activity = (feedData.activity || []) as ExploreFeedActivityRecord[];
@@ -2290,11 +2261,13 @@ export const ExploreScreen: React.FC = () => {
         const gamesById = new Map(allGames.map((game) => [game.id, game]));
         setTrendingGames(buildTrendingGamesFromActivity(activity, gamesById));
         setTrackedSearchTopics(Array.isArray(trendingSearchData?.topics) ? trendingSearchData.topics : []);
+        setTrendingSummary(trendingSummaryData);
       } catch (error) {
         if (active) {
           setLiveGames([]);
           setTrendingGames([]);
           setTrackedSearchTopics([]);
+          setTrendingSummary(null);
         }
       }
     };
@@ -2308,6 +2281,7 @@ export const ExploreScreen: React.FC = () => {
 
   useEffect(() => {
     loadDiscoverLanes(activeTab);
+    loadTrendingSummary(activeTab);
   }, [activeTab]);
 
   useEffect(() => {
@@ -2493,7 +2467,7 @@ export const ExploreScreen: React.FC = () => {
                     <Text style={styles.searchMetaCount}>{allSearchResultCount} found</Text>
                   </View>
                   <Text style={styles.searchSummaryText}>
-                    Search is now looking across real creator accounts and published games, not the editorial Explore mock cards.
+                    Search across creators, games, and the ideas people are building right now.
                   </Text>
                 </View>
 
@@ -2627,7 +2601,7 @@ export const ExploreScreen: React.FC = () => {
                     <Text style={styles.searchMetaTitle}>Search creators and games</Text>
                   </View>
                   <Text style={styles.searchSummaryText}>
-                    This should feel like a real discovery surface, not just filtering whatever Explore already had on screen.
+                    Find creators, games, and the trends people are typing into GameTok.
                   </Text>
                 </View>
 
@@ -2638,24 +2612,32 @@ export const ExploreScreen: React.FC = () => {
                       <Text style={styles.searchSectionEyebrow}>Hot Search Trends</Text>
                     </View>
                   </View>
-                  <View style={styles.searchTrendList}>
-                    {searchTopTopics.map((topic) => (
-                      <TouchableOpacity key={topic.id} onPress={() => handleSearchTopicPress(topic.label)} style={styles.searchTrendRow}>
-                        <View style={styles.searchTrendIconWrap}>
-                          <Ionicons
-                            name={topic.hot ? 'flame' : 'search'}
-                            size={18}
-                            color={topic.hot ? '#FB923C' : 'rgba(255,255,255,0.72)'}
-                          />
-                        </View>
-                        <View style={styles.searchTrendCopy}>
-                          <Text style={styles.searchTrendLabel}>{topic.label}</Text>
-                          <Text style={styles.searchTrendMeta}>{topic.meta}</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {searchTopTopics.length ? (
+                    <View style={styles.searchTrendList}>
+                      {searchTopTopics.map((topic) => (
+                        <TouchableOpacity key={topic.id} onPress={() => handleSearchTopicPress(topic.label)} style={styles.searchTrendRow}>
+                          <View style={styles.searchTrendIconWrap}>
+                            <Ionicons
+                              name={topic.hot ? 'flame' : 'search'}
+                              size={18}
+                              color={topic.hot ? '#FB923C' : 'rgba(255,255,255,0.72)'}
+                            />
+                          </View>
+                          <View style={styles.searchTrendCopy}>
+                            <Text style={styles.searchTrendLabel}>{topic.label}</Text>
+                            <Text style={styles.searchTrendMeta}>{topic.meta}</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    <View style={styles.searchEmptyState}>
+                      <Ionicons name="pulse-outline" size={28} color="rgba(255,255,255,0.34)" />
+                      <Text style={styles.searchEmptyTitle}>No search trends yet</Text>
+                      <Text style={styles.searchEmptyText}>Trends will appear after people start searching.</Text>
+                    </View>
+                  )}
                 </View>
               </>
             )}
@@ -2667,7 +2649,7 @@ export const ExploreScreen: React.FC = () => {
           </View>
         ) : null}
 
-        {!showSearchExperience && !isTrendingView ? (
+        {!showSearchExperience && !isTrendingView && hero ? (
           <View style={styles.heroWrap} {...heroPanResponder.panHandlers}>
             <TouchableOpacity activeOpacity={0.9} onPress={() => openGameFromExplore(hero.gameId)}>
               <View style={styles.heroCardFrame}>
@@ -2686,6 +2668,146 @@ export const ExploreScreen: React.FC = () => {
 
         {!showSearchExperience && isTrendingView ? (
           <>
+            {trendingDetailMode ? (
+              <View style={[styles.section, styles.leadSection]}>
+                <View style={styles.sectionHeader}>
+                  <TouchableOpacity onPress={() => setTrendingDetailMode(null)} style={styles.trendingBackButton}>
+                    <Ionicons name="chevron-back" size={18} color="#FFF" />
+                  </TouchableOpacity>
+                  <Text style={styles.sectionTitle}>{trendingDetailTitle}</Text>
+                </View>
+
+                {trendingDetailMode === 'searches' && searchTopTopics.length ? (
+                  <View style={styles.searchTrendList}>
+                    {searchTopTopics.map((topic) => (
+                      <TouchableOpacity key={topic.id} onPress={() => handleSearchTopicPress(topic.label)} style={styles.searchTrendRow}>
+                        <View style={styles.searchTrendIconWrap}>
+                          <Ionicons
+                            name={topic.hot ? 'flame' : 'search'}
+                            size={18}
+                            color={topic.hot ? '#FB923C' : 'rgba(255,255,255,0.72)'}
+                          />
+                        </View>
+                        <View style={styles.searchTrendCopy}>
+                          <Text style={styles.searchTrendLabel}>{topic.label}</Text>
+                          <Text style={styles.searchTrendMeta}>{topic.meta}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.5)" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                {trendingDetailMode === 'searches' && !searchTopTopics.length ? (
+                  <View style={styles.searchEmptyState}>
+                    <Ionicons name="pulse-outline" size={28} color="rgba(255,255,255,0.34)" />
+                    <Text style={styles.searchEmptyTitle}>No search trends yet</Text>
+                    <Text style={styles.searchEmptyText}>This fills from real searches once people use Explore search.</Text>
+                  </View>
+                ) : null}
+
+                {trendingDetailMode === 'creators' && (trendingSummary?.topCreators || []).length ? (
+                  <View style={styles.creatorResultsList}>
+                    {(trendingSummary?.topCreators || []).map((creator) => {
+                      const isSelf = creator.id === user?.id;
+                      const isFollowed = followedCreatorIds.has(creator.id);
+                      const isFollowBusy = followLoadingIds.has(creator.id);
+                      return (
+                        <TouchableOpacity
+                          key={creator.id}
+                          activeOpacity={0.88}
+                          onPress={() =>
+                            openSearchProfile({
+                              id: creator.id,
+                              username: creator.username,
+                              displayName: creator.displayName || undefined,
+                              avatar: creator.avatar || null,
+                            })
+                          }
+                          style={styles.creatorResultRow}
+                        >
+                          {creator.avatar ? (
+                            <Image source={{ uri: creator.avatar }} style={styles.creatorAvatar} />
+                          ) : (
+                            <View style={styles.creatorAvatarFallback}>
+                              <Text style={styles.creatorAvatarInitial}>
+                                {(creator.username || creator.displayName || '?').charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={styles.creatorCopy}>
+                            <Text style={styles.creatorUsername} numberOfLines={1}>
+                              @{creator.username}
+                            </Text>
+                            {!!creator.displayName && creator.displayName !== creator.username ? (
+                              <Text style={styles.creatorDisplayName} numberOfLines={1}>
+                                {creator.displayName}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <TouchableOpacity
+                            disabled={isSelf || isFollowed || isFollowBusy}
+                            onPress={() => handleFollowCreator(creator.id)}
+                            style={[styles.followButton, (isSelf || isFollowed) && styles.followButtonMuted]}
+                          >
+                            <Text style={[styles.followButtonText, (isSelf || isFollowed) && styles.followButtonTextMuted]}>
+                              {isSelf ? 'You' : isFollowed ? 'Following' : isFollowBusy ? '...' : 'Follow'}
+                            </Text>
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : null}
+                {trendingDetailMode === 'creators' && !(trendingSummary?.topCreators || []).length ? (
+                  <View style={styles.searchEmptyState}>
+                    <Ionicons name="people-outline" size={28} color="rgba(255,255,255,0.34)" />
+                    <Text style={styles.searchEmptyTitle}>No creator heat yet</Text>
+                    <Text style={styles.searchEmptyText}>Creators will rank here from real published games and activity.</Text>
+                  </View>
+                ) : null}
+
+                {trendingDetailMode === 'games' && trendingGridCards.length ? (
+                  <View style={styles.trendingGrid}>
+                    {trendingGridCards.map((item, index) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        activeOpacity={0.9}
+                        onPress={() => openGameFromExplore(item.gameId)}
+                        style={[
+                          ...getGridCardStyles(index, true),
+                          { backgroundColor: getCardSurfaceTone(item) },
+                        ]}
+                      >
+                        <ExploreMediaStage
+                          title={item.title}
+                          accent={item.accent}
+                          mediaKind={item.mediaKind}
+                          imageUrl={item.imageUrl}
+                          videoUrl={item.videoUrl}
+                          previewLabel={previewLabel}
+                          badgeLabel={tabWorld.cardLabel}
+                          badgeTone={tabWorld.accent}
+                          badgeBackground={tabWorld.accentSoft}
+                          fullBleed
+                          titleOverlay={item.title}
+                          subtitleOverlay={item.subtitle}
+                          creatorOverlay={item.creator}
+                          metricsOverlay={`${item.likes} likes · ${item.plays}`}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                {trendingDetailMode === 'games' && !trendingGridCards.length ? (
+                  <View style={styles.searchEmptyState}>
+                    <Ionicons name="game-controller-outline" size={28} color="rgba(255,255,255,0.34)" />
+                    <Text style={styles.searchEmptyTitle}>No trending games yet</Text>
+                    <Text style={styles.searchEmptyText}>This will populate from real plays and published games.</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : (
+            <>
             <View style={[styles.section, styles.leadSection]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>On The Radar</Text>
@@ -2700,8 +2822,21 @@ export const ExploreScreen: React.FC = () => {
                 ))}
               </ScrollView>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartRow}>
-                {CHART_COLUMNS.map((column) => (
-                  <LinearGradient key={column.title} colors={column.colors} style={[styles.chartCard, chartCardTone]}>
+                {chartColumns.map((column) => (
+                  <TouchableOpacity
+                    key={column.title}
+                    activeOpacity={0.92}
+                    onPress={() =>
+                      setTrendingDetailMode(
+                        column.title === 'Top Searches'
+                          ? 'searches'
+                          : column.title === 'Top Creators'
+                            ? 'creators'
+                            : 'games',
+                      )
+                    }
+                  >
+                  <LinearGradient colors={column.colors} style={[styles.chartCard, chartCardTone]}>
                     <View style={styles.chartAccentOrb} />
                     <View style={[styles.chartSignalBar, { backgroundColor: tabWorld.accent }]} />
                     <View style={styles.chartHeader}>
@@ -2713,19 +2848,30 @@ export const ExploreScreen: React.FC = () => {
                         <Ionicons name={column.icon as any} size={14} color="rgba(255,255,255,0.8)" />
                       </View>
                     </View>
-                    {column.rows.map((row, index) => (
-                      <View key={row.label} style={[styles.chartItem, index < column.rows.length - 1 && styles.chartItemBorder]}>
-                        <View style={[styles.chartIndexBadge, { backgroundColor: `${tabWorld.accent}22`, borderColor: `${tabWorld.accent}55` }]}>
-                          <Text style={[styles.chartIndex, { color: tabWorld.accent }]}>{index + 1}</Text>
-                        </View>
-                        <View style={styles.chartItemCopy}>
-                          <Text style={styles.chartItemText}>{row.label}</Text>
-                          <Text style={styles.chartItemMeta}>{row.meta}</Text>
-                        </View>
-                        <Ionicons name="arrow-forward" size={12} color="rgba(255,255,255,0.24)" />
-                      </View>
-                    ))}
+                    {column.rows.length ? (
+                      column.rows.map((row, index) => (
+                        <TouchableOpacity
+                          key={row.label}
+                          activeOpacity={0.85}
+                          onPress={row.action}
+                          disabled={!row.action}
+                          style={[styles.chartItem, index < column.rows.length - 1 && styles.chartItemBorder]}
+                        >
+                          <View style={[styles.chartIndexBadge, { backgroundColor: `${tabWorld.accent}22`, borderColor: `${tabWorld.accent}55` }]}>
+                            <Text style={[styles.chartIndex, { color: tabWorld.accent }]}>{index + 1}</Text>
+                          </View>
+                          <View style={styles.chartItemCopy}>
+                            <Text style={styles.chartItemText}>{row.label}</Text>
+                            <Text style={styles.chartItemMeta}>{row.meta}</Text>
+                          </View>
+                          <Ionicons name="arrow-forward" size={12} color="rgba(255,255,255,0.24)" />
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <Text style={styles.chartEmptyText}>Waiting for real activity.</Text>
+                    )}
                   </LinearGradient>
+                  </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
@@ -2733,65 +2879,79 @@ export const ExploreScreen: React.FC = () => {
             <View style={[styles.section, styles.compactSection]}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>{trendingSectionTitle}</Text>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={() => setTrendingDetailMode('games')}>
                   <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
                 </TouchableOpacity>
               </View>
-              <View style={styles.trendingGrid}>
-                {tabWorld.grid.map((item, index) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    activeOpacity={0.9}
-                    onPress={() => openGameFromExplore(item.gameId)}
-                    style={[
-                      ...getGridCardStyles(index, true),
-                      { backgroundColor: getCardSurfaceTone(item) },
-                    ]}
-                  >
-                    <ExploreMediaStage
-                      title={item.title}
-                      accent={item.accent}
-                      mediaKind={item.mediaKind}
-                      imageUrl={item.imageUrl}
-                      videoUrl={item.videoUrl}
-                      previewLabel={previewLabel}
-                      badgeLabel={tabWorld.cardLabel}
-                      badgeTone={tabWorld.accent}
-                      badgeBackground={tabWorld.accentSoft}
-                      fullBleed
-                      titleOverlay={item.title}
-                      subtitleOverlay={item.subtitle}
-                      creatorOverlay={item.creator}
-                      metricsOverlay={`${item.likes} likes · ${item.plays}`}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {trendingGridCards.length ? (
+                <View style={styles.trendingGrid}>
+                  {trendingGridCards.map((item, index) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      activeOpacity={0.9}
+                      onPress={() => openGameFromExplore(item.gameId)}
+                      style={[
+                        ...getGridCardStyles(index, true),
+                        { backgroundColor: getCardSurfaceTone(item) },
+                      ]}
+                    >
+                      <ExploreMediaStage
+                        title={item.title}
+                        accent={item.accent}
+                        mediaKind={item.mediaKind}
+                        imageUrl={item.imageUrl}
+                        videoUrl={item.videoUrl}
+                        previewLabel={previewLabel}
+                        badgeLabel={tabWorld.cardLabel}
+                        badgeTone={tabWorld.accent}
+                        badgeBackground={tabWorld.accentSoft}
+                        fullBleed
+                        titleOverlay={item.title}
+                        subtitleOverlay={item.subtitle}
+                        creatorOverlay={item.creator}
+                        metricsOverlay={`${item.likes} likes · ${item.plays}`}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.searchEmptyState}>
+                  <Ionicons name="game-controller-outline" size={28} color="rgba(255,255,255,0.34)" />
+                  <Text style={styles.searchEmptyTitle}>No trending games yet</Text>
+                  <Text style={styles.searchEmptyText}>Published games will show here once they start getting plays.</Text>
+                </View>
+              )}
             </View>
 
+            {trendingChallengeCards.length ? (
             <View style={[styles.section, styles.compactSection]}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{trendingChallengesTitle}</Text>
-                <TouchableOpacity>
+                <View>
+                  <Text style={styles.sectionTitle}>{trendingChallengesTitle}</Text>
+                  <Text style={styles.sectionEyebrow}>Search waves and hot games people can jump into now.</Text>
+                </View>
+                <TouchableOpacity onPress={() => setTrendingDetailMode('searches')}>
                   <Text style={styles.moreText}>More</Text>
                 </TouchableOpacity>
               </View>
-              {CHALLENGES.map((challenge) => (
-                <TouchableOpacity key={challenge.title} style={styles.challengeCard}>
+              {trendingChallengeCards.map((challenge) => (
+                <TouchableOpacity key={challenge.title} style={styles.challengeCard} activeOpacity={0.88} onPress={challenge.action}>
                   <View style={styles.challengeHeader}>
                     <Text style={styles.challengeTitle}>{challenge.title}</Text>
                     <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
                   </View>
                   <Text style={styles.challengeSubtitle}>{challenge.subtitle}</Text>
                   <View style={styles.challengeThumbRow}>
-                    <View style={[styles.challengeThumb, { backgroundColor: '#56753A' }]} />
-                    <View style={[styles.challengeThumb, { backgroundColor: '#86824A' }]} />
-                    <View style={[styles.challengeThumb, { backgroundColor: '#B9764D' }]} />
-                    <View style={[styles.challengeThumb, { backgroundColor: '#4C5E8D' }]} />
+                    {challenge.thumbColors.map((color, index) => (
+                      <View key={`${challenge.title}:${index}`} style={[styles.challengeThumb, { backgroundColor: color }]} />
+                    ))}
                   </View>
                 </TouchableOpacity>
               ))}
             </View>
+            ) : null}
+            </>
+            )}
           </>
         ) : isExploreEditorialView ? (
           <>
@@ -2970,7 +3130,11 @@ export const ExploreScreen: React.FC = () => {
           </>
         ) : (
           <>
-            {tabWorld.sections.map((section) => (
+            {tabWorld.sections.map((section) => {
+              const visibleSectionCards = section.cards.filter((card) => !!card.gameId);
+              if (!visibleSectionCards.length) return null;
+
+              return (
               <View key={section.title} style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -2979,7 +3143,7 @@ export const ExploreScreen: React.FC = () => {
                   </TouchableOpacity>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsRow}>
-                  {section.cards.map((card, index) => (
+                  {visibleSectionCards.map((card, index) => (
                     <TouchableOpacity
                       key={card.id}
                       activeOpacity={0.9}
@@ -3009,8 +3173,10 @@ export const ExploreScreen: React.FC = () => {
                   ))}
                 </ScrollView>
               </View>
-            ))}
+            );
+            })}
 
+            {tabWorld.grid.some((item) => !!item.gameId) ? (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>{tabWorld.discoverTitle}</Text>
@@ -3019,7 +3185,7 @@ export const ExploreScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
               <View style={styles.trendingGrid}>
-                {tabWorld.grid.map((item, index) => (
+                {tabWorld.grid.filter((item) => !!item.gameId).map((item, index) => (
                   <TouchableOpacity
                     key={item.id}
                     activeOpacity={0.9}
@@ -3049,6 +3215,13 @@ export const ExploreScreen: React.FC = () => {
                 ))}
               </View>
             </View>
+            ) : (
+              <View style={styles.searchEmptyState}>
+                <Ionicons name="game-controller-outline" size={28} color="rgba(255,255,255,0.34)" />
+                <Text style={styles.searchEmptyTitle}>No games here yet</Text>
+                <Text style={styles.searchEmptyText}>Once real published games match this lane, they’ll appear here.</Text>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -3375,6 +3548,15 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  trendingBackButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginRight: 10,
   },
   searchTrendIconWrap: {
     width: 42,
@@ -4091,6 +4273,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: '600',
     marginTop: 2,
+  },
+  chartEmptyText: {
+    color: 'rgba(255,255,255,0.46)',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    paddingTop: 18,
   },
   challengeCard: {
     marginHorizontal: 16,
