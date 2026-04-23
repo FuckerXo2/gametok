@@ -425,7 +425,7 @@ type TrendingSummaryResponse = {
 
 type TrendingChartRow = {
   label: string;
-  meta: string;
+  meta?: string;
   action?: () => void;
 };
 
@@ -436,7 +436,16 @@ type TrendingChallengeRecord = {
   thumbColors: string[];
 };
 
-type TrendingDetailMode = 'searches' | 'creators' | 'games' | null;
+type TrendingDetailMode = 'searches' | 'creators' | 'games' | 'topGames' | null;
+
+type TopGamesResponse = {
+  tab: (typeof PRIMARY_TABS)[number];
+  games: Array<{
+    rank: number;
+    score: number;
+    game: ExploreGameRecord;
+  }>;
+};
 
 type ExploreDiscoverDebugResponse = {
   tab: (typeof PRIMARY_TABS)[number];
@@ -1620,6 +1629,7 @@ export const ExploreScreen: React.FC = () => {
   const [trendingGames, setTrendingGames] = useState<ExploreGameRecord[]>([]);
   const [discoverLaneBuckets, setDiscoverLaneBuckets] = useState<ExploreLaneBuckets>(EMPTY_LANE_BUCKETS);
   const [trendingSummary, setTrendingSummary] = useState<TrendingSummaryResponse | null>(null);
+  const [topGamesSummary, setTopGamesSummary] = useState<TopGamesResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const heroTranslateX = useRef(new Animated.Value(0)).current;
   const heroOpacity = useRef(new Animated.Value(1)).current;
@@ -2024,7 +2034,6 @@ export const ExploreScreen: React.FC = () => {
     const topSearchRows: TrendingChartRow[] = trendingSummary?.topSearches?.length
       ? trendingSummary.topSearches.map((item) => ({
           label: item.query,
-          meta: `${formatSearchCount(item.count)} searches`,
           action: () => handleSearchTopicPress(item.query),
         }))
       : [];
@@ -2032,10 +2041,6 @@ export const ExploreScreen: React.FC = () => {
     const topCreatorRows: TrendingChartRow[] = trendingSummary?.topCreators?.length
       ? trendingSummary.topCreators.map((item) => ({
           label: item.displayName || item.username,
-          meta:
-            item.recentActivityScore && item.recentActivityScore > 0
-              ? `${formatSearchCount(item.recentActivityScore)} recent heat`
-              : `${formatSearchCount(item.totalPlays || 0)} plays`,
           action: () =>
             openSearchProfile({
               id: item.id,
@@ -2046,10 +2051,9 @@ export const ExploreScreen: React.FC = () => {
         }))
       : [];
 
-    const topGameRows: TrendingChartRow[] = trendingSummary?.topGames?.length
-      ? trendingSummary.topGames.map((item) => ({
+    const topGameRows: TrendingChartRow[] = topGamesSummary?.games?.length
+      ? topGamesSummary.games.map((item) => ({
           label: item.game.name,
-          meta: `${formatSearchCount(item.game.plays || 0)} plays`,
           action: () => openGameFromExplore(item.game.id),
         }))
       : [];
@@ -2059,7 +2063,7 @@ export const ExploreScreen: React.FC = () => {
       { ...CHART_COLUMNS[1], rows: topCreatorRows },
       { ...CHART_COLUMNS[2], rows: topGameRows },
     ];
-  }, [trendingSummary, activeTab, tabWorld.accent]);
+  }, [trendingSummary, topGamesSummary, activeTab, tabWorld.accent]);
 
   const trendingGridCards = useMemo(() => {
     if (trendingSummary?.topGames?.length) {
@@ -2067,6 +2071,13 @@ export const ExploreScreen: React.FC = () => {
     }
     return [];
   }, [trendingSummary, tabWorld.grid]);
+
+  const topGameCards = useMemo(() => {
+    if (topGamesSummary?.games?.length) {
+      return topGamesSummary.games.map((item) => buildSearchGameCard(item.game));
+    }
+    return [];
+  }, [topGamesSummary]);
 
   const trendingChallengeCards = useMemo<TrendingChallengeRecord[]>(() => {
     const liveSearchChallenges =
@@ -2105,6 +2116,8 @@ export const ExploreScreen: React.FC = () => {
       ? 'Top Searches'
       : trendingDetailMode === 'creators'
         ? 'Top Creators'
+        : trendingDetailMode === 'topGames'
+          ? 'Top Games'
         : trendingDetailMode === 'games'
           ? trendingSectionTitle
           : '';
@@ -2215,10 +2228,15 @@ export const ExploreScreen: React.FC = () => {
 
   const loadTrendingSummary = async (tab: (typeof PRIMARY_TABS)[number]) => {
     try {
-      const summary = (await gamesApi.trendingSummary(tab, 5)) as TrendingSummaryResponse;
+      const [summary, topGames] = await Promise.all([
+        gamesApi.trendingSummary(tab, 5),
+        gamesApi.top(tab, 8),
+      ]);
       setTrendingSummary(summary);
+      setTopGamesSummary(topGames as TopGamesResponse);
     } catch (error) {
       setTrendingSummary(null);
+      setTopGamesSummary(null);
     }
   };
 
@@ -2245,11 +2263,12 @@ export const ExploreScreen: React.FC = () => {
 
     const bootstrap = async () => {
       try {
-        const [gamesData, feedData, trendingSearchData, trendingSummaryData] = await Promise.all([
+        const [gamesData, feedData, trendingSearchData, trendingSummaryData, topGamesData] = await Promise.all([
           gamesApi.list(120, 0, { sort: 'discover' }),
           feed.global(40).catch(() => ({ activity: [] })),
           searchApi.trending(12).catch(() => ({ topics: [] })),
           gamesApi.trendingSummary(activeTab, 5).catch(() => null),
+          gamesApi.top(activeTab, 8).catch(() => null),
         ]);
         if (!active) return;
         const activity = (feedData.activity || []) as ExploreFeedActivityRecord[];
@@ -2262,12 +2281,14 @@ export const ExploreScreen: React.FC = () => {
         setTrendingGames(buildTrendingGamesFromActivity(activity, gamesById));
         setTrackedSearchTopics(Array.isArray(trendingSearchData?.topics) ? trendingSearchData.topics : []);
         setTrendingSummary(trendingSummaryData);
+        setTopGamesSummary(topGamesData as TopGamesResponse | null);
       } catch (error) {
         if (active) {
           setLiveGames([]);
           setTrendingGames([]);
           setTrackedSearchTopics([]);
           setTrendingSummary(null);
+          setTopGamesSummary(null);
         }
       }
     };
@@ -2766,6 +2787,46 @@ export const ExploreScreen: React.FC = () => {
                   </View>
                 ) : null}
 
+                {trendingDetailMode === 'topGames' && topGameCards.length ? (
+                  <View style={styles.trendingGrid}>
+                    {topGameCards.map((item, index) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        activeOpacity={0.9}
+                        onPress={() => openGameFromExplore(item.gameId)}
+                        style={[
+                          ...getGridCardStyles(index, true),
+                          { backgroundColor: getCardSurfaceTone(item) },
+                        ]}
+                      >
+                        <ExploreMediaStage
+                          title={item.title}
+                          accent={item.accent}
+                          mediaKind={item.mediaKind}
+                          imageUrl={item.imageUrl}
+                          videoUrl={item.videoUrl}
+                          previewLabel={previewLabel}
+                          badgeLabel="Top Game"
+                          badgeTone="#F97316"
+                          badgeBackground="rgba(249,115,22,0.16)"
+                          fullBleed
+                          titleOverlay={item.title}
+                          subtitleOverlay={item.subtitle}
+                          creatorOverlay={item.creator}
+                          metricsOverlay=""
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                {trendingDetailMode === 'topGames' && !topGameCards.length ? (
+                  <View style={styles.searchEmptyState}>
+                    <Ionicons name="trophy-outline" size={28} color="rgba(255,255,255,0.34)" />
+                    <Text style={styles.searchEmptyTitle}>No top games yet</Text>
+                    <Text style={styles.searchEmptyText}>This will rank real published games by plays, likes, and saves.</Text>
+                  </View>
+                ) : null}
+
                 {trendingDetailMode === 'games' && trendingGridCards.length ? (
                   <View style={styles.trendingGrid}>
                     {trendingGridCards.map((item, index) => (
@@ -2817,7 +2878,6 @@ export const ExploreScreen: React.FC = () => {
                   <View key={pulse.id} style={[styles.signalPulse, { borderColor: `${pulse.tone}55` }]}>
                     <View style={[styles.signalPulseDot, { backgroundColor: pulse.tone }]} />
                     <Text style={styles.signalPulseLabel}>{pulse.label}</Text>
-                    <Text style={[styles.signalPulseValue, { color: pulse.tone }]}>{pulse.value}</Text>
                   </View>
                 ))}
               </ScrollView>
@@ -2832,7 +2892,7 @@ export const ExploreScreen: React.FC = () => {
                           ? 'searches'
                           : column.title === 'Top Creators'
                             ? 'creators'
-                            : 'games',
+                            : 'topGames',
                       )
                     }
                   >
@@ -2862,7 +2922,7 @@ export const ExploreScreen: React.FC = () => {
                           </View>
                           <View style={styles.chartItemCopy}>
                             <Text style={styles.chartItemText}>{row.label}</Text>
-                            <Text style={styles.chartItemMeta}>{row.meta}</Text>
+                            {row.meta ? <Text style={styles.chartItemMeta}>{row.meta}</Text> : null}
                           </View>
                           <Ionicons name="arrow-forward" size={12} color="rgba(255,255,255,0.24)" />
                         </TouchableOpacity>

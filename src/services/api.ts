@@ -265,6 +265,18 @@ export const games = {
     };
   },
 
+  top: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 10,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    const data = await requestJsonIfAvailable(`/games/top?${params.toString()}`);
+    return data || { tab, games: [] };
+  },
+
   // Get multiplayer-only games (for Connect screen)
   multiplayer: async (limit = 50, offset = 0) => {
     return request(`/games/multiplayer?limit=${limit}&offset=${offset}`);
