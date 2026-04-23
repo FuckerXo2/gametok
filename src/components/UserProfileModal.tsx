@@ -16,9 +16,11 @@ import {
   Alert,
   Dimensions,
   StatusBar,
+  Share,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -65,6 +67,15 @@ interface ChatMessage {
 const GAMES_HOST = 'https://games.gametok.co';
 
 const SUGGESTED_FRIENDS: any[] = [];
+const PROFILE_GRID_GAP = 2;
+const PROFILE_GRID_SIZE = (Dimensions.get('window').width - PROFILE_GRID_GAP * 4) / 3;
+
+const formatCompactNumber = (value?: number | null) => {
+  if (typeof value !== 'number') return '—';
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+  return String(value);
+};
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user, onFriendStatusChange }) => {
   const insets = useSafeAreaInsets();
@@ -140,6 +151,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
   const handleBlock = () => {
     setShowBlockConfirm(true);
+  };
+
+  const shareProfile = async () => {
+    if (!user) return;
+    try {
+      await Share.share({
+        message: `Check out @${user.username} on GameTok: https://games.gametok.co/u/${user.username}`,
+      });
+    } catch (error) {
+      console.log('Failed to share profile:', error);
+    }
   };
 
   const confirmBlockAction = async () => {
@@ -363,155 +385,178 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     <SlideRightModal visible={visible} onClose={onClose}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={{ paddingHorizontal: 16, paddingTop: insets.top + 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={onClose}>
+          <View style={[styles.profileShell, { paddingTop: insets.top + 10 }]}>
+            <View style={styles.profileTopBar}>
+              <TouchableOpacity style={[styles.topIconButton, { backgroundColor: colors.surface }]} onPress={onClose} activeOpacity={0.85}>
                 <Ionicons name="chevron-back" size={24} color={colors.text} />
               </TouchableOpacity>
-              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@{user.username}</Text>
-              <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={showOptions}>
-                <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
+              <Text style={[styles.topUsername, { color: colors.text }]}>@{user.username}</Text>
+              <TouchableOpacity style={[styles.topIconButton, { backgroundColor: colors.surface }]} onPress={showOptions} activeOpacity={0.85}>
+                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
               </TouchableOpacity>
             </View>
 
-            {/* Profile Info Row */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <Avatar uri={user.avatar} size={86} />
+            <View style={styles.heroCard}>
+              <LinearGradient
+                colors={isDark ? ['rgba(168,85,247,0.18)', 'rgba(0,229,255,0.08)', 'rgba(255,255,255,0.02)'] : ['rgba(168,85,247,0.16)', 'rgba(0,229,255,0.12)', 'rgba(0,0,0,0.03)']}
+                style={[styles.heroGlow, { borderColor: colors.border }]}
+              >
+                <View style={[styles.orbLarge, { backgroundColor: isDark ? 'rgba(168,85,247,0.14)' : 'rgba(168,85,247,0.12)' }]} />
+                <View style={[styles.orbSmall, { backgroundColor: isDark ? 'rgba(37,244,238,0.1)' : 'rgba(37,244,238,0.14)' }]} />
+                <View style={[styles.heroNoiseLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
 
-              <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>
-                <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
-                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{userStats?.followers ?? '—'}</Text>
-                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Followers</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
-                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{userStats?.following ?? '—'}</Text>
-                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Following</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Name & Bio */}
-            <View style={{ marginBottom: 16 }}>
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{user.displayName || user.username}</Text>
-              {user.bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{user.bio}</Text> : (
-                <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4 }}>🎮 GameTok Player</Text>
-              )}
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,214,10,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                  <Ionicons name="trophy" size={12} color="#ffd60a" />
-                  <Text style={{ color: '#ffd60a', fontSize: 13, fontWeight: '700' }}>Level {userStats?.level ?? 1}</Text>
+                <View style={styles.avatarHitbox}>
+                  <View style={[styles.avatarRing, { borderColor: colors.primary }]}>
+                    <Avatar uri={user.avatar} size={98} />
+                  </View>
+                  {user.isOnline && <View style={styles.onlineDot} />}
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(249,115,22,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                  <Ionicons name="flame" size={14} color="#f97316" />
-                  <Text style={{ color: '#f97316', fontSize: 13, fontWeight: '600' }}>{userStats?.streak ?? 0} day streak</Text>
-                </View>
-              </View>
-            </View>
 
-            {/* Action Buttons */}
-            {isCurrentMe ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}
-                  onPress={() => Alert.alert('Notice', 'Go to the Profile tab to edit your profile.')}
-                >
-                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Edit Profile</Text>
-                </TouchableOpacity>
-              </View>
-            ) : loadingFollow ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color={colors.textSecondary} />
-                </View>
-                <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color={colors.textSecondary} />
-                </View>
-              </View>
-            ) : isAdded ? (
-              /* When following: show Challenge + Message */
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-                  onPress={() => {
-                    // TODO: implement challenge flow
-                    Alert.alert('Challenge', `Challenge @${user.username} to a game!`);
-                  }}
-                >
-                  <Ionicons name="game-controller" size={16} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Challenge</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}
-                  onPress={openChat}
-                >
-                  <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
-                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Message</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              /* When not following: show Follow + Message */
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-                <AnimatedButton
-                  style={{ flex: 1, backgroundColor: '#a855f7', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-                  onPress={handleAdd}
-                  disabled={isToggling}
-                >
-                  {isToggling ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="person-add" size={16} color="#fff" />
-                      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Follow</Text>
-                    </>
-                  )}
-                </AnimatedButton>
-              </View>
-            )}
-          </View>
+                <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+                  {user.displayName || user.username}
+                </Text>
+                <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{user.username}</Text>
+                <Text style={[styles.bioText, { color: user.bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
+                  {user.bio || 'GameTok player with strange taste and a sharp scroll instinct.'}
+                </Text>
 
-          {/* Saved Games Section */}
-          <View style={{ marginTop: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
-              <Ionicons name="heart" size={18} color={colors.text} />
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>Liked Games</Text>
-            </View>
+                <View style={[styles.vibeRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', borderColor: colors.border }]}>
+                  <View style={[styles.vibeChip, { backgroundColor: 'rgba(255,214,10,0.14)' }]}>
+                    <Ionicons name="trophy-outline" size={13} color="#ffd60a" />
+                    <Text style={[styles.vibeChipText, { color: colors.text }]}>Level {userStats?.level ?? 1}</Text>
+                  </View>
+                  <View style={[styles.vibeChip, { backgroundColor: 'rgba(249,115,22,0.16)' }]}>
+                    <Ionicons name="flame-outline" size={13} color="#f97316" />
+                    <Text style={[styles.vibeChipText, { color: colors.text }]}>{userStats?.streak ?? 0} day streak</Text>
+                  </View>
+                </View>
 
-            {loadingGames ? (
-              <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
-            ) : userGames.length > 0 ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, paddingTop: 2 }}>
-                {userGames.map(game => {
-                  const thumbUri = game.thumbnail
-                    ? (game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`)
-                    : null;
-                  return (
+                <View style={[styles.statsRow, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)' }]}>
+                  <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
+                    <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.following)}</Text>
+                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
+                  </TouchableOpacity>
+                  <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+                  <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
+                    <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.followers)}</Text>
+                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+                  </TouchableOpacity>
+                  <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userGames.length)}</Text>
+                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Liked</Text>
+                  </View>
+                </View>
+
+                {isCurrentMe ? (
+                  <View style={styles.profileActions}>
                     <TouchableOpacity
-                      key={game.id}
-                      style={{ width: (Dimensions.get('window').width - 4) / 3, aspectRatio: 1, backgroundColor: game.color || colors.surface }}
-                      onPress={() => {
-                        setPlayingGame({ id: game.id, name: game.name, color: game.color || '#a855f7' });
-                        setGameLoaded(false);
-                      }}
+                      style={[styles.primaryAction, { backgroundColor: colors.text }]}
+                      onPress={() => Alert.alert('Notice', 'Go to the Profile tab to edit your profile.')}
+                      activeOpacity={0.9}
                     >
-                      {thumbUri ? (
-                        <Image source={{ uri: thumbUri }} style={{ width: '100%', height: '100%' }} />
+                      <Text style={[styles.primaryActionText, { color: colors.background }]}>Edit profile</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                      onPress={shareProfile}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
+                      <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : loadingFollow ? (
+                  <View style={styles.profileActions}>
+                    <View style={[styles.primaryAction, { backgroundColor: colors.surface }]}>
+                      <ActivityIndicator size="small" color={colors.textSecondary} />
+                    </View>
+                    <View style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                      <ActivityIndicator size="small" color={colors.textSecondary} />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.profileActions}>
+                    <AnimatedButton
+                      style={[styles.primaryAction, { backgroundColor: isAdded ? colors.text : colors.primary }]}
+                      onPress={isAdded ? openChat : handleAdd}
+                      disabled={isToggling}
+                    >
+                      {isToggling ? (
+                        <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                          <Ionicons name="game-controller" size={32} color="rgba(255,255,255,0.5)" />
+                        <View style={styles.actionContent}>
+                          <Ionicons name={isAdded ? 'chatbubble-outline' : 'person-add'} size={16} color="#fff" />
+                          <Text style={styles.primaryActionLabel}>{isAdded ? 'Message' : 'Follow'}</Text>
                         </View>
                       )}
+                    </AnimatedButton>
+
+                    <TouchableOpacity
+                      style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                      onPress={isAdded ? shareProfile : openChat}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons name={isAdded ? 'arrow-redo-outline' : 'game-controller-outline'} size={17} color={colors.text} />
+                      <Text style={[styles.secondaryActionText, { color: colors.text }]}>{isAdded ? 'Share' : 'Challenge'}</Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={{ alignItems: 'center', padding: 40 }}>
-                <Text style={{ color: colors.textSecondary }}>No games yet.</Text>
-              </View>
-            )}
+                  </View>
+                )}
+              </LinearGradient>
+            </View>
           </View>
+
+          <View style={styles.contentIntro}>
+            <Text style={[styles.contentEyebrow, { color: colors.textSecondary }]}>THEIR TASTE</Text>
+            <Text style={[styles.contentHeading, { color: colors.text }]}>Liked Games</Text>
+            <Text style={[styles.contentBlurb, { color: colors.textSecondary }]}>
+              Games they kept around because something about them hit.
+            </Text>
+          </View>
+
+          {loadingGames ? (
+            <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
+          ) : userGames.length > 0 ? (
+            <View style={styles.gameGrid}>
+              {userGames.map(game => {
+                const thumbUri = game.thumbnail
+                  ? (game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`)
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={game.id}
+                    style={styles.gameTile}
+                    onPress={() => {
+                      setPlayingGame({ id: game.id, name: game.name, color: game.color || '#a855f7' });
+                      setGameLoaded(false);
+                    }}
+                    activeOpacity={0.9}
+                  >
+                    {thumbUri ? (
+                      <Image source={{ uri: thumbUri }} style={[styles.gameTileImage, { backgroundColor: game.color || colors.surface }]} />
+                    ) : (
+                      <View style={[styles.gameTileImage, styles.gameTileFallback, { backgroundColor: game.color || colors.surface }]}>
+                        <Ionicons name="game-controller" size={32} color="rgba(255,255,255,0.5)" />
+                      </View>
+                    )}
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0.8)']} style={styles.gameTileOverlay}>
+                      <Text style={styles.gameTileTitle} numberOfLines={2}>{game.name}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <View style={[styles.emptyIconBubble, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="heart-outline" size={32} color={colors.textSecondary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>No liked games yet</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                Their favorites have not landed here yet.
+              </Text>
+            </View>
+          )}
         </ScrollView>
       </View>
 
@@ -655,6 +700,291 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  profileShell: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  profileTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  topIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topUsername: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  heroCard: {
+    borderRadius: 34,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 10,
+  },
+  heroGlow: {
+    alignItems: 'center',
+    borderRadius: 34,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingTop: 26,
+    paddingBottom: 22,
+    position: 'relative',
+  },
+  orbLarge: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    right: -30,
+    top: -24,
+  },
+  orbSmall: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    left: -18,
+    bottom: 56,
+  },
+  heroNoiseLine: {
+    position: 'absolute',
+    width: 160,
+    height: 1,
+    top: 86,
+    right: 28,
+    opacity: 0.75,
+  },
+  avatarHitbox: {
+    marginBottom: 12,
+    position: 'relative',
+  },
+  avatarRing: {
+    padding: 5,
+    borderWidth: 2,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  onlineDot: {
+    position: 'absolute',
+    right: 6,
+    bottom: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#4CD964',
+    borderWidth: 3,
+    borderColor: '#000',
+  },
+  displayName: {
+    fontSize: 29,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+    maxWidth: '90%',
+    textAlign: 'center',
+  },
+  handleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 4,
+    letterSpacing: 0.2,
+  },
+  bioText: {
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 13,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  vibeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  vibeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  vibeChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    marginBottom: 18,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+    opacity: 0.8,
+  },
+  statNumber: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  profileActions: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 10,
+  },
+  primaryAction: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryActionText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  primaryActionLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  secondaryAction: {
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  actionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contentIntro: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 10,
+  },
+  contentEyebrow: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+  },
+  contentHeading: {
+    fontSize: 27,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+    marginTop: 4,
+  },
+  contentBlurb: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 6,
+    maxWidth: 280,
+  },
+  gameGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 5,
+    paddingTop: 4,
+    paddingBottom: 14,
+  },
+  gameTile: {
+    width: PROFILE_GRID_SIZE,
+    height: PROFILE_GRID_SIZE,
+    margin: PROFILE_GRID_GAP / 2,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+  },
+  gameTileImage: {
+    width: '100%',
+    height: '100%',
+  },
+  gameTileFallback: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gameTileOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  gameTileTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 15,
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowRadius: 10,
+    textShadowOffset: { width: 0, height: 2 },
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingHorizontal: 34,
+    paddingTop: 48,
+    paddingBottom: 90,
+  },
+  emptyIconBubble: {
+    width: 78,
+    height: 78,
+    borderRadius: 26,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+    textAlign: 'center',
+  },
   headerSection: { height: 380 },
   absoluteTopButtons: {
     position: 'absolute',
