@@ -106,21 +106,40 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [createdRes, playedRes, likedRes, userRes] = await Promise.all([
+      const [createdRes, playedRes, likedRes, userRes] = await Promise.allSettled([
         user?.id ? usersApi.created(user.id) : Promise.resolve({ games: [] }),
         user?.id ? usersApi.played(user.id) : Promise.resolve({ games: [] }),
         user?.id ? likesApi.userLikes(user.id) : Promise.resolve({ games: [] }),
         user?.id ? usersApi.get(user.id) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
       ]);
-      setCreatedGamesList(createdRes.games || []);
-      setPlayedGamesList(playedRes.games || []);
-      setLikedGamesList(likedRes.games || []);
-      if (userRes?.stats) {
-        setSocialStats({
-          followers: userRes.stats.followers || 0,
-          following: userRes.stats.following || 0,
-        });
+
+      if (createdRes.status === 'fulfilled') {
+        setCreatedGamesList(createdRes.value?.games || []);
+      } else {
+        console.log('[Profile] created fetch failed:', createdRes.reason?.message || createdRes.reason);
       }
+
+      if (playedRes.status === 'fulfilled') {
+        setPlayedGamesList(playedRes.value?.games || []);
+      } else {
+        console.log('[Profile] played fetch failed:', playedRes.reason?.message || playedRes.reason);
+      }
+
+      if (likedRes.status === 'fulfilled') {
+        setLikedGamesList(likedRes.value?.games || []);
+      } else {
+        console.log('[Profile] liked fetch failed:', likedRes.reason?.message || likedRes.reason);
+      }
+
+      if (userRes.status === 'fulfilled' && userRes.value?.stats) {
+        setSocialStats({
+          followers: userRes.value.stats.followers || 0,
+          following: userRes.value.stats.following || 0,
+        });
+      } else if (userRes.status === 'rejected') {
+        console.log('[Profile] user stats fetch failed:', userRes.reason?.message || userRes.reason);
+      }
+
       lastFetchRef.current = Date.now();
     } catch (e) {
       console.log('Failed to fetch data:', e);
