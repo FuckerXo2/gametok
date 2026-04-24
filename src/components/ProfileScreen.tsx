@@ -31,8 +31,10 @@ import { UserProfileModal } from './UserProfileModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 2;
-const NUM_COLUMNS = 3;
-const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
+const GRID_SIDE_PADDING = 6;
+const NUM_COLUMNS = 2;
+const TILE_WIDTH = (SCREEN_WIDTH - GRID_SIDE_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+const TILE_HEIGHT = TILE_WIDTH * 1.22;
 const GAMES_HOST = 'https://games.gametok.co';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
@@ -163,9 +165,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     }
   };
 
-  const renderGameTile = ({ item }: { item: Game }) => (
+  const renderGameTile = ({ item, index }: { item: Game; index: number }) => (
     <TouchableOpacity
-      style={styles.gameTile}
+      style={[styles.gameTile, index % NUM_COLUMNS === NUM_COLUMNS - 1 && styles.gameTileLastInRow]}
       activeOpacity={0.9}
       onPress={() => openProfileGame(item)}
     >
@@ -298,7 +300,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Played Games</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
               {[1, 2, 3, 4, 5, 6].map(i => (
-                <View key={i} style={{ width: TILE_SIZE, height: TILE_SIZE, backgroundColor: colors.surface, borderRadius: 4 }} />
+                <View key={i} style={{ width: TILE_WIDTH, height: TILE_HEIGHT, backgroundColor: colors.surface, borderRadius: 4 }} />
               ))}
             </View>
           </View>
@@ -702,17 +704,21 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   gameGrid: {
-    paddingHorizontal: 5,
+    paddingHorizontal: GRID_SIDE_PADDING,
     paddingTop: 0,
     paddingBottom: 14,
   },
   gameTile: {
-    width: TILE_SIZE,
-    height: TILE_SIZE,
-    margin: GRID_GAP / 2,
-    borderRadius: 14,
+    width: TILE_WIDTH,
+    height: TILE_HEIGHT,
+    marginBottom: GRID_GAP,
+    marginRight: GRID_GAP,
+    borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#111',
+  },
+  gameTileLastInRow: {
+    marginRight: 0,
   },
   gameTileImage: {
     width: '100%',
@@ -721,14 +727,14 @@ const styles = StyleSheet.create({
   gameTileOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   gameTileTitle: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: '800',
-    lineHeight: 14,
+    lineHeight: 18,
     textShadowColor: 'rgba(0,0,0,0.55)',
     textShadowRadius: 10,
     textShadowOffset: { width: 0, height: 2 },
