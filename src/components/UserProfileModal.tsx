@@ -108,7 +108,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [showReportModal, setShowReportModal] = useState(false);
   const [userStats, setUserStats] = useState<{ followers: number; following: number; level: number; streak: number } | null>(null);
   const [userGames, setUserGames] = useState<any[]>([]);
+  const [createdGames, setCreatedGames] = useState<any[]>([]);
   const [loadingGames, setLoadingGames] = useState(false);
+  const [profileTab, setProfileTab] = useState<'created' | 'liked'>('created');
   const [loadingFollow, setLoadingFollow] = useState(true);
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
   const [showOptionsModal, setShowOptionsModal] = useState(false);
@@ -155,10 +157,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
       }).catch(() => { }).finally(() => setLoadingFollow(false));
 
       setLoadingGames(true);
-      import('../services/api').then(({ likes }) => {
-        likes.userLikes(activeUser.id).then((res: any) => {
-          if (res?.games) {
-            setUserGames(res.games);
+      import('../services/api').then(({ likes, users: usersApi }) => {
+        Promise.allSettled([
+          likes.userLikes(activeUser.id),
+          usersApi.created(activeUser.id),
+        ]).then(([likedRes, createdRes]) => {
+          if (likedRes.status === 'fulfilled' && likedRes.value?.games) {
+            setUserGames(likedRes.value.games);
+          } else {
+            setUserGames([]);
+          }
+
+          if (createdRes.status === 'fulfilled' && createdRes.value?.games) {
+            setCreatedGames(createdRes.value.games);
+          } else {
+            setCreatedGames([]);
           }
         }).catch(() => { }).finally(() => setLoadingGames(false));
       });
@@ -456,8 +469,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                   <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
                 </TouchableOpacity>
                 <View style={styles.statItem}>
-                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userGames.length)}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Liked</Text>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(createdGames.length)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Created</Text>
                 </View>
               </View>
 
@@ -519,15 +532,36 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             </View>
           </View>
 
+          <View style={[styles.tabsShell, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <TouchableOpacity
+              style={[styles.contentTab, profileTab === 'created' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              activeOpacity={0.9}
+              onPress={() => setProfileTab('created')}
+            >
+              <Ionicons name="grid-outline" size={22} color={profileTab === 'created' ? colors.text : colors.textSecondary} />
+              <Text style={[styles.contentTabText, { color: profileTab === 'created' ? colors.text : colors.textSecondary }]}>Created</Text>
+              {profileTab === 'created' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.contentTab, profileTab === 'liked' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              activeOpacity={0.9}
+              onPress={() => setProfileTab('liked')}
+            >
+              <Ionicons name="heart-outline" size={22} color={profileTab === 'liked' ? colors.text : colors.textSecondary} />
+              <Text style={[styles.contentTabText, { color: profileTab === 'liked' ? colors.text : colors.textSecondary }]}>Liked</Text>
+              {profileTab === 'liked' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Liked</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{profileTab === 'created' ? 'Created' : 'Liked'}</Text>
           </View>
 
           {loadingGames ? (
             <ActivityIndicator style={{ marginTop: 20 }} color={colors.textSecondary} />
-          ) : userGames.length > 0 ? (
+          ) : (profileTab === 'created' ? createdGames : userGames).length > 0 ? (
             <View style={styles.gameGrid}>
-              {userGames.map(game => {
+              {(profileTab === 'created' ? createdGames : userGames).map(game => {
                 const thumbUri = resolveThumbnailUrl(game.thumbnail, game.id);
                 return (
                   <TouchableOpacity
@@ -556,11 +590,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           ) : (
             <View style={styles.emptyState}>
               <View style={[styles.emptyIconBubble, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name="heart-outline" size={32} color={colors.textSecondary} />
+                <Ionicons name={profileTab === 'created' ? 'grid-outline' : 'heart-outline'} size={32} color={colors.textSecondary} />
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No liked games yet</Text>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>{profileTab === 'created' ? 'No created games yet' : 'No liked games yet'}</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                Their favorites have not landed here yet.
+                {profileTab === 'created' ? 'Their published games will land here first.' : 'Their favorites have not landed here yet.'}
               </Text>
             </View>
           )}
@@ -828,6 +862,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  tabsShell: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 8,
+    padding: 3,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  contentTab: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  contentTabText: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  activeTabBar: {
+    position: 'absolute',
+    bottom: 5,
+    width: 22,
+    height: 2,
+    borderRadius: 2,
   },
   sectionHeader: {
     paddingHorizontal: 18,
