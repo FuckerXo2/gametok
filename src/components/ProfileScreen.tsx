@@ -22,7 +22,7 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
-import { auth, savedGames as savedGamesApi } from '../services/api';
+import { auth, users as usersApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
@@ -43,28 +43,7 @@ const formatNumber = (num: number): string => {
   return num.toString();
 };
 
-type ProfileContentTab = 'created' | 'saved' | 'liked';
-
-const PROFILE_TAB_META: Record<ProfileContentTab, { label: string; icon: keyof typeof Ionicons.glyphMap; eyebrow: string; blurb: string }> = {
-  created: {
-    label: 'Created',
-    icon: 'grid-outline',
-    eyebrow: 'YOUR WORLDS',
-    blurb: 'Games you publish should take over this grid.',
-  },
-  saved: {
-    label: 'Saved',
-    icon: 'bookmark-outline',
-    eyebrow: 'YOUR VAULT',
-    blurb: 'The best finds, pocketed for later.',
-  },
-  liked: {
-    label: 'Liked',
-    icon: 'heart-outline',
-    eyebrow: 'YOUR TASTE',
-    blurb: 'The stuff that made you stop scrolling.',
-  },
-};
+type ProfileContentTab = 'created' | 'played' | 'liked';
 
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
@@ -78,8 +57,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
-  const [profileTab, setProfileTab] = useState<ProfileContentTab>('saved');
+  const [playedGamesList, setPlayedGamesList] = useState<Game[]>([]);
+  const [profileTab, setProfileTab] = useState<ProfileContentTab>('played');
   const [socialStats, setSocialStats] = useState({ followers: 0, following: 0 });
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
@@ -112,11 +91,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [savedRes, userRes] = await Promise.all([
-        user?.id ? savedGamesApi.userSaved(user.id) : Promise.resolve({ games: [] }),
-        user?.id ? import('../services/api').then(({ users }) => users.get(user.id)) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
+      const [playedRes, userRes] = await Promise.all([
+        user?.id ? usersApi.played(user.id) : Promise.resolve({ games: [] }),
+        user?.id ? usersApi.get(user.id) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
       ]);
-      setSavedGamesList(savedRes.games || []);
+      setPlayedGamesList(playedRes.games || []);
       if (userRes?.stats) {
         setSocialStats({
           followers: userRes.stats.followers || 0,
@@ -131,7 +110,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     }
   };
 
-  const openSavedGame = (game: Game) => {
+  const openProfileGame = (game: Game) => {
     openSharedGame(game.id);
     setActiveTab('home');
   };
@@ -150,7 +129,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     <TouchableOpacity
       style={styles.gameTile}
       activeOpacity={0.9}
-      onPress={() => openSavedGame(item)}
+      onPress={() => openProfileGame(item)}
     >
       <Image source={{ uri: getThumbnailUrl(item) }} style={[styles.gameTileImage, { backgroundColor: colors.surface }]} resizeMode="cover" />
       <LinearGradient
@@ -175,75 +154,39 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   );
 
   const renderProfileContent = () => {
-    const meta = PROFILE_TAB_META[profileTab];
-
     if (profileTab === 'created') {
-      return (
-        <>
-          <View style={styles.contentIntro}>
-            <Text style={[styles.contentEyebrow, { color: colors.textSecondary }]}>{meta.eyebrow}</Text>
-            <Text style={[styles.contentHeading, { color: colors.text }]}>{meta.label}</Text>
-            <Text style={[styles.contentBlurb, { color: colors.textSecondary }]}>{meta.blurb}</Text>
-          </View>
-          {renderEmptyState(
-            'sparkles-outline',
-            'No published games yet',
-            'When your own worlds go live, they should sit here first.',
-          )}
-        </>
+      return renderEmptyState(
+        'sparkles-outline',
+        'No published games yet',
+        'When your own worlds go live, they should sit here first.',
       );
     }
 
     if (profileTab === 'liked') {
-      return (
-        <>
-          <View style={styles.contentIntro}>
-            <Text style={[styles.contentEyebrow, { color: colors.textSecondary }]}>{meta.eyebrow}</Text>
-            <Text style={[styles.contentHeading, { color: colors.text }]}>{meta.label}</Text>
-            <Text style={[styles.contentBlurb, { color: colors.textSecondary }]}>{meta.blurb}</Text>
-          </View>
-          {renderEmptyState(
-            'heart-outline',
-            'No liked games yet',
-            'The weird stuff you love can live here when likes are wired in.',
-          )}
-        </>
+      return renderEmptyState(
+        'heart-outline',
+        'No liked games yet',
+        'The weird stuff you love can live here when likes are wired in.',
       );
     }
 
-    if (savedGamesList.length === 0) {
-      return (
-        <>
-          <View style={styles.contentIntro}>
-            <Text style={[styles.contentEyebrow, { color: colors.textSecondary }]}>{meta.eyebrow}</Text>
-            <Text style={[styles.contentHeading, { color: colors.text }]}>{meta.label}</Text>
-            <Text style={[styles.contentBlurb, { color: colors.textSecondary }]}>{meta.blurb}</Text>
-          </View>
-          {renderEmptyState(
-            'bookmark-outline',
-            'Your vault is empty',
-            'Save a game from the feed and it will land here.',
-          )}
-        </>
+    if (playedGamesList.length === 0) {
+      return renderEmptyState(
+        'play-circle-outline',
+        'No played games yet',
+        'The games you spend time in will land here automatically.',
       );
     }
 
     return (
-      <>
-        <View style={styles.contentIntro}>
-          <Text style={[styles.contentEyebrow, { color: colors.textSecondary }]}>{meta.eyebrow}</Text>
-          <Text style={[styles.contentHeading, { color: colors.text }]}>{meta.label}</Text>
-          <Text style={[styles.contentBlurb, { color: colors.textSecondary }]}>{meta.blurb}</Text>
-        </View>
-        <FlatList
-          data={savedGamesList}
-          renderItem={renderGameTile}
-          keyExtractor={item => item.id}
-          numColumns={NUM_COLUMNS}
-          scrollEnabled={false}
-          contentContainerStyle={styles.gameGrid}
-        />
-      </>
+      <FlatList
+        data={playedGamesList}
+        renderItem={renderGameTile}
+        keyExtractor={item => item.id}
+        numColumns={NUM_COLUMNS}
+        scrollEnabled={false}
+        contentContainerStyle={styles.gameGrid}
+      />
     );
   };
 
@@ -262,8 +205,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
             {/* Preview Profile Info */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <View style={{ width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 20 }}>
-                <Ionicons name="person" size={40} color="#a855f7" />
+              <View style={{ width: 90, height: 90, borderRadius: 45, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', marginRight: 20 }}>
+                <Ionicons name="person" size={40} color={colors.textSecondary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 4 }}>Your Name</Text>
@@ -287,8 +230,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               </View>
             </View>
 
-            {/* Preview Saved Games Grid */}
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Saved Games</Text>
+            {/* Preview Played Games Grid */}
+            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Played Games</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
               {[1, 2, 3, 4, 5, 6].map(i => (
                 <View key={i} style={{ width: TILE_SIZE, height: TILE_SIZE, backgroundColor: colors.surface, borderRadius: 4 }} />
@@ -303,7 +246,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 }}>Sign up to continue</Text>
             <TouchableOpacity style={{ width: 200, borderRadius: 25, overflow: 'hidden' }} onPress={showAuthScreen} activeOpacity={0.8}>
-              <LinearGradient colors={['#a855f7', '#7c3aed']} style={{ paddingVertical: 14, alignItems: 'center' }}>
+              <LinearGradient colors={['#2f2f2f', '#161616']} style={{ paddingVertical: 14, alignItems: 'center' }}>
                 <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Sign Up</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -321,7 +264,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       <ScrollView
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#a855f7" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor={colors.text} />}
       >
         <View style={[styles.profileShell, { paddingTop: insets.top + 10 }]}>
           <View style={styles.profileTopBar}>
@@ -343,84 +286,62 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           </View>
 
           <View style={styles.heroCard}>
-            <LinearGradient
-              colors={isDark ? ['rgba(168,85,247,0.18)', 'rgba(0,229,255,0.08)', 'rgba(255,255,255,0.02)'] : ['rgba(168,85,247,0.16)', 'rgba(0,229,255,0.12)', 'rgba(0,0,0,0.03)']}
-              style={[styles.heroGlow, { borderColor: colors.border }]}
-            >
-              <View style={[styles.orbLarge, { backgroundColor: isDark ? 'rgba(168,85,247,0.14)' : 'rgba(168,85,247,0.12)' }]} />
-              <View style={[styles.orbSmall, { backgroundColor: isDark ? 'rgba(37,244,238,0.1)' : 'rgba(37,244,238,0.14)' }]} />
-              <View style={[styles.heroNoiseLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+            <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9} style={styles.avatarHitbox}>
+              <View style={[styles.avatarRing, { borderColor: colors.border }]}>
+                <Avatar uri={avatar} size={96} />
+              </View>
+              <View style={[styles.avatarEditBadge, { backgroundColor: colors.surface, borderColor: colors.background }]}>
+                <Ionicons name="pencil" size={13} color={colors.text} />
+              </View>
+            </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9} style={styles.avatarHitbox}>
-                <View style={[styles.avatarRing, { borderColor: colors.primary }]}>
-                  <Avatar uri={avatar} size={98} />
-                </View>
-                <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
-                  <Ionicons name="pencil" size={13} color="#fff" />
-                </View>
+            <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+              {displayName || username}
+            </Text>
+            <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{username}</Text>
+            <Text style={[styles.bioText, { color: bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
+              {bio || 'No bio yet.'}
+            </Text>
+
+            <View style={styles.statsRow}>
+              <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
+                <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(socialStats.following)}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
               </TouchableOpacity>
-
-              <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
-                {displayName || username}
-              </Text>
-              <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{username}</Text>
-              <Text style={[styles.bioText, { color: bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
-                {bio || 'No bio yet. Make this little corner of the internet yours.'}
-              </Text>
-
-              <View style={[styles.vibeRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', borderColor: colors.border }]}>
-                <View style={[styles.vibeChip, { backgroundColor: isDark ? 'rgba(168,85,247,0.14)' : 'rgba(168,85,247,0.12)' }]}>
-                  <Ionicons name="sparkles-outline" size={13} color={colors.primary} />
-                  <Text style={[styles.vibeChipText, { color: colors.text }]}>AI creator</Text>
-                </View>
-                <View style={[styles.vibeChip, { backgroundColor: isDark ? 'rgba(37,244,238,0.12)' : 'rgba(37,244,238,0.12)' }]}>
-                  <Ionicons name="flash-outline" size={13} color="#25F4EE" />
-                  <Text style={[styles.vibeChipText, { color: colors.text }]}>Black mode</Text>
-                </View>
+              <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
+                <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(socialStats.followers)}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+              </TouchableOpacity>
+              <View style={styles.statItem}>
+                <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(playedGamesList.length)}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Played</Text>
               </View>
+            </View>
 
-              <View style={[styles.statsRow, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)' }]}>
-                <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
-                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(socialStats.following)}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
-                </TouchableOpacity>
-                <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-                <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
-                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(socialStats.followers)}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
-                </TouchableOpacity>
-                <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-                <View style={styles.statItem}>
-                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatNumber(savedGamesList.length)}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Saved</Text>
-                </View>
-              </View>
-
-              <View style={styles.profileActions}>
-                <TouchableOpacity
-                  style={[styles.primaryAction, { backgroundColor: colors.text }]}
-                  onPress={() => setShowEditProfile(true)}
-                  activeOpacity={0.9}
-                >
-                  <Text style={[styles.primaryActionText, { color: colors.background }]}>Edit profile</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                  onPress={handleShareProfile}
-                  activeOpacity={0.9}
-                >
-                  <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
-                  <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
+            <View style={styles.profileActions}>
+              <TouchableOpacity
+                style={[styles.primaryAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => setShowEditProfile(true)}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.primaryActionText, { color: colors.text }]}>Edit profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                onPress={handleShareProfile}
+                activeOpacity={0.9}
+              >
+                <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
+                <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
         <View style={[styles.tabsShell, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {[
             { key: 'created', label: 'Created', icon: 'grid-outline' },
-            { key: 'saved', label: 'Saved', icon: 'bookmark-outline' },
+            { key: 'played', label: 'Played', icon: 'play-circle-outline' },
             { key: 'liked', label: 'Liked', icon: 'heart-outline' },
           ].map((tab) => {
             const isSelected = profileTab === tab.key;
@@ -440,10 +361,16 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 <Text style={[styles.contentTabText, { color: isSelected ? colors.text : colors.textSecondary }]}>
                   {tab.label}
                 </Text>
-                {isSelected && <View style={[styles.activeTabBar, { backgroundColor: colors.primary }]} />}
+                {isSelected && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
               </TouchableOpacity>
             );
           })}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            {profileTab === 'created' ? 'Created' : profileTab === 'liked' ? 'Liked' : 'Played'}
+          </Text>
         </View>
 
         {renderProfileContent()}
@@ -459,10 +386,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         username={username}
         initialTab={followModalConfig.tab}
         onUserPress={(profileUser) => {
-          setFollowModalConfig({ ...followModalConfig, visible: false });
-          setTimeout(() => {
-            setSelectedProfileUser({ ...profileUser, isFriend: false });
-          }, 300);
+          setSelectedProfileUser({ ...profileUser, isFriend: false });
         }}
       />
 
@@ -497,7 +421,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }}>
                 <Ionicons name={isDark ? "moon" : "sunny-outline"} size={22} color={colors.text} />
                 <Text style={{ color: colors.text, fontSize: 16 }}>Dark Mode</Text>
-                <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#ccc', true: '#a855f7' }} thumbColor="#fff" style={{ marginLeft: 'auto' }} />
+                <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#ccc', true: '#666' }} thumbColor="#fff" style={{ marginLeft: 'auto' }} />
               </View>
 
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
@@ -551,7 +475,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 const styles = StyleSheet.create({
   profileShell: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 10,
   },
   profileTopBar: {
     flexDirection: 'row',
@@ -572,56 +496,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   heroCard: {
-    borderRadius: 34,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 10,
-  },
-  heroGlow: {
     alignItems: 'center',
-    borderRadius: 34,
-    borderWidth: 1,
-    paddingHorizontal: 18,
-    paddingTop: 26,
-    paddingBottom: 22,
-    position: 'relative',
-  },
-  orbLarge: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    right: -30,
-    top: -24,
-  },
-  orbSmall: {
-    position: 'absolute',
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    left: -18,
-    bottom: 56,
-  },
-  heroNoiseLine: {
-    position: 'absolute',
-    width: 160,
-    height: 1,
-    top: 86,
-    right: 28,
-    opacity: 0.75,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   avatarHitbox: {
-    marginBottom: 12,
+    marginBottom: 14,
     position: 'relative',
   },
   avatarRing: {
-    padding: 5,
+    padding: 4,
     borderWidth: 2,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 58,
   },
   avatarEditBadge: {
     position: 'absolute',
@@ -636,78 +523,44 @@ const styles = StyleSheet.create({
     borderColor: '#000',
   },
   displayName: {
-    fontSize: 29,
+    fontSize: 22,
     fontWeight: '900',
-    letterSpacing: -0.8,
+    letterSpacing: -0.5,
     maxWidth: '90%',
     textAlign: 'center',
   },
   handleText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    marginTop: 4,
-    letterSpacing: 0.2,
+    marginTop: 6,
   },
   bioText: {
     fontSize: 14,
-    lineHeight: 21,
-    marginTop: 13,
+    lineHeight: 20,
+    marginTop: 10,
     textAlign: 'center',
-    maxWidth: 300,
-  },
-  vibeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-  },
-  vibeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  vibeChipText: {
-    fontSize: 12,
-    fontWeight: '800',
+    maxWidth: 280,
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'space-between',
     width: '100%',
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    marginTop: 18,
     marginBottom: 18,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  statDivider: {
-    width: 1,
-    height: 28,
-    opacity: 0.8,
-  },
   statNumber: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
   statLabel: {
     fontSize: 12,
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: 3,
   },
   profileActions: {
     flexDirection: 'row',
@@ -717,17 +570,18 @@ const styles = StyleSheet.create({
   primaryAction: {
     flex: 1,
     minHeight: 44,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   primaryActionText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
   },
   secondaryAction: {
     minHeight: 44,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 17,
     flexDirection: 'row',
@@ -742,10 +596,10 @@ const styles = StyleSheet.create({
   tabsShell: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginTop: 2,
-    marginBottom: 6,
-    padding: 4,
-    borderRadius: 22,
+    marginTop: 10,
+    marginBottom: 8,
+    padding: 3,
+    borderRadius: 18,
     borderWidth: 1,
   },
   contentTabs: {
@@ -755,57 +609,44 @@ const styles = StyleSheet.create({
   },
   contentTab: {
     flex: 1,
-    height: 58,
-    borderRadius: 18,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
   },
   contentTabText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.7,
+    letterSpacing: 0.5,
   },
   activeTabBar: {
     position: 'absolute',
-    bottom: 6,
-    width: 24,
-    height: 3,
+    bottom: 5,
+    width: 22,
+    height: 2,
     borderRadius: 2,
   },
-  contentIntro: {
+  sectionHeader: {
     paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingTop: 8,
     paddingBottom: 10,
   },
-  contentEyebrow: {
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
-  contentHeading: {
-    fontSize: 27,
-    fontWeight: '900',
-    letterSpacing: -0.8,
-    marginTop: 4,
-  },
-  contentBlurb: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-    maxWidth: 280,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
   },
   gameGrid: {
     paddingHorizontal: 5,
-    paddingTop: 4,
+    paddingTop: 0,
     paddingBottom: 14,
   },
   gameTile: {
     width: TILE_SIZE,
     height: TILE_SIZE,
     margin: GRID_GAP / 2,
-    borderRadius: 20,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#111',
   },
@@ -821,9 +662,9 @@ const styles = StyleSheet.create({
   },
   gameTileTitle: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-    lineHeight: 15,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 14,
     textShadowColor: 'rgba(0,0,0,0.55)',
     textShadowRadius: 10,
     textShadowOffset: { width: 0, height: 2 },

@@ -3337,23 +3337,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         likeCount={getFeedCount(item!.game!.id, 'likes')}
                         styles={styles}
                       />
-                      {/* Bookmark/Save */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleSave(item!.game!.id);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="bookmark"
-                          size={32}
-                          color={savedGames.has(item!.game!.id) ? LoopsColors.coinGold : LoopsColors.white}
-                        />
-                        <Text style={styles.actionCount}>{formatCount(getFeedCount(item!.game!.id, 'saves'))}</Text>
-                      </TouchableOpacity>
-
                       {/* Share */}
                       <AnimatedShareButton
                         onPress={(e) => {

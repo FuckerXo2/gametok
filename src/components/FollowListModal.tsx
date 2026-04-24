@@ -170,7 +170,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
 
                 {loading ? (
                     <View style={styles.centerContainer}>
-                        <ActivityIndicator size="large" color="#a855f7" />
+                        <ActivityIndicator size="large" color={colors.textSecondary} />
                     </View>
                 ) : (
                     <FlatList
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.2)',
     },
     followBtn: {
-        backgroundColor: '#a855f7',
+        backgroundColor: '#f3f4f6',
     },
     actionButtonText: {
         fontSize: 13,
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
         color: '#ffffff',
     },
     followBtnText: {
-        color: '#ffffff',
+        color: '#111111',
     },
     centerContainer: {
         flex: 1,

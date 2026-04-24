@@ -81,7 +81,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { user: currentUser } = useAuth();
-  const [isAdded, setIsAdded] = useState(user?.isFriend ?? false);
+  const [profileStack, setProfileStack] = useState<any[]>(user ? [user] : []);
+  const activeUser = profileStack[profileStack.length - 1] || user;
+  const [isAdded, setIsAdded] = useState(activeUser?.isFriend ?? false);
   const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -92,27 +94,32 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
-  const [nestedUser, setNestedUser] = useState<any>(null);
 
   const [playingGame, setPlayingGame] = useState<any | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
 
-  const isCurrentMe = currentUser?.id === user?.id;
+  const isCurrentMe = currentUser?.id === activeUser?.id;
+
+  React.useEffect(() => {
+    if (visible && user) {
+      setProfileStack([user]);
+    }
+  }, [visible, user?.id]);
 
   // Update isAdded when user changes or modal opens
   React.useEffect(() => {
-    if (user) {
-      setIsAdded(user.isFriend);
+    if (activeUser) {
+      setIsAdded(activeUser.isFriend);
       setIsMutual(false);
       setLoadingFollow(true);
     }
-  }, [user?.id, user?.isFriend, visible]);
+  }, [activeUser?.id, activeUser?.isFriend, visible]);
 
   // Fetch real user stats when modal opens
   React.useEffect(() => {
-    if (visible && user?.id) {
+    if (visible && activeUser?.id) {
       setUserStats(null);
-      users.get(user.id).then((res: any) => {
+      users.get(activeUser.id).then((res: any) => {
         if (res?.stats) {
           setUserStats({
             followers: res.stats.followers || 0,
@@ -130,14 +137,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
       setLoadingGames(true);
       import('../services/api').then(({ likes }) => {
-        likes.userLikes(user.id).then((res: any) => {
+        likes.userLikes(activeUser.id).then((res: any) => {
           if (res?.games) {
             setUserGames(res.games);
           }
         }).catch(() => { }).finally(() => setLoadingGames(false));
       });
     }
-  }, [visible, user?.id]);
+  }, [visible, activeUser?.id]);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -154,10 +161,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   };
 
   const shareProfile = async () => {
-    if (!user) return;
+    if (!activeUser) return;
     try {
       await Share.share({
-        message: `Check out @${user.username} on GameTok: https://games.gametok.co/u/${user.username}`,
+        message: `Check out @${activeUser.username} on GameTok: https://games.gametok.co/u/${activeUser.username}`,
       });
     } catch (error) {
       console.log('Failed to share profile:', error);
@@ -166,7 +173,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
   const confirmBlockAction = async () => {
     try {
-      await moderation.block(user!.id);
+      await moderation.block(activeUser.id);
       setShowBlockConfirm(false);
       onClose();
     } catch (error: any) {
@@ -179,13 +186,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     setShowOptionsModal(true);
   };
 
-  if (!user) return null;
+  if (!activeUser) return null;
 
   const handleAdd = async () => {
     if (isToggling) return;
     setIsToggling(true);
     try {
-      const result = await users.follow(user.id);
+      const result = await users.follow(activeUser.id);
       setIsAdded(result.following);
       setIsMutual(result.isMutual || false);
 
@@ -200,7 +207,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
       }
 
       // Notify parent component of the change
-      onFriendStatusChange?.(user.id, result.following);
+      onFriendStatusChange?.(activeUser.id, result.following);
     } catch (error) {
       console.log('Follow/unfollow error:', error);
     } finally {
@@ -212,7 +219,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     setShowChat(true);
     setLoadingChat(true);
     try {
-      const data = await messagesApi.getConversation(user.id);
+      const data = await messagesApi.getConversation(activeUser.id);
       setChatMessages(data.messages || []);
     } catch (error) {
       console.log('Failed to load chat:', error);
@@ -236,7 +243,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
     try {
       const data = await messagesApi.send({
-        recipientId: user.id,
+        recipientId: activeUser.id,
         text,
       });
       setChatMessages(prev => [...prev, data.message]);
@@ -262,9 +269,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               <Ionicons name="chevron-back" size={28} color={colors.text} />
             </TouchableOpacity>
             <View style={styles.chatHeaderUser}>
-              <Avatar uri={user.avatar} size={36} style={styles.chatHeaderAvatar} />
+              <Avatar uri={activeUser.avatar} size={36} style={styles.chatHeaderAvatar} />
               <Text style={[styles.chatHeaderUsername, { color: colors.text }]}>
-                {user.displayName || user.username}
+                {activeUser.displayName || activeUser.username}
               </Text>
             </View>
             <TouchableOpacity>
@@ -275,7 +282,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           {/* Chat Messages */}
           {loadingChat ? (
             <View style={styles.chatLoading}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.textSecondary} />
             </View>
           ) : (
             <FlatList
@@ -387,135 +394,120 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
           <View style={[styles.profileShell, { paddingTop: insets.top + 10 }]}>
             <View style={styles.profileTopBar}>
-              <TouchableOpacity style={[styles.topIconButton, { backgroundColor: colors.surface }]} onPress={onClose} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={[styles.topIconButton, { backgroundColor: colors.surface }]}
+                onPress={() => {
+                  if (profileStack.length > 1) {
+                    setProfileStack(prev => prev.slice(0, -1));
+                    return;
+                  }
+                  onClose();
+                }}
+                activeOpacity={0.85}
+              >
                 <Ionicons name="chevron-back" size={24} color={colors.text} />
               </TouchableOpacity>
-              <Text style={[styles.topUsername, { color: colors.text }]}>@{user.username}</Text>
+              <Text style={[styles.topUsername, { color: colors.text }]}>@{activeUser.username}</Text>
               <TouchableOpacity style={[styles.topIconButton, { backgroundColor: colors.surface }]} onPress={showOptions} activeOpacity={0.85}>
                 <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.heroCard}>
-              <LinearGradient
-                colors={isDark ? ['rgba(168,85,247,0.18)', 'rgba(0,229,255,0.08)', 'rgba(255,255,255,0.02)'] : ['rgba(168,85,247,0.16)', 'rgba(0,229,255,0.12)', 'rgba(0,0,0,0.03)']}
-                style={[styles.heroGlow, { borderColor: colors.border }]}
-              >
-                <View style={[styles.orbLarge, { backgroundColor: isDark ? 'rgba(168,85,247,0.14)' : 'rgba(168,85,247,0.12)' }]} />
-                <View style={[styles.orbSmall, { backgroundColor: isDark ? 'rgba(37,244,238,0.1)' : 'rgba(37,244,238,0.14)' }]} />
-                <View style={[styles.heroNoiseLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
-
-                <View style={styles.avatarHitbox}>
-                  <View style={[styles.avatarRing, { borderColor: colors.primary }]}>
-                    <Avatar uri={user.avatar} size={98} />
-                  </View>
-                  {user.isOnline && <View style={styles.onlineDot} />}
+              <View style={styles.avatarHitbox}>
+                <View style={[styles.avatarRing, { borderColor: colors.border }]}>
+                  <Avatar uri={activeUser.avatar} size={96} />
                 </View>
+                {activeUser.isOnline && <View style={styles.onlineDot} />}
+              </View>
 
-                <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
-                  {user.displayName || user.username}
-                </Text>
-                <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{user.username}</Text>
-                <Text style={[styles.bioText, { color: user.bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
-                  {user.bio || 'GameTok player with strange taste and a sharp scroll instinct.'}
-                </Text>
+              <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+                {activeUser.displayName || activeUser.username}
+              </Text>
+              <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{activeUser.username}</Text>
+              <Text style={[styles.bioText, { color: activeUser.bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
+                {activeUser.bio || 'GameTok player.'}
+              </Text>
 
-                <View style={[styles.vibeRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', borderColor: colors.border }]}>
-                  <View style={[styles.vibeChip, { backgroundColor: 'rgba(255,214,10,0.14)' }]}>
-                    <Ionicons name="trophy-outline" size={13} color="#ffd60a" />
-                    <Text style={[styles.vibeChipText, { color: colors.text }]}>Level {userStats?.level ?? 1}</Text>
-                  </View>
-                  <View style={[styles.vibeChip, { backgroundColor: 'rgba(249,115,22,0.16)' }]}>
-                    <Ionicons name="flame-outline" size={13} color="#f97316" />
-                    <Text style={[styles.vibeChipText, { color: colors.text }]}>{userStats?.streak ?? 0} day streak</Text>
-                  </View>
+              <View style={styles.statsRow}>
+                <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.following)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.followers)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+                </TouchableOpacity>
+                <View style={styles.statItem}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userGames.length)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Liked</Text>
                 </View>
+              </View>
 
-                <View style={[styles.statsRow, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)' }]}>
-                  <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
-                    <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.following)}</Text>
-                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
+              {isCurrentMe ? (
+                <View style={styles.profileActions}>
+                  <TouchableOpacity
+                    style={[styles.primaryAction, styles.primaryActionWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    onPress={() => Alert.alert('Notice', 'Go to the Profile tab to edit your profile.')}
+                    activeOpacity={0.9}
+                  >
+                    <Text style={[styles.primaryActionText, { color: colors.text }]}>Edit profile</Text>
                   </TouchableOpacity>
-                  <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-                  <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
-                    <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.followers)}</Text>
-                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
+                  <TouchableOpacity
+                    style={[styles.secondaryAction, styles.secondaryActionFixed, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                    onPress={shareProfile}
+                    activeOpacity={0.9}
+                  >
+                    <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
+                    <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
                   </TouchableOpacity>
-                  <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-                  <View style={styles.statItem}>
-                    <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userGames.length)}</Text>
-                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Liked</Text>
+                </View>
+              ) : loadingFollow ? (
+                <View style={styles.profileActions}>
+                  <View style={[styles.primaryAction, styles.primaryActionWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <ActivityIndicator size="small" color={colors.textSecondary} />
+                  </View>
+                  <View style={[styles.secondaryAction, styles.secondaryActionFixed, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                    <ActivityIndicator size="small" color={colors.textSecondary} />
                   </View>
                 </View>
-
-                {isCurrentMe ? (
-                  <View style={styles.profileActions}>
-                    <TouchableOpacity
-                      style={[styles.primaryAction, { backgroundColor: colors.text }]}
-                      onPress={() => Alert.alert('Notice', 'Go to the Profile tab to edit your profile.')}
-                      activeOpacity={0.9}
-                    >
-                      <Text style={[styles.primaryActionText, { color: colors.background }]}>Edit profile</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                      onPress={shareProfile}
-                      activeOpacity={0.9}
-                    >
-                      <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
-                      <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : loadingFollow ? (
-                  <View style={styles.profileActions}>
-                    <View style={[styles.primaryAction, { backgroundColor: colors.surface }]}>
+              ) : (
+                <View style={styles.profileActions}>
+                  <AnimatedButton
+                    containerStyle={styles.primaryActionWrap}
+                    style={[styles.primaryAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    onPress={isAdded ? openChat : handleAdd}
+                    disabled={isToggling}
+                  >
+                    {isToggling ? (
                       <ActivityIndicator size="small" color={colors.textSecondary} />
-                    </View>
-                    <View style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                      <ActivityIndicator size="small" color={colors.textSecondary} />
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.profileActions}>
-                    <AnimatedButton
-                      style={[styles.primaryAction, { backgroundColor: isAdded ? colors.text : colors.primary }]}
-                      onPress={isAdded ? openChat : handleAdd}
-                      disabled={isToggling}
-                    >
-                      {isToggling ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <View style={styles.actionContent}>
-                          <Ionicons name={isAdded ? 'chatbubble-outline' : 'person-add'} size={16} color="#fff" />
-                          <Text style={styles.primaryActionLabel}>{isAdded ? 'Message' : 'Follow'}</Text>
-                        </View>
-                      )}
-                    </AnimatedButton>
+                    ) : (
+                      <View style={styles.actionContent}>
+                        <Ionicons name={isAdded ? 'chatbubble-outline' : 'person-add-outline'} size={16} color={colors.text} />
+                        <Text style={[styles.primaryActionText, { color: colors.text }]}>{isAdded ? 'Message' : 'Follow'}</Text>
+                      </View>
+                    )}
+                  </AnimatedButton>
 
-                    <TouchableOpacity
-                      style={[styles.secondaryAction, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                      onPress={isAdded ? shareProfile : openChat}
-                      activeOpacity={0.9}
-                    >
-                      <Ionicons name={isAdded ? 'arrow-redo-outline' : 'game-controller-outline'} size={17} color={colors.text} />
-                      <Text style={[styles.secondaryActionText, { color: colors.text }]}>{isAdded ? 'Share' : 'Challenge'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </LinearGradient>
+                  <TouchableOpacity
+                    style={[styles.secondaryAction, styles.secondaryActionFixed, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                    onPress={shareProfile}
+                    activeOpacity={0.9}
+                  >
+                    <Ionicons name="arrow-redo-outline" size={17} color={colors.text} />
+                    <Text style={[styles.secondaryActionText, { color: colors.text }]}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
 
-          <View style={styles.contentIntro}>
-            <Text style={[styles.contentEyebrow, { color: colors.textSecondary }]}>THEIR TASTE</Text>
-            <Text style={[styles.contentHeading, { color: colors.text }]}>Liked Games</Text>
-            <Text style={[styles.contentBlurb, { color: colors.textSecondary }]}>
-              Games they kept around because something about them hit.
-            </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Liked</Text>
           </View>
 
           {loadingGames ? (
-            <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
+            <ActivityIndicator style={{ marginTop: 20 }} color={colors.textSecondary} />
           ) : userGames.length > 0 ? (
             <View style={styles.gameGrid}>
               {userGames.map(game => {
@@ -527,7 +519,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                     key={game.id}
                     style={styles.gameTile}
                     onPress={() => {
-                      setPlayingGame({ id: game.id, name: game.name, color: game.color || '#a855f7' });
+                      setPlayingGame({ id: game.id, name: game.name, color: game.color || '#181818' });
                       setGameLoaded(false);
                     }}
                     activeOpacity={0.9}
@@ -572,7 +564,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 onPress={() => { setShowOptionsModal(false); handleAdd(); }}
               >
                 <Ionicons name="person-remove-outline" size={24} color="#ef4444" style={{ marginRight: 16 }} />
-                <Text style={{ color: '#ef4444', fontSize: 16, fontWeight: '600' }}>Unfollow @{user.username}</Text>
+                <Text style={{ color: '#ef4444', fontSize: 16, fontWeight: '600' }}>Unfollow @{activeUser.username}</Text>
               </TouchableOpacity>
             )}
 
@@ -612,7 +604,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(239, 68, 68, 0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
                 <Ionicons name="ban" size={24} color="#ef4444" />
               </View>
-              <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>Block @{user.username}?</Text>
+              <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>Block @{activeUser.username}?</Text>
               <Text style={{ color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
                 Are you sure you want to block this user? They won't be able to message you, challenge you, or see your profile.
               </Text>
@@ -633,30 +625,22 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
       <ReportModal
         visible={showReportModal}
         onClose={() => setShowReportModal(false)}
-        userId={user.id}
-        username={user.username}
+        userId={activeUser.id}
+        username={activeUser.username}
         contentType="profile"
       />
 
       <FollowListModal
         visible={followModalConfig.visible}
         onClose={() => setFollowModalConfig({ ...followModalConfig, visible: false })}
-        userId={user.id}
-        username={user.username}
+        userId={activeUser.id}
+        username={activeUser.username}
         initialTab={followModalConfig.tab}
         onUserPress={(profileUser) => {
           setFollowModalConfig({ ...followModalConfig, visible: false });
-          setNestedUser({ ...profileUser, isFriend: false });
+          setProfileStack(prev => [...prev, { ...profileUser, isFriend: false }]);
         }}
       />
-
-      {nestedUser && (
-        <UserProfileModal
-          visible={!!nestedUser}
-          onClose={() => setNestedUser(null)}
-          user={nestedUser}
-        />
-      )}
 
       {/* Game Playing Modal */}
       <Modal visible={playingGame !== null} animationType="slide" onRequestClose={() => setPlayingGame(null)}>
@@ -702,7 +686,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   profileShell: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 10,
   },
   profileTopBar: {
     flexDirection: 'row',
@@ -723,56 +707,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   heroCard: {
-    borderRadius: 34,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 10,
-  },
-  heroGlow: {
     alignItems: 'center',
-    borderRadius: 34,
-    borderWidth: 1,
-    paddingHorizontal: 18,
-    paddingTop: 26,
-    paddingBottom: 22,
-    position: 'relative',
-  },
-  orbLarge: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    right: -30,
-    top: -24,
-  },
-  orbSmall: {
-    position: 'absolute',
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    left: -18,
-    bottom: 56,
-  },
-  heroNoiseLine: {
-    position: 'absolute',
-    width: 160,
-    height: 1,
-    top: 86,
-    right: 28,
-    opacity: 0.75,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   avatarHitbox: {
-    marginBottom: 12,
+    marginBottom: 14,
     position: 'relative',
   },
   avatarRing: {
-    padding: 5,
+    padding: 4,
     borderWidth: 2,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 58,
   },
   onlineDot: {
     position: 'absolute',
@@ -786,109 +733,77 @@ const styles = StyleSheet.create({
     borderColor: '#000',
   },
   displayName: {
-    fontSize: 29,
+    fontSize: 22,
     fontWeight: '900',
-    letterSpacing: -0.8,
+    letterSpacing: -0.5,
     maxWidth: '90%',
     textAlign: 'center',
   },
   handleText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    marginTop: 4,
-    letterSpacing: 0.2,
+    marginTop: 6,
   },
   bioText: {
     fontSize: 14,
-    lineHeight: 21,
-    marginTop: 13,
+    lineHeight: 20,
+    marginTop: 10,
     textAlign: 'center',
-    maxWidth: 300,
-  },
-  vibeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-  },
-  vibeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  vibeChipText: {
-    fontSize: 12,
-    fontWeight: '800',
+    maxWidth: 280,
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'space-between',
     width: '100%',
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    marginTop: 18,
     marginBottom: 18,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  statDivider: {
-    width: 1,
-    height: 28,
-    opacity: 0.8,
-  },
   statNumber: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
   statLabel: {
     fontSize: 12,
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: 3,
   },
   profileActions: {
     flexDirection: 'row',
     width: '100%',
     gap: 10,
   },
+  primaryActionWrap: {
+    flex: 1,
+  },
   primaryAction: {
     flex: 1,
     minHeight: 44,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   primaryActionText: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  primaryActionLabel: {
-    color: '#fff',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   secondaryAction: {
     minHeight: 44,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     paddingHorizontal: 17,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  secondaryActionFixed: {
+    minWidth: 124,
   },
   secondaryActionText: {
     fontSize: 14,
@@ -899,40 +814,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  contentIntro: {
+  sectionHeader: {
     paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingTop: 8,
     paddingBottom: 10,
   },
-  contentEyebrow: {
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
-  contentHeading: {
-    fontSize: 27,
-    fontWeight: '900',
-    letterSpacing: -0.8,
-    marginTop: 4,
-  },
-  contentBlurb: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-    maxWidth: 280,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
   },
   gameGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 5,
-    paddingTop: 4,
+    paddingTop: 0,
     paddingBottom: 14,
   },
   gameTile: {
     width: PROFILE_GRID_SIZE,
     height: PROFILE_GRID_SIZE,
     margin: PROFILE_GRID_GAP / 2,
-    borderRadius: 20,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#111',
   },
@@ -952,9 +854,9 @@ const styles = StyleSheet.create({
   },
   gameTileTitle: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-    lineHeight: 15,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 14,
     textShadowColor: 'rgba(0,0,0,0.55)',
     textShadowRadius: 10,
     textShadowOffset: { width: 0, height: 2 },
@@ -1017,7 +919,6 @@ const styles = StyleSheet.create({
   chatBtn: { flex: 1, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   chatBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   content: { flex: 1, paddingTop: 20 },
-  sectionTitle: { fontSize: 17, fontWeight: '700', paddingHorizontal: 16, marginBottom: 16 },
   friendsScroll: { paddingHorizontal: 12, gap: 8 },
   friendCard: { width: 110, paddingVertical: 16, paddingHorizontal: 12, borderRadius: 16, alignItems: 'center', marginHorizontal: 4 },
   dismissBtn: { position: 'absolute', top: 8, right: 8 },

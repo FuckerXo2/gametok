@@ -207,6 +207,10 @@ export const users = {
     return request(`/users/${userId}/following`);
   },
 
+  played: async (userId: string, limit = 30) => {
+    return request(`/users/${userId}/played?limit=${limit}`);
+  },
+
   search: async (query: string) => {
     return request(`/users/search/${encodeURIComponent(query)}`);
   },
