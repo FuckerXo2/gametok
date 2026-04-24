@@ -22,7 +22,7 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
-import { auth, likes as likesApi, users as usersApi } from '../services/api';
+import { API_URL, auth, likes as likesApi, users as usersApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
@@ -34,9 +34,22 @@ const GRID_GAP = 2;
 const NUM_COLUMNS = 3;
 const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 const GAMES_HOST = 'https://games.gametok.co';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 interface Game { id: string; name: string; thumbnail?: string; }
-const getThumbnailUrl = (game: Game) => game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png`;
+const getThumbnailUrl = (game: Game) => {
+  if (game.thumbnail) {
+    if (game.thumbnail.startsWith('http') || game.thumbnail.startsWith('data:')) {
+      return game.thumbnail;
+    }
+    if (game.thumbnail.startsWith('/')) {
+      return `${API_ORIGIN}${game.thumbnail}`;
+    }
+    return `${GAMES_HOST}${game.thumbnail}`;
+  }
+
+  return `${GAMES_HOST}/thumbnails/${game.id}.png`;
+};
 const formatNumber = (num: number): string => {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;

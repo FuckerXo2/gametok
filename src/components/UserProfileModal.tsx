@@ -24,7 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { messages as messagesApi, users, moderation, feed, games as gamesApi, stories as storiesApi } from '../services/api';
+import { API_URL, messages as messagesApi, users, moderation, feed, games as gamesApi, stories as storiesApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { ReportModal } from './ReportModal';
 import { FollowListModal } from './FollowListModal';
@@ -65,6 +65,7 @@ interface ChatMessage {
 }
 
 const GAMES_HOST = 'https://games.gametok.co';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 const SUGGESTED_FRIENDS: any[] = [];
 const PROFILE_GRID_GAP = 2;
@@ -75,6 +76,24 @@ const formatCompactNumber = (value?: number | null) => {
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
   return String(value);
+};
+
+const resolveThumbnailUrl = (thumbnail?: string | null, gameId?: string | null) => {
+  if (thumbnail) {
+    if (thumbnail.startsWith('http') || thumbnail.startsWith('data:')) {
+      return thumbnail;
+    }
+    if (thumbnail.startsWith('/')) {
+      return `${API_ORIGIN}${thumbnail}`;
+    }
+    return `${GAMES_HOST}${thumbnail}`;
+  }
+
+  if (gameId) {
+    return `${GAMES_HOST}/thumbnails/${gameId}.png`;
+  }
+
+  return null;
 };
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user, onFriendStatusChange }) => {
@@ -294,9 +313,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
                 const hasGameShare = !!(item as any).gameShare;
                 const gameShare = (item as any).gameShare;
-                const thumbUri = gameShare?.thumbnail
-                  ? (gameShare.thumbnail.startsWith('http') ? gameShare.thumbnail : `${GAMES_HOST}${gameShare.thumbnail}`)
-                  : null;
+                const thumbUri = resolveThumbnailUrl(gameShare?.thumbnail, gameShare?.id);
 
                 if (hasGameShare) {
                   return (
@@ -511,9 +528,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           ) : userGames.length > 0 ? (
             <View style={styles.gameGrid}>
               {userGames.map(game => {
-                const thumbUri = game.thumbnail
-                  ? (game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`)
-                  : null;
+                const thumbUri = resolveThumbnailUrl(game.thumbnail, game.id);
                 return (
                   <TouchableOpacity
                     key={game.id}
