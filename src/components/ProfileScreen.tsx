@@ -30,11 +30,11 @@ import { FollowListModal } from './FollowListModal';
 import { UserProfileModal } from './UserProfileModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GRID_GAP = 2;
-const GRID_SIDE_PADDING = 6;
-const NUM_COLUMNS = 2;
+const GRID_GAP = 1;
+const GRID_SIDE_PADDING = 1;
+const NUM_COLUMNS = 3;
 const TILE_WIDTH = (SCREEN_WIDTH - GRID_SIDE_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
-const TILE_HEIGHT = TILE_WIDTH * 1.22;
+const TILE_HEIGHT = TILE_WIDTH * 1.34;
 const GAMES_HOST = 'https://games.gametok.co';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
@@ -695,9 +695,9 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   sectionHeader: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 10,
     paddingTop: 8,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   sectionTitle: {
     fontSize: 18,
@@ -713,7 +713,7 @@ const styles = StyleSheet.create({
     height: TILE_HEIGHT,
     marginBottom: GRID_GAP,
     marginRight: GRID_GAP,
-    borderRadius: 16,
+    borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: '#111',
   },
@@ -727,14 +727,14 @@ const styles = StyleSheet.create({
   gameTileOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
   gameTileTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 11,
     fontWeight: '800',
-    lineHeight: 18,
+    lineHeight: 13,
     textShadowColor: 'rgba(0,0,0,0.55)',
     textShadowRadius: 10,
     textShadowOffset: { width: 0, height: 2 },
