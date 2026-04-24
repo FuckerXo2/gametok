@@ -180,6 +180,10 @@ export const users = {
     return request(`/users/${userId}`);
   },
 
+  created: async (userId: string, limit = 30) => {
+    return request(`/users/${userId}/created?limit=${limit}`);
+  },
+
   update: async (userId: string, data: { username?: string; displayName?: string; bio?: string; avatar?: string }) => {
     return request(`/users/${userId}`, {
       method: 'PUT',

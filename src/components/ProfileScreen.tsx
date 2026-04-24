@@ -22,7 +22,7 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
-import { auth, users as usersApi } from '../services/api';
+import { auth, likes as likesApi, users as usersApi } from '../services/api';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
@@ -57,7 +57,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [createdGamesList, setCreatedGamesList] = useState<Game[]>([]);
   const [playedGamesList, setPlayedGamesList] = useState<Game[]>([]);
+  const [likedGamesList, setLikedGamesList] = useState<Game[]>([]);
   const [profileTab, setProfileTab] = useState<ProfileContentTab>('played');
   const [socialStats, setSocialStats] = useState({ followers: 0, following: 0 });
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
@@ -91,11 +93,15 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [playedRes, userRes] = await Promise.all([
+      const [createdRes, playedRes, likedRes, userRes] = await Promise.all([
+        user?.id ? usersApi.created(user.id) : Promise.resolve({ games: [] }),
         user?.id ? usersApi.played(user.id) : Promise.resolve({ games: [] }),
+        user?.id ? likesApi.userLikes(user.id) : Promise.resolve({ games: [] }),
         user?.id ? usersApi.get(user.id) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
       ]);
+      setCreatedGamesList(createdRes.games || []);
       setPlayedGamesList(playedRes.games || []);
+      setLikedGamesList(likedRes.games || []);
       if (userRes?.stats) {
         setSocialStats({
           followers: userRes.stats.followers || 0,
@@ -155,18 +161,44 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
   const renderProfileContent = () => {
     if (profileTab === 'created') {
-      return renderEmptyState(
-        'sparkles-outline',
-        'No published games yet',
-        'When your own worlds go live, they should sit here first.',
+      if (createdGamesList.length === 0) {
+        return renderEmptyState(
+          'sparkles-outline',
+          'No published games yet',
+          'When your own worlds go live, they should sit here first.',
+        );
+      }
+
+      return (
+        <FlatList
+          data={createdGamesList}
+          renderItem={renderGameTile}
+          keyExtractor={item => item.id}
+          numColumns={NUM_COLUMNS}
+          scrollEnabled={false}
+          contentContainerStyle={styles.gameGrid}
+        />
       );
     }
 
     if (profileTab === 'liked') {
-      return renderEmptyState(
-        'heart-outline',
-        'No liked games yet',
-        'The weird stuff you love can live here when likes are wired in.',
+      if (likedGamesList.length === 0) {
+        return renderEmptyState(
+          'heart-outline',
+          'No liked games yet',
+          'The games you like will show up here with their thumbnails.',
+        );
+      }
+
+      return (
+        <FlatList
+          data={likedGamesList}
+          renderItem={renderGameTile}
+          keyExtractor={item => item.id}
+          numColumns={NUM_COLUMNS}
+          scrollEnabled={false}
+          contentContainerStyle={styles.gameGrid}
+        />
       );
     }
 
