@@ -107,7 +107,7 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ visi
           }
           renderItem={({ item }) => (
             <View style={[styles.requestItem, { borderBottomColor: colors.border }]}>
-              <Avatar uri={item.avatar || null} size={48} />
+              <Avatar uri={item.avatar || null} userId={item.id} size={48} />
               <View style={styles.requestContent}>
                 <Text style={[styles.requestName, { color: colors.text }]}>
                   {item.displayName || item.username}

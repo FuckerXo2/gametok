@@ -8,16 +8,22 @@ interface SlideRightModalProps {
     visible: boolean;
     onClose: () => void;
     children: React.ReactNode;
+    instant?: boolean;
 }
 
-export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClose, children }) => {
-    const translateX = useRef(new Animated.Value(SCREEN_WIDTH)).current;
-    const backdropOpacity = useRef(new Animated.Value(0)).current;
+export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClose, children, instant = false }) => {
+    const translateX = useRef(new Animated.Value(visible && instant ? 0 : SCREEN_WIDTH)).current;
+    const backdropOpacity = useRef(new Animated.Value(visible && instant ? 1 : 0)).current;
     const isClosingRef = useRef(false);
 
     useEffect(() => {
         if (visible) {
             isClosingRef.current = false;
+            if (instant) {
+                translateX.setValue(0);
+                backdropOpacity.setValue(1);
+                return;
+            }
             // Animate in
             Animated.parallel([
                 Animated.spring(translateX, {

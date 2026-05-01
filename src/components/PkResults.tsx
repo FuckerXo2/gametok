@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
 import { useAuth } from '../context/AuthContext';
-import { resolveAvatarSource } from './Avatar';
+import { Avatar } from './Avatar';
 
 interface Props {
   myScore: number;
@@ -51,10 +51,7 @@ export const PkResults: React.FC<Props> = ({
         <View style={styles.scoresContainer}>
           {/* My Score */}
           <View style={styles.playerCard}>
-            <Image 
-              source={resolveAvatarSource(user?.avatar || null)} 
-              style={styles.playerAvatar} 
-            />
+            <Avatar uri={user?.avatar || null} userId={user?.id} size={80} style={styles.playerAvatar} />
             <Text style={styles.playerName} numberOfLines={1}>You</Text>
             <Text style={styles.playerScore}>{myScore}</Text>
           </View>
@@ -66,10 +63,7 @@ export const PkResults: React.FC<Props> = ({
 
           {/* Opponent Score */}
           <View style={styles.playerCard}>
-            <Image 
-              source={resolveAvatarSource(opponent.avatar)} 
-              style={styles.playerAvatar} 
-            />
+            <Avatar uri={opponent.avatar} userId={String(opponent.id)} size={80} style={styles.playerAvatar} />
             <Text style={styles.playerName} numberOfLines={1}>{opponent.username}</Text>
             <Text style={styles.playerScore}>{opponentScore}</Text>
           </View>

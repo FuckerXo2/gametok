@@ -13,6 +13,7 @@ interface User {
   following: string[];
   totalScore: number;
   gamesPlayed: number;
+  verified?: boolean;
 }
 
 interface AuthContextType {

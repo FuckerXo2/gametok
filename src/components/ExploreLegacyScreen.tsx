@@ -24,7 +24,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { WebView } from 'react-native-webview';
-import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
 import { games, users, feed } from '../services/api';
 import { FindFriendsModal } from './FindFriendsModal';
 import { UserProfileModal } from './UserProfileModal';
@@ -33,7 +32,6 @@ import { CategoryModal } from './CategoryModal';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useAuthScreen } from '../../App';
-import { isExpoGo } from '../services/ads';
 import { GameLoadingScreen } from './GameLoadingScreen';
 import { LoopsBadges, LoopsIcons, BadgeSizes } from '../constants/LoopsBadges';
 
@@ -110,84 +108,7 @@ const getFakePlayCount = (gameId: string) => {
   return Math.abs(hash) % 1500000 + 10000;
 };
 
-// Ad blocker script from previous codebase
-const AD_BLOCKER_SCRIPT = `
-(function() {
-  window.alert = function() {};
-  window.confirm = function() { return true; };
-  window.prompt = function() { return ''; };
-  
-  // Fake ad SDKs
-  const fireCallbacks = (callbacks) => {
-    if (!callbacks) return;
-    callbacks.adStarted && callbacks.adStarted();
-    callbacks.adFinished && callbacks.adFinished();
-    callbacks.adReward && callbacks.adReward();
-    callbacks.onComplete && callbacks.onComplete();
-    callbacks.onReward && callbacks.onReward();
-    callbacks.success && callbacks.success();
-    callbacks.complete && callbacks.complete();
-    callbacks.done && callbacks.done();
-    callbacks.onClose && callbacks.onClose();
-  };
-  
-  window.google = window.google || {};
-  window.google.ima = {
-    AdDisplayContainer: function() { this.initialize = function(){}; },
-    AdsLoader: function() { this.addEventListener = function(){}; this.requestAds = function(){}; },
-    AdsManager: function() { this.addEventListener = function(){}; this.init = function(){}; this.start = function(){}; },
-    AdsManagerLoadedEvent: { Type: { ADS_MANAGER_LOADED: 'adsManagerLoaded' } },
-    AdErrorEvent: { Type: { AD_ERROR: 'adError' } },
-    AdEvent: { Type: { CONTENT_PAUSE_REQUESTED: 'pause', CONTENT_RESUME_REQUESTED: 'resume', ALL_ADS_COMPLETED: 'complete' }},
-    AdsRenderingSettings: function(){},
-    AdsRequest: function(){},
-  };
-  
-  window.sdk = {
-    showBanner: () => Promise.resolve(),
-    hideBanner: () => Promise.resolve(),
-    showAd: (type, cb) => { fireCallbacks(cb); return Promise.resolve(); },
-    showRewardedAd: (cb) => { fireCallbacks(cb); return Promise.resolve(); },
-    preloadAd: (cb) => { cb && cb(); return Promise.resolve(); },
-  };
-  window.gdsdk = window.sdk;
-  
-  const removeAds = () => {
-    const selectors = [
-      'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', '[class*="ad-"]', '[id*="ad-"]',
-      '.gdsdk-container', '.advertisement', '.ad-overlay', '[class*="preroll"]',
-      '.gm-loader', '.gm-splash', '[class*="gm-"]', '.loading-overlay', '.splash',
-      '#unity-loading-bar', '.unity-loader', '[class*="unity-load"]',
-    ];
-    selectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;';
-        try { el.remove(); } catch(e) {}
-      });
-    });
-  };
-  
-  setInterval(removeAds, 200);
-  setTimeout(removeAds, 0);
-  setTimeout(removeAds, 100);
-  setTimeout(removeAds, 500);
-  setTimeout(removeAds, 1000);
-  
-  const style = document.createElement('style');
-  style.textContent = \`
-    html, body { margin:0!important; padding:0!important; width:100%!important; height:100%!important; overflow:hidden!important; }
-    canvas, #game-container, .game-container, #unity-container { 
-      width:100vw!important; height:100vh!important; position:fixed!important; top:0!important; left:0!important; 
-    }
-    .gm-loader, .gm-splash, [class*="gm-"], .loading-overlay, .splash, #unity-loading-bar, .unity-loader,
-    [class*="loading-screen"], [class*="splash-screen"], .preloader, #preloader {
-      display:none!important; visibility:hidden!important; opacity:0!important;
-    }
-  \`;
-  document.head.appendChild(style);
-})();
-true;
-`;
+
 
 // Inject blurred game thumbnail as CSS background inside WebView
 const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
@@ -371,7 +292,7 @@ const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?
   return (
     <AnimatedCard onPress={onPress || (() => { })} index={index} style={styles.friendCard}>
       <View>
-        <Avatar uri={friend.avatar} size={64} style={styles.friendAvatar} />
+        <Avatar uri={friend.avatar} userId={friend.id} size={64} style={styles.friendAvatar} />
         {onlineUsers?.includes(friend.id) && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
       </View>
       <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.displayName || friend.username}</Text>
@@ -527,45 +448,7 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
   useEffect(() => { loadFriends(); }, [loadFriends]);
   useEffect(() => { loadNotifications(); }, [loadNotifications]);
 
-  // Interstitial Ad
-  const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
-  const [isAdLoaded, setIsAdLoaded] = useState(false);
-  const pendingCloseRef = useRef(false);
 
-  useEffect(() => {
-    if (isExpoGo) return;
-
-    const adUnitId = __DEV__ ? TestIds.INTERSTITIAL : 'ca-app-pub-1961802731817431/7682402362';
-    const interstitial = InterstitialAd.createForAdRequest(adUnitId, {
-      requestNonPersonalizedAdsOnly: true,
-    });
-
-    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => setIsAdLoaded(true));
-    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
-      setIsAdLoaded(false);
-      if (pendingCloseRef.current) {
-        pendingCloseRef.current = false;
-        setPlayingGame(null);
-      }
-      interstitial.load();
-    });
-    const unsubscribeError = interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
-      setIsAdLoaded(false);
-      if (pendingCloseRef.current) {
-        pendingCloseRef.current = false;
-        setPlayingGame(null);
-      }
-    });
-
-    interstitial.load();
-    setInterstitialAd(interstitial);
-
-    return () => {
-      unsubscribeLoaded();
-      unsubscribeClosed();
-      unsubscribeError();
-    };
-  }, []);
 
   const loadData = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
@@ -931,7 +814,7 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
               allowsAirPlayForMediaPlayback={false}
-              injectedJavaScriptBeforeContentLoaded={isExternalGame(playingGame) ? AD_BLOCKER_SCRIPT : undefined}
+              injectedJavaScriptBeforeContentLoaded={undefined}
               injectedJavaScript={createBlurBgScript(playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`, playingGame?.color || '#1a1a2e')}
               ref={webViewRef}
             />
@@ -950,15 +833,7 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
           <TouchableOpacity
             style={[styles.gameCloseBtn, { top: insets.top + 10, zIndex: 20 }]}
             onPress={() => {
-              if (isExpoGo) {
-                setPlayingGame(null);
-                alert('Mock Interstitial Ad: Sponsored Content');
-              } else if (isAdLoaded && interstitialAd) {
-                pendingCloseRef.current = true;
-                interstitialAd.show();
-              } else {
-                setPlayingGame(null);
-              }
+              setPlayingGame(null);
             }}
           >
             <Ionicons name="close" size={24} color="#fff" />

@@ -1,17 +1,14 @@
 import React, { useEffect } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { Avatar } from './Avatar';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withSequence,
   withTiming,
-  interpolateColor
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
@@ -22,49 +19,45 @@ interface BottomNavProps {
   onTabPress: (tab: TabName) => void;
 }
 
-const AnimatedTab = ({
+const NAV_WHITE = '#ffffff';
+const BRAND_PURPLE = '#a855f7';
+const INACTIVE = 'rgba(255,255,255,0.55)';
+const noFocusRing = { outlineStyle: 'none' } as any;
+
+interface TabSpec {
+  name: TabName;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconActive: keyof typeof Ionicons.glyphMap;
+  label: string;
+}
+
+const NavTab = ({
   tab,
   isActive,
   onPress,
-  colors,
-  user
+  user,
 }: {
-  tab: any;
+  tab: TabSpec;
   isActive: boolean;
   onPress: () => void;
-  colors: any;
   user: any;
 }) => {
-  const scale = useSharedValue(isActive ? 1.15 : 1);
-  const translateY = useSharedValue(isActive ? -4 : 0);
-  const opacity = useSharedValue(isActive ? 1 : 0.6);
+  const scale = useSharedValue(1);
 
   useEffect(() => {
-    scale.value = withSpring(isActive ? 1.15 : 1, { damping: 12, stiffness: 150 });
-    translateY.value = withSpring(isActive ? -4 : 0, { damping: 12, stiffness: 150 });
-    opacity.value = withTiming(isActive ? 1 : 0.6, { duration: 200 });
+    scale.value = withSpring(isActive ? 1.05 : 1, { damping: 14, stiffness: 220 });
   }, [isActive]);
 
-  const animatedIconStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { scale: scale.value }
-    ],
-  }));
-
-  const animatedTextStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: isActive ? 1.05 : 1 }],
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
   }));
 
   const handlePressIn = () => {
-    scale.value = withTiming(0.85, { duration: 100 });
+    scale.value = withTiming(0.92, { duration: 90 });
   };
-
   const handlePressOut = () => {
-    scale.value = withSpring(isActive ? 1.15 : 1, { damping: 10, stiffness: 250 });
+    scale.value = withSpring(isActive ? 1.05 : 1, { damping: 14, stiffness: 220 });
   };
-
   const handlePress = () => {
     if (!isActive) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -72,53 +65,54 @@ const AnimatedTab = ({
     }
   };
 
+  const color = isActive ? BRAND_PURPLE : INACTIVE;
+
   return (
     <Pressable
-      style={styles.tab}
+      style={[styles.tab, noFocusRing]}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={handlePress}
     >
-      <Animated.View style={[styles.iconContainer, animatedIconStyle]}>
+      <Animated.View style={[styles.tabInner, animatedStyle]}>
         {tab.name === 'profile' ? (
-          <View style={[styles.avatarContainer, isActive && { borderColor: colors.primary, borderWidth: 2 }]}>
-            <Avatar
-              uri={user?.avatar}
-              size={24}
-            />
+          <View style={[styles.avatarRing, isActive && styles.avatarRingActive]}>
+            <Avatar uri={user?.avatar} userId={user?.id} size={26} />
           </View>
         ) : (
-          <Ionicons
-            name={isActive ? tab.iconActive : tab.icon}
-            size={24}
-            color={isActive ? colors.primary : '#888'}
-          />
+          <Ionicons name={isActive ? tab.iconActive : tab.icon} size={24} color={color} />
         )}
+        <Animated.Text
+          style={[
+            styles.label,
+            { color },
+            isActive && styles.labelActive,
+          ]}
+        >
+          {tab.label}
+        </Animated.Text>
       </Animated.View>
-      <Animated.Text style={[
-        styles.label,
-        animatedTextStyle,
-        { color: isActive ? colors.primary : '#888' }
-      ]}>
-        {tab.label}
-      </Animated.Text>
     </Pressable>
   );
 };
 
-const CreateButton = ({ onPress, colors, isDark }: { onPress: () => void, colors: any, isDark: boolean }) => {
+const CreateButton = ({ onPress }: { onPress: () => void }) => {
   const scale = useSharedValue(1);
 
-  const handlePressIn = () => { scale.value = withTiming(0.85, { duration: 100 }); };
-  const handlePressOut = () => { scale.value = withSpring(1, { damping: 10, stiffness: 250 }); };
+  const handlePressIn = () => {
+    scale.value = withTiming(0.85, { duration: 90 });
+  };
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 12, stiffness: 220 });
+  };
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }]
+    transform: [{ scale: scale.value }],
   }));
 
   return (
     <Pressable
-      style={styles.createButtonContainer}
+      style={[styles.createTab, noFocusRing]}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={() => {
@@ -127,12 +121,9 @@ const CreateButton = ({ onPress, colors, isDark }: { onPress: () => void, colors
       }}
     >
       <Animated.View style={[styles.createButtonWrapper, animatedStyle]}>
-        {/* Engineered Psychological 3D Depth using GameTok Brand Colors */}
-        <View style={[styles.createButtonGlitch, { backgroundColor: '#00e5ff', left: -3 }]} />
-        <View style={[styles.createButtonGlitch, { backgroundColor: colors.primary, right: -3 }]} />
-        
-        {/* High Contrast Core */}
-        <View style={[styles.createButton, { backgroundColor: '#FFF' }]}>
+        <View style={[styles.createButtonGlitch, styles.createButtonGlitchCyan]} />
+        <View style={[styles.createButtonGlitch, styles.createButtonGlitchPurple]} />
+        <View style={styles.createButton}>
           <Ionicons name="add" size={24} color="#000" />
         </View>
       </Animated.View>
@@ -142,50 +133,43 @@ const CreateButton = ({ onPress, colors, isDark }: { onPress: () => void, colors
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
   const { user } = useAuth();
 
-  const tabs: { name: TabName; icon: string; iconActive: string; label: string }[] = [
+  const left: TabSpec[] = [
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
     { name: 'explore', icon: 'compass-outline', iconActive: 'compass', label: 'Explore' },
+  ];
+
+  const right: TabSpec[] = [
     { name: 'connect', icon: 'people-outline', iconActive: 'people', label: 'Connect' },
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
   ];
 
   return (
-    <View style={[
-      styles.container,
-      {
-        paddingBottom: insets.bottom || 8,
-        backgroundColor: '#000',
-        borderTopColor: '#333',
-      }
-    ]}>
-      {tabs.slice(0, 2).map((tab) => (
-        <AnimatedTab
+    <View
+      style={[
+        styles.container,
+        { paddingBottom: insets.bottom || 8 },
+      ]}
+    >
+      {left.map((tab) => (
+        <NavTab
           key={tab.name}
           tab={tab}
           isActive={activeTab === tab.name}
           onPress={() => onTabPress(tab.name)}
-          colors={colors}
           user={user}
         />
       ))}
 
-      {/* Custom GameTok AI Studio Button */}
-      <CreateButton 
-        onPress={() => onTabPress('create')} 
-        colors={colors} 
-        isDark={isDark} 
-      />
+      <CreateButton onPress={() => onTabPress('create')} />
 
-      {tabs.slice(2).map((tab) => (
-        <AnimatedTab
+      {right.map((tab) => (
+        <NavTab
           key={tab.name}
           tab={tab}
           isActive={activeTab === tab.name}
           onPress={() => onTabPress(tab.name)}
-          colors={colors}
           user={user}
         />
       ))}
@@ -196,8 +180,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
+    backgroundColor: '#000',
     borderTopWidth: 0.5,
-    paddingTop: 8,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    paddingTop: 10,
+    paddingHorizontal: 4,
     zIndex: 9999,
     elevation: 9999,
   },
@@ -205,28 +192,45 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
-  iconContainer: {
+  tabInner: {
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 3,
   },
   label: {
     fontSize: 10,
-    marginTop: 4,
     fontWeight: '600',
+    marginTop: 2,
+    letterSpacing: 0.1,
   },
-  createButtonContainer: {
+  labelActive: {
+    fontWeight: '700',
+  },
+  avatarRing: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarRingActive: {
+    borderWidth: 2,
+    borderColor: BRAND_PURPLE,
+  },
+  createTab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2, 
+    marginTop: 2,
   },
   createButtonWrapper: {
     width: 44,
     height: 30,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   createButtonGlitch: {
     position: 'absolute',
@@ -234,19 +238,20 @@ const styles = StyleSheet.create({
     height: 30,
     borderRadius: 8,
   },
+  createButtonGlitchCyan: {
+    left: -3,
+    backgroundColor: '#00e5ff',
+  },
+  createButtonGlitchPurple: {
+    right: -3,
+    backgroundColor: '#a855f7',
+  },
   createButton: {
     width: 44,
     height: 30,
     borderRadius: 8,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarContainer: {
-    width: 26,
-    height: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 13,
-    overflow: 'hidden',
   },
 });

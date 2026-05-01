@@ -94,7 +94,7 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
               />
               {/* Avatar overlay in center of QR */}
               <View style={styles.avatarOverlay}>
-                <Avatar uri={user?.avatar} size={40} />
+                <Avatar uri={user?.avatar} userId={user?.id} size={40} />
               </View>
             </View>
 

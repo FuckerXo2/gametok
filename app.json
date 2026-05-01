@@ -42,8 +42,7 @@
       "package": "com.vogeza",
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.RECORD_AUDIO",
-        "com.google.android.gms.permission.AD_ID"
+        "android.permission.RECORD_AUDIO"
       ],
       "versionCode": 50
     },
@@ -69,19 +68,6 @@
         "expo-image-picker",
         {
           "photosPermission": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."
-        }
-      ],
-      [
-        "expo-tracking-transparency",
-        {
-          "userTrackingPermission": "This identifier will be used to deliver personalized ads to you."
-        }
-      ],
-      [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-1961802731817431~2296399651",
-          "iosAppId": "ca-app-pub-1961802731817431~8301521567"
         }
       ]
     ],

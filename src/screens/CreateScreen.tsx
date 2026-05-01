@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,6 +16,7 @@ import {
   Alert,
   Modal,
   FlatList,
+  TouchableOpacity,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
@@ -42,17 +43,23 @@ import { cancelLocalNotification, scheduleCookingNotification, scheduleGameReady
 import * as ImagePicker from 'expo-image-picker';
 
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
+import { Avatar } from '../components/Avatar';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const GAMETOK_BG = require('../../assets/gametok_bg.png');
 
 // =============================================
 // TYPES
 // =============================================
 type DreamPhase = 'idle' | 'generating' | 'preview' | 'publish';
 type StudioTab = 'create' | 'drafts' | 'templates';
+type CreatorMode = 'game' | 'narrative';
+type NarrativeMessage = { id: string; role: 'ai' | 'user'; text: string };
 
 interface DraftItem {
   id: string;
@@ -189,6 +196,151 @@ const GENRE_CHIPS = [
       'An asteroid mining survival game where oxygen is running out'
     ] 
   },
+  {
+    icon: 'car-sport',
+    iconColor: '#38BDF8',
+    label: 'Racing',
+    prompts: [
+      'A first-person neon drifting game with sharp turns, boost pads, and reactive city lights.',
+      'An arcade street racer where you weave through midnight traffic and chain drift combos for score.',
+    ],
+  },
+  {
+    icon: 'musical-notes',
+    iconColor: '#F472B6',
+    label: 'Rhythm',
+    prompts: [
+      'A rhythm game where the player taps and swipes to a glitchy hyperpop beat while the stage pulses with light.',
+      'A musical reaction game where each lane has a different instrument and perfect timing stacks a combo meter.',
+    ],
+  },
+  {
+    icon: 'eye',
+    iconColor: '#F87171',
+    label: 'Horror',
+    prompts: [
+      'A psychological horror game where each answer changes the room and the player slowly realizes they are being watched.',
+      'A low-light survey game with whispering audio, false exits, and escalating tension after each choice.',
+    ],
+  },
+  {
+    icon: 'brush',
+    iconColor: '#22D3EE',
+    label: 'Creative',
+    prompts: [
+      'A mesmerizing drawing toy where mirrored strokes bloom into glowing kaleidoscope patterns.',
+      'A chill visual sandbox where adding particles changes the music and builds generative art in real time.',
+    ],
+  },
+  {
+    icon: 'school',
+    iconColor: '#C084FC',
+    label: 'Quiz',
+    prompts: [
+      'A fast-paced trivia game with streak bonuses, dramatic reveals, and playful wrong-answer animations.',
+      'A weird internet quiz where the questions get stranger the more correct answers you give.',
+    ],
+  },
+  {
+    icon: 'construct',
+    iconColor: '#F59E0B',
+    label: 'Builder',
+    prompts: [
+      'A toy builder game where the player snaps ramps, platforms, and launchers together to solve chaos puzzles.',
+      'A construction sandbox with physics blocks, moving parts, and a goal object that must reach a target zone.',
+    ],
+  },
+];
+
+const NARRATIVE_CHIPS = [
+  {
+    icon: 'book',
+    iconColor: '#f472b6',
+    label: 'Mystery',
+    prompts: [
+      'Create an interactive mystery story where the player searches a locked penthouse after midnight, collecting clues and choosing which suspect to trust.',
+      'Build a detective narrative with branching dialogue, hidden notes, and a reveal that changes based on which clues the player prioritized.',
+    ],
+  },
+  {
+    icon: 'heart',
+    iconColor: '#fb7185',
+    label: 'Romance',
+    prompts: [
+      'Write a dramatic enemies-to-lovers interactive story set backstage at a sold-out concert, with flirt tension, jealousy, and multiple endings.',
+      'Create a soft romance story where the player reconnects with a childhood friend during one strange neon-lit weekend in Lagos.',
+    ],
+  },
+  {
+    icon: 'moon',
+    iconColor: '#a78bfa',
+    label: 'Horror',
+    prompts: [
+      'Build a horror story where the player answers a late-night questionnaire and each answer changes the room around them in unsettling ways.',
+      'Create a phone-based psychological horror experience with whispered audio cues, false choices, and a final reveal that the game was watching the player back.',
+    ],
+  },
+  {
+    icon: 'people',
+    iconColor: '#22d3ee',
+    label: 'Roleplay',
+    prompts: [
+      'Create an immersive roleplay story where the player becomes the newest member of a secret guild and must choose alliances carefully.',
+      'Design a school-life roleplay with rival cliques, gossip systems, and high-stakes choices that affect who stands with you by the finale.',
+    ],
+  },
+  {
+    icon: 'rose',
+    iconColor: '#FB7185',
+    label: 'Drama',
+    prompts: [
+      'Create a messy relationship drama where every scene raises the emotional stakes and trust keeps breaking in new ways.',
+      'Write a high-tension story of betrayal and reunion set across one emotionally chaotic night.',
+    ],
+  },
+  {
+    icon: 'flash',
+    iconColor: '#F59E0B',
+    label: 'Thriller',
+    prompts: [
+      'Build a thriller where the player has ten minutes to prevent a disaster and each call changes who survives.',
+      'Create an interactive chase story full of time pressure, hidden motives, and split-second choices.',
+    ],
+  },
+  {
+    icon: 'sparkles',
+    iconColor: '#A78BFA',
+    label: 'Fantasy',
+    prompts: [
+      'Write a fantasy journey where the player binds magical relics and chooses which kingdom to betray.',
+      'Create a mystical interactive tale with secret powers, ancient omens, and a morally messy finale.',
+    ],
+  },
+  {
+    icon: 'business',
+    iconColor: '#38BDF8',
+    label: 'School',
+    prompts: [
+      'Design a chaotic school-life interactive story with cliques, rumors, and status shifts after every decision.',
+      'Create a campus roleplay where the player balances friendship, romance, and a secret scandal.',
+    ],
+  },
+];
+
+const NARRATIVE_STARTER_MESSAGES: NarrativeMessage[] = [
+  {
+    id: 'ai-0',
+    role: 'ai',
+    text: 'Tell me the messy version first. What kind of world, scene, or story are we building?',
+  },
+];
+
+const NARRATIVE_QUESTIONS = [
+  'What should the player be trying to achieve?',
+  'What mood should it feel like: funny, scary, romantic, chaotic, emotional, or something else?',
+  'Who is the main character, and what do they want?',
+  'What choice or mechanic should keep the player engaged every few seconds?',
+  'How should a good ending or win moment feel?',
 ];
 
 // =============================================
@@ -207,6 +359,11 @@ const COOKING_STATUS_LINES = [
   'Teaching the zombies how to lose...',
   'Sanding the rough edges off the fun...',
 ];
+
+const chunkIntoRows = <T,>(items: T[], rowCount: number) =>
+  Array.from({ length: rowCount }, (_, rowIndex) =>
+    items.filter((_, index) => index % rowCount === rowIndex)
+  );
 
 const ATTACHMENT_ROLE_OPTIONS: Record<string, Array<{ role: AttachmentRole; label: string }>> = {
   image: [
@@ -260,6 +417,7 @@ const StepIndicator = ({ step, isActive, isComplete }: { step: typeof GENERATION
 // =============================================
 export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose }) => {
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -268,6 +426,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const cookingNotificationRef = useRef<string | null>(null);
   const webviewRef = useRef<WebView>(null);
   const enemyIdRef = useRef(0);
+  const ideasScrollRefs = useRef<Array<ScrollView | null>>([]);
+  const ideasOffsetRefs = useRef([0, 0, 0]);
+  const ideasContentWidthRefs = useRef([0, 0, 0]);
+  const ideasPauseUntilRef = useRef(0);
 
   // Game Config Bridge State (Rezona-style)
   const [gameConfig, setGameConfig] = useState<Record<string, { type: string; label: string; value: number; min: number; max: number }>>({}); 
@@ -329,6 +491,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [showExitConfirm, setShowExitConfirm] = useState<'discard' | 'closeApp' | null>(null);
   const [privacySetting, setPrivacySetting] = useState<'public' | 'play_only' | 'private'>('public');
   const [labsMode, setLabsMode] = useState(false);
+  const [creatorMode, setCreatorMode] = useState<CreatorMode>('game');
+  const [narrativeMessages, setNarrativeMessages] = useState<NarrativeMessage[]>(NARRATIVE_STARTER_MESSAGES);
+  const [narrativeInput, setNarrativeInput] = useState('');
+  const [narrativeStep, setNarrativeStep] = useState(0);
 
   // Audio search state
   const [audioSearchQuery, setAudioSearchQuery] = useState('');
@@ -345,6 +511,29 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [templates, setTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [studioBuildTick, setStudioBuildTick] = useState(0);
+
+  const narrativeUserReplies = useMemo(
+    () => narrativeMessages.filter((message) => message.role === 'user').map((message) => message.text.trim()).filter(Boolean),
+    [narrativeMessages]
+  );
+
+  const narrativeBrief = useMemo(() => {
+    if (narrativeUserReplies.length === 0) {
+      return 'No story locked yet. Start with a rough idea and I’ll shape it.';
+    }
+
+    const [core, goal, tone, character, mechanic, ending] = narrativeUserReplies;
+    return [
+      `Core idea: ${core}`,
+      goal ? `Player goal: ${goal}` : null,
+      tone ? `Tone: ${tone}` : null,
+      character ? `Main character: ${character}` : null,
+      mechanic ? `Interactive hook: ${mechanic}` : null,
+      ending ? `Ending feel: ${ending}` : null,
+      'Build it as a polished interactive narrative game with clear choices, readable UI, satisfying feedback, and a complete playable loop.',
+    ].filter(Boolean).join('\n');
+  }, [narrativeUserReplies]);
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
   // This JavaScript is injected into the WebView after the game HTML loads.
@@ -403,6 +592,26 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     true;
   `;
 
+  const MUTE_WEBVIEW_JS = useMemo(() => `
+    (function() {
+      window._gametokActive = false;
+      window._gametokMuted = true;
+      document.querySelectorAll('audio, video').forEach(function(el) {
+        try {
+          el.muted = true;
+          el.volume = 0;
+          el.pause();
+        } catch(e) {}
+      });
+      if (window._audioContexts) {
+        window._audioContexts.forEach(function(ctx) {
+          try { ctx.suspend(); } catch(e) {}
+        });
+      }
+    })();
+    true;
+  `, []);
+
   // Handle messages from the WebView game
   const showPreviewError = useCallback((message: string) => {
     if (!message) return;
@@ -460,6 +669,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // Animations
   const orbPulse = useSharedValue(1);
   const orbRotation = useSharedValue(0);
+  const studioChipData = creatorMode === 'game' ? GENRE_CHIPS : NARRATIVE_CHIPS;
+  const studioChipRows = chunkIntoRows(studioChipData, 3).map((row) => [...row, ...row]);
+  const activeStudioStepIndex = pendingJobId ? (phase === 'generating' ? activeStep : studioBuildTick % GENERATION_STEPS.length) : 0;
+  const activeStudioStep = GENERATION_STEPS[activeStudioStepIndex];
+  const activeStudioStatusLine = COOKING_STATUS_LINES[studioBuildTick % COOKING_STATUS_LINES.length];
 
   // Fetch drafts when screen becomes active or tab switches to drafts
   const fetchDrafts = useCallback(async () => {
@@ -479,8 +693,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   useEffect(() => {
     if (isActive) {
       fetchDrafts();
+    } else {
+      webviewRef.current?.injectJavaScript(MUTE_WEBVIEW_JS);
     }
-  }, [isActive, fetchDrafts]);
+  }, [isActive, fetchDrafts, MUTE_WEBVIEW_JS]);
 
   useEffect(() => {
     if (studioTab === 'drafts') {
@@ -685,6 +901,47 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   }, [phase]);
 
   useEffect(() => {
+    if (!pendingJobId || phase === 'generating') return;
+    const interval = setInterval(() => {
+      setStudioBuildTick((prev) => prev + 1);
+    }, 2600);
+    return () => clearInterval(interval);
+  }, [pendingJobId, phase]);
+
+  useEffect(() => {
+    ideasOffsetRefs.current = [0, 0, 0];
+    ideasContentWidthRefs.current = [0, 0, 0];
+    ideasScrollRefs.current.forEach((ref) => ref?.scrollTo({ x: 0, animated: false }));
+  }, [creatorMode]);
+
+  useEffect(() => {
+    if (studioTab !== 'create' || phase !== 'idle') return;
+    const interval = setInterval(() => {
+      if (Date.now() < ideasPauseUntilRef.current) return;
+      ideasScrollRefs.current.forEach((ref, rowIndex) => {
+        const loopWidth = ideasContentWidthRefs.current[rowIndex] / 2;
+        if (!loopWidth || !ref) return;
+        const direction = rowIndex % 2 === 0 ? 1 : -1;
+        const speed = rowIndex === 1 ? 0.5 : 0.75;
+        let nextOffset = ideasOffsetRefs.current[rowIndex] + direction * speed;
+
+        if (direction === 1 && nextOffset >= loopWidth) {
+          nextOffset = 0;
+          ref.scrollTo({ x: 0, animated: false });
+        } else if (direction === -1 && nextOffset <= 0) {
+          nextOffset = loopWidth;
+          ref.scrollTo({ x: loopWidth, animated: false });
+        } else {
+          ref.scrollTo({ x: nextOffset, animated: false });
+        }
+
+        ideasOffsetRefs.current[rowIndex] = nextOffset;
+      });
+    }, 24);
+    return () => clearInterval(interval);
+  }, [studioTab, phase, creatorMode]);
+
+  useEffect(() => {
     if (phase !== 'generating') return;
 
     enemyIdRef.current = 0;
@@ -753,12 +1010,66 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // ======================
   const handleGenreSelect = (genrePrompts: string[]) => {
     const randomPrompt = genrePrompts[Math.floor(Math.random() * genrePrompts.length)];
-    setPrompt(randomPrompt);
+    if (creatorMode === 'narrative') {
+      setNarrativeInput(randomPrompt);
+    } else {
+      setPrompt(randomPrompt);
+    }
+    setErrorMsg(null);
+    ideasPauseUntilRef.current = Date.now() + 1200;
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const handleDream = async () => {
-    const finalPrompt = prompt.trim();
-    if (!finalPrompt || phase === 'generating') return;
+  const sendNarrativeMessage = useCallback(() => {
+    const text = narrativeInput.trim();
+    if (!text) return;
+
+    const userMessage: NarrativeMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text,
+    };
+    const nextStep = narrativeStep + 1;
+    const aiText = nextStep < NARRATIVE_QUESTIONS.length
+      ? NARRATIVE_QUESTIONS[nextStep]
+      : 'That is enough to forge from. Add one more detail if you want, or tap Forge It and I’ll build the interactive story.';
+
+    setNarrativeMessages((prev) => [
+      ...prev,
+      userMessage,
+      {
+        id: `ai-${Date.now()}`,
+        role: 'ai',
+        text: aiText,
+      },
+    ]);
+    setNarrativeStep(nextStep);
+    setNarrativeInput('');
+    setPrompt((prev) => {
+      const compiled = [...narrativeUserReplies, text].filter(Boolean);
+      return [
+        'Create a polished interactive narrative game from this creative direction:',
+        ...compiled.map((item, index) => `${index + 1}. ${item}`),
+        'Make the story playable with meaningful choices, visible consequences, strong atmosphere, and a complete ending.',
+      ].join('\n');
+    });
+    setErrorMsg(null);
+  }, [narrativeInput, narrativeStep, narrativeUserReplies]);
+
+  const handleReturnToForge = useCallback(() => {
+    if (!pendingJobId) return;
+    setErrorMsg(null);
+    setPhase('generating');
+  }, [pendingJobId]);
+
+  const handleDream = async (promptOverride?: string) => {
+    const finalPrompt = (promptOverride ?? prompt).trim();
+    if (phase === 'generating') return;
+    if (!finalPrompt) {
+      setErrorMsg('Write a quick brief first, or tap Surprise me.');
+      inputRef.current?.focus();
+      return;
+    }
 
     setPhase('generating');
     setErrorMsg(null);
@@ -815,6 +1126,51 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       setErrorMsg(friendlyMessage);
       setPhase('idle');
     }
+  };
+
+  const handleDreamComposerPress = () => {
+    const finalPrompt = creatorMode === 'narrative' ? narrativeBrief.trim() : prompt.trim();
+    if (creatorMode === 'narrative' && narrativeInput.trim()) {
+      sendNarrativeMessage();
+      return;
+    }
+    if (!finalPrompt || (creatorMode === 'narrative' && narrativeUserReplies.length === 0)) {
+      setErrorMsg('Write a quick brief first, or tap Surprise me.');
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    if (creatorMode === 'narrative') {
+      setPrompt(narrativeBrief);
+    }
+    setErrorMsg(null);
+    Keyboard.dismiss();
+    requestAnimationFrame(() => handleDream(finalPrompt));
+  };
+
+  const handleDeleteDraft = (draftId: string, title?: string) => {
+    Alert.alert(
+      'Delete draft?',
+      `Remove ${title || 'this draft'} from your drafts? This can’t be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ai.deleteDraft(draftId);
+              setDrafts(prev => prev.filter(d => d.id !== draftId));
+              if (activeDraftId === draftId) {
+                handleRegenerate();
+              }
+            } catch (e) {
+              console.error('Failed to delete draft:', e);
+              Alert.alert('Couldn’t delete draft', 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
 
@@ -1042,10 +1398,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setIsGeneratingImage(false);
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     detachPendingDreamRef.current = false;
     stopLocalDreamPolling();
-    clearPendingDreamJob();
+    await clearPendingDreamJob();
     setPhase('idle');
   };
 
@@ -1219,10 +1575,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   };
 
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
     detachPendingDreamRef.current = false;
     stopLocalDreamPolling();
-    clearPendingDreamJob();
+    await clearPendingDreamJob();
     setActiveHtml(null);
     setActiveDraftId(null);
     setGameTitle('');
@@ -1241,9 +1597,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       else setPhase('idle');
       return;
     }
+
+    if (pendingJobId) {
+      if (actionType === 'closeApp') onClose();
+      else setPhase('idle');
+      return;
+    }
     
-    // Check if user has unsaved input or an active preview
-    if (activeDraftId || prompt.trim() || attachedAssets.length > 0 || activeHtml) {
+    // Only confirm when leaving a live preview / test surface.
+    if (phase === 'preview' && (activeDraftId || activeHtml)) {
       setShowExitConfirm(actionType);
     } else {
       if (actionType === 'closeApp') onClose();
@@ -1926,6 +2288,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                 javaScriptEnabled={true}
                 originWhitelist={['*']}
                 allowsInlineMediaPlayback={true}
+                mediaPlaybackRequiresUserAction={true}
+                injectedJavaScript={MUTE_WEBVIEW_JS}
               />
               <View style={{ position: 'absolute', bottom: 12, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 }}>
                 <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Edit</Text>
@@ -2028,9 +2392,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     <Modal visible={!!showExitConfirm} transparent animationType="fade" onRequestClose={() => setShowExitConfirm(null)}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <View style={{ width: '100%', maxWidth: 340, backgroundColor: '#2C2C2E', borderRadius: 28, padding: 28, alignItems: 'center' }}>
-          <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '800', marginBottom: 14, textAlign: 'center' }}>Hold up—heading out?</Text>
+          <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '800', marginBottom: 14, textAlign: 'center' }}>Leave Dream Forge?</Text>
           <Text style={{ color: '#AAA', fontSize: 15, textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
-            Leaving now means your game creation gets yeeted. Like... gone. Forever. 😬
+            You have an unfinished draft on this screen. If you leave now, the unsent brief and local edits will be discarded.
           </Text>
           <Pressable 
             style={({ pressed }) => [{ width: '100%', backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginBottom: 10 }, pressed && { opacity: 0.85 }]}
@@ -2207,45 +2571,50 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // ======================
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {/* Full-screen purple-to-blue gradient for all tabs */}
-      <LinearGradient
-        colors={['rgba(88,28,135,0.4)', 'rgba(30,58,138,0.3)', 'rgba(10,20,50,0.1)']}
-        locations={[0, 0.5, 1]}
-        style={StyleSheet.absoluteFillObject}
-      />
+      {/* Full-screen background (Removed to ensure perfect black) */}
 
-      {/* Header — changes based on active tab */}
+      {/* V2 Header (mockup): avatar | centered gametok | menu */}
       {studioTab === 'create' ? (
-        <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('closeApp')}>
-            <Ionicons name="close" size={20} color="#E0E0E0" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Create your game</Text>
-          <Pressable 
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: labsMode ? 'rgba(52,199,89,0.15)' : 'rgba(255,255,255,0.06)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: labsMode ? 'rgba(52,199,89,0.3)' : 'transparent' }}
-            onPress={() => setLabsMode(prev => !prev)}
-          >
-            <Ionicons name="flask" size={14} color={labsMode ? '#34C759' : '#888'} style={{ marginRight: 6 }} />
-            <Text style={{ color: labsMode ? '#34C759' : '#888', fontSize: 13, fontWeight: '700' }}>{labsMode ? 'Qwen Solo' : 'Labs'}</Text>
-          </Pressable>
+        <View style={styles.headerV2}>
+          <View style={styles.headerV2Side}>
+            <Pressable style={styles.headerAvatarWrap} onPress={() => handleIntentClose('closeApp')}>
+              <Avatar uri={user?.avatar} userId={user?.id} size={44} />
+            </Pressable>
+          </View>
+          <View style={styles.headerV2Center} pointerEvents="none">
+            <Text style={[styles.headerLogo, styles.headerLogoGametok]}>gametok</Text>
+          </View>
+          <View style={[styles.headerV2Side, styles.headerV2SideRight]}>
+            <View style={{ width: 36, height: 36 }} />
+          </View>
         </View>
       ) : studioTab === 'drafts' ? (
-        <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('closeApp')}>
-            <Ionicons name="close" size={20} color="#E0E0E0" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Your Draft</Text>
-          <Pressable style={{ paddingHorizontal: 4 }}>
-            <Text style={{ color: '#FF453A', fontSize: 15, fontWeight: '600' }}>Delete</Text>
-          </Pressable>
+        <View style={styles.headerV2}>
+          <View style={styles.headerV2Side}>
+            <Pressable style={styles.headerMenuBtn} onPress={() => setStudioTab('create')}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </Pressable>
+          </View>
+          <View style={styles.headerV2Center} pointerEvents="none">
+            <Text style={styles.headerLogo}>Your Drafts</Text>
+          </View>
+          <View style={[styles.headerV2Side, styles.headerV2SideRight]}>
+            <View style={{ width: 36, height: 36 }} />
+          </View>
         </View>
       ) : (
-        <View style={styles.header}>
-          <Pressable style={styles.closeBtn} onPress={() => handleIntentClose('closeApp')}>
-            <Ionicons name="close" size={20} color="#E0E0E0" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Templates</Text>
-          <View style={{ width: 38 }} />
+        <View style={styles.headerV2}>
+          <View style={styles.headerV2Side}>
+            <Pressable style={styles.headerMenuBtn} onPress={() => setStudioTab('create')}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </Pressable>
+          </View>
+          <View style={styles.headerV2Center} pointerEvents="none">
+            <Text style={styles.headerLogo}>Templates</Text>
+          </View>
+          <View style={[styles.headerV2Side, styles.headerV2SideRight]}>
+            <View style={{ width: 36, height: 36 }} />
+          </View>
         </View>
       )}
 
@@ -2258,19 +2627,88 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           contentContainerStyle={styles.scrollContent}
           bounces={false}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
         >
+          {/* Top hero — matches promo screenshot: sparkle + gradient-style title + subtitle + segmented modes */}
+          <Animated.View entering={FadeInUp.duration(360)}>
+            <View style={styles.heroV2Wrap}>
+              <View style={[styles.heroV2TitleRow, { position: 'relative', width: 260, height: 44, alignSelf: 'center' }]}>
+                {/* Subtle glow effect behind */}
+                <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', position: 'absolute' }}>
+                  <Text style={[styles.heroV2TitleDream, { color: 'transparent', fontSize: 28, textShadowColor: 'rgba(168,85,247,0.6)', textShadowRadius: 14 }]}>✨ Dream Forge</Text>
+                </View>
+
+                {/* Gradient text using SVG to avoid native crash from MaskedView */}
+                <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                  <Ionicons name="sparkles" size={24} color="#d946ef" style={{ marginRight: 8 }} />
+                  <Svg height="40" width="180">
+                    <Defs>
+                      <SvgLinearGradient id="grad" x1="0" y1="0" x2="1" y2="0">
+                        <Stop offset="0" stopColor="#d946ef" stopOpacity="1" />
+                        <Stop offset="0.45" stopColor="#8b5cf6" stopOpacity="1" />
+                        <Stop offset="1" stopColor="#3b82f6" stopOpacity="1" />
+                      </SvgLinearGradient>
+                    </Defs>
+                    <SvgText
+                      fill="url(#grad)"
+                      fontSize="28"
+                      fontWeight="800"
+                      x="0"
+                      y="30"
+                      letterSpacing="-0.4"
+                    >
+                      Dream Forge
+                    </SvgText>
+                  </Svg>
+                </View>
+              </View>
+              <Text style={styles.heroV2Subtitle}>Your imagination. Unlocked.</Text>
+
+              <View style={styles.modeSwitchV2}>
+                <Pressable
+                  style={[styles.modeSwitchV2Tab, { marginRight: 4 }, creatorMode === 'game' && styles.modeSwitchV2TabActive]}
+                  onPressIn={() => setCreatorMode('game')}
+                >
+                  <Text style={[styles.modeSwitchV2Text, creatorMode === 'game' && styles.modeSwitchV2TextActive]}>
+                    Game Mode
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modeSwitchV2Tab, creatorMode === 'narrative' && styles.modeSwitchV2TabActive]}
+                  onPressIn={() => setCreatorMode('narrative')}
+                >
+                  <Text style={[styles.modeSwitchV2Text, creatorMode === 'narrative' && styles.modeSwitchV2TextActive]}>
+                    Narrative Mode
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </Animated.View>
+
           {/* === MAIN INPUT CARD === */}
-          <Animated.View entering={FadeInUp.delay(100).duration(400)}>
-            <View style={styles.inputCard}>
+          <Animated.View entering={FadeInUp.delay(80).duration(400)}>
+            <View style={[styles.inputCard, creatorMode === 'narrative' && styles.narrativeChatSurface]}>
               <LinearGradient
-                colors={['rgba(168,85,247,0.4)', 'rgba(37,244,238,0.2)']}
+                colors={['rgba(124,58,237,0.55)', 'rgba(168,85,247,0.55)', 'rgba(192,132,252,0.4)']}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={styles.inputGlowBorder}
               />
 
+              <View style={styles.inputCardHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Ionicons name={creatorMode === 'game' ? 'hardware-chip' : 'chatbubble-ellipses'} size={12} color="#C084FC" style={{ marginRight: 6 }} />
+                  <Text style={[styles.inputCardEyebrow, { marginBottom: 0 }]}>{creatorMode === 'game' ? 'GAME BRIEF' : 'AI STORY SESSION'}</Text>
+                </View>
+                {creatorMode === 'narrative' ? (
+                  <View style={styles.narrativeHeaderStatus}>
+                    <View style={styles.narrativeHeaderDot} />
+                    <Text style={styles.narrativeHeaderStatusText}>Brief building</Text>
+                  </View>
+                ) : null}
+              </View>
+
               {/* Attached Assets Visual Row */}
-              {attachedAssets.length > 0 && (
+              {creatorMode === 'game' && attachedAssets.length > 0 && (
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                     {attachedAssets.map((asset, i) => (
@@ -2301,53 +2739,235 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                 </View>
               )}
 
-              {/* Text input area */}
-              <TextInput
-                ref={inputRef}
-                style={styles.mainInput}
-                placeholder="Describe your dream game..."
-                placeholderTextColor="rgba(255,255,255,0.25)"
-                multiline
-                maxLength={500}
-                value={prompt}
-                onChangeText={setPrompt}
-                textAlignVertical="top"
-                inputAccessoryViewID="gametok-done"
-              />
+              <View style={styles.inputCardBody}>
+                {creatorMode === 'narrative' ? (
+                  <>
+                    <View style={styles.narrativeSessionHeader}>
+                      <View style={styles.narrativeAgentAvatar}>
+                        <Ionicons name="sparkles" size={18} color="#FFF" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.narrativeAgentName}>Dream Forge AI</Text>
+                        <Text style={styles.narrativeAgentSub}>Talk it through. I’ll shape the playable story.</Text>
+                      </View>
+                    </View>
 
-              {/* Bottom row inside input — surprise me + send */}
-              <View style={styles.inputBottomRow}>
-                <Pressable
-                  style={styles.surpriseBtn}
-                  onPress={() => {
-                    const surprises = [
-                      'A massive, completely unhinged physics simulation where you control a magnetic wrecking ball. You must swing through fully destructible voxel skyscrapers, causing absolute chaos and frame-dropping levels of particle explosions. The ground should shatter realistically, and the UI should keep a running tally of millions of dollars in property damage with a satisfying slot-machine counter animation.',
-                      'An intensely addictive tower defense hybrid set in a microscopic cell. You are defending the nucleus from evolving viruses. Place white blood cell turrets that automatically lock on to enemies. Crucially, the viruses mutate every wave, becoming immune to certain projectile colors, forcing the player to constantly upgrade and swap turret types. Include an incredible liquid-like UI with soft blobs and organic sounds.',
-                      'A deeply satisfying game focused purely on game feel and cutting things. Fruits and objects fly across the screen, and the player swipes their finger to slice them accurately in half like Fruit Ninja. However, implement extremely detailed hit-stop, heavy screen shake on critical hits, and physics where the two halves of the object actually fly apart based precisely on the angle of the swipe vector. Add combo tracking and announcer voice text.',
-                      'A hyper-stylized neon rhythm game where the map generates purely based on the beat. The player controls a glowing cube racing down an infinite track. Bass hits spawn massive obstacles you have to jump over, while synth notes create speed pads. The camera must pulse and FOV warp aggressively to the beat to make the player feel the music. Keep the neon colors vibrant against an absolute pitch-black background.',
-                    ];
-                    setPrompt(surprises[Math.floor(Math.random() * surprises.length)]);
-                  }}
-                >
-                  <Ionicons name="sparkles" size={16} color="#a855f7" style={styles.surpriseEmoji as any} />
-                  <Text style={styles.surpriseText}>Surprise me</Text>
-                </Pressable>
+                    <View style={styles.narrativeChatBox}>
+                      {narrativeMessages.map((message) => (
+                        <View
+                          key={message.id}
+                          style={[
+                            styles.narrativeBubble,
+                            message.role === 'user' ? styles.narrativeBubbleUser : styles.narrativeBubbleAi,
+                          ]}
+                        >
+                          {message.role === 'ai' ? (
+                            <View style={styles.narrativeAiDot}>
+                              <Ionicons name="sparkles" size={11} color="#FFF" />
+                            </View>
+                          ) : null}
+                          <Text style={styles.narrativeBubbleText}>{message.text}</Text>
+                        </View>
+                      ))}
+                    </View>
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={styles.narrativeBriefPanel}>
+                      <View style={styles.narrativeBriefHeader}>
+                        <View style={styles.narrativeBriefIcon}>
+                          <Ionicons name="document-text" size={14} color="#F0ABFC" />
+                        </View>
+                        <Text style={styles.narrativeBriefTitle}>Current Brief</Text>
+                        <Text style={styles.narrativeBriefCount}>{narrativeUserReplies.length}/5</Text>
+                      </View>
+                      <Text style={styles.narrativeBriefText} numberOfLines={6}>
+                        {narrativeBrief}
+                      </Text>
+                    </View>
+
+                    <View style={styles.narrativeComposer}>
+                      <TextInput
+                        ref={inputRef}
+                        style={styles.narrativeInput}
+                        placeholder="Answer naturally..."
+                        placeholderTextColor="rgba(255,255,255,0.28)"
+                        multiline
+                        maxLength={420}
+                        value={narrativeInput}
+                        onChangeText={setNarrativeInput}
+                        textAlignVertical="top"
+                        inputAccessoryViewID="gametok-done"
+                      />
+                      <Pressable
+                        style={[styles.narrativeSendBtn, !narrativeInput.trim() && styles.narrativeSendBtnIdle]}
+                        onPress={sendNarrativeMessage}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="arrow-up" size={18} color={narrativeInput.trim() ? '#FFF' : 'rgba(255,255,255,0.35)'} />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.narrativeReferenceDock}>
+                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => setShowCommunityImagesModal(true)}>
+                        <Ionicons name="images-outline" size={17} color="#C084FC" />
+                        <Text style={styles.narrativeReferenceText}>Images</Text>
+                      </Pressable>
+                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => setShowVideosModal(true)}>
+                        <Ionicons name="film-outline" size={17} color="#FF6B9D" />
+                        <Text style={styles.narrativeReferenceText}>Video</Text>
+                      </Pressable>
+                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => { setAudioTab('bgm'); setShowAudioModal(true); }}>
+                        <Ionicons name="musical-notes-outline" size={17} color="#25F4EE" />
+                        <Text style={styles.narrativeReferenceText}>Audio</Text>
+                      </Pressable>
+                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => setShowImageModal(true)}>
+                        <Ionicons name="sparkles-outline" size={17} color="#FACC15" />
+                        <Text style={styles.narrativeReferenceText}>Generate</Text>
+                      </Pressable>
+                    </View>
+
+                    {attachedAssets.length > 0 ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.narrativeAttachedRow}>
+                        {attachedAssets.map((asset, i) => (
+                          <Pressable key={`narrative-attached-${i}`} style={styles.narrativeAttachedChip} onPress={() => openAssetIntentModal(asset, i)}>
+                            <Image source={{ uri: asset.thumb || asset.thumbnail || asset.url }} style={styles.narrativeAttachedThumb} resizeMode="cover" />
+                            <Text style={styles.narrativeAttachedText} numberOfLines={1}>{asset.role}</Text>
+                            <Pressable onPress={() => setAttachedAssets(prev => prev.filter((_, idx) => idx !== i))} hitSlop={6}>
+                              <Ionicons name="close" size={12} color="rgba(255,255,255,0.72)" />
+                            </Pressable>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    ) : null}
+
+                    <View style={styles.narrativeActionRow}>
+                      <Text style={styles.narrativeForgeHint}>Keep chatting until the brief feels right.</Text>
+
+                      <Pressable
+                        style={[styles.sendBtn, narrativeUserReplies.length === 0 && styles.sendBtnIdle]}
+                        onPressIn={() => {
+                          if (narrativeUserReplies.length === 0) {
+                            setErrorMsg('Talk through the idea first, then forge the brief.');
+                            requestAnimationFrame(() => inputRef.current?.focus());
+                            return;
+                          }
+                          setPrompt(narrativeBrief);
+                          setErrorMsg(null);
+                          Keyboard.dismiss();
+                          requestAnimationFrame(() => handleDream(narrativeBrief));
+                        }}
+                        hitSlop={14}
+                      >
+                        <Text style={styles.sendBtnText}>Forge It</Text>
+                        <Ionicons name="chevron-forward" size={18} color="#FFF" />
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                {/* Text input area */}
+                <TextInput
+                  ref={inputRef}
+                  style={styles.mainInput}
+                  placeholder={creatorMode === 'game' ? 'Make a first person drifting game with night neon roads...' : 'Write a dark interactive survey where each answer changes the room...'}
+                  placeholderTextColor="rgba(255,255,255,0.14)"
+                  multiline
+                  maxLength={500}
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  textAlignVertical="top"
+                  inputAccessoryViewID="gametok-done"
+                />
+
+                {!prompt.trim() && (
+                  <Text style={styles.inputHint}>
+                    Write a brief or tap `Surprise me` to seed one.
+                  </Text>
+                )}
+
+                {/* Bottom row inside input — surprise me + send */}
+                <View style={[styles.inputBottomRow, { zIndex: 99 }]}>
                   <Pressable
-                    style={[styles.sendBtn, !prompt.trim() && { opacity: 0.3 }]}
-                    onPress={handleDream}
-                    disabled={!prompt.trim()}
+                    style={styles.surpriseBtn}
+                    onPressIn={() => {
+                      const surprises = [
+                        'A massive, completely unhinged physics simulation where you control a magnetic wrecking ball. You must swing through fully destructible voxel skyscrapers, causing absolute chaos and frame-dropping levels of particle explosions. The ground should shatter realistically, and the UI should keep a running tally of millions of dollars in property damage with a satisfying slot-machine counter animation.',
+                        'An intensely addictive tower defense hybrid set in a microscopic cell. You are defending the nucleus from evolving viruses. Place white blood cell turrets that automatically lock on to enemies. Crucially, the viruses mutate every wave, becoming immune to certain projectile colors, forcing the player to constantly upgrade and swap turret types. Include an incredible liquid-like UI with soft blobs and organic sounds.',
+                        'A deeply satisfying game focused purely on game feel and cutting things. Fruits and objects fly across the screen, and the player swipes their finger to slice them accurately in half like Fruit Ninja. However, implement extremely detailed hit-stop, heavy screen shake on critical hits, and physics where the two halves of the object actually fly apart based precisely on the angle of the swipe vector. Add combo tracking and announcer voice text.',
+                        'A hyper-stylized neon rhythm game where the map generates purely based on the beat. The player controls a glowing cube racing down an infinite track. Bass hits spawn massive obstacles you have to jump over, while synth notes create speed pads. The camera must pulse and FOV warp aggressively to the beat to make the player feel the music. Keep the neon colors vibrant against an absolute pitch-black background.',
+                      ];
+                      setPrompt(surprises[Math.floor(Math.random() * surprises.length)]);
+                      setErrorMsg(null);
+                      requestAnimationFrame(() => inputRef.current?.focus());
+                    }}
                   >
-                    <Ionicons name="arrow-up" size={20} color="#FFF" />
+                    <Ionicons name="sparkles" size={16} color="#C084FC" style={styles.surpriseEmoji as any} />
+                    <Text style={styles.surpriseText}>Surprise me</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[styles.sendBtn, !prompt.trim() && styles.sendBtnIdle]}
+                    onPressIn={handleDreamComposerPress}
+                    hitSlop={14}
+                  >
+                    <Text style={styles.sendBtnText}>Forge It</Text>
+                    <Ionicons name="chevron-forward" size={18} color="#FFF" />
                   </Pressable>
                 </View>
+                  </>
+                )}
               </View>
             </View>
           </Animated.View>
 
+          {pendingJobId && (
+            <Animated.View entering={FadeInUp.delay(110).duration(360)}>
+              <Pressable style={styles.activeBuildCard} onPressIn={handleReturnToForge}>
+                <View style={styles.activeBuildStrip}>
+                  <View style={styles.activeBuildStatusDot} />
+                  <Text style={styles.activeBuildStatusText}>Forging in background · {activeStudioStep.text}</Text>
+                  <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.48)" />
+                </View>
+              </Pressable>
+            </Animated.View>
+          )}
+
+          {activeHtml && (
+            <Animated.View entering={FadeInUp.delay(150).duration(400)}>
+              <Pressable style={styles.generatedPreviewCard} onPress={() => setPhase('preview')}>
+                <Image source={GAMETOK_BG} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                <LinearGradient
+                  colors={['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.24)', 'rgba(0,0,0,0.82)']}
+                  locations={[0, 0.45, 1]}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <View style={styles.generatedBadge}>
+                  <Ionicons name="sparkles" size={12} color="#25F4EE" />
+                  <Text style={styles.generatedBadgeText}>Generated</Text>
+                </View>
+                <View style={styles.generatedPlayBtn}>
+                  <Ionicons name="play" size={20} color="#FFF" />
+                </View>
+                <View style={styles.generatedMetaRow}>
+                  <View style={styles.generatedMetaPill}>
+                    <Ionicons name="game-controller" size={13} color="#a855f7" />
+                    <Text style={styles.generatedMetaText}>Racing</Text>
+                  </View>
+                  <View style={styles.generatedMetaPill}>
+                    <Ionicons name="people" size={13} color="#FFF" />
+                    <Text style={styles.generatedMetaText}>1-8 Players</Text>
+                  </View>
+                  <View style={styles.generatedMetaPill}>
+                    <Ionicons name="time-outline" size={13} color="#FFF" />
+                    <Text style={styles.generatedMetaText}>2-5 min</Text>
+                  </View>
+                </View>
+              </Pressable>
+            </Animated.View>
+          )}
+
           {/* === MEDIA TOOLBAR === */}
-          <Animated.View entering={FadeInUp.delay(200).duration(400)}>
+          {creatorMode === 'game' ? (
+          <Animated.View entering={FadeInUp.delay(210).duration(400)}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
               <Pressable style={styles.mediaBtn} onPress={() => setShowCommunityImagesModal(true)}>
                 <View style={[styles.mediaIcon, { backgroundColor: 'rgba(168,85,247,0.12)' }]}>
@@ -2399,22 +3019,55 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
               </Pressable>
             </ScrollView>
           </Animated.View>
+          ) : null}
 
           {/* === NEED IDEAS? SECTION === */}
-          <Animated.View entering={FadeInUp.delay(300).duration(400)}>
-            <View style={styles.ideasGrid}>
-              {GENRE_CHIPS.map((chip) => (
-                <Pressable
-                  key={chip.label}
-                  style={({ pressed }) => [styles.ideaPill, pressed && { transform: [{ scale: 0.95 }] }]}
-                  onPress={() => handleGenreSelect(chip.prompts)}
+          {creatorMode === 'game' ? (
+          <Animated.View entering={FadeInUp.delay(270).duration(400)}>
+            <View style={styles.starterRailHeader}>
+              <Text style={styles.starterRailSubtitle}>
+                Fast templates for mechanics-heavy prompts.
+              </Text>
+            </View>
+            <View style={styles.ideasLaneStack}>
+              {studioChipRows.map((row, rowIndex) => (
+                <ScrollView
+                  key={`ideas-row-${creatorMode}-${rowIndex}`}
+                  ref={(ref) => { ideasScrollRefs.current[rowIndex] = ref; }}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  scrollEnabled={false}
+                  contentContainerStyle={styles.ideasLane}
+                  onTouchStart={() => {
+                    ideasPauseUntilRef.current = Date.now() + 1200;
+                  }}
+                  onContentSizeChange={(width) => {
+                    ideasContentWidthRefs.current[rowIndex] = width;
+                    if (rowIndex % 2 === 1) {
+                      const startX = width / 2;
+                      ideasOffsetRefs.current[rowIndex] = startX;
+                      ideasScrollRefs.current[rowIndex]?.scrollTo({ x: startX, animated: false });
+                    }
+                  }}
                 >
-                  <Ionicons name={chip.icon as any} size={15} color={chip.iconColor} />
-                  <Text style={styles.ideaLabel}>{chip.label}</Text>
-                </Pressable>
+                  {row.map((chip, chipIndex) => (
+                    <Pressable
+                      key={`${chip.label}-${rowIndex}-${chipIndex}`}
+                      style={({ pressed }) => [styles.ideaPill, pressed && { transform: [{ scale: 0.96 }] }]}
+                      onPressIn={() => {
+                        ideasPauseUntilRef.current = Date.now() + 1200;
+                      }}
+                      onPress={() => handleGenreSelect(chip.prompts)}
+                    >
+                      <Ionicons name={chip.icon as any} size={15} color={chip.iconColor} />
+                      <Text style={styles.ideaLabel}>{chip.label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               ))}
             </View>
           </Animated.View>
+          ) : null}
 
           {/* Error message */}
           {errorMsg && (
@@ -2469,6 +3122,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                       }
                     }}
                   >
+                    <Pressable
+                      style={styles.draftDeleteBtn}
+                      hitSlop={10}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        handleDeleteDraft(draft.id, draft.title);
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#FFF" />
+                    </Pressable>
+
                     {/* Thumbnail */}
                     <View style={styles.draftThumbnail}>
                       {draft.thumbnail ? (
@@ -2636,10 +3300,509 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 };
 
 const styles = StyleSheet.create({
+  // ── V2 mockup styles ───────────────────────────────────────────────────
+  headerV2: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 2,
+    paddingBottom: 8,
+  },
+  headerV2Side: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerV2SideRight: {
+    justifyContent: 'flex-end',
+  },
+  headerV2Center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerLogo: {
+    color: '#fff',
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  headerLogoGametok: {
+    textTransform: 'lowercase',
+  },
+  headerMenuBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroV2Wrap: {
+    paddingTop: 4,
+    paddingBottom: 14,
+    width: '100%',
+    alignItems: 'center',
+  },
+  heroV2TitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroV2SparkleIcon: {
+    marginRight: 8,
+    marginTop: 3,
+  },
+  heroV2TitleTextWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexShrink: 1,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  heroV2TitleDream: {
+    color: '#a855f7',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  heroV2TitleForge: {
+    color: '#ffffff',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  heroV2Subtitle: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  modeSwitchV2: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    marginTop: 12,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: '#120b1f',
+    borderWidth: 0,
+    zIndex: 999,
+  },
+  modeSwitchV2Tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.001)',
+  },
+  modeSwitchV2TabActive: {
+    backgroundColor: '#4c1d95',
+  },
+  modeSwitchV2Text: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  modeSwitchV2TextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  // ── Existing styles ─────────────────────────────────────────────────────
   screen: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#08080C',
     zIndex: 99999,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 180,
+    flexGrow: 1,
+    gap: 12,
+  },
+
+  studioHeroCard: {
+    minHeight: 146,
+    borderRadius: 24,
+    overflow: 'hidden',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#0E1018',
+  },
+  studioHeroBg: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    opacity: 0.38,
+  },
+  studioHeroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  studioBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(13,12,24,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  studioBadgeText: {
+    color: '#FFD89B',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  studioLivePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(20,20,24,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,199,89,0.18)',
+  },
+  studioLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#34C759',
+  },
+  studioLiveText: {
+    color: '#D7FFE3',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  studioHeroCopyRow: {
+    gap: 4,
+  },
+  studioHeroTitle: {
+    color: '#FFF',
+    fontSize: 21,
+    lineHeight: 26,
+    fontWeight: '800',
+    maxWidth: '100%',
+  },
+  studioHeroSubtitle: {
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 12,
+    lineHeight: 17,
+    maxWidth: '100%',
+  },
+  modeSwitchShell: {
+    marginTop: 12,
+    padding: 4,
+    borderRadius: 18,
+    backgroundColor: 'rgba(13,12,24,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    flexDirection: 'row',
+  },
+  modeSwitchTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: 9,
+  },
+  modeSwitchTabActive: {
+    backgroundColor: 'rgba(168,85,247,0.22)',
+  },
+  modeSwitchText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modeSwitchTextActive: {
+    color: '#FFF',
+  },
+  studioUtilityRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  yourGamesCard: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 24,
+    backgroundColor: 'rgba(18,18,24,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  utilityLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  utilityLabel: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  utilityValue: {
+    color: '#FFF',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700',
+  },
+  utilityMiniCard: {
+    width: 84,
+    minHeight: 86,
+    borderRadius: 24,
+    backgroundColor: 'rgba(18,18,24,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  utilityMiniNumber: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  utilityMiniLabel: {
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  activeBuildCard: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,16,24,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.16)',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  activeBuildStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  activeBuildHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  activeBuildEyebrow: {
+    color: '#FFBA69',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  activeBuildTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '800',
+    maxWidth: 240,
+  },
+  activeBuildStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(87,22,130,0.32)',
+  },
+  activeBuildStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#34C759',
+  },
+  activeBuildStatusText: {
+    color: '#F8E8FF',
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  activeBuildBody: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 10,
+  },
+  activeBuildTimelineRow: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  activeBuildTimelineDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(168,85,247,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeBuildTimelineLabel: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  activeBuildTimelineSubtext: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  activeBuildActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  activeBuildActionPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 16,
+    backgroundColor: '#A855F7',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    flex: 1,
+  },
+  activeBuildActionPrimaryText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  activeBuildActionGhost: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  activeBuildActionGhostText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  recentBuildsHeader: {
+    marginTop: 2,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  recentBuildsTitle: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  recentBuildsSubtitle: {
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  recentBuildsLink: {
+    color: '#C084FC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recentBuildsRow: {
+    gap: 12,
+    paddingRight: 8,
+  },
+  recentBuildCard: {
+    width: 132,
+  },
+  recentBuildThumb: {
+    height: 158,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#15151B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'space-between',
+  },
+  recentBuildOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,8,12,0.16)',
+  },
+  recentBuildBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,8,12,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  recentBuildBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  recentBuildName: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  starterRailHeader: {
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  starterRailTitle: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  starterRailSubtitle: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
   },
 
   // === HEADER ===
@@ -2648,8 +3811,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 6,
   },
   headerTitle: {
     color: '#FFF',
@@ -2673,22 +3836,88 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // === SCROLL CONTENT ===
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 140,
-    flexGrow: 1,
-  },
-
   // === MAIN INPUT CARD ===
   inputCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.15)',
-    backgroundColor: '#0E0E14',
+    borderColor: '#6d28d9',
+    backgroundColor: '#0a0514',
+  },
+  narrativeChatSurface: {
+    borderRadius: 22,
+    backgroundColor: '#050209',
+    borderColor: 'rgba(168,85,247,0.34)',
+  },
+  inputCardHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  narrativeHeaderStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(168,85,247,0.12)',
+  },
+  narrativeHeaderDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#A855F7',
+  },
+  narrativeHeaderStatusText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  inputCardBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  inputCardEyebrow: {
+    color: '#C084FC',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  inputCardTitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+    maxWidth: 240,
+  },
+  inputCardMetaPill: {
+    minWidth: 58,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+  },
+  inputCardMetaValue: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  inputCardMetaLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: 1,
   },
   inputGlowBorder: {
     position: 'absolute',
@@ -2703,26 +3932,243 @@ const styles = StyleSheet.create({
   },
   mainInput: {
     color: '#FFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '500',
-    lineHeight: 26,
-    minHeight: 200,
+    lineHeight: 23,
+    minHeight: 60,
     textAlignVertical: 'top',
+  },
+  inputHint: {
+    marginTop: 10,
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  narrativeBriefPanel: {
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 10,
+    backgroundColor: 'rgba(168,85,247,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(192,132,252,0.2)',
+  },
+  narrativeSessionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+    paddingHorizontal: 2,
+    marginBottom: 8,
+  },
+  narrativeAgentAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#7c3aed',
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+  },
+  narrativeAgentName: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  narrativeAgentSub: {
+    color: 'rgba(255,255,255,0.48)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  narrativeBriefHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  narrativeBriefIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(168,85,247,0.28)',
+  },
+  narrativeBriefTitle: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  narrativeBriefCount: {
+    color: '#C084FC',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  narrativeBriefText: {
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  narrativeChatBox: {
+    justifyContent: 'flex-start',
+    gap: 10,
+    paddingTop: 4,
+    paddingBottom: 6,
+    marginBottom: 2,
+  },
+  narrativeBubble: {
+    maxWidth: '88%',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  narrativeBubbleAi: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderTopLeftRadius: 8,
+  },
+  narrativeBubbleUser: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(124,58,237,0.72)',
+    borderTopRightRadius: 8,
+  },
+  narrativeAiDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#7c3aed',
+    marginTop: 1,
+  },
+  narrativeBubbleText: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  narrativeComposer: {
+    minHeight: 58,
+    borderRadius: 22,
+    paddingLeft: 16,
+    paddingRight: 10,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+  },
+  narrativeInput: {
+    flex: 1,
+    maxHeight: 110,
+    color: '#FFF',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
+    paddingVertical: 6,
+  },
+  narrativeSendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#a855f7',
+  },
+  narrativeSendBtnIdle: {
+    backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  narrativeActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 12,
+  },
+  narrativeForgeHint: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.46)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  narrativeReferenceDock: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+    paddingBottom: 2,
+  },
+  narrativeReferenceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  narrativeReferenceText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  narrativeAttachedRow: {
+    gap: 8,
+    paddingTop: 10,
+  },
+  narrativeAttachedChip: {
+    maxWidth: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    padding: 6,
+    paddingRight: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+  },
+  narrativeAttachedThumb: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: '#21162d',
+  },
+  narrativeAttachedText: {
+    maxWidth: 72,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'capitalize',
   },
   inputBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.04)',
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 0,
   },
   surpriseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    paddingHorizontal: 14,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
     paddingVertical: 10,
     borderRadius: 12,
   },
@@ -2741,18 +4187,98 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sendBtn: {
-    width: 40,
-    height: 40,
+    minWidth: 110,
+    height: 38,
+    paddingHorizontal: 16,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#a855f7',
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: '#7c3aed',
+    shadowColor: '#7c3aed',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  sendBtnIdle: {
+    backgroundColor: 'rgba(168,85,247,0.32)',
+  },
+  sendBtnText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
 
   mediaRow: {
     gap: 12,
-    paddingBottom: 20,
+    paddingBottom: 14,
     paddingRight: 20,
+  },
+  generatedPreviewCard: {
+    height: 218,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#101018',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.25)',
+    marginBottom: 4,
+  },
+  generatedBadge: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    borderWidth: 1,
+    borderColor: 'rgba(37,244,238,0.28)',
+  },
+  generatedBadgeText: {
+    color: '#25F4EE',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  generatedPlayBtn: {
+    position: 'absolute',
+    top: 18,
+    right: 18,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  generatedMetaRow: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  generatedMetaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  generatedMetaText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   mediaBtn: {
     alignItems: 'center',
@@ -2775,21 +4301,22 @@ const styles = StyleSheet.create({
   },
 
   // === NEED IDEAS SECTION ===
-  ideasGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  ideasLaneStack: {
+    gap: 10,
     marginBottom: 20,
-    paddingHorizontal: 32,
+  },
+  ideasLane: {
+    gap: 12,
+    paddingRight: 20,
   },
   ideaPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     backgroundColor: 'rgba(255,255,255,0.04)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
   },
@@ -3350,6 +4877,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginBottom: 8,
     padding: 6,
+  },
+  draftDeleteBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
   draftThumbnail: {
     width: '100%',

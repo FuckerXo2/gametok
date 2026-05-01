@@ -452,10 +452,10 @@ export const comments = {
     return request(`/comments/${gameId}?limit=${limit}`);
   },
 
-  create: async (gameId: string, text: string) => {
+  create: async (gameId: string, text: string, gifUrl?: string) => {
     return request('/comments', {
       method: 'POST',
-      body: JSON.stringify({ gameId, text }),
+      body: JSON.stringify({ gameId, text, gifUrl }),
     });
   },
 
@@ -844,6 +844,9 @@ export const ai = {
   },
   getDraft: async (draftId: string) => {
     return request(`/ai/drafts/${draftId}`);
+  },
+  deleteDraft: async (draftId: string) => {
+    return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
   },
   publish: async (draftId: string) => {
     return request(`/ai/publish/${draftId}`, { method: 'POST' });

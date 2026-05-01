@@ -140,7 +140,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
       <LinearGradient colors={[inkTop, inkMid, inkBottom]} style={StyleSheet.absoluteFillObject} />
 
       <Animated.View entering={FadeIn.duration(240)} style={styles.header}>
-        <Pressable style={styles.closeBtn} onPress={onCancel}>
+        <Pressable style={styles.closeBtn} onPressIn={onCancel}>
           <Ionicons name="close" size={20} color="#FFF" />
         </Pressable>
         <View style={[styles.headerChip, labsMode && styles.headerChipLabs]}>
@@ -435,7 +435,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
         <View style={styles.actionsRow}>
           <Pressable
             style={({ pressed }) => [styles.cancelActionBtn, pressed && styles.pressedBtn]}
-            onPress={onCancel}
+            onPressIn={onCancel}
           >
             <Ionicons name="stop-circle-outline" size={16} color="#FF7B7B" />
             <Text style={styles.cancelText}>Stop</Text>
@@ -443,7 +443,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
 
           <Pressable
             style={({ pressed }) => [styles.minimizeBtn, pressed && styles.pressedBtn]}
-            onPress={onMinimize}
+            onPressIn={onMinimize}
           >
             <Ionicons name="flame" size={16} color="#000" />
             <Text style={styles.minimizeText}>Cook in background</Text>

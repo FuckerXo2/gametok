@@ -26,6 +26,60 @@ export interface WebViewPoolHandle {
 
 const POOL_SIZE = 4;
 
+const MUTE_WEBVIEW_SCRIPT = `
+  window._gametokActive = false;
+  window._gametokMuted = true;
+  (function muteAll() {
+    document.querySelectorAll('audio, video').forEach(el => {
+      try {
+        el.muted = true;
+        el.volume = 0;
+        el.pause();
+      } catch (e) {}
+    });
+    if (window._audioContexts) {
+      window._audioContexts.forEach(ctx => {
+        try { ctx.suspend(); } catch (e) {}
+      });
+    }
+  })();
+  if (!window._gametokMuteInterval) {
+    window._gametokMuteInterval = setInterval(function() {
+      if (!window._gametokActive || window._gametokMuted) {
+        document.querySelectorAll('audio, video').forEach(el => {
+          try {
+            el.muted = true;
+            el.volume = 0;
+            el.pause();
+          } catch (e) {}
+        });
+      }
+    }, 800);
+  }
+  true;
+`;
+
+const UNMUTE_WEBVIEW_SCRIPT = `
+  window._gametokActive = true;
+  window._gametokMuted = false;
+  if (window._gametokMuteInterval) {
+    clearInterval(window._gametokMuteInterval);
+    window._gametokMuteInterval = null;
+  }
+  document.querySelectorAll('audio, video').forEach(el => {
+    try {
+      el.muted = false;
+      el.volume = 1;
+    } catch (e) {}
+  });
+  if (window._audioContexts) {
+    window._audioContexts.forEach(ctx => {
+      try { ctx.resume(); } catch (e) {}
+    });
+  }
+  true;
+`;
+
 const injectedJS = `
   (function() {
     // Prevent iOS Now Playing widget
@@ -173,39 +227,16 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
   }, [activeId]);
 
   const setActiveGame = useCallback((id: string) => {
-    // Mute previous active
-    if (activeId && activeId !== id) {
-      const prevRef = webViewRefs.current.get(activeId);
-      prevRef?.current?.injectJavaScript(`
-        window._gametokMuted = true;
-        document.querySelectorAll('audio, video').forEach(el => {
-          el.muted = true;
-          el.volume = 0;
-          el.pause();
-        });
-        if (window._audioContexts) {
-          window._audioContexts.forEach(ctx => ctx.suspend());
-        }
-        true;
-      `);
-    }
+    webViewRefs.current.forEach((viewRef, viewId) => {
+      if (viewId !== id) viewRef.current?.injectJavaScript(MUTE_WEBVIEW_SCRIPT);
+    });
 
     // Unmute new active
     const newRef = webViewRefs.current.get(id);
-    newRef?.current?.injectJavaScript(`
-      window._gametokMuted = false;
-      document.querySelectorAll('audio, video').forEach(el => {
-        el.muted = false;
-        el.volume = 1;
-      });
-      if (window._audioContexts) {
-        window._audioContexts.forEach(ctx => ctx.resume());
-      }
-      true;
-    `);
+    newRef?.current?.injectJavaScript(UNMUTE_WEBVIEW_SCRIPT);
 
     setActiveId(id);
-  }, [activeId]);
+  }, []);
 
   const getActiveWebView = useCallback((id: string) => {
     return webViewRefs.current.get(id) || null;
@@ -230,6 +261,8 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
 
   const handleLoadEnd = (id: string) => {
     setPool(prev => prev.map(p => p.id === id ? { ...p, loaded: true } : p));
+    const viewRef = webViewRefs.current.get(id);
+    viewRef?.current?.injectJavaScript(id === activeId ? UNMUTE_WEBVIEW_SCRIPT : MUTE_WEBVIEW_SCRIPT);
   };
 
   const handleMessage = (id: string, event: any) => {

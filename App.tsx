@@ -1,12 +1,19 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Text, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, Linking, ActivityIndicator, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { ConnectScreen } from './src/components/ConnectScreen';
@@ -19,7 +26,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
-import { requestTrackingPermission } from './src/services/ads';
+
 import { addNotificationResponseListener, addNotificationReceivedListener, registerForPushNotifications, savePushToken } from './src/services/notifications';
 import { getToken } from './src/services/api';
 import { startGameDownload } from './src/services/gameDownloader';
@@ -133,12 +140,13 @@ const AppContent = () => {
 
   useEffect(() => {
     checkOnboarding();
-    requestTrackingPermission();
     handleDeepLink();
     setupNotifications();
     
-    // Start background download of multiplayer games immediately
-    startGameDownload().catch(e => console.log('[GameDownload] Background download error:', e));
+    // Start background download of multiplayer games immediately on native.
+    if (Platform.OS !== 'web') {
+      startGameDownload().catch(e => console.log('[GameDownload] Background download error:', e));
+    }
 
     // Request notification permission on app start (for existing users after update)
     if (isAuthenticated) {
@@ -290,12 +298,17 @@ const AppContent = () => {
 export default function App() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
 
-  // Load Graphik fonts
+  // Load Graphik (legacy) + Inter (V2 design system) fonts
   const [fontsLoaded] = useFonts({
     'Graphik-Regular': require('./assets/fonts/graphik_arabic.otf'),
     'Graphik-Medium': require('./assets/fonts/graphik_arabic_medium.otf'),
     'Graphik-SemiBold': require('./assets/fonts/graphik_arabic_semibold.otf'),
     'Graphik-Bold': require('./assets/fonts/graphik_arabic_bold.otf'),
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
   });
 
   return (

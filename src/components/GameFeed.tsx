@@ -17,7 +17,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './GameCard';
 import { WebViewPool, WebViewPoolHandle } from './WebViewPool';
 import { games as gamesApi } from '../services/api';
-import { initializeAds, getAdFrequency } from '../services/ads';
 
 const GAMES_HOST = 'https://games.gametok.co';
 const SCROLL_ZONE_HEIGHT = 0.25; // Bottom 25% of screen
@@ -54,7 +53,6 @@ export const GameFeed: React.FC = () => {
   const [feedData, setFeedData] = useState<FeedItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [adsInitialized, setAdsInitialized] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
   const feedIndexRef = useRef(0);
@@ -131,12 +129,6 @@ export const GameFeed: React.FC = () => {
       }
     }
   }, [activeIndex, feedData]);
-
-  useEffect(() => {
-    initializeAds().then((success) => {
-      setAdsInitialized(success);
-    });
-  }, []);
 
   useEffect(() => {
     const fetchGames = async () => {

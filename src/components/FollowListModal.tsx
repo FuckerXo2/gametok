@@ -103,7 +103,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
                 onPress={() => onUserPress && onUserPress(item)}
                 activeOpacity={0.7}
             >
-                <Avatar uri={item.avatar} size={54} />
+                <Avatar uri={item.avatar} userId={item.id} size={54} />
                 <View style={styles.userInfo}>
                     <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
                         {item.displayName || item.username}

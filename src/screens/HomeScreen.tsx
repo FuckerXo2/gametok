@@ -11,14 +11,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
 import { API_URL, games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress } from '../services/api';
-import { getAdFrequency, initializeAds } from '../services/ads';
 import { ShareSheet } from '../components/ShareSheet';
 import { LeaderboardModal } from '../components/LeaderboardModal';
 import { GameLoadingScreen } from '../components/GameLoadingScreen';
-import NativeAdView from '../components/NativeAdView';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
-import { useDeepLink } from '../../App';
+import { CommentsModal } from '../components/CommentsModal';
+import { useDeepLink, useNavigation } from '../../App';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import { resolveGameThumbnail } from '../utils/thumbnails';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { LoopsAnimations } from '../constants/LoopsAnimations';
 
@@ -48,13 +49,14 @@ interface Game {
   discoveryChips?: string[];
   creatorDisplayName?: string | null;
   creatorUsername?: string | null;
+  creatorVerified?: boolean;
+  creatorAvatar?: string | null;
 }
 
-// Feed contains games and native ad placeholders every AD_FREQUENCY games
+// Feed contains games
 interface FeedItem {
   game?: Game;
   id: string;
-  isAd?: boolean;
 }
 
 const getGameUrl = (game: Game) => {
@@ -66,16 +68,7 @@ const getGameUrl = (game: Game) => {
 };
 
 const getThumbnailUrl = (game: Game) => {
-  if (game.thumbnail) {
-    if (game.thumbnail.startsWith('http') || game.thumbnail.startsWith('data:')) {
-      return game.thumbnail;
-    }
-    if (game.thumbnail.startsWith('/')) {
-      return `${API_ORIGIN}${game.thumbnail}`;
-    }
-    return `${GAMES_HOST}${game.thumbnail}`;
-  }
-  return `${GAMES_HOST}/thumbnails/${game.id}.png`;
+  return resolveGameThumbnail(game.thumbnail, game.id, game);
 };
 
 const getFeedBackdropColor = () => '#050505';
@@ -90,56 +83,115 @@ const shouldUseWebViewBackdrop = (game: Game) => {
 };
 
 // Domains to block at request level
-const AD_DOMAINS = [
-  'imasdk.googleapis.com',
-  'pagead2.googlesyndication.com',
-  'doubleclick.net',
-  'googlesyndication.com',
-  'googleadservices.com',
-  'adservice.google',
-  'googleads.g.doubleclick.net',
-  'www.googletagservices.com',
-  'securepubads.g.doubleclick.net',
-  'tpc.googlesyndication.com',
-  'ad.doubleclick.net',
-  'amazon-adsystem.com',
-  'a-mo.net',
-  'applovin.com',
-  'criteo.com',
-  'pubmatic.com',
-  'rubiconproject.com',
-  'openx.net',
-  'smartadserver.com',
-  'casalemedia.com',
-  // Only specific ad endpoints, do NOT block the main game host domains
-  'api.gamemonetize.com',
-  'api.gamemonetize.co',
-  'gamemonetize.com/gamemonetize.js',
-  'html5.gamedistribution.com/rvv1/gdsdk/gdsdk.js',
-  'gamedistribution.com/rvv1/',
-  'gdsdk.com',
-  'adinplay.com',
-];
 
-// Check if URL should be blocked - uses Set for O(1) lookup on exact matches
-// and falls back to substring matching for partial domain matches
-const AD_DOMAINS_SET = new Set(AD_DOMAINS);
-const shouldBlockRequest = (url: string): boolean => {
-  const urlLower = url.toLowerCase();
-  // Fast path: check if any domain is in the URL
-  for (const domain of AD_DOMAINS) {
-    if (urlLower.includes(domain)) {
-      return true;
+const GAME_AUDIO_GUARD_SCRIPT = `
+(function() {
+  if (window.__gametokAudioGuardInstalled) return true;
+  window.__gametokAudioGuardInstalled = true;
+  window._gametokActive = false;
+  window._gametokMuted = true;
+  window._audioContexts = window._audioContexts || [];
+
+  const muteMedia = function() {
+    try {
+      document.querySelectorAll('audio, video').forEach(function(el) {
+        try {
+          el.muted = true;
+          el.volume = 0;
+          if (!window._gametokActive) el.pause();
+        } catch (e) {}
+      });
+    } catch (e) {}
+  };
+
+  try {
+    if (navigator.mediaSession) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
     }
+  } catch (e) {}
+
+  const NativeAudio = window.Audio;
+  if (NativeAudio && !NativeAudio.__gametokWrapped) {
+    const WrappedAudio = function(src) {
+      const audio = new NativeAudio(src);
+      audio.muted = true;
+      audio.volume = 0;
+      const nativePlay = audio.play ? audio.play.bind(audio) : null;
+      if (nativePlay) {
+        audio.play = function() {
+          if (!window._gametokActive || window._gametokMuted) {
+            audio.muted = true;
+            audio.volume = 0;
+            return Promise.resolve();
+          }
+          return nativePlay();
+        };
+      }
+      return audio;
+    };
+    WrappedAudio.prototype = NativeAudio.prototype;
+    WrappedAudio.__gametokWrapped = true;
+    window.Audio = WrappedAudio;
   }
-  return false;
-};
+
+  const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
+  if (NativeAudioContext && !NativeAudioContext.__gametokWrapped) {
+    const WrappedAudioContext = function() {
+      const ctx = new NativeAudioContext();
+      window._audioContexts.push(ctx);
+      if (!window._gametokActive || window._gametokMuted) {
+        try { ctx.suspend(); } catch (e) {}
+      }
+      return ctx;
+    };
+    WrappedAudioContext.prototype = NativeAudioContext.prototype;
+    WrappedAudioContext.__gametokWrapped = true;
+    window.AudioContext = WrappedAudioContext;
+    window.webkitAudioContext = WrappedAudioContext;
+  }
+
+  if (window.HTMLMediaElement && window.HTMLMediaElement.prototype && !window.HTMLMediaElement.prototype.__gametokPlayWrapped) {
+    const nativeMediaPlay = window.HTMLMediaElement.prototype.play;
+    window.HTMLMediaElement.prototype.play = function() {
+      if (!window._gametokActive || window._gametokMuted) {
+        try {
+          this.muted = true;
+          this.volume = 0;
+          this.pause();
+        } catch (e) {}
+        return Promise.resolve();
+      }
+      return nativeMediaPlay.apply(this, arguments);
+    };
+    window.HTMLMediaElement.prototype.__gametokPlayWrapped = true;
+  }
+
+  const installObserver = function() {
+    muteMedia();
+    if (!window._gametokMediaObserver && document.body) {
+      window._gametokMediaObserver = new MutationObserver(muteMedia);
+      window._gametokMediaObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installObserver, { once: true });
+  } else {
+    installObserver();
+  }
+})();
+true;
+`;
+
 
 // Script to pause/freeze a game
 const PAUSE_SCRIPT = `
 (function() {
   // Immediately mute everything
   window._gamePaused = true;
+  window._gametokActive = false;
+  window._gametokMuted = true;
   
   // Clear ALL intervals to prevent memory leaks
   if (window._muteInterval) {
@@ -209,8 +261,11 @@ const PAUSE_SCRIPT = `
   
   // Mute immediately
   muteAll();
-  
-  // DON'T start a new interval - just mute once. This prevents memory leaks.
+
+  // Keep the inactive WebView silent even if the game starts audio after load.
+  if (!window._muteInterval) {
+    window._muteInterval = setInterval(muteAll, 800);
+  }
   
   // Unity
   if (window.unityInstance) {
@@ -250,6 +305,8 @@ const RESUME_SCRIPT = `
 (function() {
   // Clear the mute interval first
   window._gamePaused = false;
+  window._gametokActive = true;
+  window._gametokMuted = false;
   if (window._muteInterval) {
     clearInterval(window._muteInterval);
     window._muteInterval = null;
@@ -419,678 +476,6 @@ const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
     applyBg();
   }
   setInterval(applyBg, 1500);
-})();
-true;
-`;
-
-// Mock GD SDK to bypass ads completely
-const AD_BLOCKER_SCRIPT = `
-(function() {
-  // Suppress error dialogs
-  window.alert = function() {};
-  window.confirm = function() { return true; };
-  window.prompt = function() { return ''; };
-  
-  // Track audio contexts and gain nodes for pause/resume
-  window._audioContexts = [];
-  window._allGainNodes = [];
-  window._gamePaused = false; // Will be set to true by PAUSE_SCRIPT
-  
-  const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
-  if (OrigAudioContext) {
-    window.AudioContext = window.webkitAudioContext = function() {
-      const ctx = new OrigAudioContext();
-      window._audioContexts.push(ctx);
-      
-      // If game is paused, immediately suspend new contexts
-      if (window._gamePaused) {
-        try { ctx.suspend(); } catch(e) {}
-      }
-      
-      // Also intercept createGain to track all gain nodes
-      const origCreateGain = ctx.createGain.bind(ctx);
-      ctx.createGain = function() {
-        const gain = origCreateGain();
-        window._allGainNodes.push(gain);
-        // If paused, mute new gain nodes
-        if (window._gamePaused) {
-          try { gain.gain.setValueAtTime(0, ctx.currentTime); } catch(e) {}
-        }
-        return gain;
-      };
-      
-      return ctx;
-    };
-  }
-  
-  // Also intercept Audio constructor
-  const OrigAudio = window.Audio;
-  if (OrigAudio) {
-    window.Audio = function(src) {
-      const audio = new OrigAudio(src);
-      // If game is paused, mute new audio elements
-      if (window._gamePaused) {
-        audio.muted = true;
-        audio.volume = 0;
-      }
-      return audio;
-    };
-  }
-  
-  // Fake OneTrust consent - pretend user already accepted
-  // This prevents the consent banner from showing
-  window.OnetrustActiveGroups = ',C0001,C0002,C0003,C0004,';
-  window.OptanonActiveGroups = ',C0001,C0002,C0003,C0004,';
-  window.OneTrust = {
-    IsAlertBoxClosed: function() { return true; },
-    GetDomainData: function() { return { ShowAlertNotice: false }; },
-    Init: function() {},
-    LoadBanner: function() {},
-    ToggleInfoDisplay: function() {},
-    Close: function() {},
-    AllowAll: function() {},
-    RejectAll: function() {}
-  };
-  window.Optanon = window.OneTrust;
-  
-  // Block OneTrust/Optanon scripts from loading
-  const blockScripts = ['onetrust', 'optanon', 'cookielaw', 'cookie-consent', 'consent-manager'];
-  
-  // Override createElement to block consent scripts
-  const origCreateElement = document.createElement.bind(document);
-  document.createElement = function(tag) {
-    const el = origCreateElement(tag);
-    if (tag.toLowerCase() === 'script') {
-      const origSetAttribute = el.setAttribute.bind(el);
-      el.setAttribute = function(name, value) {
-        if (name === 'src' && typeof value === 'string') {
-          if (blockScripts.some(s => value.toLowerCase().includes(s))) {
-            return; // Don't set src for blocked scripts
-          }
-        }
-        return origSetAttribute(name, value);
-      };
-      Object.defineProperty(el, 'src', {
-        set: function(value) {
-          if (typeof value === 'string' && blockScripts.some(s => value.toLowerCase().includes(s))) {
-            return; // Block
-          }
-          origSetAttribute('src', value);
-        },
-        get: function() { return el.getAttribute('src'); }
-      });
-    }
-    return el;
-  };
-
-  // Clear all cookies
-  document.cookie.split(';').forEach(function(c) {
-    document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-  });
-  
-  // Block cookie setting
-  const origCookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') || 
-                         Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie');
-  if (origCookieDesc) {
-    Object.defineProperty(document, 'cookie', {
-      get: function() { return ''; },
-      set: function() { return true; },
-      configurable: true
-    });
-  }
-  
-  // Don't clear localStorage - we need it for game saves!
-  // Only clear sessionStorage for tracking
-  try { sessionStorage.clear(); } catch(e) {}
-
-  window.google = window.google || {};
-  window.google.ima = {
-    AdDisplayContainer: function() { this.initialize = function(){}; },
-    AdsLoader: function() {
-      this.addEventListener = function(){};
-      this.requestAds = function(){};
-      this.contentComplete = function(){};
-    },
-    AdsManager: function() {
-      this.addEventListener = function(){};
-      this.init = function(){};
-      this.start = function(){};
-      this.destroy = function(){};
-    },
-    AdsManagerLoadedEvent: { Type: { ADS_MANAGER_LOADED: 'adsManagerLoaded' } },
-    AdErrorEvent: { Type: { AD_ERROR: 'adError' } },
-    AdEvent: { Type: { 
-      CONTENT_PAUSE_REQUESTED: 'contentPauseRequested',
-      CONTENT_RESUME_REQUESTED: 'contentResumeRequested',
-      ALL_ADS_COMPLETED: 'allAdsCompleted',
-      LOADED: 'loaded',
-      STARTED: 'started',
-      COMPLETE: 'complete'
-    }},
-    AdsRenderingSettings: function(){},
-    AdsRequest: function(){ this.adTagUrl = ''; this.linearAdSlotWidth = 0; this.linearAdSlotHeight = 0; },
-    ViewMode: { NORMAL: 'normal' },
-    settings: { setVpaidMode: function(){}, setLocale: function(){} }
-  };
-
-  // Instant callback - no delay
-  const fireCallbacks = (callbacks) => {
-    if (!callbacks) return;
-    // Fire all callbacks immediately in sequence
-    callbacks.adStarted && callbacks.adStarted();
-    callbacks.adFinished && callbacks.adFinished();
-    callbacks.adReward && callbacks.adReward();
-    // Also try common alternative names
-    callbacks.onAdStarted && callbacks.onAdStarted();
-    callbacks.onAdFinished && callbacks.onAdFinished();
-    callbacks.onComplete && callbacks.onComplete();
-    callbacks.onReward && callbacks.onReward();
-    callbacks.success && callbacks.success();
-    callbacks.complete && callbacks.complete();
-    // More callback variations
-    callbacks.done && callbacks.done();
-    callbacks.finished && callbacks.finished();
-    callbacks.callback && callbacks.callback();
-    callbacks.onDone && callbacks.onDone();
-    callbacks.onFinished && callbacks.onFinished();
-    callbacks.onSuccess && callbacks.onSuccess();
-    callbacks.onClose && callbacks.onClose();
-    callbacks.close && callbacks.close();
-    callbacks.beforeReward && callbacks.beforeReward();
-    callbacks.afterReward && callbacks.afterReward();
-    callbacks.adViewed && callbacks.adViewed();
-    callbacks.onAdViewed && callbacks.onAdViewed();
-    callbacks.rewardReceived && callbacks.rewardReceived();
-    callbacks.onRewardReceived && callbacks.onRewardReceived();
-  };
-  
-  // Aggressive ad container removal
-  const removeAdElements = () => {
-    const adSelectors = [
-      'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', 'iframe[src*="googlesyndication"]',
-      'iframe[id*="ad"]', 'iframe[class*="ad"]', 'iframe[src*="imasdk"]',
-      'div[id*="preroll"]', 'div[class*="preroll"]', 'div[id*="ad-"]', 'div[class*="ad-"]',
-      'div[id*="video-ad"]', 'div[class*="video-ad"]', 'div[id*="rewarded"]',
-      '.gdsdk-container', '#gdsdk-container', '[class*="gdsdk"]', '[id*="gdsdk"]',
-      '.ad-container', '#ad-container', '.ads-container', '#ads-container',
-      '.advertisement', '#advertisement', '.ad-overlay', '#ad-overlay',
-      '[class*="interstitial"]', '[id*="interstitial"]',
-      '[class*="preroll"]', '[id*="preroll"]',
-      'video[src*="ad"]', 'video[class*="ad"]', 'video[id*="ad"]',
-      'iframe[src*="gamemonetize"]', 'div[class*="gamemonetize"]', '#gamemonetize-video'
-    ];
-    adSelectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.display = 'none';
-        el.style.visibility = 'hidden';
-        el.style.opacity = '0';
-        el.style.pointerEvents = 'none';
-        el.style.position = 'absolute';
-        el.style.left = '-9999px';
-        try { el.remove(); } catch(e) {}
-      });
-    });
-    
-    // GameMonetize specific: find and remove "skip" countdown elements
-    document.querySelectorAll('*').forEach(el => {
-      const text = el.innerText || el.textContent || '';
-      if (text.includes('skip this in') || text.includes('Skip Ad') || 
-          text.includes('skip ad') || text.includes('Advertisement') ||
-          text.includes('skip in') || text.includes('Skip in')) {
-        // Find the parent container and nuke it
-        let parent = el;
-        for (let i = 0; i < 5; i++) {
-          if (parent.parentElement) parent = parent.parentElement;
-        }
-        parent.style.display = 'none';
-        try { parent.remove(); } catch(e) {}
-        el.style.display = 'none';
-        try { el.remove(); } catch(e) {}
-      }
-    });
-    
-    // Y8/Yad Games: remove "More Games" links and cross-promo overlays
-    document.querySelectorAll('*').forEach(el => {
-      const text = el.innerText || el.textContent || '';
-      if (text.includes('More Games') || text.includes('more games') ||
-          text.includes('Play More') || text.includes('play more') ||
-          text.includes('Similar Games') || text.includes('You May Also Like') ||
-          text.includes('Recommended') || text.includes('Try These') ||
-          text.includes('Play Again') && el.tagName === 'A') {
-        el.style.display = 'none';
-        el.style.pointerEvents = 'none';
-        try { el.remove(); } catch(e) {}
-      }
-    });
-    
-    // Block all external links (anything not pointing to the game itself)
-    document.querySelectorAll('a[href]').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      if (href.startsWith('http') && !href.includes(window.location.hostname)) {
-        a.style.display = 'none';
-        a.style.pointerEvents = 'none';
-        a.removeAttribute('href');
-        a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
-      }
-    });
-    
-    // Also look for fixed position elements at bottom (ad bars)
-    document.querySelectorAll('div, span, p').forEach(el => {
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      // If it's fixed at bottom and small height, likely an ad bar
-      if (style.position === 'fixed' && rect.bottom > window.innerHeight - 100 && rect.height < 80) {
-        const text = el.innerText || '';
-        if (text.includes('skip') || text.includes('Skip') || text.includes('ad') || text.includes('Ad')) {
-          el.style.display = 'none';
-          try { el.remove(); } catch(e) {}
-        }
-      }
-    });
-  };
-  
-  // Run ad removal periodically (but NOT loader removal - that was breaking games)
-  // Store interval ID so it can be cleared on pause
-  // Run every 2 seconds instead of 500ms to reduce CPU load
-  window._adRemovalInterval = setInterval(removeAdElements, 2000);
-  
-  // Initial ad removal attempts
-  setTimeout(removeAdElements, 0);
-  setTimeout(removeAdElements, 100);
-  setTimeout(removeAdElements, 500);
-  setTimeout(removeAdElements, 1000);
-  setTimeout(removeAdElements, 2000);
-  
-  window.sdk = {
-    showBanner: function() { return Promise.resolve(); },
-    hideBanner: function() { return Promise.resolve(); },
-    showAd: function(type, callbacks) {
-      fireCallbacks(callbacks);
-      return Promise.resolve();
-    },
-    preloadAd: function(cb) { cb && cb(); return Promise.resolve(); },
-    preloadRewardedAd: function(cb) { cb && cb(); return Promise.resolve(); },
-    showRewardedAd: function(callbacks) {
-      fireCallbacks(callbacks);
-      return Promise.resolve();
-    },
-    cancelAd: function() { return Promise.resolve(); },
-    openConsole: function() {},
-    onPauseGame: function() {},
-    onResumeGame: function() {},
-    play: function() { return Promise.resolve(); },
-    start: function() { return Promise.resolve(); },
-    pause: function() { return Promise.resolve(); },
-    resume: function() { return Promise.resolve(); },
-    requestAd: function(callback) { callback && callback(); },
-    customVideoAd: function(functionFunc) { if (typeof functionFunc === 'function') functionFunc(); },
-    adBreak: function(config) {
-      // Handle adBreak API used by some games
-      if (config && config.adBreakDone) config.adBreakDone();
-      if (config && config.afterAd) config.afterAd();
-    },
-    adConfig: function(config) {
-      if (config && config.onReady) config.onReady();
-    }
-  };
-  
-  window.gdsdk = window.sdk;
-  
-  // GameDistribution specific SDK mock
-  window.GD_OPTIONS = {
-    gameId: 'test',
-    onEvent: function(event) {
-      console.log('GD Event:', event);
-    }
-  };
-  
-  // Full GD SDK mock
-  window.gdsdk = {
-    showAd: function(type) {
-      return new Promise(resolve => {
-        if (window.GD_OPTIONS && window.GD_OPTIONS.onEvent) {
-          window.GD_OPTIONS.onEvent({ name: 'SDK_GAME_START' });
-        }
-        resolve();
-      });
-    },
-    preloadAd: function() { return Promise.resolve(); },
-    cancelAd: function() { return Promise.resolve(); },
-    showBanner: function() { return Promise.resolve(); },
-    openConsole: function() {},
-    ...window.sdk
-  };
-  
-  // Mock the GD SDK loader
-  window.GD = window.gdsdk;
-  
-  // Fire SDK ready event
-  setTimeout(() => {
-    if (window.GD_OPTIONS && window.GD_OPTIONS.onEvent) {
-      window.GD_OPTIONS.onEvent({ name: 'SDK_READY' });
-      window.GD_OPTIONS.onEvent({ name: 'SDK_GAME_START' });
-    }
-    // Also dispatch custom event some games listen for
-    window.dispatchEvent(new Event('게임시작'));
-    window.dispatchEvent(new CustomEvent('game-ready'));
-  }, 100);
-  
-  // Also mock adBreak/adConfig globals (used by some SDKs)
-  window.adBreak = window.sdk.adBreak;
-  window.adConfig = window.sdk.adConfig;
-  
-  const adDomains = [
-    'imasdk.googleapis.com', 'pagead2.googlesyndication.com', 'doubleclick.net', 'googlesyndication.com', 
-    'googleadservices.com', 'api.gamemonetize.com', 'gdsdk.com', '/gdsdk/', 'gamemonetize.js'
-  ];
-  
-  // Block ad requests at fetch level
-  const origFetch = window.fetch;
-  window.fetch = function(url) {
-    if (typeof url === 'string') {
-      const urlLower = url.toLowerCase();
-      for (let i = 0; i < adDomains.length; i++) {
-        if (urlLower.includes(adDomains[i])) {
-          console.log('[AdBlock] Blocked fetch:', url);
-          return Promise.resolve(new Response('', { status: 200 }));
-        }
-      }
-    }
-    return origFetch.apply(this, arguments);
-  };
-  
-  // Block ad requests at XHR level
-  const origXHROpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(m, url) {
-    this._blocked = false;
-    if (typeof url === 'string') {
-      const urlLower = url.toLowerCase();
-      for (let i = 0; i < adDomains.length; i++) {
-        if (urlLower.includes(adDomains[i])) {
-          this._blocked = true;
-          console.log('[AdBlock] Blocked XHR:', url);
-          break;
-        }
-      }
-    }
-    return origXHROpen.apply(this, arguments);
-  };
-  const origXHRSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function() {
-    if (this._blocked) {
-      Object.defineProperty(this, 'readyState', { value: 4 });
-      Object.defineProperty(this, 'status', { value: 200 });
-      Object.defineProperty(this, 'responseText', { value: '' });
-      setTimeout(() => {
-        this.onreadystatechange && this.onreadystatechange();
-        this.onload && this.onload();
-      }, 0);
-      return;
-    }
-    return origXHRSend.apply(this, arguments);
-  };
-  
-  // Force fullscreen for external games
-  const fullscreenStyle = document.createElement('style');
-  fullscreenStyle.textContent = \`
-    html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      width: 100% !important;
-      height: 100% !important;
-      overflow: hidden !important;
-      background: #000 !important;
-    }
-    /* Unity WebGL specific */
-    #unity-container, .unity-container, #unityContainer,
-    #unity-canvas, .unity-canvas, #gameContainer,
-    .webgl-content, #webgl-content {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: 100vw !important;
-      max-height: 100vh !important;
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-      background: #000 !important;
-    }
-    canvas, #game-container, .game-container, #game, .game, 
-    #game-canvas, .game-canvas, #gameFrame, .gameFrame, #game_frame, .game_frame {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: 100vw !important;
-      max-height: 100vh !important;
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-    }
-    /* Hide Unity branding/footer/warnings AND loading screens */
-    #unity-footer, .unity-footer, #unity-logo, .unity-logo,
-    #unity-fullscreen-button, #unity-build-title, .unity-mobile-warning,
-    #unity-warning, .unity-warning, #unity-mobile-warning,
-    #unity-progress-bar-empty, #unity-progress-bar-full,
-    #unity-loading-bar, .unity-loading-bar, #unity-loader, .unity-loader,
-    #unity-progress, .unity-progress, #unity-loading, .unity-loading,
-    #unity-loading-cover, .unity-loading-cover,
-    #unity-loading-background, .unity-loading-background,
-    #loading-cover, .loading-cover, #loading-bar, .loading-bar,
-    #preloader, .preloader, #loader, .loader:not(canvas),
-    [class*="unity-warning"], [id*="unity-warning"],
-    [class*="unity-load"], [id*="unity-load"],
-    [class*="loading-screen"], [id*="loading-screen"],
-    [class*="splash-screen"], [id*="splash-screen"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      position: absolute !important;
-      left: -9999px !important;
-      top: -9999px !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    /* Hide any ad containers or overlays */
-    .ad-container, .ads-container, #ad-container, #ads-container,
-    .advertisement, #advertisement, .ad-overlay, #ad-overlay,
-    .gdsdk-container, #gdsdk-container { 
-      display: none !important; 
-    }
-    /* Ad-related elements only */
-    [class*="preroll"], [id*="preroll"], [class*="Preroll"], [id*="Preroll"],
-    [class*="video-ad"], [id*="video-ad"], [class*="videoAd"], [id*="videoAd"],
-    [class*="adContainer"], [id*="adContainer"], [class*="ad-wrapper"], [id*="ad-wrapper"],
-    [class*="rewarded"], [id*="rewarded"], [class*="interstitial"], [id*="interstitial"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      position: absolute !important;
-      left: -9999px !important;
-      top: -9999px !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    /* Hide cookie consent banners */
-    .cookie-consent, .cookie-banner, .cookie-notice, .cookie-popup,
-    .consent-banner, .consent-popup, .consent-modal, .consent-overlay,
-    .gdpr-banner, .gdpr-popup, .gdpr-consent, .privacy-banner,
-    #cookie-consent, #cookie-banner, #cookie-notice, #cookieConsent,
-    #consent-banner, #consent-popup, #gdpr-banner, #privacy-banner,
-    [class*="cookie-consent"], [class*="cookie-banner"], [class*="CookieConsent"],
-    [class*="consent-banner"], [class*="gdpr"], [id*="cookie"], [id*="consent"],
-    .fc-consent-root, .qc-cmp2-container, #qc-cmp2-container,
-    .cmp-container, #cmp-container, .cmpbox, #cmpbox,
-    /* Famobi specific */
-    #onetrust-consent-sdk, .onetrust-pc-dark-filter, #onetrust-banner-sdk,
-    .ot-sdk-container, [class*="onetrust"], [id*="onetrust"],
-    .optanon-alert-box-wrapper, #optanon-popup-bg, #optanon-popup-wrapper {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-  \`;
-  document.head.appendChild(fullscreenStyle);
-  
-  // Auto-accept cookie consent (runs after DOM loads)
-  const autoAcceptCookies = () => {
-    // Famobi uses OneTrust - look for their specific buttons
-    const acceptSelectors = [
-      '#onetrust-accept-btn-handler',
-      '.onetrust-close-btn-handler',
-      '#accept-recommended-btn-handler',
-      'button[id*="accept"]',
-      'button[class*="accept"]',
-      '[class*="accept"][class*="cookie"]',
-      '[class*="Accept"][class*="Cookie"]',
-      'button:contains("Accept All")',
-      '[class*="accept"]', '[class*="Accept"]', '[class*="agree"]', '[class*="Agree"]',
-      '[id*="accept"]', '[id*="Accept"]', '[id*="agree"]', '[id*="Agree"]',
-      'button[class*="consent"]', 'button[class*="cookie"]',
-      '.fc-cta-consent', '.qc-cmp2-summary-buttons button:first-child',
-      '[data-testid="accept-button"]', '[data-action="accept"]'
-    ];
-    
-    for (const selector of acceptSelectors) {
-      try {
-        const btns = document.querySelectorAll(selector);
-        for (const btn of btns) {
-          if (btn && btn.offsetParent !== null && btn.innerText && 
-              (btn.innerText.toLowerCase().includes('accept') || btn.innerText.toLowerCase().includes('agree'))) {
-            btn.click();
-            return true;
-          }
-        }
-        // Also try just clicking first match
-        const btn = document.querySelector(selector);
-        if (btn && btn.offsetParent !== null) {
-          btn.click();
-          return true;
-        }
-      } catch(e) {}
-    }
-    
-    // Famobi specific: find button with "Accept All Cookies" text
-    const allButtons = document.querySelectorAll('button');
-    for (const btn of allButtons) {
-      if (btn.innerText && btn.innerText.includes('Accept All Cookies')) {
-        btn.click();
-        return true;
-      }
-      // Y8 "Got it" button
-      if (btn.innerText && btn.innerText.trim() === 'Got it') {
-        btn.click();
-      }
-    }
-    
-    return false;
-  };
-  
-  // Y8 specific: auto-click "PLAY IN FULLSCREEN" button
-  const autoClickY8Play = () => {
-    const allButtons = document.querySelectorAll('button, a, div');
-    for (const btn of allButtons) {
-      if (btn.innerText && (
-        btn.innerText.includes('PLAY IN FULLSCREEN') || 
-        btn.innerText.includes('Play in Fullscreen') ||
-        btn.innerText.includes('PLAY NOW') ||
-        btn.innerText.includes('Play Now') ||
-        btn.innerText.includes('START GAME') ||
-        btn.innerText.includes('Start Game')
-      )) {
-        btn.click();
-        return true;
-      }
-    }
-    return false;
-  };
-  
-  // Try immediately and after short delays
-  setTimeout(autoAcceptCookies, 100);
-  setTimeout(autoAcceptCookies, 500);
-  setTimeout(autoAcceptCookies, 1000);
-  setTimeout(autoAcceptCookies, 2000);
-  
-  // Y8 play button clicks
-  setTimeout(autoClickY8Play, 500);
-  setTimeout(autoClickY8Play, 1000);
-  setTimeout(autoClickY8Play, 2000);
-  setTimeout(autoClickY8Play, 3000);
-  
-  // Also observe for dynamically added consent dialogs
-  const observer = new MutationObserver(() => {
-    autoAcceptCookies();
-  });
-  if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      observer.observe(document.body, { childList: true, subtree: true });
-    });
-  }
-  setTimeout(() => observer.disconnect(), 10000); // Stop after 10s
-  
-  // Force fullscreen via JavaScript (for Unity games that resist CSS)
-  const forceFullscreen = () => {
-    // Remove Unity mobile warning
-    const warnings = document.querySelectorAll('#unity-warning, .unity-warning, #unity-mobile-warning, .unity-mobile-warning');
-    warnings.forEach(w => w.remove());
-    
-    // Also remove any paragraph with the warning text
-    document.querySelectorAll('p').forEach(p => {
-      if (p.textContent && p.textContent.includes('WebGL builds are not supported')) {
-        p.remove();
-      }
-    });
-    
-    const canvas = document.querySelector('canvas');
-    if (canvas) {
-      canvas.style.cssText = 'width:100vw!important;height:100vh!important;position:fixed!important;top:0!important;left:0!important;display:block!important;';
-    }
-    // Also resize Unity container
-    const containers = document.querySelectorAll('#unity-container, #gameContainer, .webgl-content, #unityContainer');
-    containers.forEach(c => {
-      c.style.cssText = 'width:100vw!important;height:100vh!important;position:fixed!important;top:0!important;left:0!important;background:#000!important;';
-    });
-  };
-  
-  // Run multiple times as Unity loads
-  setTimeout(forceFullscreen, 500);
-  setTimeout(forceFullscreen, 1000);
-  setTimeout(forceFullscreen, 2000);
-  setTimeout(forceFullscreen, 3000);
-  
-  // Also run on window resize
-  window.addEventListener('resize', forceFullscreen);
-  
-  // CRITICAL: Block touch events at screen edges to allow native swipe gestures
-  // This prevents the WebView from capturing swipe gestures at top/bottom
-  const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
-  
-  const blockEdgeTouches = (e) => {
-    if (!e.touches || e.touches.length === 0) return;
-    const touch = e.touches[0];
-    const y = touch.clientY;
-    const screenHeight = window.innerHeight;
-    
-    // Block touches in top or bottom edge zones
-    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
-      e.stopPropagation();
-      // Don't preventDefault - let it bubble to native
-    }
-  };
-  
-  // Capture phase to intercept before game handlers
-  document.addEventListener('touchstart', blockEdgeTouches, { capture: true, passive: true });
-  document.addEventListener('touchmove', blockEdgeTouches, { capture: true, passive: true });
-  
-  // NO div blockers - native gesture zones handle swipe detection
 })();
 true;
 `;
@@ -1380,25 +765,16 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
-// Create feed with native ads inserted every AD_FREQUENCY games
+// Create feed of games
 const createFeed = (games: Game[], cycle: number = 0): FeedItem[] => {
   // Shuffle games for variety
   const shuffledGames = shuffleArray(games);
-  const adFrequency = getAdFrequency();
   const result: FeedItem[] = [];
 
   shuffledGames.forEach((game, index) => {
-    // Insert an ad before every N games (after the first batch)
-    if (index > 0 && index % adFrequency === 0) {
-      result.push({
-        id: `ad-${cycle}-${index}`,
-        isAd: true,
-      });
-    }
     result.push({
       game,
       id: `${game.id}-cycle${cycle}-${index}`,
-      isAd: false,
     });
   });
 
@@ -1594,6 +970,36 @@ const AnimatedShareButton = ({
         <Ionicons name="arrow-redo" size={32} color={LoopsColors.white} />
       </Animated.View>
       <Text style={styles.actionCount}>{formatCount(shareCount)}</Text>
+    </TouchableOpacity>
+  );
+};
+
+const AnimatedCommentButton = ({
+  onPress,
+  commentCount,
+  styles
+}: {
+  onPress: (e: any) => void;
+  commentCount: number;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePress = (e: any) => {
+    onPress(e);
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.72, duration: 90, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1.14, friction: 3, tension: 40, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
+    ]).start();
+  };
+
+  return (
+    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons name="chatbubble-outline" size={32} color={LoopsColors.white} />
+      </Animated.View>
+      <Text style={styles.actionCount}>{formatCount(commentCount)}</Text>
     </TouchableOpacity>
   );
 };
@@ -2112,10 +1518,25 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refreshTrigger = 0 }) => {
   const insets = useSafeAreaInsets();
   const { sharedGameId, clearSharedGame } = useDeepLink();
+  const { setActiveTab: setRootActiveTab } = useNavigation();
   const { user } = useAuth();
+  const { setMyStatus } = useSocket();
   const isFocused = isActive; // Use the prop instead of navigation hook
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1, will be set to 0 if returning user
+
+  // Toggle presence between 'in-game' (when actively playing) and 'online'
+  useEffect(() => {
+    if (!isActive) return;
+    if (currentIndex >= 0) {
+      setMyStatus('in-game');
+    } else {
+      setMyStatus('online');
+    }
+    return () => {
+      setMyStatus('online');
+    };
+  }, [isActive, currentIndex, setMyStatus]);
   const [loading, setLoading] = useState(true);
 
   const [scrollEnabled, setScrollEnabled] = useState(false);
@@ -2133,7 +1554,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     let timeout: NodeJS.Timeout;
     if (feed.length > 0 && currentIndex >= 0 && currentIndex < feed.length) {
       const activeItem = feed[currentIndex];
-      if (activeItem && !activeItem.isAd && !readyGames.has(activeItem.id)) {
+      if (activeItem && !readyGames.has(activeItem.id)) {
         timeout = setTimeout(() => {
           setReadyGames(prev => new Set(prev).add(activeItem.id));
         }, 15000);
@@ -2179,6 +1600,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [showShare, setShowShare] = useState(false);
   const [shareGameId, setShareGameId] = useState<string>('');
   const [shareGameName, setShareGameName] = useState<string>('');
+  const [showComments, setShowComments] = useState(false);
+  const [commentGameId, setCommentGameId] = useState<string>('');
+  const [commentGameName, setCommentGameName] = useState<string>('');
 
   // Click animation state - track position of last tap
   const [clickAnimations, setClickAnimations] = useState<Array<{ id: string; x: number; y: number }>>([]);
@@ -2392,6 +1816,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     }
   };
 
+  const handleOpenComments = (game: Game) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setCommentGameId(game.id);
+      setCommentGameName(game.name);
+      setShowComments(true);
+    } catch (e: any) {
+      Alert.alert('Comments Error', e.message || String(e));
+    }
+  };
+
   // Handle sending game to friend
   const handleSendToFriend = async (friendId: string, gameId: string) => {
     try {
@@ -2422,10 +1857,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'background' || state === 'inactive') {
+        Object.values(webViewRefs.current).forEach(webView => {
+          webView?.injectJavaScript(PAUSE_SCRIPT);
+        });
         if (!isAnimating.current) {
           translateY.setValue(0);
         }
         setScrollEnabled(false);
+      } else if (state === 'active' && isFocused) {
+        const currItem = currentIndexRef.current >= 0 ? feedRef.current[currentIndexRef.current] : null;
+        if (currItem && webViewRefs.current[currItem.id]) {
+          webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+        }
       }
     });
     return () => sub.remove();
@@ -2443,7 +1886,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           webView.injectJavaScript(PAUSE_SCRIPT);
         }
       });
-      webViewRefs.current = {};
 
       // Record play time when leaving tab
       if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
@@ -2532,7 +1974,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     if (currentIndex < 0) return;
 
     const currentItem = feed[currentIndex];
-    if (!currentItem || currentItem.isAd || !currentItem.game?.id) return;
+    if (!currentItem || !currentItem.game?.id) return;
 
     const gameId = currentItem.game.id;
     if (playRecordedForSessionRef.current.has(gameId)) return;
@@ -2667,7 +2109,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   }, [feed]);
 
   useEffect(() => {
-    if (!isFocused || currentIndex < 0 || !feed[currentIndex] || feed[currentIndex]?.isAd) {
+    if (!isFocused || currentIndex < 0 || !feed[currentIndex]) {
       clearHudTimers();
       return;
     }
@@ -2692,14 +2134,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         setCurrentIndex(0);
       }
 
-      // Initialize ads SDK (don't block on this)
-      console.log('[HomeScreen] Initializing ads...');
-      initializeAds().then(() => {
-        console.log('[HomeScreen] Ads SDK initialized successfully');
-        // Native ads are loaded on-demand by NativeAdView component
-      }).catch(e => console.log('[HomeScreen] Ads init error:', e));
-
-      // Fetch games immediately (don't wait for ads)
+      // Fetch games immediately
       console.log('[HomeScreen] Fetching games...');
       try {
         const data = await gamesApi.list(50, 0, { sort: 'discover' });
@@ -2830,7 +2265,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           );
           if (game) {
             // Add the shared game to the front of the feed
-            const newItem: FeedItem = { game, id: `shared-${game.id}`, isAd: false };
+            const newItem: FeedItem = { game, id: `shared-${game.id}` };
             setFeed(prev => [newItem, ...prev]);
             setCurrentIndex(0);
           }
@@ -3182,7 +2617,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   if (feed.length === 0 && currentIndex !== -1) return null;
 
-  const isCurrentAd = currentIndex > -1 && feed[currentIndex] && feed[currentIndex].isAd;
   const renderedItems = isFocused ? visibleItems : [];
 
   return (
@@ -3207,11 +2641,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
             <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1 }} collapsable={false}>
               <WelcomeScreen contentHeight={contentHeight} />
             </Animated.View>
-          ) : item!.isAd ? (
-            // Native Ad — load at position 0 and +1/-1 (so it doesn't instantly unmount and crash when swiping past)
-            <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1, backgroundColor: '#000' }} collapsable={false}>
-              {(Math.abs(position) <= 1) && <NativeAdView contentHeight={contentHeight} />}
-            </Animated.View>
           ) : (
             // Game screen - natively tracks edge panning around the webview
             <Animated.View {...edgePanResponder.panHandlers} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
@@ -3234,7 +2663,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   nestedScrollEnabled={false}
                   thirdPartyCookiesEnabled={false}
                   sharedCookiesEnabled={false}
-                  injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT : EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT}
+                  injectedJavaScriptBeforeContentLoaded={GAME_AUDIO_GUARD_SCRIPT + EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT}
                   injectedJavaScript={shouldUseWebViewBackdrop(item!.game!) ? createBlurBgScript(getThumbnailUrl(item!.game!), getFeedBackdropColor()) : undefined}
                   onMessage={async (event) => {
                     try {
@@ -3292,6 +2721,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, {}));
                       }
                     }
+
+                    const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused;
+                    webViewRefs.current[item!.id]?.injectJavaScript(shouldResume ? RESUME_SCRIPT : PAUSE_SCRIPT);
                   }}
                   onLoad={() => {
                     const shouldPause = position !== 0 || currentIndex === -1;
@@ -3300,9 +2732,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     }
                   }}
                   onShouldStartLoadWithRequest={(request) => {
-                    if (isExternalGame(item!.game!)) {
-                      return !shouldBlockRequest(request.url);
-                    }
                     return true;
                   }}
                 />
@@ -3321,76 +2750,108 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   </View>
                 )}
 
-                {/* Only show action buttons and game info for games, not ads */}
-                {!item!.isAd && (
-                  <>
-                    {/* TikTok-style action buttons - right side */}
-                    <Animated.View style={[styles.actionButtons, { bottom: 64 }]}>
+                {/* TikTok-style action buttons - right side */}
+                <Animated.View style={[styles.actionButtons, { bottom: 64 }]}>
+                  <AnimatedLikeButton
+                    isLiked={likedGames.has(item!.game!.id)}
+                    onPress={(e) => {
+                      triggerClickAnimation(e);
+                      handleLike(item!.game!.id);
+                    }}
+                    likeCount={getFeedCount(item!.game!.id, 'likes')}
+                    styles={styles}
+                  />
+                  <AnimatedCommentButton
+                    onPress={(e) => {
+                      triggerClickAnimation(e);
+                      handleOpenComments(item!.game!);
+                    }}
+                    commentCount={0}
+                    styles={styles}
+                  />
+                  {/* Share */}
+                  <AnimatedShareButton
+                    onPress={(e) => {
+                      triggerClickAnimation(e);
+                      handleShare(item!.game!);
+                    }}
+                    shareCount={getFeedCount(item!.game!.id, 'shares')}
+                    styles={styles}
+                  />
+                </Animated.View>
 
-
-                      <AnimatedLikeButton
-                        isLiked={likedGames.has(item!.game!.id)}
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleLike(item!.game!.id);
-                        }}
-                        likeCount={getFeedCount(item!.game!.id, 'likes')}
-                        styles={styles}
-                      />
-                      {/* Share */}
-                      <AnimatedShareButton
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleShare(item!.game!);
-                        }}
-                        shareCount={getFeedCount(item!.game!.id, 'shares')}
-                        styles={styles}
-                      />
-                    </Animated.View>
-
-                    {/* Game info - bottom left */}
-                    <Animated.View style={styles.gameInfo} pointerEvents="none">
-                      <View style={styles.gameNameRow}>
-                        <Text style={styles.gameName} numberOfLines={2}>{item!.game!.name}</Text>
-                        <View style={styles.gameBadge}>
-                          <Ionicons name="game-controller" size={11} color={LoopsColors.white} />
+                {/* Game info - bottom left (V2 mockup-faithful) */}
+                <Animated.View style={styles.gameInfo} pointerEvents="none">
+                  <View style={styles.gameTitleRow}>
+                    <Text style={styles.gameName} numberOfLines={2}>
+                      {item!.game!.name}
+                    </Text>
+                    <View style={styles.gameTitlePill}>
+                      <Ionicons name="game-controller" size={12} color="#fff" />
+                    </View>
+                  </View>
+                  {!!item!.game!.creatorDisplayName && (
+                    <View style={styles.creatorRow}>
+                      <Text style={styles.creatorDisplayName} numberOfLines={1}>
+                        {item!.game!.creatorDisplayName || item!.game!.creatorUsername}
+                      </Text>
+                      {item!.game!.creatorVerified ? (
+                        <View style={styles.verifiedDot}>
+                          <Text style={styles.verifiedCheck}>✓</Text>
                         </View>
-                      </View>
-                      {!!item!.game!.creatorDisplayName && (
-                        <View style={styles.creatorRow}>
-                          <Text style={styles.creatorDisplayName} numberOfLines={1}>{item!.game!.creatorDisplayName}</Text>
-                        </View>
-                      )}
-                      <View style={styles.gameMetaRow}>
-                        <View style={styles.gameMetaPill}>
-                          <Ionicons name="play" size={12} color={LoopsColors.white80} />
-                          <Text style={styles.gameMetaText}>{formatCount(item!.game!.plays || 0)} plays</Text>
-                        </View>
-                      </View>
-                    </Animated.View>
-                  </>
-                )}
+                      ) : null}
+                    </View>
+                  )}
+                  <View style={styles.gameMetaRow}>
+                    <View style={styles.gameMetaPill}>
+                      <Ionicons name="play" size={11} color="rgba(255,255,255,0.85)" />
+                      <Text style={styles.gameMetaText}>
+                        {formatCount(item!.game!.plays || 0)} plays
+                      </Text>
+                    </View>
+                  </View>
+                </Animated.View>
             </Animated.View>
           )}
         </Animated.View>
       ))}
 
-      {/* Swipe hint — shows hand icon for 5s on first game or after an ad */}
+      {/* Swipe hint — shows hand icon for 5s on first game */}
       <SwipeHintOverlay 
         gameIndex={currentIndex} 
-        shouldShow={currentIndex === 0 || (currentIndex > 0 && !!feed[currentIndex - 1]?.isAd)}
+        shouldShow={currentIndex === 0}
       />
 
-      {/* For You header - tappable to refresh, swipes pass through around it */}
-      <Animated.View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
-        <View style={styles.headerRail}>
+      {/* V2 Top bar (mockup): gametok / search */}
+      <Animated.View
+        style={[styles.topBarV2, { paddingTop: insets.top + 8 }]}
+        pointerEvents="box-none"
+      >
+        <View style={styles.topBarV2Row}>
+          <View style={styles.topBarV2Side} />
+          <View style={styles.topBarV2Center}>
+            <Text style={styles.gametokLogoV2}>gametok</Text>
+          </View>
+          <View style={[styles.topBarV2Side, { alignItems: 'flex-end' }]}>
+            <TouchableOpacity
+              style={styles.topV2IconBtn}
+              onPress={() => setRootActiveTab('explore')}
+              activeOpacity={0.85}
+              hitSlop={6}
+            >
+              <Ionicons name="search" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.forYouV2Wrap}>
           <TouchableOpacity
             onPress={refreshFeed}
-            activeOpacity={0.8}
-            style={styles.feedModePill}
+            activeOpacity={0.85}
+            style={styles.forYouV2Pill}
           >
-            <View style={styles.feedModeDot} />
-            <Text style={styles.forYouText}>For You</Text>
+            <View style={styles.forYouV2Dot} />
+            <Text style={styles.forYouV2Text}>For You</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -3433,6 +2894,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         gameId={shareGameId}
         gameName={shareGameName}
         onSendToFriend={handleSendToFriend}
+      />
+
+      <CommentsModal
+        visible={showComments}
+        onClose={() => setShowComments(false)}
+        gameId={commentGameId}
+        gameName={commentGameName}
       />
 
       {/* Leaderboard Modal */}
@@ -3484,6 +2952,75 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: LoopsColors.black, // Fallback for loading state
   },
+  // ── V2 mockup top bar ────────────────────────────────────────────
+  topBarV2: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10000,
+    paddingHorizontal: 14,
+  },
+  topBarV2Row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topBarV2Side: {
+    flex: 1,
+  },
+  topBarV2Center: {
+    alignItems: 'center',
+  },
+  gametokLogoV2: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  topV2IconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forYouV2Wrap: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  forYouV2Pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.5)',
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  forYouV2Dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#a855f7',
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.85,
+    shadowRadius: 5,
+  },
+  forYouV2Text: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
   header: {
     position: 'absolute',
     top: 0,
@@ -3500,24 +3037,29 @@ const styles = StyleSheet.create({
   feedModePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: 'rgba(10,10,10,0.72)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(168,85,247,0.45)',
   },
   feedModeDot: {
     width: 7,
     height: 7,
     borderRadius: 999,
-    backgroundColor: LoopsColors.mainPink,
+    backgroundColor: '#a855f7',
     marginRight: 8,
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
   },
   forYouText: {
     color: LoopsColors.white,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   gameContainer: {
     position: 'absolute',
@@ -3662,6 +3204,23 @@ const styles = StyleSheet.create({
     right: 80,
     zIndex: 10,
   },
+  gameTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  gameTitlePill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#a855f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+  },
   gameNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3669,31 +3228,63 @@ const styles = StyleSheet.create({
   },
   creatorRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 6,
-    marginLeft: 10,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  creatorAvatarBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  creatorAvatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorAvatarInitial: {
+    color: LoopsColors.white,
+    fontSize: 12,
+    fontWeight: '800',
   },
   creatorDisplayName: {
-    color: 'rgba(255,255,255,0.88)',
-    fontSize: 15,
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.05,
-    textShadowColor: LoopsColors.black90,
+    letterSpacing: -0.2,
+    textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
     flexShrink: 1,
   },
+  verifiedDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#a855f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifiedCheck: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: -1,
+  },
   gameName: {
     color: LoopsColors.white,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     letterSpacing: -0.4,
-    textShadowColor: LoopsColors.black90,
+    textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 6,
+    flexShrink: 1,
   },
   gameBadge: {
-    backgroundColor: 'rgba(255, 64, 151, 0.82)',
+    backgroundColor: 'rgba(168,85,247,0.85)',
     borderRadius: 999,
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -3704,25 +3295,29 @@ const styles = StyleSheet.create({
   gameMetaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 8,
+    gap: 6,
+    marginTop: 4,
   },
   gameMetaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
-    marginRight: 8,
-    marginBottom: 8,
-    backgroundColor: 'rgba(10,10,10,0.42)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  gameMetaPillAccent: {
+    backgroundColor: 'rgba(168,85,247,0.18)',
+    borderColor: 'rgba(168,85,247,0.4)',
   },
   gameMetaText: {
-    color: LoopsColors.white80,
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 6,
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   gameLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,

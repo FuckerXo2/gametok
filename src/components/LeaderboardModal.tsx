@@ -12,12 +12,12 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
+import { Avatar } from './Avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LoopsColors, SemanticColors, LoopsGradients } from '../constants/LoopsColors';
-import { resolveAvatarSource } from './Avatar';
 import { gamification } from '../services/api';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -176,8 +176,10 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
       <View key={player.userId} style={[styles.playerRow, isMe && styles.playerRowMe]}>
         {getRankBadge()}
         
-        <Image
-          source={resolveAvatarSource(player.avatar)}
+        <Avatar
+          uri={player.avatar}
+          userId={player.userId}
+          size={32}
           style={[styles.avatar, isMe && { borderColor: LoopsColors.mainGreen, borderWidth: 2 }]}
         />
         

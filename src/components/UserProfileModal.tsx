@@ -31,6 +31,7 @@ import { FollowListModal } from './FollowListModal';
 import { SlideRightModal } from './SlideRightModal';
 import { AnimatedButton } from './AnimatedButton';
 import { useAuth } from '../context/AuthContext';
+import { resolveGameThumbnail } from '../utils/thumbnails';
 
 interface UserProfile {
   id: string;
@@ -65,7 +66,6 @@ interface ChatMessage {
 }
 
 const GAMES_HOST = 'https://games.gametok.co';
-const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 const SUGGESTED_FRIENDS: any[] = [];
 const PROFILE_GRID_GAP = 2;
@@ -79,21 +79,7 @@ const formatCompactNumber = (value?: number | null) => {
 };
 
 const resolveThumbnailUrl = (thumbnail?: string | null, gameId?: string | null) => {
-  if (thumbnail) {
-    if (thumbnail.startsWith('http') || thumbnail.startsWith('data:')) {
-      return thumbnail;
-    }
-    if (thumbnail.startsWith('/')) {
-      return `${API_ORIGIN}${thumbnail}`;
-    }
-    return `${GAMES_HOST}${thumbnail}`;
-  }
-
-  if (gameId) {
-    return `${GAMES_HOST}/thumbnails/${gameId}.png`;
-  }
-
-  return null;
+  return resolveGameThumbnail(thumbnail, gameId);
 };
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onClose, user, onFriendStatusChange }) => {
@@ -301,7 +287,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               <Ionicons name="chevron-back" size={28} color={colors.text} />
             </TouchableOpacity>
             <View style={styles.chatHeaderUser}>
-              <Avatar uri={activeUser.avatar} size={36} style={styles.chatHeaderAvatar} />
+              <Avatar uri={activeUser.avatar} userId={activeUser.id} size={36} style={styles.chatHeaderAvatar} />
               <Text style={[styles.chatHeaderUsername, { color: colors.text }]}>
                 {activeUser.displayName || activeUser.username}
               </Text>
@@ -446,7 +432,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             <View style={styles.heroCard}>
               <View style={styles.avatarHitbox}>
                 <View style={[styles.avatarRing, { borderColor: colors.border }]}>
-                  <Avatar uri={activeUser.avatar} size={96} />
+                  <Avatar uri={activeUser.avatar} userId={activeUser.id} size={96} />
                 </View>
                 {activeUser.isOnline && <View style={styles.onlineDot} />}
               </View>
@@ -553,8 +539,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             </TouchableOpacity>
           </View>
 
-          <View style={styles.sectionHeader}>
+          <View style={styles.contentMetaRow}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{profileTab === 'created' ? 'Created' : 'Liked'}</Text>
+            <Text style={[styles.contentCount, { color: colors.textSecondary }]}>
+              {formatCompactNumber((profileTab === 'created' ? createdGames : userGames).length)}
+            </Text>
           </View>
 
           {loadingGames ? (
@@ -735,13 +724,13 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   profileShell: {
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingBottom: 4,
   },
   profileTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 10,
   },
   topIconButton: {
     width: 42,
@@ -757,12 +746,12 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingHorizontal: 6,
+    paddingTop: 2,
+    paddingBottom: 2,
   },
   avatarHitbox: {
-    marginBottom: 14,
+    marginBottom: 10,
     position: 'relative',
   },
   avatarRing: {
@@ -782,21 +771,21 @@ const styles = StyleSheet.create({
     borderColor: '#000',
   },
   displayName: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: -0.5,
     maxWidth: '90%',
     textAlign: 'center',
   },
   handleText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    marginTop: 6,
+    marginTop: 4,
   },
   bioText: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 10,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 8,
     textAlign: 'center',
     maxWidth: 280,
   },
@@ -804,22 +793,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 18,
-    marginBottom: 18,
+    marginTop: 14,
+    marginBottom: 14,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 21,
+    fontSize: 18,
     fontWeight: '900',
     letterSpacing: -0.3,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    marginTop: 3,
+    marginTop: 2,
   },
   profileActions: {
     flexDirection: 'row',
@@ -831,31 +820,31 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     flex: 1,
-    minHeight: 44,
-    borderRadius: 16,
+    minHeight: 40,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
   primaryActionText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '900',
   },
   secondaryAction: {
-    minHeight: 44,
-    borderRadius: 16,
+    minHeight: 40,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 17,
+    paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   secondaryActionFixed: {
-    minWidth: 124,
+    minWidth: 116,
   },
   secondaryActionText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
   },
   actionContent: {
@@ -866,16 +855,16 @@ const styles = StyleSheet.create({
   tabsShell: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 2,
     padding: 3,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
   },
   contentTab: {
     flex: 1,
-    height: 48,
-    borderRadius: 14,
+    height: 44,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
@@ -893,19 +882,28 @@ const styles = StyleSheet.create({
     height: 2,
     borderRadius: 2,
   },
-  sectionHeader: {
+  contentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     paddingHorizontal: 18,
     paddingTop: 8,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
+  },
+  contentCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   gameGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 5,
+    paddingHorizontal: 3,
     paddingTop: 0,
     paddingBottom: 14,
   },

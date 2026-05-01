@@ -23,20 +23,24 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { useAuthScreen, useNavigation } from '../../App';
+import { useAuthScreen, useNavigation, useDeepLink } from '../../App';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
-import { users, messages as messagesApi, feed, stories as storiesApi } from '../services/api';
+import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import * as ImagePicker from 'expo-image-picker';
-import { ExploreLegacyScreen } from './ExploreLegacyScreen';
+import { resolveGameThumbnail } from '../utils/thumbnails';
+const BRAND_PURPLE = '#A855F7';
 
-const GAMES_HOST = 'https://games.gametok.co';
+const resolveSharedGameThumbnail = (thumbnail?: string | null, gameId?: string) => {
+  return resolveGameThumbnail(thumbnail, gameId);
+};
 
 type TabName = 'play' | 'messages';
+type InboxLane = 'chats' | 'requests' | 'activity';
 
 interface Conversation {
   id: string;
@@ -47,9 +51,18 @@ interface Conversation {
     avatar?: string;
   };
   lastMessage?: {
+    id: string;
     text: string;
     createdAt: string;
+    isFromMe: boolean;
     isRead: boolean;
+    isUnread: boolean;
+    gameShare?: {
+      id: string;
+      name: string;
+      thumbnail?: string;
+      color?: string;
+    } | null;
   };
   streak: number;
 }
@@ -108,7 +121,7 @@ const TabButton: React.FC<{
         style={[
           styles.tabButtonInner,
           {
-            backgroundColor: isActive ? LoopsColors.color1 : colors.surface,
+            backgroundColor: isActive ? BRAND_PURPLE : colors.surface,
           },
         ]}
       >
@@ -133,7 +146,11 @@ const TabButton: React.FC<{
 };
 
 // Messages Tab
-const MessagesTab: React.FC = () => {
+const MessagesTab: React.FC<{
+  initialConversation?: Conversation | null;
+  closeOnChatBack?: boolean;
+  onClose?: () => void;
+}> = ({ initialConversation = null, closeOnChatBack = false, onClose }) => {
   const { colors } = useTheme();
   const { user } = useAuth();
   const { chatSocket, onlineUsers, typingUsers, joinConversation, leaveConversation, sendTyping, stopTyping } = useSocket();
@@ -141,13 +158,15 @@ const MessagesTab: React.FC = () => {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<UserItem[]>([]);
   const [storyUsers, setStoryUsers] = useState<any[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<UserItem[]>([]);
+  const [activeLane, setActiveLane] = useState<InboxLane>('chats');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Chat modal state
-  const [selectedChat, setSelectedChat] = useState<Conversation | null>(null);
+  const [selectedChat, setSelectedChat] = useState<Conversation | null>(initialConversation);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
@@ -169,20 +188,22 @@ const MessagesTab: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [convRes, activityRes, storiesRes, followingRes] = await Promise.all([
+      const [convRes, activityRes, storiesRes, followingRes, requestsRes] = await Promise.all([
         messagesApi.getConversations().catch(() => ({ conversations: [] })),
         feed.activity(30).catch(() => ({ activity: [] })),
         storiesApi.list().catch(() => ({ stories: [] })),
         users.following(user?.id || '').catch(() => []),
+        users.pendingRequests(user?.id || '').catch(() => []),
       ]);
 
-      setConversations(convRes.conversations || []);
-      setActivity(activityRes.activity || []);
-      setStoryUsers(storiesRes.stories || []);
+      setConversations(Array.isArray(convRes.conversations) ? convRes.conversations : []);
+      setActivity(Array.isArray(activityRes.activity) ? activityRes.activity : []);
+      setStoryUsers(Array.isArray(storiesRes.stories) ? storiesRes.stories : []);
 
-      // Get suggested users from following
       const friends = Array.isArray(followingRes) ? followingRes : [];
+      const requests = Array.isArray(requestsRes) ? requestsRes : [];
       setSuggestedUsers(friends.slice(0, 6));
+      setPendingRequests(requests);
     } catch (error) {
       console.error('Load messages data error:', error);
     } finally {
@@ -274,6 +295,19 @@ const MessagesTab: React.FC = () => {
     setLoadingChat(false);
   };
 
+  const closeChat = () => {
+    if (closeOnChatBack && selectedChat) {
+      onClose?.();
+      return;
+    }
+    setSelectedChat(null);
+  };
+
+  useEffect(() => {
+    if (!initialConversation) return;
+    openChat(initialConversation);
+  }, [initialConversation?.id]);
+
   const sendMessage = async () => {
     if (!messageText.trim() || !selectedChat) return;
     const text = messageText.trim();
@@ -304,6 +338,19 @@ const MessagesTab: React.FC = () => {
   const openUserProfile = (userItem: UserItem) => {
     setSelectedUser(userItem);
     setShowUserProfile(true);
+  };
+
+  const handleRequestAction = async (person: UserItem) => {
+    try {
+      await users.follow(person.id);
+      setPendingRequests((prev) => prev.filter((item) => item.id !== person.id));
+      const existingConvo = conversations.find((c) => c.user.id === person.id);
+      if (existingConvo) {
+        openChat(existingConvo);
+      }
+    } catch (e) {
+      console.log('Request action error:', e);
+    }
   };
 
   const createStory = async () => {
@@ -343,6 +390,26 @@ const MessagesTab: React.FC = () => {
     return `${Math.floor(diff / 86400000)}d`;
   };
 
+  const getActivityCopy = (item: ActivityItem) => {
+    const actor = item.user.displayName || item.user.username;
+    switch (item.type) {
+      case 'follow':
+        return `${actor} followed you`;
+      case 'like':
+        return item.game?.name ? `${actor} liked ${item.game.name}` : `${actor} liked your game`;
+      case 'comment':
+        return item.text || `${actor} left a comment`;
+      case 'score':
+        return item.score != null && item.game?.name
+          ? `${actor} scored ${item.score} on ${item.game.name}`
+          : `${actor} posted a new score`;
+      case 'playing':
+        return item.game?.name ? `${actor} is playing ${item.game.name}` : `${actor} is playing right now`;
+      default:
+        return `${actor} did something new`;
+    }
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -372,125 +439,237 @@ const MessagesTab: React.FC = () => {
             onPress={() => setShowSearch(true)}
           >
             <Ionicons name="search" size={18} color={colors.textSecondary} />
-            <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search messages</Text>
+            <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search people and chats</Text>
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Quick Access Row - New button + Recent contacts */}
-        <Animated.View entering={FadeInRight.delay(100).springify().damping(18)}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickAccessRow}
-          >
-            {/* New Message Button */}
-            <TouchableOpacity style={styles.newMessageBtn} onPress={() => setShowSearch(true)}>
-              <View style={[styles.newMessageCircle, { backgroundColor: colors.surface }]}>
-                <Ionicons name="create-outline" size={24} color={LoopsColors.color1} />
-              </View>
-              <Text style={[styles.quickAccessLabel, { color: colors.text }]}>New</Text>
-            </TouchableOpacity>
-
-            {/* Recent contacts (plain avatars, no gradient rings) */}
-            {suggestedUsers.map((person) => (
-              <TouchableOpacity 
-                key={person.id} 
-                style={styles.quickAccessItem} 
-                onPress={() => {
-                  // Start a chat with this person
-                  const existingConvo = conversations.find(c => c.user.id === person.id);
-                  if (existingConvo) {
-                    openChat(existingConvo);
-                  } else {
-                    // Create a new conversation object
-                    openChat({
-                      id: `new-${person.id}`,
-                      user: person,
-                      streak: 0
-                    });
-                  }
-                }}
-              >
-                <Avatar uri={person.avatar} size={56} />
-                <Text style={[styles.quickAccessLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-                  {person.username}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </Animated.View>
-
-        {/* Messages Section Header */}
-        <Animated.View entering={FadeInRight.delay(150).springify().damping(18)} style={styles.messagesSectionHeader}>
-          <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Messages</Text>
-          <TouchableOpacity onPress={() => setShowSearch(true)}>
-            <Ionicons name="create-outline" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Message Threads */}
-        {conversations.length > 0 ? (
-          conversations.map((chat, index) => {
-            const isUnread = chat.lastMessage && !chat.lastMessage.isRead;
-            return (
-              <Animated.View 
-                key={chat.id} 
-                entering={index < 8 ? FadeInRight.delay(200 + index * 50).springify().damping(18) : undefined}
-              >
+        <Animated.View entering={FadeInRight.delay(100).springify().damping(18)} style={styles.inboxLaneWrap}>
+          <View style={[styles.inboxLaneBar, { backgroundColor: colors.surface }]}>
+            {[
+              { key: 'chats' as InboxLane, label: 'Chats', count: conversations.length },
+              { key: 'requests' as InboxLane, label: 'Requests', count: pendingRequests.length },
+              { key: 'activity' as InboxLane, label: 'Activity', count: activity.length },
+            ].map((lane) => {
+              const active = activeLane === lane.key;
+              return (
                 <TouchableOpacity
-                  style={styles.chatItem}
-                  onPress={() => openChat(chat)}
+                  key={lane.key}
+                  style={[
+                    styles.inboxLanePill,
+                    active && { backgroundColor: LoopsColors.color1 },
+                  ]}
+                  onPress={() => setActiveLane(lane.key)}
                 >
-                  <View>
-                    <Avatar uri={chat.user.avatar} size={52} />
-                    {onlineUsers.includes(chat.user.id) && (
-                      <View style={[styles.onlineDot, { borderColor: colors.background }]} />
-                    )}
-                  </View>
-                  <View style={styles.chatContent}>
-                    <View style={styles.chatHeader}>
-                      <Text style={[styles.chatUsername, { color: colors.text, fontWeight: isUnread ? '700' : '600' }]}>
-                        {chat.user.displayName}
+                  <Text style={[styles.inboxLaneText, { color: active ? '#fff' : colors.textSecondary }]}>
+                    {lane.label}
+                  </Text>
+                  {lane.count > 0 && (
+                    <View style={[styles.inboxLaneBadge, { backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'rgba(168,85,247,0.18)' }]}>
+                      <Text style={[styles.inboxLaneBadgeText, { color: active ? '#fff' : LoopsColors.color1 }]}>
+                        {lane.count}
                       </Text>
-                      {chat.streak > 0 && (
-                        <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
-                      )}
                     </View>
-                    <Text 
-                      style={[
-                        styles.chatPreview, 
-                        { 
-                          color: isUnread ? colors.text : colors.textSecondary,
-                          fontWeight: isUnread ? '600' : '400'
-                        }
-                      ]} 
-                      numberOfLines={1}
-                    >
-                      {chat.lastMessage?.text || 'Start chatting'}
-                    </Text>
-                  </View>
-                  <View style={styles.chatMeta}>
-                    {chat.lastMessage && (
-                      <Text style={[styles.chatTime, { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' }]}>
-                        {formatTime(chat.lastMessage.createdAt)}
-                      </Text>
-                    )}
-                    {isUnread && (
-                      <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
-                    )}
-                  </View>
+                  )}
                 </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        {activeLane === 'chats' && (
+          <>
+            <Animated.View entering={FadeInRight.delay(120).springify().damping(18)}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickAccessRow}
+              >
+                <TouchableOpacity style={styles.newMessageBtn} onPress={() => setShowSearch(true)}>
+                  <View style={[styles.newMessageCircle, { backgroundColor: colors.surface }]}>
+                    <Ionicons name="create-outline" size={24} color={LoopsColors.color1} />
+                  </View>
+                  <Text style={[styles.quickAccessLabel, { color: colors.text }]}>New</Text>
+                </TouchableOpacity>
+
+                {suggestedUsers.map((person) => (
+                  <TouchableOpacity
+                    key={person.id}
+                    style={styles.quickAccessItem}
+                    onPress={() => {
+                      const existingConvo = conversations.find((c) => c.user.id === person.id);
+                      if (existingConvo) openChat(existingConvo);
+                      else {
+                        openChat({
+                          id: `new-${person.id}`,
+                          user: person,
+                          streak: 0,
+                        });
+                      }
+                    }}
+                  >
+                    <Avatar uri={person.avatar} userId={person.id} size={56} />
+                    <Text style={[styles.quickAccessLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {person.username}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Animated.View>
+
+            <Animated.View entering={FadeInRight.delay(150).springify().damping(18)} style={styles.messagesSectionHeader}>
+              <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Recent chats</Text>
+              <TouchableOpacity onPress={() => setShowSearch(true)}>
+                <Ionicons name="create-outline" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </Animated.View>
+
+            {conversations.length > 0 ? (
+              conversations.map((chat, index) => {
+                const isUnread = !!chat.lastMessage?.isUnread;
+                return (
+                  <Animated.View
+                    key={chat.id}
+                    entering={index < 8 ? FadeInRight.delay(200 + index * 50).springify().damping(18) : undefined}
+                  >
+                    <TouchableOpacity style={styles.chatItem} onPress={() => openChat(chat)}>
+                      <View>
+                        <Avatar uri={chat.user.avatar} userId={chat.user.id} size={52} />
+                        {onlineUsers.includes(chat.user.id) && (
+                          <View style={[styles.onlineDot, { borderColor: colors.background }]} />
+                        )}
+                      </View>
+                      <View style={styles.chatContent}>
+                        <View style={styles.chatHeader}>
+                          <Text style={[styles.chatUsername, { color: colors.text, fontWeight: isUnread ? '700' : '600' }]}>
+                            {chat.user.displayName}
+                          </Text>
+                          {chat.streak > 0 && <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>}
+                        </View>
+                        <Text
+                          style={[
+                            styles.chatPreview,
+                            {
+                              color: isUnread ? colors.text : colors.textSecondary,
+                              fontWeight: isUnread ? '600' : '400',
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {chat.lastMessage?.text || 'Start chatting'}
+                        </Text>
+                      </View>
+                      <View style={styles.chatMeta}>
+                        {chat.lastMessage && (
+                          <Text style={[styles.chatTime, { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' }]}>
+                            {formatTime(chat.lastMessage.createdAt)}
+                          </Text>
+                        )}
+                        {isUnread && <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />}
+                      </View>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })
+            ) : (
+              <Animated.View entering={FadeInRight.delay(200).springify().damping(18)} style={styles.emptyMessages}>
+                <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No chats yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Start a conversation with someone from your circle.
+                </Text>
               </Animated.View>
-            );
-          })
-        ) : (
-          <Animated.View entering={FadeInRight.delay(200).springify().damping(18)} style={styles.emptyMessages}>
-            <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No messages yet</Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Start a conversation with someone!
-            </Text>
-          </Animated.View>
+            )}
+          </>
+        )}
+
+        {activeLane === 'requests' && (
+          <>
+            <Animated.View entering={FadeInRight.delay(120).springify().damping(18)} style={styles.messagesSectionHeader}>
+              <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Friend requests</Text>
+              <TouchableOpacity onPress={() => setShowSearch(true)}>
+                <Ionicons name="person-add-outline" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </Animated.View>
+
+            {pendingRequests.length > 0 ? (
+              pendingRequests.map((person, index) => (
+                <Animated.View
+                  key={person.id}
+                  entering={index < 8 ? FadeInRight.delay(180 + index * 45).springify().damping(18) : undefined}
+                >
+                  <View style={styles.requestRow}>
+                    <TouchableOpacity style={styles.requestIdentity} onPress={() => openUserProfile(person)}>
+                      <Avatar uri={person.avatar} userId={person.id} size={52} />
+                      <View style={styles.requestCopy}>
+                        <Text style={[styles.chatUsername, { color: colors.text }]}>
+                          {person.displayName || person.username}
+                        </Text>
+                        <Text style={[styles.requestSubtitle, { color: colors.textSecondary }]}>
+                          wants to connect and play together
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.requestAction, { backgroundColor: LoopsColors.color1 }]}
+                      onPress={() => handleRequestAction(person)}
+                    >
+                      <Text style={styles.requestActionText}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Animated.View>
+              ))
+            ) : (
+              <Animated.View entering={FadeInRight.delay(180).springify().damping(18)} style={styles.emptyMessages}>
+                <Ionicons name="mail-open-outline" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No requests waiting</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  New follows and friend requests will land here.
+                </Text>
+              </Animated.View>
+            )}
+          </>
+        )}
+
+        {activeLane === 'activity' && (
+          <>
+            <Animated.View entering={FadeInRight.delay(120).springify().damping(18)} style={styles.messagesSectionHeader}>
+              <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Recent activity</Text>
+              <TouchableOpacity onPress={handleRefresh}>
+                <Ionicons name="refresh" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </Animated.View>
+
+            {activity.length > 0 ? (
+              activity.map((item, index) => (
+                <Animated.View
+                  key={item.id}
+                  entering={index < 10 ? FadeInRight.delay(180 + index * 40).springify().damping(18) : undefined}
+                >
+                  <TouchableOpacity style={styles.activityRow} onPress={() => openUserProfile(item.user)}>
+                    <Avatar uri={item.user.avatar} userId={item.user.id} size={48} />
+                    <View style={styles.activityCopy}>
+                      <Text style={[styles.activityTitle, { color: colors.text }]}>
+                        {getActivityCopy(item)}
+                      </Text>
+                      <Text style={[styles.activityMeta, { color: colors.textSecondary }]}>
+                        {formatTime(item.createdAt)}
+                        {item.game?.name ? ` · ${item.game.name}` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </Animated.View>
+              ))
+            ) : (
+              <Animated.View entering={FadeInRight.delay(180).springify().damping(18)} style={styles.emptyMessages}>
+                <Ionicons name="pulse-outline" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>Nothing new yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Likes, plays, follows, and score moments will show up here.
+                </Text>
+              </Animated.View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -544,7 +723,7 @@ const MessagesTab: React.FC = () => {
                   style={[styles.searchResult, { borderBottomColor: colors.border }]}
                   onPress={() => { setShowSearch(false); openUserProfile(item); }}
                 >
-                  <Avatar uri={item.avatar} size={48} />
+                  <Avatar uri={item.avatar} userId={item.id} size={48} />
                   <View style={styles.searchResultContent}>
                     <Text style={[styles.searchResultName, { color: colors.text }]}>
                       {item.displayName || item.username}
@@ -562,7 +741,7 @@ const MessagesTab: React.FC = () => {
       </SlideRightModal>
 
       {/* Chat Modal */}
-      <SlideRightModal visible={!!selectedChat} onClose={() => setSelectedChat(null)}>
+      <SlideRightModal visible={!!selectedChat} onClose={closeChat} instant={closeOnChatBack}>
         {selectedChat && (
           <KeyboardAvoidingView 
             style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}
@@ -570,14 +749,14 @@ const MessagesTab: React.FC = () => {
             keyboardVerticalOffset={0}
           >
             <View style={[styles.chatModalHeader, { borderBottomColor: colors.border }]}>
-              <TouchableOpacity onPress={() => setSelectedChat(null)}>
+              <TouchableOpacity onPress={closeChat}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.chatModalUser}
                 onPress={() => openUserProfile(selectedChat.user)}
               >
-                <Avatar uri={selectedChat.user.avatar} size={36} />
+                <Avatar uri={selectedChat.user.avatar} userId={selectedChat.user.id} size={36} />
                 <View>
                   <Text style={[styles.chatModalUsername, { color: colors.text }]}>
                     {selectedChat.user.displayName || selectedChat.user.username}
@@ -604,9 +783,7 @@ const MessagesTab: React.FC = () => {
                 renderItem={({ item, index }) => {
                   const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
                   const hasGameShare = !!item.gameShare;
-                  const thumbUri = item.gameShare?.thumbnail
-                    ? (item.gameShare.thumbnail.startsWith('http') ? item.gameShare.thumbnail : `${GAMES_HOST}${item.gameShare.thumbnail}`)
-                    : null;
+                  const thumbUri = resolveSharedGameThumbnail(item.gameShare?.thumbnail, item.gameShare?.id);
                   
                   // Message grouping - check if previous message (in reversed order) is from same person
                   const reversedMessages = [...chatMessages].reverse();
@@ -752,46 +929,634 @@ const MessagesTab: React.FC = () => {
 };
 
 // Play Together Tab
+interface FollowingUser {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  verified?: boolean;
+}
+
 const PlayTogetherTab: React.FC = () => {
-  return <ExploreLegacyScreen showHeader={false} />;
+  const { user } = useAuth();
+  const { presenceMap } = useSocket();
+  const { setActiveTab } = useNavigation();
+  const [following, setFollowing] = useState<FollowingUser[]>([]);
+  const [recommended, setRecommended] = useState<FollowingUser[]>([]);
+  const [trendingGames, setTrendingGames] = useState<Array<{ id: string; name: string; thumbnail?: string; plays?: number; creatorDisplayName?: string | null }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  const { openSharedGame } = useDeepLink();
+
+  const loadData = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      const [followingRes, recommendedRes, trendingRes] = await Promise.allSettled([
+        users.following(user.id),
+        users.recommended(),
+        gamesApi.list(8, 0, { sort: 'trending' }).catch(() => ({ games: [] })),
+      ]);
+
+      if (followingRes.status === 'fulfilled') {
+        setFollowing(followingRes.value?.users || followingRes.value?.following || []);
+      }
+      if (recommendedRes.status === 'fulfilled') {
+        setRecommended(recommendedRes.value?.users || []);
+      }
+      if (trendingRes.status === 'fulfilled') {
+        const fetched = trendingRes.value?.games || [];
+        setTrendingGames(fetched.slice(0, 8));
+      }
+    } catch (err) {
+      console.log('[Connect/Play] load failed', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const liveFriend = following.find((f) => presenceMap.get(f.id) === 'in-game');
+  const onlineFollowing = following.filter((f) => {
+    const status = presenceMap.get(f.id);
+    return status === 'online' || status === 'in-game';
+  });
+
+  if (loading && following.length === 0 && recommended.length === 0) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#a855f7" size="small" />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 120 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} tintColor="#fff" />}
+    >
+      {/* Stories row */}
+      <View style={connectV2Styles.storiesSection}>
+        <Text style={connectV2Styles.sectionTitle}>Stories</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={connectV2Styles.storiesScroll}>
+          <Pressable style={connectV2Styles.storyAddCol}>
+            <View style={connectV2Styles.storyAddBubble}>
+              <Ionicons name="add" size={26} color="#fff" />
+            </View>
+            <Text style={connectV2Styles.storyName} numberOfLines={1}>You</Text>
+          </Pressable>
+          {(following.length > 0 ? following : recommended).slice(0, 14).map((u) => {
+            const status = presenceMap.get(u.id);
+            return (
+              <Pressable
+                key={u.id}
+                style={connectV2Styles.storyCol}
+                onPress={() => setSelectedProfileUser(u)}
+              >
+                <View style={[
+                  connectV2Styles.storyRing,
+                  status === 'in-game' && { borderColor: '#a855f7' },
+                  status === 'online' && { borderColor: '#22c55e' },
+                  !status && { borderColor: 'rgba(255,255,255,0.18)' },
+                ]}>
+                  <View style={connectV2Styles.storyAvatarFrame}>
+                    <Avatar uri={u.avatar} userId={u.id} size={56} />
+                  </View>
+                  {status === 'online' || status === 'in-game' ? (
+                    <View style={[
+                      connectV2Styles.storyDot,
+                      status === 'in-game' && { backgroundColor: '#a855f7' },
+                    ]} />
+                  ) : null}
+                </View>
+                <Text style={connectV2Styles.storyName} numberOfLines={1}>
+                  {u.displayName || u.username}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* LIVE NOW card */}
+      {liveFriend ? (
+        <Pressable
+          style={connectV2Styles.liveCard}
+          onPress={() => setSelectedProfileUser(liveFriend)}
+        >
+          <LinearGradient
+            colors={['rgba(168,85,247,0.4)', 'rgba(124,58,237,0.18)', 'rgba(17,17,23,0.94)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={connectV2Styles.liveBadgeRow}>
+            <View style={connectV2Styles.liveBadge}>
+              <View style={connectV2Styles.liveBadgeDot} />
+              <Text style={connectV2Styles.liveBadgeText}>LIVE NOW</Text>
+            </View>
+          </View>
+          <View style={connectV2Styles.liveBody}>
+            <View style={connectV2Styles.liveAvatar}>
+              <Avatar uri={liveFriend.avatar} userId={liveFriend.id} size={52} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={connectV2Styles.liveName}>
+                {liveFriend.displayName || liveFriend.username}
+              </Text>
+              <Text style={connectV2Styles.liveSubtitle}>
+                In-game right now · tap to view
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.6)" />
+          </View>
+        </Pressable>
+      ) : (
+        <View style={connectV2Styles.liveCardEmpty}>
+          <View style={connectV2Styles.liveCardEmptyDot} />
+          <Text style={connectV2Styles.liveCardEmptyTitle}>
+            {onlineFollowing.length > 0
+              ? `${onlineFollowing.length} ${onlineFollowing.length === 1 ? 'friend is' : 'friends are'} online`
+              : 'No friends online yet'}
+          </Text>
+          <Text style={connectV2Styles.liveCardEmptyBody}>
+            We&apos;ll show a LIVE banner here when someone you follow is in-game.
+          </Text>
+        </View>
+      )}
+
+      {/* Friends are playing */}
+      <View style={connectV2Styles.section}>
+        <Text style={connectV2Styles.sectionTitle}>Friends are playing</Text>
+        {trendingGames.length === 0 ? (
+          <Text style={connectV2Styles.sectionEmpty}>Nothing trending yet — try refreshing.</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={connectV2Styles.gameRow}>
+            {trendingGames.map((g) => (
+              <Pressable
+                key={g.id}
+                style={connectV2Styles.gameCardSm}
+                onPress={() => {
+                  openSharedGame(g.id);
+                  setActiveTab('home');
+                }}
+              >
+                {g.thumbnail ? (
+                  <Image
+                    source={{ uri: resolveSharedGameThumbnail(g.thumbnail, g.id) || '' }}
+                    style={StyleSheet.absoluteFillObject}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
+                )}
+                <LinearGradient
+                  colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']}
+                  locations={[0, 0.5, 1]}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <View style={connectV2Styles.gameCardBody}>
+                  <Text style={connectV2Styles.gameCardTitle} numberOfLines={2}>
+                    {g.name}
+                  </Text>
+                  {g.creatorDisplayName ? (
+                    <Text style={connectV2Styles.gameCardCreator} numberOfLines={1}>
+                      @{g.creatorDisplayName}
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
+      {/* Popular creators */}
+      {recommended.length > 0 ? (
+        <View style={connectV2Styles.section}>
+          <Text style={connectV2Styles.sectionTitle}>Popular creators</Text>
+          <View style={connectV2Styles.creatorList}>
+            {recommended.slice(0, 6).map((u) => {
+              const status = presenceMap.get(u.id);
+              return (
+                <Pressable
+                  key={u.id}
+                  style={connectV2Styles.creatorRow}
+                  onPress={() => setSelectedProfileUser(u)}
+                >
+                  <View style={connectV2Styles.creatorAvatarWrap}>
+                    <Avatar uri={u.avatar} userId={u.id} size={42} />
+                    {status === 'online' || status === 'in-game' ? (
+                      <View style={[
+                        connectV2Styles.creatorStatusDot,
+                        status === 'in-game' && { backgroundColor: '#a855f7' },
+                      ]} />
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={connectV2Styles.creatorName}>
+                        {u.displayName || u.username}
+                      </Text>
+                      {u.verified ? (
+                        <View style={connectV2Styles.creatorVerifiedDot}>
+                          <Text style={connectV2Styles.creatorVerifiedCheck}>✓</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={connectV2Styles.creatorHandle}>@{u.username}</Text>
+                  </View>
+                  <View style={connectV2Styles.creatorFollowBtn}>
+                    <Text style={connectV2Styles.creatorFollowText}>View</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      <UserProfileModal
+        visible={!!selectedProfileUser}
+        onClose={() => setSelectedProfileUser(null)}
+        user={selectedProfileUser}
+      />
+    </ScrollView>
+  );
 };
+
+const connectV2Styles = StyleSheet.create({
+  section: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+  },
+  storiesSection: {
+    marginTop: 8,
+    paddingLeft: 16,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    marginBottom: 12,
+    paddingRight: 16,
+  },
+  sectionEmpty: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    paddingVertical: 18,
+  },
+  storiesScroll: {
+    gap: 14,
+    paddingRight: 16,
+  },
+  storyCol: {
+    alignItems: 'center',
+    width: 70,
+  },
+  storyAddCol: {
+    alignItems: 'center',
+    width: 70,
+  },
+  storyAddBubble: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(168,85,247,0.16)',
+    borderWidth: 2,
+    borderColor: 'rgba(168,85,247,0.6)',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  storyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    padding: 2,
+    marginBottom: 6,
+    position: 'relative',
+  },
+  storyAvatarFrame: {
+    flex: 1,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  storyAvatar: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  storyAvatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(168,85,247,0.18)',
+  },
+  storyAvatarInitial: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 18,
+  },
+  storyDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: '#0a0a0f',
+  },
+  storyName: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  liveCard: {
+    marginHorizontal: 16,
+    marginTop: 24,
+    borderRadius: 22,
+    overflow: 'hidden',
+    height: 110,
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.4)',
+  },
+  liveBadgeRow: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 5,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#ef4444',
+  },
+  liveBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+  },
+  liveBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  liveBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  liveAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: '#a855f7',
+  },
+  liveName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  liveSubtitle: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  liveCardEmpty: {
+    marginHorizontal: 16,
+    marginTop: 24,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  liveCardEmptyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+    marginBottom: 8,
+  },
+  liveCardEmptyTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  liveCardEmptyBody: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  gameRow: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  gameCardSm: {
+    width: 140,
+    height: 184,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  gameCardBody: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+  },
+  gameCardTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  gameCardCreator: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  creatorList: {
+    gap: 12,
+  },
+  creatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  creatorAvatarWrap: {
+    position: 'relative',
+  },
+  creatorAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+  },
+  creatorStatusDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: '#0a0a0f',
+  },
+  creatorName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  creatorVerifiedDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#a855f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorVerifiedCheck: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '900',
+    marginTop: -1,
+  },
+  creatorHandle: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  creatorFollowBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(168,85,247,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.4)',
+  },
+  creatorFollowText: {
+    color: '#d8b4fe',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V2 Connect screen — pixel-faithful to mockups
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ConnectFilter = 'following' | 'foryou' | 'friends';
+
+const CONNECT_PURPLE = '#a855f7';
+const CONNECT_BG = '#000000';
+const CONNECT_TEXT_MUTED = '#9a9aa8';
 
 export const ConnectScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
-  const { pendingChatUserId } = useNavigation();
+  const { presenceMap } = useSocket();
+  const { setActiveTab } = useNavigation();
+  const { openSharedGame } = useDeepLink();
 
-  const [activeTab, setActiveTab] = useState<TabName>('messages');
+  const [filter, setFilter] = useState<ConnectFilter>('foryou');
+  const [following, setFollowing] = useState<any[]>([]);
+  const [recommended, setRecommended] = useState<any[]>([]);
+  const [trendingGames, setTrendingGames] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [storyUsers, setStoryUsers] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
+  const [inboxInitialChat, setInboxInitialChat] = useState<Conversation | null>(null);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
 
-  // Switch to messages tab if coming from a notification
-  useEffect(() => {
-    if (pendingChatUserId) {
-      setActiveTab('messages');
+  const loadConnectData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [followingRes, recommendedRes, trendingRes, convRes, storiesRes] = await Promise.allSettled([
+        users.following(user.id),
+        users.recommended(),
+        gamesApi.list(8, 0, { sort: 'trending' }).catch(() => ({ games: [] })),
+        messagesApi.getConversations().catch(() => ({ conversations: [] })),
+        storiesApi.list().catch(() => ({ stories: [] })),
+      ]);
+
+      if (followingRes.status === 'fulfilled') {
+        setFollowing(followingRes.value?.users || followingRes.value?.following || []);
+      }
+      if (recommendedRes.status === 'fulfilled') {
+        setRecommended(recommendedRes.value?.users || []);
+      }
+      if (trendingRes.status === 'fulfilled') {
+        setTrendingGames((trendingRes.value?.games || []).slice(0, 6));
+      }
+      if (convRes.status === 'fulfilled') {
+        setConversations(Array.isArray(convRes.value?.conversations) ? convRes.value.conversations : []);
+      }
+      if (storiesRes.status === 'fulfilled') {
+        setStoryUsers(Array.isArray(storiesRes.value?.stories) ? storiesRes.value.stories : []);
+      }
+    } catch (err) {
+      console.log('[Connect] load failed', err);
     }
-  }, [pendingChatUserId]);
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadConnectData();
+  }, [loadConnectData]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadConnectData();
+    setRefreshing(false);
+  };
 
   // Auth gate
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Connect</Text>
+      <View style={[connectV3Styles.root, { paddingTop: insets.top }]}>
+        <View style={[connectV3Styles.topBar, { paddingTop: 0 }]}>
+          <View style={connectV3Styles.topIconBtn} />
+          <Text style={connectV3Styles.topTitle}>gametok</Text>
+          <View style={connectV3Styles.topIconBtn} />
         </View>
         <View style={StyleSheet.absoluteFill}>
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
           <View style={styles.authGate}>
             <Ionicons name="people" size={64} color="rgba(255,255,255,0.3)" />
             <Text style={styles.authTitle}>Join the community</Text>
-            <Text style={styles.authSubtitle}>
-              Play together and chat with friends
-            </Text>
+            <Text style={styles.authSubtitle}>Play together and chat with friends</Text>
             <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen}>
-              <LinearGradient
-                colors={[LoopsColors.color1, '#7c3aed']}
-                style={styles.authBtnGradient}
-              >
+              <LinearGradient colors={[CONNECT_PURPLE, '#7c3aed']} style={styles.authBtnGradient}>
                 <Text style={styles.authBtnText}>Sign Up</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -804,38 +1569,841 @@ export const ConnectScreen: React.FC = () => {
     );
   }
 
+  // Build segments for filter tabs
+  const allOnline = following.filter((f) => {
+    const s = presenceMap.get(f.id);
+    return s === 'online' || s === 'in-game';
+  });
+  const liveFriend = following.find((f) => presenceMap.get(f.id) === 'in-game');
+  const peopleForStories =
+    filter === 'following'
+      ? following
+      : filter === 'friends'
+      ? following.filter((f) => allOnline.find((o) => o.id === f.id))
+      : (following.length > 0 ? following : recommended);
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Connect</Text>
-      </View>
+    <View style={connectV3Styles.root}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
+        }
+      >
+        {/* Top bar */}
+        <View style={[connectV3Styles.topBar, { paddingTop: insets.top + 8 }]}>
+          <Pressable
+            style={connectV3Styles.topAvatarWrap}
+            onPress={() => setActiveTab('profile')}
+            hitSlop={6}
+          >
+            <Avatar uri={user?.avatar} userId={user?.id} size={32} />
+          </Pressable>
+          <Text style={connectV3Styles.topTitle}>gametok</Text>
+          <Pressable
+            style={connectV3Styles.topIconBtn}
+            onPress={() => {
+              setInboxInitialChat(null);
+              setShowInbox(true);
+            }}
+            hitSlop={6}
+          >
+            <Ionicons name="notifications-outline" size={20} color="#fff" />
+            {conversations.some((c) => c.lastMessage?.isUnread) ? (
+              <View style={connectV3Styles.bellDot} />
+            ) : null}
+          </Pressable>
+        </View>
 
-      {/* Tab Switcher */}
-      <View style={[styles.tabSwitcher, { backgroundColor: colors.surface }]}>
-        <TabButton
-          label="Play Together"
-          icon="game-controller"
-          isActive={activeTab === 'play'}
-          onPress={() => setActiveTab('play')}
-        />
-        <TabButton
-          label="Messages"
-          icon="chatbubbles"
-          isActive={activeTab === 'messages'}
-          onPress={() => setActiveTab('messages')}
-        />
-      </View>
+        {/* Filter pills */}
+        <View style={connectV3Styles.filterRow}>
+          {([
+            { id: 'following', label: 'Following' },
+            { id: 'foryou', label: 'For You' },
+            { id: 'friends', label: 'Friends' },
+          ] as { id: ConnectFilter; label: string }[]).map((f) => {
+            const active = filter === f.id;
+            return (
+              <Pressable
+                key={f.id}
+                onPress={() => setFilter(f.id)}
+                style={[connectV3Styles.filterPill, active && connectV3Styles.filterPillActive]}
+              >
+                <Text style={[connectV3Styles.filterText, active && connectV3Styles.filterTextActive]}>
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-      {/* Tab Content */}
-      {activeTab === 'play' ? (
-        <PlayTogetherTab />
-      ) : (
-        <MessagesTab />
-      )}
+        {/* Stories row */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={connectV3Styles.storiesScroll}
+        >
+          <Pressable style={connectV3Styles.storyCol}>
+            <View style={connectV3Styles.storyAddRing}>
+              <Ionicons name="add" size={26} color="#fff" />
+            </View>
+            <Text style={connectV3Styles.storyName} numberOfLines={1}>
+              Add Story
+            </Text>
+            <Text style={connectV3Styles.storyStatus} numberOfLines={1} />
+          </Pressable>
+
+          {peopleForStories.slice(0, 12).map((u) => {
+            const status = presenceMap.get(u.id);
+            const statusLabel =
+              status === 'in-game' ? 'In a game' : status === 'online' ? 'Online' : null;
+            return (
+              <Pressable
+                key={u.id}
+                style={connectV3Styles.storyCol}
+                onPress={() => setSelectedProfileUser(u)}
+              >
+                <View style={connectV3Styles.storyRing}>
+                  <View style={connectV3Styles.storyAvatarFrame}>
+                    <Avatar uri={u.avatar} userId={u.id} size={56} />
+                  </View>
+                  {(status === 'online' || status === 'in-game') ? (
+                    <View
+                      style={[
+                        connectV3Styles.storyDot,
+                        status === 'in-game' && { backgroundColor: CONNECT_PURPLE },
+                      ]}
+                    />
+                  ) : null}
+                </View>
+                <Text style={connectV3Styles.storyName} numberOfLines={1}>
+                  {u.displayName || u.username}
+                </Text>
+                <Text style={connectV3Styles.storyStatus} numberOfLines={1}>
+                  {statusLabel || ''}
+                </Text>
+              </Pressable>
+            );
+          })}
+
+          {allOnline.length > 12 ? (
+            <View style={connectV3Styles.storyCol}>
+              <View style={[connectV3Styles.storyAddRing, { backgroundColor: 'rgba(255,255,255,0.06)', borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.15)' }]}>
+                <Text style={connectV3Styles.storyMoreText}>+{allOnline.length - 12}</Text>
+              </View>
+              <Text style={connectV3Styles.storyName} numberOfLines={1}>+{allOnline.length - 12}</Text>
+              <Text style={connectV3Styles.storyStatus}>Online</Text>
+            </View>
+          ) : null}
+        </ScrollView>
+
+        {/* LIVE NOW big card */}
+        {liveFriend && trendingGames[0] ? (
+          <Pressable
+            style={connectV3Styles.liveCard}
+            onPress={() => {
+              if (trendingGames[0]) {
+                openSharedGame(trendingGames[0].id);
+                setActiveTab('home');
+              }
+            }}
+          >
+            <Image
+              source={{
+                uri: resolveSharedGameThumbnail(trendingGames[0]?.thumbnail, trendingGames[0]?.id) || '',
+              }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
+              locations={[0, 0.5, 1]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={connectV3Styles.liveBadgeWrap}>
+              <View style={connectV3Styles.liveBadge}>
+                <View style={connectV3Styles.liveBadgeDot} />
+                <Text style={connectV3Styles.liveBadgeText}>LIVE NOW</Text>
+              </View>
+            </View>
+            <View style={connectV3Styles.liveBody}>
+              <Text style={connectV3Styles.liveTitle} numberOfLines={1}>
+                {trendingGames[0]?.name || liveFriend.displayName || liveFriend.username}
+              </Text>
+              <Text style={connectV3Styles.liveSubtitle}>Custom Room</Text>
+              <View style={connectV3Styles.liveBottomRow}>
+                <View style={connectV3Styles.liveAvatarStack}>
+                  {[liveFriend, ...allOnline.filter((o) => o.id !== liveFriend.id)].slice(0, 3).map((u, i) => (
+                    <View
+                      key={u.id}
+                      style={[connectV3Styles.liveStackAvatar, { marginLeft: i === 0 ? 0 : -10 }]}
+                    >
+                      <Avatar uri={u.avatar} userId={u.id} size={24} />
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flex: 1 }} />
+                <Pressable
+                  style={connectV3Styles.joinBtn}
+                  onPress={() => {
+                    if (trendingGames[0]) {
+                      openSharedGame(trendingGames[0].id);
+                      setActiveTab('home');
+                    }
+                  }}
+                >
+                  <Text style={connectV3Styles.joinBtnText}>Join</Text>
+                </Pressable>
+                <View style={connectV3Styles.liveCapacity}>
+                  <Ionicons name="people" size={11} color="#fff" />
+                  <Text style={connectV3Styles.liveCapacityText}>
+                    {Math.min(allOnline.length + 1, 8)}/8
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Pressable>
+        ) : (
+          <View style={connectV3Styles.liveCardEmpty}>
+            <View style={connectV3Styles.liveCardEmptyDot} />
+            <Text style={connectV3Styles.liveCardEmptyTitle}>
+              {allOnline.length > 0
+                ? `${allOnline.length} ${allOnline.length === 1 ? 'friend is' : 'friends are'} online`
+                : 'No friends online yet'}
+            </Text>
+            <Text style={connectV3Styles.liveCardEmptyBody}>
+              We'll show a LIVE banner here when someone you follow is in-game.
+            </Text>
+          </View>
+        )}
+
+        {/* Friends are playing — 3-col grid */}
+        <View style={connectV3Styles.section}>
+          <View style={connectV3Styles.sectionHeader}>
+            <Text style={connectV3Styles.sectionTitle}>Friends are playing</Text>
+            <Pressable hitSlop={8}>
+              <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
+            </Pressable>
+          </View>
+          {trendingGames.length === 0 ? (
+            <Text style={connectV3Styles.sectionEmpty}>No games trending right now.</Text>
+          ) : (
+            <View style={connectV3Styles.friendsGrid}>
+              {trendingGames.slice(0, 3).map((g) => (
+                <Pressable
+                  key={g.id}
+                  style={connectV3Styles.friendsCard}
+                  onPress={() => {
+                    openSharedGame(g.id);
+                    setActiveTab('home');
+                  }}
+                >
+                  {g.thumbnail ? (
+                    <Image
+                      source={{ uri: resolveSharedGameThumbnail(g.thumbnail, g.id) || '' }}
+                      style={StyleSheet.absoluteFillObject}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a22' }]} />
+                  )}
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
+                    locations={[0, 0.45, 1]}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <View style={connectV3Styles.friendsCardBody}>
+                    <Text style={connectV3Styles.friendsCardTitle} numberOfLines={1}>
+                      {g.name}
+                    </Text>
+                    <View style={connectV3Styles.friendsCardMeta}>
+                      <View style={connectV3Styles.friendsAvatarStack}>
+                        {following.slice(0, 2).map((u, i) => (
+                          <View
+                            key={u.id}
+                            style={[connectV3Styles.friendsStackAvatar, { marginLeft: i === 0 ? 0 : -6 }]}
+                          >
+                            <Avatar uri={u.avatar} userId={u.id} size={13} />
+                          </View>
+                        ))}
+                      </View>
+                      <Text style={connectV3Styles.friendsCount}>
+                        {following.length > 0 ? `${Math.min(following.length, 9)} friends` : 'Trending'}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Active Conversations preview */}
+        <View style={connectV3Styles.section}>
+          <Text style={connectV3Styles.sectionTitle}>Active Conversations</Text>
+          {conversations.length === 0 ? (
+            <Pressable
+              style={connectV3Styles.convoEmpty}
+              onPress={() => {
+                setInboxInitialChat(null);
+                setShowInbox(true);
+              }}
+            >
+              <Ionicons name="chatbubble-outline" size={18} color={CONNECT_TEXT_MUTED} />
+              <Text style={connectV3Styles.convoEmptyText}>
+                No active chats yet — tap to start one.
+              </Text>
+            </Pressable>
+          ) : (
+            conversations.slice(0, 4).map((c) => {
+              const last = c.lastMessage;
+              const time = last ? formatRelativeTime(last.createdAt) : '';
+              const unreadCount = last?.isUnread && !last?.isFromMe ? 1 : 0;
+              const status = presenceMap.get(c.user.id);
+              return (
+                <Pressable
+                  key={c.id}
+                  style={connectV3Styles.convoRow}
+                  onPress={() => {
+                    setInboxInitialChat(c);
+                    setShowInbox(true);
+                  }}
+                >
+                  <View style={connectV3Styles.convoAvatarWrap}>
+                    <Avatar uri={c.user.avatar} userId={c.user.id} size={46} />
+                    {(status === 'online' || status === 'in-game') ? (
+                      <View
+                        style={[
+                          connectV3Styles.convoStatus,
+                          status === 'in-game' && { backgroundColor: CONNECT_PURPLE },
+                        ]}
+                      />
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={connectV3Styles.convoName} numberOfLines={1}>
+                      {c.user.displayName || c.user.username}
+                    </Text>
+                    <Text style={connectV3Styles.convoLast} numberOfLines={1}>
+                      {last?.text || 'Tap to message'}
+                    </Text>
+                  </View>
+                  <View style={connectV3Styles.convoMeta}>
+                    <Text style={connectV3Styles.convoTime}>{time}</Text>
+                    {unreadCount > 0 ? (
+                      <View style={connectV3Styles.convoBadge}>
+                        <Text style={connectV3Styles.convoBadgeText}>{unreadCount}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+
+      {/* User profile modal */}
+      <UserProfileModal
+        visible={!!selectedProfileUser}
+        onClose={() => setSelectedProfileUser(null)}
+        user={selectedProfileUser}
+      />
+
+      {/* Inbox modal — shows the existing MessagesTab */}
+      {showInbox ? (
+        <View style={connectV3Styles.inboxOverlay}>
+          <View style={[connectV3Styles.inboxCard, { paddingTop: inboxInitialChat ? 0 : insets.top + 8 }]}>
+            {!inboxInitialChat ? (
+              <View style={connectV3Styles.inboxHeader}>
+                <Pressable
+                  onPress={() => {
+                    setShowInbox(false);
+                    setInboxInitialChat(null);
+                  }}
+                  hitSlop={8}
+                  style={connectV3Styles.topIconBtn}
+                >
+                  <Ionicons name="chevron-back" size={20} color="#fff" />
+                </Pressable>
+                <Text style={connectV3Styles.topTitle}>Inbox</Text>
+                <View style={connectV3Styles.topIconBtn} />
+              </View>
+            ) : null}
+            <MessagesTab
+              initialConversation={inboxInitialChat}
+              closeOnChatBack={!!inboxInitialChat}
+              onClose={() => {
+                setShowInbox(false);
+                setInboxInitialChat(null);
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 };
+
+const formatRelativeTime = (dateStr: string): string => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(diff / 86400000)}d`;
+};
+
+const connectV3Styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: CONNECT_BG,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  topAvatarWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: '#000',
+  },
+  topTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
+  filterPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  filterPillActive: {
+    backgroundColor: CONNECT_PURPLE,
+  },
+  filterText: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  filterTextActive: {
+    color: '#fff',
+  },
+  storiesScroll: {
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  storyCol: {
+    width: 72,
+    alignItems: 'center',
+  },
+  storyAddRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(168,85,247,0.10)',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(168,85,247,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  storyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    padding: 2,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.18)',
+    marginBottom: 6,
+    position: 'relative',
+  },
+  storyAvatarFrame: {
+    flex: 1,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  storyAvatarImg: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  storyAvatarFallback: {
+    backgroundColor: 'rgba(168,85,247,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatarInitial: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 17,
+  },
+  storyDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: CONNECT_BG,
+  },
+  storyMoreText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  storyName: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  storyStatus: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 9,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 2,
+    height: 12,
+  },
+  liveCard: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    height: 200,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#0e0e14',
+  },
+  liveBadgeWrap: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#ec4899',
+  },
+  liveBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+  },
+  liveBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  liveBody: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
+  },
+  liveTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 4,
+  },
+  liveSubtitle: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  liveBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 10,
+  },
+  liveAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  liveStackAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  joinBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: CONNECT_PURPLE,
+  },
+  joinBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  liveCapacity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  liveCapacityText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  liveCardEmpty: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  liveCardEmptyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+    marginBottom: 8,
+  },
+  liveCardEmptyTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  liveCardEmptyBody: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  section: {
+    marginTop: 22,
+    paddingHorizontal: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    marginBottom: 12,
+  },
+  sectionSeeAll: {
+    color: CONNECT_PURPLE,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionEmpty: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 13,
+    paddingVertical: 18,
+  },
+  friendsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  friendsCard: {
+    flex: 1,
+    aspectRatio: 0.78,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  friendsCardBody: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+  },
+  friendsCardTitle: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  friendsCardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  friendsAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  friendsStackAvatar: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#000',
+  },
+  friendsCount: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  convoEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  convoEmptyText: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  convoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  convoAvatarWrap: {
+    position: 'relative',
+  },
+  convoAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    overflow: 'hidden',
+  },
+  convoStatus: {
+    position: 'absolute',
+    right: 0,
+    bottom: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: CONNECT_BG,
+  },
+  convoName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  convoLast: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  convoMeta: {
+    alignItems: 'flex-end',
+    gap: 5,
+  },
+  convoTime: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  convoBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 6,
+    borderRadius: 9,
+    backgroundColor: CONNECT_PURPLE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  convoBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  inboxOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: CONNECT_BG,
+    zIndex: 100,
+  },
+  inboxCard: {
+    flex: 1,
+    backgroundColor: CONNECT_BG,
+  },
+  inboxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -1347,6 +2915,43 @@ const styles = StyleSheet.create({
   searchPlaceholder: {
     ...FontStyles.body,
   },
+  inboxLaneWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  inboxLaneBar: {
+    flexDirection: 'row',
+    borderRadius: 18,
+    padding: 4,
+    gap: 8,
+  },
+  inboxLanePill: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+  },
+  inboxLaneText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  inboxLaneBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  inboxLaneBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
   // Quick Access Row (New button + recent contacts)
   quickAccessRow: {
     paddingHorizontal: 12,
@@ -1513,9 +3118,137 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  requestIdentity: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  requestCopy: {
+    flex: 1,
+  },
+  requestSubtitle: {
+    marginTop: 2,
+    ...FontStyles.bodySmall,
+  },
+  requestAction: {
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  requestActionText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  playLockWrap: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  playLockCard: {
+    borderRadius: 28,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.2)',
+  },
+  playLockBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  playLockBadgeText: {
+    color: '#F6D58C',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  playLockTitle: {
+    marginTop: 18,
+    color: '#FFF',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
+  },
+  playLockBody: {
+    marginTop: 12,
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  playLockFeatures: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 20,
+  },
+  playLockFeaturePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  playLockFeatureText: {
+    color: '#F5F3FF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  playLockFooter: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  playLockFooterDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#A855F7',
+  },
+  playLockFooterText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  activityCopy: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  activityMeta: {
+    marginTop: 3,
+    ...FontStyles.caption,
+  },
   emptyMessages: {
     alignItems: 'center',
     paddingVertical: 60,
+    paddingHorizontal: 28,
   },
   searchModal: {
     flex: 1,

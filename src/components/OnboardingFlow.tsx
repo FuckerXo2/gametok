@@ -833,7 +833,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
         <Animated.View entering={ZoomIn.delay(300).springify()}>
           <View style={styles.avatarPicker}>
-            <Avatar uri={avatar} size={120} />
+            <Avatar uri={avatar} userId={displayName || username || 'onboarding'} size={120} />
           </View>
         </Animated.View>
 
