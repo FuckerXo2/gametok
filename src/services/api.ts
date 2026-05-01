@@ -619,6 +619,13 @@ export const multiplayer = {
 
 // // DreamStream AI Engine API
 export const ai = {
+  narrativeChat: async (messages: { role: 'ai' | 'user'; text: string }[]) => {
+    return request('/ai/narrative/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, 45000);
+  },
+
   dreamLabs: (
     prompt: string,
     attachments: any[] = [],

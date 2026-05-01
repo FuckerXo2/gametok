@@ -59,7 +59,7 @@ const GAMETOK_BG = require('../../assets/gametok_bg.png');
 type DreamPhase = 'idle' | 'generating' | 'preview' | 'publish';
 type StudioTab = 'create' | 'drafts' | 'templates';
 type CreatorMode = 'game' | 'narrative';
-type NarrativeMessage = { id: string; role: 'ai' | 'user'; text: string };
+type NarrativeMessage = { id: string; role: 'ai' | 'user'; text: string; pending?: boolean };
 
 interface DraftItem {
   id: string;
@@ -331,16 +331,8 @@ const NARRATIVE_STARTER_MESSAGES: NarrativeMessage[] = [
   {
     id: 'ai-0',
     role: 'ai',
-    text: 'Tell me the messy version first. What kind of world, scene, or story are we building?',
+    text: 'Tell me what you want to make. Rough is fine. I’ll ask back until it feels like a playable story.',
   },
-];
-
-const NARRATIVE_QUESTIONS = [
-  'What should the player be trying to achieve?',
-  'What mood should it feel like: funny, scary, romantic, chaotic, emotional, or something else?',
-  'Who is the main character, and what do they want?',
-  'What choice or mechanic should keep the player engaged every few seconds?',
-  'How should a good ending or win moment feel?',
 ];
 
 // =============================================
@@ -494,7 +486,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [creatorMode, setCreatorMode] = useState<CreatorMode>('game');
   const [narrativeMessages, setNarrativeMessages] = useState<NarrativeMessage[]>(NARRATIVE_STARTER_MESSAGES);
   const [narrativeInput, setNarrativeInput] = useState('');
-  const [narrativeStep, setNarrativeStep] = useState(0);
+  const [narrativeAiBrief, setNarrativeAiBrief] = useState('');
+  const [isNarrativeThinking, setIsNarrativeThinking] = useState(false);
 
   // Audio search state
   const [audioSearchQuery, setAudioSearchQuery] = useState('');
@@ -519,6 +512,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   );
 
   const narrativeBrief = useMemo(() => {
+    if (narrativeAiBrief.trim()) {
+      return narrativeAiBrief.trim();
+    }
+
     if (narrativeUserReplies.length === 0) {
       return 'No story locked yet. Start with a rough idea and I’ll shape it.';
     }
@@ -533,7 +530,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       ending ? `Ending feel: ${ending}` : null,
       'Build it as a polished interactive narrative game with clear choices, readable UI, satisfying feedback, and a complete playable loop.',
     ].filter(Boolean).join('\n');
-  }, [narrativeUserReplies]);
+  }, [narrativeAiBrief, narrativeUserReplies]);
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
   // This JavaScript is injected into the WebView after the game HTML loads.
@@ -1020,41 +1017,69 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const sendNarrativeMessage = useCallback(() => {
+  const sendNarrativeMessage = useCallback(async () => {
     const text = narrativeInput.trim();
-    if (!text) return;
+    if (!text || isNarrativeThinking) return;
 
     const userMessage: NarrativeMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       text,
     };
-    const nextStep = narrativeStep + 1;
-    const aiText = nextStep < NARRATIVE_QUESTIONS.length
-      ? NARRATIVE_QUESTIONS[nextStep]
-      : 'That is enough to forge from. Add one more detail if you want, or tap Forge It and I’ll build the interactive story.';
+    const thinkingMessage: NarrativeMessage = {
+      id: `ai-thinking-${Date.now()}`,
+      role: 'ai',
+      text: 'Thinking...',
+      pending: true,
+    };
 
-    setNarrativeMessages((prev) => [
-      ...prev,
-      userMessage,
-      {
-        id: `ai-${Date.now()}`,
-        role: 'ai',
-        text: aiText,
-      },
-    ]);
-    setNarrativeStep(nextStep);
+    const nextMessages = [...narrativeMessages, userMessage];
+    setNarrativeMessages([...nextMessages, thinkingMessage]);
     setNarrativeInput('');
-    setPrompt((prev) => {
+    setIsNarrativeThinking(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await ai.narrativeChat(nextMessages.map(({ role, text }) => ({ role, text })));
+      const reply = String(res?.reply || '').trim() || 'I’m with you. Give me one more detail that should affect how the player plays.';
+      const brief = String(res?.brief || '').trim();
+      if (brief) {
+        setNarrativeAiBrief(brief);
+        setPrompt(brief);
+      } else {
+        const compiled = [...narrativeUserReplies, text].filter(Boolean);
+        setPrompt([
+          'Create a polished interactive narrative game from this creative direction:',
+          ...compiled.map((item, index) => `${index + 1}. ${item}`),
+          'Make the story playable with meaningful choices, visible consequences, strong atmosphere, and a complete ending.',
+        ].join('\n'));
+      }
+      setNarrativeMessages((prev) => prev.map((message) => (
+        message.id === thinkingMessage.id
+          ? { id: `ai-${Date.now()}`, role: 'ai', text: reply }
+          : message
+      )));
+    } catch (error: any) {
+      console.warn('Narrative chat failed:', error?.message || error);
+      setNarrativeMessages((prev) => prev.map((message) => (
+        message.id === thinkingMessage.id
+          ? {
+              id: `ai-${Date.now()}`,
+              role: 'ai',
+              text: 'The AI chat tripped for a second. Send that again, or tap Forge It if the idea is already clear.',
+            }
+          : message
+      )));
       const compiled = [...narrativeUserReplies, text].filter(Boolean);
-      return [
+      setPrompt([
         'Create a polished interactive narrative game from this creative direction:',
         ...compiled.map((item, index) => `${index + 1}. ${item}`),
         'Make the story playable with meaningful choices, visible consequences, strong atmosphere, and a complete ending.',
-      ].join('\n');
-    });
-    setErrorMsg(null);
-  }, [narrativeInput, narrativeStep, narrativeUserReplies]);
+      ].join('\n'));
+    } finally {
+      setIsNarrativeThinking(false);
+    }
+  }, [isNarrativeThinking, narrativeInput, narrativeMessages, narrativeUserReplies]);
 
   const handleReturnToForge = useCallback(() => {
     if (!pendingJobId) return;
@@ -2577,8 +2602,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       {studioTab === 'create' ? (
         <View style={styles.headerV2}>
           <View style={styles.headerV2Side}>
-            <Pressable style={styles.headerAvatarWrap} onPress={() => handleIntentClose('closeApp')}>
-              <Avatar uri={user?.avatar} userId={user?.id} size={44} />
+            <Pressable style={[styles.headerAvatarWrap, { width: 52, height: 52, borderRadius: 26 }]} onPress={() => handleIntentClose('closeApp')}>
+              <Avatar uri={user?.avatar} userId={user?.id} size={52} />
             </Pressable>
           </View>
           <View style={styles.headerV2Center} pointerEvents="none">
@@ -2662,7 +2687,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                   </Svg>
                 </View>
               </View>
-              <Text style={styles.heroV2Subtitle}>Your imagination. Unlocked.</Text>
+              {creatorMode !== 'narrative' && (
+                <Text style={styles.heroV2Subtitle}>Your imagination. Unlocked.</Text>
+              )}
 
               <View style={styles.modeSwitchV2}>
                 <Pressable
@@ -2685,9 +2712,148 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             </View>
           </Animated.View>
 
+          {creatorMode === 'narrative' ? (
+            /* ========== FULL-SCREEN CHAT (ChatGPT style) ========== */
+            <Animated.View entering={FadeInUp.delay(80).duration(400)} style={{ flex: 1 }}>
+              {/* Messages area */}
+              <ScrollView
+                style={{ flex: 1, paddingHorizontal: 16 }}
+                contentContainerStyle={{ paddingBottom: 12, paddingTop: 8 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="always"
+                ref={(ref) => { if (ref) setTimeout(() => ref.scrollToEnd?.({ animated: false }), 100); }}
+              >
+                {narrativeMessages.map((message) => (
+                  <View
+                    key={message.id}
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
+                      marginBottom: 12,
+                    }}
+                  >
+                    {message.role === 'ai' && (
+                      <View style={{
+                        width: 28, height: 28, borderRadius: 14,
+                        backgroundColor: 'rgba(168,85,247,0.3)',
+                        alignItems: 'center', justifyContent: 'center',
+                        marginRight: 8, marginTop: 2,
+                      }}>
+                        <Ionicons name="sparkles" size={14} color="#C084FC" />
+                      </View>
+                    )}
+                    <View style={{
+                      maxWidth: '78%',
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      borderRadius: 18,
+                      ...(message.role === 'user'
+                        ? {
+                            backgroundColor: '#7C3AED',
+                            borderBottomRightRadius: 4,
+                          }
+                        : {
+                            backgroundColor: 'rgba(255,255,255,0.08)',
+                            borderBottomLeftRadius: 4,
+                          }),
+                    }}>
+                      <Text style={{
+                        color: '#FFF',
+                        fontSize: 15,
+                        lineHeight: 21,
+                        fontWeight: '500',
+                      }}>{message.text}</Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {/* Bottom composer bar */}
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'flex-end',
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(255,255,255,0.08)',
+                backgroundColor: 'rgba(0,0,0,0.4)',
+                gap: 8,
+              }}>
+                <View style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'flex-end',
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  borderRadius: 22,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.1)',
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  minHeight: 44,
+                }}>
+                  <TextInput
+                    ref={inputRef}
+                    style={{
+                      flex: 1,
+                      color: '#FFF',
+                      fontSize: 15,
+                      maxHeight: 100,
+                      paddingVertical: 0,
+                    }}
+                    placeholder="Message..."
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    multiline
+                    maxLength={420}
+                    value={narrativeInput}
+                    onChangeText={setNarrativeInput}
+                    textAlignVertical="top"
+                    inputAccessoryViewID="gametok-done"
+                  />
+                </View>
+                <Pressable
+                  onPressIn={sendNarrativeMessage}
+                  hitSlop={8}
+                  style={{
+                    width: 40, height: 40, borderRadius: 20,
+                    backgroundColor: narrativeInput.trim() && !isNarrativeThinking ? '#7C3AED' : 'rgba(255,255,255,0.08)',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                  disabled={!narrativeInput.trim() || isNarrativeThinking}
+                >
+                  {isNarrativeThinking ? (
+                    <ActivityIndicator size="small" color="rgba(255,255,255,0.65)" />
+                  ) : (
+                    <Ionicons name="arrow-up" size={20} color={narrativeInput.trim() ? '#FFF' : 'rgba(255,255,255,0.3)'} />
+                  )}
+                </Pressable>
+              </View>
+
+              {/* Forge It bar — appears after at least 1 reply */}
+              {narrativeUserReplies.length >= 1 && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                  <Pressable
+                    style={[styles.sendBtn, { marginTop: 0 }]}
+                    onPressIn={() => {
+                      Keyboard.dismiss();
+                      setPrompt(narrativeBrief);
+                      setErrorMsg(null);
+                      requestAnimationFrame(() => handleDream(narrativeBrief));
+                    }}
+                    hitSlop={14}
+                  >
+                    <Ionicons name="sparkles" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.sendBtnText}>Forge It</Text>
+                    <Ionicons name="chevron-forward" size={18} color="#FFF" />
+                  </Pressable>
+                </View>
+              )}
+            </Animated.View>
+          ) : (
+            /* ========== GAME MODE (existing card UI) ========== */
+            <>
           {/* === MAIN INPUT CARD === */}
           <Animated.View entering={FadeInUp.delay(80).duration(400)}>
-            <View style={[styles.inputCard, creatorMode === 'narrative' && styles.narrativeChatSurface]}>
+            <View style={styles.inputCard}>
               <LinearGradient
                 colors={['rgba(124,58,237,0.55)', 'rgba(168,85,247,0.55)', 'rgba(192,132,252,0.4)']}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -2696,19 +2862,13 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
               <View style={styles.inputCardHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name={creatorMode === 'game' ? 'hardware-chip' : 'chatbubble-ellipses'} size={12} color="#C084FC" style={{ marginRight: 6 }} />
-                  <Text style={[styles.inputCardEyebrow, { marginBottom: 0 }]}>{creatorMode === 'game' ? 'GAME BRIEF' : 'AI STORY SESSION'}</Text>
+                  <Ionicons name="hardware-chip" size={12} color="#C084FC" style={{ marginRight: 6 }} />
+                  <Text style={[styles.inputCardEyebrow, { marginBottom: 0 }]}>GAME BRIEF</Text>
                 </View>
-                {creatorMode === 'narrative' ? (
-                  <View style={styles.narrativeHeaderStatus}>
-                    <View style={styles.narrativeHeaderDot} />
-                    <Text style={styles.narrativeHeaderStatusText}>Brief building</Text>
-                  </View>
-                ) : null}
               </View>
 
               {/* Attached Assets Visual Row */}
-              {creatorMode === 'game' && attachedAssets.length > 0 && (
+              {attachedAssets.length > 0 && (
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                     {attachedAssets.map((asset, i) => (
@@ -2740,135 +2900,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
               )}
 
               <View style={styles.inputCardBody}>
-                {creatorMode === 'narrative' ? (
-                  <>
-                    <View style={styles.narrativeSessionHeader}>
-                      <View style={styles.narrativeAgentAvatar}>
-                        <Ionicons name="sparkles" size={18} color="#FFF" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.narrativeAgentName}>Dream Forge AI</Text>
-                        <Text style={styles.narrativeAgentSub}>Talk it through. I’ll shape the playable story.</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.narrativeChatBox}>
-                      {narrativeMessages.map((message) => (
-                        <View
-                          key={message.id}
-                          style={[
-                            styles.narrativeBubble,
-                            message.role === 'user' ? styles.narrativeBubbleUser : styles.narrativeBubbleAi,
-                          ]}
-                        >
-                          {message.role === 'ai' ? (
-                            <View style={styles.narrativeAiDot}>
-                              <Ionicons name="sparkles" size={11} color="#FFF" />
-                            </View>
-                          ) : null}
-                          <Text style={styles.narrativeBubbleText}>{message.text}</Text>
-                        </View>
-                      ))}
-                    </View>
-
-                    <View style={styles.narrativeBriefPanel}>
-                      <View style={styles.narrativeBriefHeader}>
-                        <View style={styles.narrativeBriefIcon}>
-                          <Ionicons name="document-text" size={14} color="#F0ABFC" />
-                        </View>
-                        <Text style={styles.narrativeBriefTitle}>Current Brief</Text>
-                        <Text style={styles.narrativeBriefCount}>{narrativeUserReplies.length}/5</Text>
-                      </View>
-                      <Text style={styles.narrativeBriefText} numberOfLines={6}>
-                        {narrativeBrief}
-                      </Text>
-                    </View>
-
-                    <View style={styles.narrativeComposer}>
-                      <TextInput
-                        ref={inputRef}
-                        style={styles.narrativeInput}
-                        placeholder="Answer naturally..."
-                        placeholderTextColor="rgba(255,255,255,0.28)"
-                        multiline
-                        maxLength={420}
-                        value={narrativeInput}
-                        onChangeText={setNarrativeInput}
-                        textAlignVertical="top"
-                        inputAccessoryViewID="gametok-done"
-                      />
-                      <Pressable
-                        style={[styles.narrativeSendBtn, !narrativeInput.trim() && styles.narrativeSendBtnIdle]}
-                        onPress={sendNarrativeMessage}
-                        hitSlop={8}
-                      >
-                        <Ionicons name="arrow-up" size={18} color={narrativeInput.trim() ? '#FFF' : 'rgba(255,255,255,0.35)'} />
-                      </Pressable>
-                    </View>
-
-                    <View style={styles.narrativeReferenceDock}>
-                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => setShowCommunityImagesModal(true)}>
-                        <Ionicons name="images-outline" size={17} color="#C084FC" />
-                        <Text style={styles.narrativeReferenceText}>Images</Text>
-                      </Pressable>
-                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => setShowVideosModal(true)}>
-                        <Ionicons name="film-outline" size={17} color="#FF6B9D" />
-                        <Text style={styles.narrativeReferenceText}>Video</Text>
-                      </Pressable>
-                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => { setAudioTab('bgm'); setShowAudioModal(true); }}>
-                        <Ionicons name="musical-notes-outline" size={17} color="#25F4EE" />
-                        <Text style={styles.narrativeReferenceText}>Audio</Text>
-                      </Pressable>
-                      <Pressable style={styles.narrativeReferenceBtn} onPress={() => setShowImageModal(true)}>
-                        <Ionicons name="sparkles-outline" size={17} color="#FACC15" />
-                        <Text style={styles.narrativeReferenceText}>Generate</Text>
-                      </Pressable>
-                    </View>
-
-                    {attachedAssets.length > 0 ? (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.narrativeAttachedRow}>
-                        {attachedAssets.map((asset, i) => (
-                          <Pressable key={`narrative-attached-${i}`} style={styles.narrativeAttachedChip} onPress={() => openAssetIntentModal(asset, i)}>
-                            <Image source={{ uri: asset.thumb || asset.thumbnail || asset.url }} style={styles.narrativeAttachedThumb} resizeMode="cover" />
-                            <Text style={styles.narrativeAttachedText} numberOfLines={1}>{asset.role}</Text>
-                            <Pressable onPress={() => setAttachedAssets(prev => prev.filter((_, idx) => idx !== i))} hitSlop={6}>
-                              <Ionicons name="close" size={12} color="rgba(255,255,255,0.72)" />
-                            </Pressable>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                    ) : null}
-
-                    <View style={styles.narrativeActionRow}>
-                      <Text style={styles.narrativeForgeHint}>Keep chatting until the brief feels right.</Text>
-
-                      <Pressable
-                        style={[styles.sendBtn, narrativeUserReplies.length === 0 && styles.sendBtnIdle]}
-                        onPressIn={() => {
-                          if (narrativeUserReplies.length === 0) {
-                            setErrorMsg('Talk through the idea first, then forge the brief.');
-                            requestAnimationFrame(() => inputRef.current?.focus());
-                            return;
-                          }
-                          setPrompt(narrativeBrief);
-                          setErrorMsg(null);
-                          Keyboard.dismiss();
-                          requestAnimationFrame(() => handleDream(narrativeBrief));
-                        }}
-                        hitSlop={14}
-                      >
-                        <Text style={styles.sendBtnText}>Forge It</Text>
-                        <Ionicons name="chevron-forward" size={18} color="#FFF" />
-                      </Pressable>
-                    </View>
-                  </>
-                ) : (
-                  <>
                 {/* Text input area */}
                 <TextInput
                   ref={inputRef}
                   style={styles.mainInput}
-                  placeholder={creatorMode === 'game' ? 'Make a first person drifting game with night neon roads...' : 'Write a dark interactive survey where each answer changes the room...'}
+                  placeholder="Make a first person drifting game with night neon roads..."
                   placeholderTextColor="rgba(255,255,255,0.14)"
                   multiline
                   maxLength={500}
@@ -2913,11 +2949,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                     <Ionicons name="chevron-forward" size={18} color="#FFF" />
                   </Pressable>
                 </View>
-                  </>
-                )}
               </View>
             </View>
           </Animated.View>
+            </>
+          )}
 
           {pendingJobId && (
             <Animated.View entering={FadeInUp.delay(110).duration(360)}>
