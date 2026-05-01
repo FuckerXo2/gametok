@@ -71,6 +71,17 @@ const STYLE_BY_KIND: Record<string, string[]> = {
   ],
 };
 
+const MEDIUMS = [
+  'cinematic 3D game keyframe',
+  'flat graphic poster illustration',
+  'pixel-art inspired game scene',
+  'clay-render mobile game diorama',
+  'hand-painted storybook illustration',
+  'anime key visual',
+  'realistic found-footage still',
+  'clean isometric game-board art',
+];
+
 const kindForGame = (game?: ThumbnailGame | null) => {
   const text = `${game?.primaryTab || ''} ${game?.category || ''} ${game?.subcategory || ''} ${game?.name || ''} ${game?.title || ''}`.toLowerCase();
   if (/horror|haunted|watched|ghost|nightmare|unsettling/.test(text)) return 'horror';
@@ -104,6 +115,7 @@ export const generatedThumbnailUrl = (game?: ThumbnailGame | null) => {
   const kind = kindForGame(game);
   const seed = hashSeed(String(game?.id || title || 'gametok'));
   const style = pick(STYLE_BY_KIND[kind] || STYLE_BY_KIND.default, seed);
+  const medium = pick(MEDIUMS, Math.floor(seed / 3));
   const camera = pick([
     'close-up composition',
     'wide establishing composition',
@@ -121,11 +133,13 @@ export const generatedThumbnailUrl = (game?: ThumbnailGame | null) => {
   ], Math.floor(seed / 17));
   const prompt = [
     subjectForTitle(title, kind),
+    medium,
     style,
     camera,
     palette,
-    'portrait mobile game thumbnail',
+    'portrait mobile game thumbnail with a unique visual identity',
     'environment and characters only',
+    'avoid generic neon fantasy poster style',
     'no title text, no readable letters, no logo, no watermark, no UI, no buttons, no captions',
   ].join(', ');
 
@@ -141,11 +155,8 @@ export const resolveGameThumbnail = (
   if (value) {
     if (value.startsWith('http') || value.startsWith('data:')) return value;
 
-    // These local cover paths are unreliable on the deployed backend when the
-    // generated file was saved to ephemeral disk. Use a deterministic visual
-    // fallback instead of rendering empty dark cards.
     if (value.startsWith('/uploads/covers/') || value.startsWith('uploads/covers/')) {
-      return generatedThumbnailUrl({ ...game, id: gameId || game?.id });
+      return `${API_ORIGIN}/${value.replace(/^\/+/, '')}`;
     }
 
     if (value.startsWith('/')) return `${API_ORIGIN}${value}`;
