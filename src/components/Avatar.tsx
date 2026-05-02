@@ -51,22 +51,16 @@ export const DICEBEAR_BACKGROUNDS = [
 
 export const DICEBEAR_SKIN_TONES = ['f2d3b1', 'eac393', 'd08b5b', '9c5a3c', '6b3d2a'];
 export const DICEBEAR_HAIR_COLORS = ['2c1b18', '5a3d2b', '8b5e3c', 'd19a66', 'f2d6b3', '8b1e3f', '4c6a92'];
-export const DICEBEAR_EYE_OPTIONS = ['variant01', 'variant02', 'variant03', 'variant04', 'variant05', 'variant06', 'variant07', 'variant08'];
-export const DICEBEAR_BROW_OPTIONS = ['variant01', 'variant02', 'variant03', 'variant04', 'variant05', 'variant06', 'variant07', 'variant08'];
-export const DICEBEAR_MOUTH_OPTIONS = ['variant01', 'variant02', 'variant03', 'variant04', 'variant05', 'variant06', 'variant07', 'variant08'];
+export const DICEBEAR_EYE_OPTIONS = Array.from({ length: 26 }, (_, i) => `variant${String(i + 1).padStart(2, '0')}`);
+export const DICEBEAR_BROW_OPTIONS = Array.from({ length: 15 }, (_, i) => `variant${String(i + 1).padStart(2, '0')}`);
+export const DICEBEAR_MOUTH_OPTIONS = Array.from({ length: 30 }, (_, i) => `variant${String(i + 1).padStart(2, '0')}`);
 export const DICEBEAR_HAIR_OPTIONS = [
-  'short01',
-  'short02',
-  'short03',
-  'short04',
-  'short05',
-  'short06',
-  'long01',
-  'long02',
-  'long03',
-  'long04',
+  ...Array.from({ length: 26 }, (_, i) => `long${String(i + 1).padStart(2, '0')}`),
+  ...Array.from({ length: 19 }, (_, i) => `short${String(i + 1).padStart(2, '0')}`),
 ];
-export const DICEBEAR_ACCESSORY_OPTIONS = ['blank', 'glasses', 'sunglasses'];
+export const DICEBEAR_ACCESSORY_OPTIONS = ['blank', 'variant01', 'variant02', 'variant03', 'variant04', 'variant05'];
+export const DICEBEAR_FEATURE_OPTIONS = ['blank', 'mustache', 'blush', 'birthmark', 'freckles'];
+export const DICEBEAR_EARRING_OPTIONS = ['blank', 'variant01', 'variant02', 'variant03', 'variant04', 'variant05', 'variant06'];
 
 interface AvatarProps {
   uri?: string | null;
@@ -85,6 +79,8 @@ export interface DicebearConfig {
   mouth?: string;
   hair?: string;
   accessory?: string;
+  feature?: string;
+  earrings?: string;
 }
 
 const hashValue = (value: string) => {
@@ -102,6 +98,12 @@ const pickBackground = (seed: string) => DICEBEAR_BACKGROUNDS[hashValue(seed) % 
 const pickOption = (seed: string, options: string[], salt: string) =>
   options[hashValue(`${seed}:${salt}`) % options.length];
 
+const normalizeAccessory = (accessory?: string | null) => {
+  if (accessory === 'glasses') return 'variant01';
+  if (accessory === 'sunglasses') return 'variant02';
+  return accessory || 'blank';
+};
+
 const buildDefaultConfig = (seed?: string | null, uri?: string | null): DicebearConfig => {
   const normalizedSeed = normalizeSeed(seed || uri || 'gametok');
   return {
@@ -114,6 +116,8 @@ const buildDefaultConfig = (seed?: string | null, uri?: string | null): Dicebear
     mouth: pickOption(normalizedSeed, DICEBEAR_MOUTH_OPTIONS, 'mouth'),
     hair: pickOption(normalizedSeed, DICEBEAR_HAIR_OPTIONS, 'hair'),
     accessory: pickOption(normalizedSeed, DICEBEAR_ACCESSORY_OPTIONS, 'accessory'),
+    feature: pickOption(normalizedSeed, DICEBEAR_FEATURE_OPTIONS, 'feature'),
+    earrings: pickOption(normalizedSeed, DICEBEAR_EARRING_OPTIONS, 'earrings'),
   };
 };
 
@@ -141,7 +145,9 @@ export const makeDicebearAvatarUri = (
   if (config.eyebrows) params.set('eyebrows', config.eyebrows);
   if (config.mouth) params.set('mouth', config.mouth);
   if (config.hair) params.set('hair', sanitizeAdventurerHair(config.hair));
-  if (config.accessory) params.set('accessory', config.accessory);
+  if (config.accessory) params.set('accessory', normalizeAccessory(config.accessory));
+  if (config.feature) params.set('feature', config.feature);
+  if (config.earrings) params.set('earrings', config.earrings);
   return `dicebear://${encodeURIComponent(config.seed)}?${params.toString()}`;
 };
 
@@ -161,14 +167,18 @@ export const getDicebearConfig = (uri?: string | null): DicebearConfig | null =>
     eyebrows: params.get('eyebrows') || defaults.eyebrows,
     mouth: params.get('mouth') || defaults.mouth,
     hair: sanitizeAdventurerHair(params.get('hair') || defaults.hair),
-    accessory: params.get('accessory') || defaults.accessory,
+    accessory: normalizeAccessory(params.get('accessory') || defaults.accessory),
+    feature: params.get('feature') || defaults.feature,
+    earrings: params.get('earrings') || defaults.earrings,
   };
 };
 
 /** Maps stored config → @dicebear/adventurer options (single choice per feature = one-element arrays). */
 export function buildAdventurerLibraryOptions(config: DicebearConfig, pixelSize: number): LibOptions {
   const hair = sanitizeAdventurerHair(config.hair);
-  const accessory = config.accessory || 'blank';
+  const accessory = normalizeAccessory(config.accessory);
+  const feature = config.feature || 'blank';
+  const earrings = config.earrings || 'blank';
 
   const opts: LibOptions = {
     seed: config.seed,
@@ -185,14 +195,25 @@ export function buildAdventurerLibraryOptions(config: DicebearConfig, pixelSize:
   if (config.eyebrows) opts.eyebrows = [config.eyebrows as NonNullable<AdventurerOptions['eyebrows']>[number]];
   if (config.mouth) opts.mouth = [config.mouth as NonNullable<AdventurerOptions['mouth']>[number]];
 
-  if (accessory === 'glasses') {
-    opts.glasses = ['variant01'];
-    opts.glassesProbability = 100;
-  } else if (accessory === 'sunglasses') {
-    opts.glasses = ['variant02'];
+  if (accessory !== 'blank') {
+    opts.glasses = [accessory as NonNullable<AdventurerOptions['glasses']>[number]];
     opts.glassesProbability = 100;
   } else {
     opts.glassesProbability = 0;
+  }
+
+  if (feature !== 'blank') {
+    opts.features = [feature as NonNullable<AdventurerOptions['features']>[number]];
+    opts.featuresProbability = 100;
+  } else {
+    opts.featuresProbability = 0;
+  }
+
+  if (earrings !== 'blank') {
+    opts.earrings = [earrings as NonNullable<AdventurerOptions['earrings']>[number]];
+    opts.earringsProbability = 100;
+  } else {
+    opts.earringsProbability = 0;
   }
 
   return opts;

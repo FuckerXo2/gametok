@@ -21,7 +21,9 @@ import {
   DICEBEAR_ACCESSORY_OPTIONS,
   DICEBEAR_BACKGROUNDS,
   DICEBEAR_BROW_OPTIONS,
+  DICEBEAR_EARRING_OPTIONS,
   DICEBEAR_EYE_OPTIONS,
+  DICEBEAR_FEATURE_OPTIONS,
   DICEBEAR_HAIR_COLORS,
   DICEBEAR_HAIR_OPTIONS,
   DICEBEAR_MOUTH_OPTIONS,
@@ -39,7 +41,7 @@ interface EditProfileModalProps {
 const PREVIEW_SIZE = 56;
 const PREVIEW_RING = 3;
 
-type PickerKey = 'hair' | 'eyes' | 'eyebrows' | 'mouth' | 'accessory';
+type PickerKey = 'hair' | 'eyes' | 'eyebrows' | 'mouth' | 'accessory' | 'feature' | 'earrings';
 type AppearanceTab = 'bg' | 'skin' | 'hair' | 'eyes' | 'brows' | 'mouth' | 'extras';
 type EditorMode = 'profile' | 'avatar';
 
@@ -105,6 +107,8 @@ const VIBE_PRESETS: Array<{
       eyebrows: 'variant02',
       mouth: 'variant01',
       accessory: 'blank',
+      feature: 'blush',
+      earrings: 'blank',
     },
   },
   {
@@ -117,7 +121,9 @@ const VIBE_PRESETS: Array<{
       eyes: 'variant07',
       eyebrows: 'variant07',
       mouth: 'variant06',
-      accessory: 'sunglasses',
+      accessory: 'variant02',
+      feature: 'birthmark',
+      earrings: 'variant03',
     },
   },
   {
@@ -130,7 +136,9 @@ const VIBE_PRESETS: Array<{
       eyes: 'variant02',
       eyebrows: 'variant06',
       mouth: 'variant05',
-      accessory: 'glasses',
+      accessory: 'variant01',
+      feature: 'freckles',
+      earrings: 'blank',
     },
   },
   {
@@ -144,11 +152,19 @@ const VIBE_PRESETS: Array<{
       eyebrows: 'variant03',
       mouth: 'variant07',
       accessory: 'blank',
+      feature: 'mustache',
+      earrings: 'variant05',
     },
   },
 ];
 
-const accessoryLabel = (v: string) => (v === 'blank' ? 'None' : v === 'glasses' ? 'Glasses' : 'Sunglasses');
+const accessoryLabel = (v: string) =>
+  v === 'blank' ? 'None' : v === 'variant01' ? 'Glasses' : v === 'variant02' ? 'Shades' : `Frame ${v.replace('variant', '')}`;
+
+const featureLabel = (v: string) =>
+  v === 'blank' ? 'None' : v === 'birthmark' ? 'Birthmark' : v.charAt(0).toUpperCase() + v.slice(1);
+
+const earringLabel = (v: string) => (v === 'blank' ? 'None' : `Earring ${v.replace('variant', '')}`);
 
 const hairStyleLabel = (id: string) => {
   return HAIR_STYLE_LABELS[id] || 'Style';
@@ -331,6 +347,12 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
       accessory:
         DICEBEAR_ACCESSORY_OPTIONS[Math.floor(Math.random() * DICEBEAR_ACCESSORY_OPTIONS.length)] ||
         prev.accessory,
+      feature:
+        DICEBEAR_FEATURE_OPTIONS[Math.floor(Math.random() * DICEBEAR_FEATURE_OPTIONS.length)] ||
+        prev.feature,
+      earrings:
+        DICEBEAR_EARRING_OPTIONS[Math.floor(Math.random() * DICEBEAR_EARRING_OPTIONS.length)] ||
+        prev.earrings,
     }));
   }, []);
 
@@ -732,6 +754,28 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
                   onSelect={onPickPart}
                   bottomLabel={accessoryLabel}
                   onShuffle={() => randomizePart('accessory', DICEBEAR_ACCESSORY_OPTIONS)}
+                />
+                <AvatarOptionRow
+                  title="Face details"
+                  optionKey="feature"
+                  options={DICEBEAR_FEATURE_OPTIONS}
+                  avatarConfig={avatarConfig}
+                  userId={user?.id}
+                  colors={pickerColors}
+                  onSelect={onPickPart}
+                  bottomLabel={featureLabel}
+                  onShuffle={() => randomizePart('feature', DICEBEAR_FEATURE_OPTIONS)}
+                />
+                <AvatarOptionRow
+                  title="Earrings"
+                  optionKey="earrings"
+                  options={DICEBEAR_EARRING_OPTIONS}
+                  avatarConfig={avatarConfig}
+                  userId={user?.id}
+                  colors={pickerColors}
+                  onSelect={onPickPart}
+                  bottomLabel={earringLabel}
+                  onShuffle={() => randomizePart('earrings', DICEBEAR_EARRING_OPTIONS)}
                 />
                 <Text style={[styles.attribution, { color: colors.textSecondary }]}>
                   Avatars by DiceBear Adventurer
