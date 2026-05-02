@@ -22,7 +22,7 @@ import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { API_URL, messages as messagesApi, users, moderation, feed, games as gamesApi, stories as storiesApi } from '../services/api';
 import { Avatar } from './Avatar';
@@ -70,6 +70,10 @@ const GAMES_HOST = 'https://games.gametok.co';
 const SUGGESTED_FRIENDS: any[] = [];
 const PROFILE_GRID_GAP = 2;
 const PROFILE_GRID_SIZE = (Dimensions.get('window').width - PROFILE_GRID_GAP * 4) / 3;
+const PROFILE_TILE_HEIGHT = PROFILE_GRID_SIZE * 1.34;
+const PURPLE = '#a855f7';
+const CYAN = '#22d3ee';
+const GOLD = '#f59e0b';
 
 const formatCompactNumber = (value?: number | null) => {
   if (typeof value !== 'number') return '—';
@@ -92,11 +96,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [userStats, setUserStats] = useState<{ followers: number; following: number; level: number; streak: number } | null>(null);
+  const [userStats, setUserStats] = useState<{ followers: number; following: number; likes: number; level: number; streak: number } | null>(null);
+  const [playedGames, setPlayedGames] = useState<any[]>([]);
   const [userGames, setUserGames] = useState<any[]>([]);
   const [createdGames, setCreatedGames] = useState<any[]>([]);
   const [loadingGames, setLoadingGames] = useState(false);
-  const [profileTab, setProfileTab] = useState<'created' | 'liked'>('created');
+  const [profileTab, setProfileTab] = useState<'created' | 'played' | 'liked'>('created');
   const [loadingFollow, setLoadingFollow] = useState(true);
   const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
   const [showOptionsModal, setShowOptionsModal] = useState(false);
@@ -131,6 +136,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           setUserStats({
             followers: res.stats.followers || 0,
             following: res.stats.following || 0,
+            likes: res.stats.likes || res.stats.totalLikes || 0,
             level: res.stats.level || 1,
             streak: res.stats.streak || 0,
           });
@@ -147,7 +153,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
         Promise.allSettled([
           likes.userLikes(activeUser.id),
           usersApi.created(activeUser.id),
-        ]).then(([likedRes, createdRes]) => {
+          usersApi.played(activeUser.id),
+        ]).then(([likedRes, createdRes, playedRes]) => {
           if (likedRes.status === 'fulfilled' && likedRes.value?.games) {
             setUserGames(likedRes.value.games);
           } else {
@@ -158,6 +165,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
             setCreatedGames(createdRes.value.games);
           } else {
             setCreatedGames([]);
+          }
+
+          if (playedRes.status === 'fulfilled' && playedRes.value?.games) {
+            setPlayedGames(playedRes.value.games);
+          } else {
+            setPlayedGames([]);
           }
         }).catch(() => { }).finally(() => setLoadingGames(false));
       });
@@ -404,6 +417,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     );
   }
 
+  const activeProfileGames = profileTab === 'created'
+    ? createdGames
+    : profileTab === 'played'
+      ? playedGames
+      : userGames;
+  const activeProfileTitle = profileTab === 'created' ? 'Created' : profileTab === 'played' ? 'Played' : 'Liked';
+  const activeProfileIcon = profileTab === 'created' ? 'grid-outline' : profileTab === 'played' ? 'play-circle-outline' : 'heart-outline';
+
   return (
     <SlideRightModal visible={visible} onClose={onClose}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -437,13 +458,31 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 {activeUser.isOnline && <View style={styles.onlineDot} />}
               </View>
 
-              <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
-                {activeUser.displayName || activeUser.username}
-              </Text>
+              <View style={styles.displayNameRow}>
+                <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+                  {activeUser.displayName || activeUser.username}
+                </Text>
+                {activeUser.verified ? <MaterialIcons name="verified" size={18} color={PURPLE} /> : null}
+              </View>
               <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{activeUser.username}</Text>
               <Text style={[styles.bioText, { color: activeUser.bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
                 {activeUser.bio || 'GameTok player.'}
               </Text>
+
+              <View style={styles.badgeRow}>
+                <View style={[styles.badgePill, { borderColor: `${PURPLE}55` }]}>
+                  <Ionicons name="sparkles" size={13} color={PURPLE} />
+                  <Text style={styles.badgeText}>Creator</Text>
+                </View>
+                <View style={[styles.badgePill, { borderColor: `${CYAN}55` }]}>
+                  <Ionicons name="game-controller" size={13} color={CYAN} />
+                  <Text style={styles.badgeText}>Game Builder</Text>
+                </View>
+                <View style={[styles.badgePill, { borderColor: `${GOLD}55` }]}>
+                  <Ionicons name="ribbon" size={13} color={GOLD} />
+                  <Text style={styles.badgeText}>Early Access</Text>
+                </View>
+              </View>
 
               <View style={styles.statsRow}>
                 <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
@@ -457,6 +496,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 <View style={styles.statItem}>
                   <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(createdGames.length)}</Text>
                   <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Created</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.likes)}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Likes</Text>
                 </View>
               </View>
 
@@ -529,6 +572,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               {profileTab === 'created' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
             </TouchableOpacity>
             <TouchableOpacity
+              style={[styles.contentTab, profileTab === 'played' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              activeOpacity={0.9}
+              onPress={() => setProfileTab('played')}
+            >
+              <Ionicons name="play-circle-outline" size={22} color={profileTab === 'played' ? colors.text : colors.textSecondary} />
+              <Text style={[styles.contentTabText, { color: profileTab === 'played' ? colors.text : colors.textSecondary }]}>Played</Text>
+              {profileTab === 'played' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[styles.contentTab, profileTab === 'liked' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               activeOpacity={0.9}
               onPress={() => setProfileTab('liked')}
@@ -540,17 +592,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           </View>
 
           <View style={styles.contentMetaRow}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>{profileTab === 'created' ? 'Created' : 'Liked'}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{activeProfileTitle}</Text>
             <Text style={[styles.contentCount, { color: colors.textSecondary }]}>
-              {formatCompactNumber((profileTab === 'created' ? createdGames : userGames).length)}
+              {formatCompactNumber(activeProfileGames.length)}
             </Text>
           </View>
 
           {loadingGames ? (
             <ActivityIndicator style={{ marginTop: 20 }} color={colors.textSecondary} />
-          ) : (profileTab === 'created' ? createdGames : userGames).length > 0 ? (
+          ) : activeProfileGames.length > 0 ? (
             <View style={styles.gameGrid}>
-              {(profileTab === 'created' ? createdGames : userGames).map(game => {
+              {activeProfileGames.map(game => {
                 const thumbUri = resolveThumbnailUrl(game.thumbnail, game.id);
                 return (
                   <TouchableOpacity
@@ -579,11 +631,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
           ) : (
             <View style={styles.emptyState}>
               <View style={[styles.emptyIconBubble, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name={profileTab === 'created' ? 'grid-outline' : 'heart-outline'} size={32} color={colors.textSecondary} />
+                <Ionicons name={activeProfileIcon as any} size={32} color={colors.textSecondary} />
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>{profileTab === 'created' ? 'No created games yet' : 'No liked games yet'}</Text>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>{profileTab === 'created' ? 'No created games yet' : profileTab === 'played' ? 'No played games yet' : 'No liked games yet'}</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                {profileTab === 'created' ? 'Their published games will land here first.' : 'Their favorites have not landed here yet.'}
+                {profileTab === 'created' ? 'Their published games will land here first.' : profileTab === 'played' ? 'Games they play will show here.' : 'Their favorites have not landed here yet.'}
               </Text>
             </View>
           )}
@@ -774,8 +826,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: -0.5,
-    maxWidth: '90%',
+    maxWidth: 260,
     textAlign: 'center',
+  },
+  displayNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    maxWidth: '90%',
   },
   handleText: {
     fontSize: 14,
@@ -788,6 +847,30 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     maxWidth: 280,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 12,
+    paddingHorizontal: 6,
+  },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: -0.1,
   },
   statsRow: {
     flexDirection: 'row',
@@ -909,7 +992,7 @@ const styles = StyleSheet.create({
   },
   gameTile: {
     width: PROFILE_GRID_SIZE,
-    height: PROFILE_GRID_SIZE,
+    height: PROFILE_TILE_HEIGHT,
     margin: PROFILE_GRID_GAP / 2,
     borderRadius: 14,
     overflow: 'hidden',
