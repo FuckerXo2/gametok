@@ -892,8 +892,8 @@ export const ai = {
   deleteDraft: async (draftId: string) => {
     return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
   },
-  publish: async (draftId: string, title?: string, privacy?: string) => {
-    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy }) });
+  publish: async (draftId: string, title?: string, privacy?: string, html?: string) => {
+    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) });
   },
   reclassifyPublished: async (draftId?: string, limit = 20) => {
     return request('/ai/reclassify-published', {

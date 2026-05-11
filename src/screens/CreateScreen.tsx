@@ -1477,7 +1477,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
     setIsPublishing(true);
     try {
-      const res = await ai.publish(activeDraftId, gameTitle.trim(), privacySetting);
+      // Send HTML if we have it (needed for templates that don't exist in ai_games table yet)
+      const res = await ai.publish(activeDraftId, gameTitle.trim(), privacySetting, activeHtml || undefined);
       if (res.success) {
         console.log('✅ LIVE! Game pushed to Feed:', res.gameId);
         Alert.alert('🎉 Game Posted!', 'Your game is now live on GameTOK!', [
@@ -2911,25 +2912,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                       try {
                         const res = await ai.getTemplate(tpl.id) as any;
                         if (res?.template?.html_payload) {
-                          // Templates need to be saved as a new draft before publishing
-                          // because they have sekai_ IDs which aren't valid UUIDs
-                          const saveRes = await ai.saveDraft({
-                            html: res.template.html_payload,
-                            title: res.template.title || 'Untitled',
-                            prompt: `Template: ${res.template.title || 'Untitled'}`,
-                          });
-                          
-                          if (saveRes?.draftId) {
-                            setActiveHtml(res.template.html_payload);
-                            setActiveDraftId(saveRes.draftId);
-                            setGameTitle(res.template.title || 'Untitled');
-                            setPhase('preview');
-                          } else {
-                            Alert.alert('Error', 'Failed to create draft from template');
-                          }
+                          setActiveHtml(res.template.html_payload);
+                          setActiveDraftId(tpl.id);
+                          setGameTitle(res.template.title || 'Untitled');
+                          setPhase('preview');
                         }
                       } catch (e) {
-                        console.error('Template load error:', e);
                         Alert.alert('Error', 'Failed to load template');
                       }
                     }}
