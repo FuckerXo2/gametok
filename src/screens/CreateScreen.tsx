@@ -2912,8 +2912,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                       try {
                         const res = await ai.getTemplate(tpl.id) as any;
                         if (res?.template?.html_payload) {
+                          // Generate a new UUID for the template since sekai_ IDs aren't valid UUIDs
+                          const newDraftId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                            const r = Math.random() * 16 | 0;
+                            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                            return v.toString(16);
+                          });
+                          
                           setActiveHtml(res.template.html_payload);
-                          setActiveDraftId(tpl.id);
+                          setActiveDraftId(newDraftId);
                           setGameTitle(res.template.title || 'Untitled');
                           setPhase('preview');
                         }
