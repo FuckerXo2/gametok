@@ -2631,7 +2631,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         />
                         <View style={styles.thumbnailCardPlayPill}>
                           <Ionicons 
-                            name={item!.game!.id === interactedGameId && position === 0 ? "reload" : "play"} 
+                            name={item!.game!.id === interactedGameId && position === 0 ? "reload-circle" : "play"} 
                             size={12} 
                             color="#fff" 
                           />
