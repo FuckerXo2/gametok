@@ -57,7 +57,7 @@ const GAMETOK_BG = require('../../assets/gametok_bg.png');
 // TYPES
 // =============================================
 type DreamPhase = 'idle' | 'generating' | 'preview' | 'publish';
-type StudioTab = 'create' | 'drafts' | 'templates';
+type StudioTab = 'create' | 'drafts';
 
 interface DraftItem {
   id: string;
@@ -411,8 +411,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [studioTab, setStudioTab] = useState<StudioTab>('create');
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [studioBuildTick, setStudioBuildTick] = useState(0);
 
@@ -584,24 +582,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     if (studioTab === 'drafts') {
       fetchDrafts();
     }
-    if (studioTab === 'templates') {
-      fetchTemplates();
-    }
   }, [studioTab, fetchDrafts]);
-
-  const fetchTemplates = useCallback(async () => {
-    try {
-      setTemplatesLoading(true);
-      const res = await ai.templates() as any;
-      if (res?.templates) {
-        setTemplates(res.templates);
-      }
-    } catch (e) {
-      console.error('Failed to fetch templates:', e);
-    } finally {
-      setTemplatesLoading(false);
-    }
-  }, []);
 
   const clearPendingDreamJob = useCallback(async () => {
     setPendingJobId(null);
@@ -2884,89 +2865,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         </View>
       )}
 
-      {/* ============================== */}
-      {/* TAB: TEMPLATES                 */}
-      {/* ============================== */}
-      {studioTab === 'templates' && (
-        <View style={{ flex: 1 }}>
-          <Animated.View entering={FadeInUp.duration(400)}>
-            <Text style={styles.draftCountLabel}>{templates.length} templates</Text>
-          </Animated.View>
-
-          {templates.length === 0 ? (
-            <Animated.View entering={FadeInUp.delay(100).duration(400)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <Ionicons name="cube-outline" size={48} color="#333" />
-              <Text style={{ color: '#555', fontSize: 16, fontWeight: '600' }}>No templates yet</Text>
-              <Text style={{ color: '#444', fontSize: 13 }}>Create a game and mark it as a template</Text>
-            </Animated.View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.draftsGrid}
-              showsVerticalScrollIndicator={false}
-            >
-              {templates.map((tpl: any, index: number) => (
-                <Animated.View key={tpl.id} entering={FadeInUp.delay(index * 80).duration(400)}>
-                  <Pressable
-                    style={({ pressed }) => [styles.draftCard, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
-                    onPress={async () => {
-                      try {
-                        const res = await ai.getTemplate(tpl.id) as any;
-                        if (res?.template?.html_payload) {
-                          // Generate a new UUID for the template since sekai_ IDs aren't valid UUIDs
-                          const newDraftId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-                            const r = Math.random() * 16 | 0;
-                            const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                            return v.toString(16);
-                          });
-                          
-                          setActiveHtml(res.template.html_payload);
-                          setActiveDraftId(newDraftId);
-                          setGameTitle(res.template.title || 'Untitled');
-                          setPhase('preview');
-                        }
-                      } catch (e) {
-                        Alert.alert('Error', 'Failed to load template');
-                      }
-                    }}
-                  >
-                    <View style={styles.draftThumbnail}>
-                      {tpl.thumbnail ? (
-                        <Image
-                          source={{ uri: tpl.thumbnail }}
-                          style={StyleSheet.absoluteFillObject}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <>
-                          <LinearGradient
-                            colors={DRAFT_GRADIENTS[index % DRAFT_GRADIENTS.length]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={StyleSheet.absoluteFillObject}
-                          />
-                          <Ionicons
-                            name={DRAFT_ICONS[index % DRAFT_ICONS.length]}
-                            size={44}
-                            color="rgba(255,255,255,0.35)"
-                          />
-                        </>
-                      )}
-                      <View style={[styles.draftBadge, { backgroundColor: 'rgba(168,85,247,0.85)' }]}>
-                        <Text style={styles.draftBadgeText}>Template</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.draftTitle} numberOfLines={1}>
-                      {tpl.title || 'Untitled Game'}
-                    </Text>
-                    <Text style={styles.draftDate}>{tpl.prompt ? tpl.prompt.substring(0, 40) + '...' : 'Tap to remix'}</Text>
-                  </Pressable>
-                </Animated.View>
-              ))}
-            </ScrollView>
-          )}
-        </View>
-      )}
-
       {/* === BOTTOM TAB BAR === */}
       <View style={{ width: '100%', alignItems: 'center', paddingBottom: Math.max(insets.bottom, 12) }}>
         <View style={styles.bottomTabs}>
@@ -2983,13 +2881,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           >
             <Ionicons name={studioTab === 'drafts' ? 'cube' : 'cube-outline'} size={20} color={studioTab === 'drafts' ? '#FFF' : '#888'} />
             <Text style={[styles.bottomTabLabel, studioTab === 'drafts' && styles.bottomTabLabelActive]}>Drafts{drafts.length > 0 ? ` (${drafts.length})` : ''}</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.bottomTab, studioTab === 'templates' && styles.bottomTabActive]}
-            onPress={() => setStudioTab('templates')}
-          >
-            <Ionicons name={studioTab === 'templates' ? 'copy' : 'copy-outline'} size={20} color={studioTab === 'templates' ? '#FFF' : '#888'} />
-            <Text style={[styles.bottomTabLabel, studioTab === 'templates' && styles.bottomTabLabelActive]}>Templates</Text>
           </Pressable>
         </View>
       </View>

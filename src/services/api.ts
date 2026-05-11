@@ -901,10 +901,4 @@ export const ai = {
       body: JSON.stringify({ draftId, limit }),
     });
   },
-  templates: async () => {
-    return request('/ai/templates');
-  },
-  getTemplate: async (templateId: string) => {
-    return request(`/ai/templates/${templateId}`);
-  }
 };
