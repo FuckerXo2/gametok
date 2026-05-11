@@ -1562,14 +1562,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         }
         setScrollEnabled(false);
       } else if (state === 'active' && isFocused) {
+        // Only resume if the game was already being played (interacted with)
         const currItem = currentIndexRef.current >= 0 ? feedRef.current[currentIndexRef.current] : null;
-        if (currItem && webViewRefs.current[currItem.id]) {
+        if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
           webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
         }
       }
     });
     return () => sub.remove();
-  }, [translateY, isFocused]);
+  }, [translateY, isFocused, interactedGameId]);
   const isAnimating = useRef(false);
   const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
   const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
@@ -1608,9 +1609,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       isAnimating.current = false;
       translateY.setValue(0); // Reset any partial swipe animation
 
-      // Resume current game when coming back to the tab
+      // Resume current game ONLY if it was already being played (interacted with)
       const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
-      if (currItem && webViewRefs.current[currItem.id]) {
+      if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
         webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
       }
 
@@ -2387,13 +2388,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       }
                     }
 
-                    const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused;
+                    // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
+                    // Otherwise, keep it paused so it doesn't play in the background
+                    const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused && item!.game!.id === interactedGameId;
                     webViewRefs.current[item!.id]?.injectJavaScript(
                       shouldResume ? RESUME_SCRIPT : position === 1 ? PRELOAD_SCRIPT : PAUSE_SCRIPT
                     );
                   }}
                   onLoad={() => {
-                    const shouldResume = position === 0 && currentIndex !== -1 && isFocused;
+                    // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
+                    // Otherwise, keep it paused so it doesn't play in the background
+                    const shouldResume = position === 0 && currentIndex !== -1 && isFocused && item!.game!.id === interactedGameId;
                     if (!shouldResume && webViewRefs.current[item!.id]) {
                       webViewRefs.current[item!.id]?.injectJavaScript(position === 1 ? PRELOAD_SCRIPT : PAUSE_SCRIPT);
                     }
