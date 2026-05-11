@@ -58,8 +58,6 @@ const GAMETOK_BG = require('../../assets/gametok_bg.png');
 // =============================================
 type DreamPhase = 'idle' | 'generating' | 'preview' | 'publish';
 type StudioTab = 'create' | 'drafts' | 'templates';
-type CreatorMode = 'game' | 'narrative';
-type NarrativeMessage = { id: string; role: 'ai' | 'user'; text: string; pending?: boolean };
 
 interface DraftItem {
   id: string;
@@ -252,89 +250,6 @@ const GENRE_CHIPS = [
   },
 ];
 
-const NARRATIVE_CHIPS = [
-  {
-    icon: 'book',
-    iconColor: '#f472b6',
-    label: 'Mystery',
-    prompts: [
-      'Create an interactive mystery story where the player searches a locked penthouse after midnight, collecting clues and choosing which suspect to trust.',
-      'Build a detective narrative with branching dialogue, hidden notes, and a reveal that changes based on which clues the player prioritized.',
-    ],
-  },
-  {
-    icon: 'heart',
-    iconColor: '#fb7185',
-    label: 'Romance',
-    prompts: [
-      'Write a dramatic enemies-to-lovers interactive story set backstage at a sold-out concert, with flirt tension, jealousy, and multiple endings.',
-      'Create a soft romance story where the player reconnects with a childhood friend during one strange neon-lit weekend in Lagos.',
-    ],
-  },
-  {
-    icon: 'moon',
-    iconColor: '#a78bfa',
-    label: 'Horror',
-    prompts: [
-      'Build a horror story where the player answers a late-night questionnaire and each answer changes the room around them in unsettling ways.',
-      'Create a phone-based psychological horror experience with whispered audio cues, false choices, and a final reveal that the game was watching the player back.',
-    ],
-  },
-  {
-    icon: 'people',
-    iconColor: '#22d3ee',
-    label: 'Roleplay',
-    prompts: [
-      'Create an immersive roleplay story where the player becomes the newest member of a secret guild and must choose alliances carefully.',
-      'Design a school-life roleplay with rival cliques, gossip systems, and high-stakes choices that affect who stands with you by the finale.',
-    ],
-  },
-  {
-    icon: 'rose',
-    iconColor: '#FB7185',
-    label: 'Drama',
-    prompts: [
-      'Create a messy relationship drama where every scene raises the emotional stakes and trust keeps breaking in new ways.',
-      'Write a high-tension story of betrayal and reunion set across one emotionally chaotic night.',
-    ],
-  },
-  {
-    icon: 'flash',
-    iconColor: '#F59E0B',
-    label: 'Thriller',
-    prompts: [
-      'Build a thriller where the player has ten minutes to prevent a disaster and each call changes who survives.',
-      'Create an interactive chase story full of time pressure, hidden motives, and split-second choices.',
-    ],
-  },
-  {
-    icon: 'sparkles',
-    iconColor: '#A78BFA',
-    label: 'Fantasy',
-    prompts: [
-      'Write a fantasy journey where the player binds magical relics and chooses which kingdom to betray.',
-      'Create a mystical interactive tale with secret powers, ancient omens, and a morally messy finale.',
-    ],
-  },
-  {
-    icon: 'business',
-    iconColor: '#38BDF8',
-    label: 'School',
-    prompts: [
-      'Design a chaotic school-life interactive story with cliques, rumors, and status shifts after every decision.',
-      'Create a campus roleplay where the player balances friendship, romance, and a secret scandal.',
-    ],
-  },
-];
-
-const NARRATIVE_STARTER_MESSAGES: NarrativeMessage[] = [
-  {
-    id: 'ai-0',
-    role: 'ai',
-    text: 'Tell me what you want to make. Rough is fine. I’ll ask back until it feels like a playable story.',
-  },
-];
-
 // =============================================
 // GENERATING PHASE STEPS
 // =============================================
@@ -483,11 +398,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [showExitConfirm, setShowExitConfirm] = useState<'discard' | 'closeApp' | null>(null);
   const [privacySetting, setPrivacySetting] = useState<'public' | 'play_only' | 'private'>('public');
   const [labsMode, setLabsMode] = useState(false);
-  const [creatorMode, setCreatorMode] = useState<CreatorMode>('game');
-  const [narrativeMessages, setNarrativeMessages] = useState<NarrativeMessage[]>(NARRATIVE_STARTER_MESSAGES);
-  const [narrativeInput, setNarrativeInput] = useState('');
-  const [narrativeAiBrief, setNarrativeAiBrief] = useState('');
-  const [isNarrativeThinking, setIsNarrativeThinking] = useState(false);
 
   // Audio search state
   const [audioSearchQuery, setAudioSearchQuery] = useState('');
@@ -506,31 +416,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [studioBuildTick, setStudioBuildTick] = useState(0);
 
-  const narrativeUserReplies = useMemo(
-    () => narrativeMessages.filter((message) => message.role === 'user').map((message) => message.text.trim()).filter(Boolean),
-    [narrativeMessages]
-  );
-
-  const narrativeBrief = useMemo(() => {
-    if (narrativeAiBrief.trim()) {
-      return narrativeAiBrief.trim();
-    }
-
-    if (narrativeUserReplies.length === 0) {
-      return 'No story locked yet. Start with a rough idea and I’ll shape it.';
-    }
-
-    const [core, goal, tone, character, mechanic, ending] = narrativeUserReplies;
-    return [
-      `Core idea: ${core}`,
-      goal ? `Player goal: ${goal}` : null,
-      tone ? `Tone: ${tone}` : null,
-      character ? `Main character: ${character}` : null,
-      mechanic ? `Interactive hook: ${mechanic}` : null,
-      ending ? `Ending feel: ${ending}` : null,
-      'Build it as a polished interactive narrative game with clear choices, readable UI, satisfying feedback, and a complete playable loop.',
-    ].filter(Boolean).join('\n');
-  }, [narrativeAiBrief, narrativeUserReplies]);
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
   // This JavaScript is injected into the WebView after the game HTML loads.
@@ -666,7 +551,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // Animations
   const orbPulse = useSharedValue(1);
   const orbRotation = useSharedValue(0);
-  const studioChipData = creatorMode === 'game' ? GENRE_CHIPS : NARRATIVE_CHIPS;
+  const studioChipData = GENRE_CHIPS;
   const studioChipRows = chunkIntoRows(studioChipData, 3).map((row) => [...row, ...row]);
   const activeStudioStepIndex = pendingJobId ? (phase === 'generating' ? activeStep : studioBuildTick % GENERATION_STEPS.length) : 0;
   const activeStudioStep = GENERATION_STEPS[activeStudioStepIndex];
@@ -909,7 +794,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     ideasOffsetRefs.current = [0, 0, 0];
     ideasContentWidthRefs.current = [0, 0, 0];
     ideasScrollRefs.current.forEach((ref) => ref?.scrollTo({ x: 0, animated: false }));
-  }, [creatorMode]);
+  }, []);
 
   useEffect(() => {
     if (studioTab !== 'create' || phase !== 'idle') return;
@@ -936,7 +821,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       });
     }, 24);
     return () => clearInterval(interval);
-  }, [studioTab, phase, creatorMode]);
+  }, [studioTab, phase]);
 
   useEffect(() => {
     if (phase !== 'generating') return;
@@ -1007,79 +892,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // ======================
   const handleGenreSelect = (genrePrompts: string[]) => {
     const randomPrompt = genrePrompts[Math.floor(Math.random() * genrePrompts.length)];
-    if (creatorMode === 'narrative') {
-      setNarrativeInput(randomPrompt);
-    } else {
-      setPrompt(randomPrompt);
-    }
+    setPrompt(randomPrompt);
     setErrorMsg(null);
     ideasPauseUntilRef.current = Date.now() + 1200;
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const sendNarrativeMessage = useCallback(async () => {
-    const text = narrativeInput.trim();
-    if (!text || isNarrativeThinking) return;
-
-    const userMessage: NarrativeMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      text,
-    };
-    const thinkingMessage: NarrativeMessage = {
-      id: `ai-thinking-${Date.now()}`,
-      role: 'ai',
-      text: 'Thinking...',
-      pending: true,
-    };
-
-    const nextMessages = [...narrativeMessages, userMessage];
-    setNarrativeMessages([...nextMessages, thinkingMessage]);
-    setNarrativeInput('');
-    setIsNarrativeThinking(true);
-    setErrorMsg(null);
-
-    try {
-      const res = await ai.narrativeChat(nextMessages.map(({ role, text }) => ({ role, text })));
-      const reply = String(res?.reply || '').trim() || 'I’m with you. Give me one more detail that should affect how the player plays.';
-      const brief = String(res?.brief || '').trim();
-      if (brief) {
-        setNarrativeAiBrief(brief);
-        setPrompt(brief);
-      } else {
-        const compiled = [...narrativeUserReplies, text].filter(Boolean);
-        setPrompt([
-          'Create a polished interactive narrative game from this creative direction:',
-          ...compiled.map((item, index) => `${index + 1}. ${item}`),
-          'Make the story playable with meaningful choices, visible consequences, strong atmosphere, and a complete ending.',
-        ].join('\n'));
-      }
-      setNarrativeMessages((prev) => prev.map((message) => (
-        message.id === thinkingMessage.id
-          ? { id: `ai-${Date.now()}`, role: 'ai', text: reply }
-          : message
-      )));
-    } catch (error: any) {
-      console.warn('Narrative chat failed:', error?.message || error);
-      setNarrativeMessages((prev) => prev.map((message) => (
-        message.id === thinkingMessage.id
-          ? {
-              id: `ai-${Date.now()}`,
-              role: 'ai',
-              text: 'The AI chat tripped for a second. Send that again, or tap Forge It if the idea is already clear.',
-            }
-          : message
-      )));
-      const compiled = [...narrativeUserReplies, text].filter(Boolean);
-      setPrompt([
-        'Create a polished interactive narrative game from this creative direction:',
-        ...compiled.map((item, index) => `${index + 1}. ${item}`),
-        'Make the story playable with meaningful choices, visible consequences, strong atmosphere, and a complete ending.',
-      ].join('\n'));
-    } finally {
-      setIsNarrativeThinking(false);
-    }
-  }, [isNarrativeThinking, narrativeInput, narrativeMessages, narrativeUserReplies]);
 
   const handleReturnToForge = useCallback(() => {
     if (!pendingJobId) return;
@@ -1154,18 +972,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   };
 
   const handleDreamComposerPress = () => {
-    const finalPrompt = creatorMode === 'narrative' ? narrativeBrief.trim() : prompt.trim();
-    if (creatorMode === 'narrative' && narrativeInput.trim()) {
-      sendNarrativeMessage();
-      return;
-    }
-    if (!finalPrompt || (creatorMode === 'narrative' && narrativeUserReplies.length === 0)) {
+    const finalPrompt = prompt.trim();
+    if (!finalPrompt) {
       setErrorMsg('Write a quick brief first, or tap Surprise me.');
       requestAnimationFrame(() => inputRef.current?.focus());
       return;
-    }
-    if (creatorMode === 'narrative') {
-      setPrompt(narrativeBrief);
     }
     setErrorMsg(null);
     Keyboard.dismiss();
@@ -2713,170 +2524,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                   </Svg>
                 </View>
               </View>
-              {creatorMode !== 'narrative' && (
-                <Text style={styles.heroV2Subtitle}>Your imagination. Unlocked.</Text>
-              )}
-
-              <View style={styles.modeSwitchV2}>
-                <Pressable
-                  style={[styles.modeSwitchV2Tab, { marginRight: 4 }, creatorMode === 'game' && styles.modeSwitchV2TabActive]}
-                  onPressIn={() => setCreatorMode('game')}
-                >
-                  <Text style={[styles.modeSwitchV2Text, creatorMode === 'game' && styles.modeSwitchV2TextActive]}>
-                    Game Mode
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.modeSwitchV2Tab, creatorMode === 'narrative' && styles.modeSwitchV2TabActive]}
-                  onPressIn={() => setCreatorMode('narrative')}
-                >
-                  <Text style={[styles.modeSwitchV2Text, creatorMode === 'narrative' && styles.modeSwitchV2TextActive]}>
-                    Narrative Mode
-                  </Text>
-                </Pressable>
-              </View>
+              <Text style={styles.heroV2Subtitle}>Your imagination. Unlocked.</Text>
             </View>
           </Animated.View>
 
-          {creatorMode === 'narrative' ? (
-            /* ========== FULL-SCREEN CHAT (ChatGPT style) ========== */
-            <Animated.View entering={FadeInUp.delay(80).duration(400)} style={{ flex: 1 }}>
-              {/* Messages area */}
-              <ScrollView
-                style={{ flex: 1, paddingHorizontal: 16 }}
-                contentContainerStyle={{ paddingBottom: 12, paddingTop: 8 }}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="always"
-                ref={(ref) => { if (ref) setTimeout(() => ref.scrollToEnd?.({ animated: false }), 100); }}
-              >
-                {narrativeMessages.map((message) => (
-                  <View
-                    key={message.id}
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
-                      marginBottom: 12,
-                    }}
-                  >
-                    {message.role === 'ai' && (
-                      <View style={{
-                        width: 28, height: 28, borderRadius: 14,
-                        backgroundColor: 'rgba(168,85,247,0.3)',
-                        alignItems: 'center', justifyContent: 'center',
-                        marginRight: 8, marginTop: 2,
-                      }}>
-                        <Ionicons name="sparkles" size={14} color="#C084FC" />
-                      </View>
-                    )}
-                    <View style={{
-                      maxWidth: '78%',
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      borderRadius: 18,
-                      ...(message.role === 'user'
-                        ? {
-                            backgroundColor: '#7C3AED',
-                            borderBottomRightRadius: 4,
-                          }
-                        : {
-                            backgroundColor: 'rgba(255,255,255,0.08)',
-                            borderBottomLeftRadius: 4,
-                          }),
-                    }}>
-                      <Text style={{
-                        color: '#FFF',
-                        fontSize: 15,
-                        lineHeight: 21,
-                        fontWeight: '500',
-                      }}>{message.text}</Text>
-                    </View>
-                  </View>
-                ))}
-              </ScrollView>
-
-              {/* Bottom composer bar */}
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'flex-end',
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                borderTopWidth: 1,
-                borderTopColor: 'rgba(255,255,255,0.08)',
-                backgroundColor: 'rgba(0,0,0,0.4)',
-                gap: 8,
-              }}>
-                <View style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'flex-end',
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  borderRadius: 22,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.1)',
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  minHeight: 44,
-                }}>
-                  <TextInput
-                    ref={inputRef}
-                    style={{
-                      flex: 1,
-                      color: '#FFF',
-                      fontSize: 15,
-                      maxHeight: 100,
-                      paddingVertical: 0,
-                    }}
-                    placeholder="Message..."
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    multiline
-                    maxLength={420}
-                    value={narrativeInput}
-                    onChangeText={setNarrativeInput}
-                    textAlignVertical="top"
-                    inputAccessoryViewID="gametok-done"
-                  />
-                </View>
-                <Pressable
-                  onPressIn={sendNarrativeMessage}
-                  hitSlop={8}
-                  style={{
-                    width: 40, height: 40, borderRadius: 20,
-                    backgroundColor: narrativeInput.trim() && !isNarrativeThinking ? '#7C3AED' : 'rgba(255,255,255,0.08)',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                  disabled={!narrativeInput.trim() || isNarrativeThinking}
-                >
-                  {isNarrativeThinking ? (
-                    <ActivityIndicator size="small" color="rgba(255,255,255,0.65)" />
-                  ) : (
-                    <Ionicons name="arrow-up" size={20} color={narrativeInput.trim() ? '#FFF' : 'rgba(255,255,255,0.3)'} />
-                  )}
-                </Pressable>
-              </View>
-
-              {/* Forge It bar — appears after at least 1 reply */}
-              {narrativeUserReplies.length >= 1 && (
-                <View style={{ paddingHorizontal: 16, paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)' }}>
-                  <Pressable
-                    style={[styles.sendBtn, { marginTop: 0 }]}
-                    onPressIn={() => {
-                      Keyboard.dismiss();
-                      setPrompt(narrativeBrief);
-                      setErrorMsg(null);
-                      requestAnimationFrame(() => handleDream(narrativeBrief));
-                    }}
-                    hitSlop={14}
-                  >
-                    <Ionicons name="sparkles" size={16} color="#FFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.sendBtnText}>Forge It</Text>
-                    <Ionicons name="chevron-forward" size={18} color="#FFF" />
-                  </Pressable>
-                </View>
-              )}
-            </Animated.View>
-          ) : (
-            /* ========== GAME MODE (existing card UI) ========== */
-            <>
+          {/* ========== GAME MODE (ONLY MODE NOW) ========== */}
           {/* === MAIN INPUT CARD === */}
           <Animated.View entering={FadeInUp.delay(80).duration(400)}>
             <View style={styles.inputCard}>
@@ -2978,8 +2630,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
               </View>
             </View>
           </Animated.View>
-            </>
-          )}
 
           {pendingJobId && (
             <Animated.View entering={FadeInUp.delay(110).duration(360)}>
@@ -3028,7 +2678,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           )}
 
           {/* === MEDIA TOOLBAR === */}
-          {creatorMode === 'game' ? (
           <Animated.View entering={FadeInUp.delay(210).duration(400)}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRow}>
               <Pressable style={styles.mediaBtn} onPress={() => setShowCommunityImagesModal(true)}>
@@ -3081,10 +2730,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
               </Pressable>
             </ScrollView>
           </Animated.View>
-          ) : null}
 
           {/* === NEED IDEAS? SECTION === */}
-          {creatorMode === 'game' ? (
           <Animated.View entering={FadeInUp.delay(270).duration(400)}>
             <View style={styles.starterRailHeader}>
               <Text style={styles.starterRailSubtitle}>
@@ -3094,7 +2741,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
             <View style={styles.ideasLaneStack}>
               {studioChipRows.map((row, rowIndex) => (
                 <ScrollView
-                  key={`ideas-row-${creatorMode}-${rowIndex}`}
+                  key={`ideas-row-${rowIndex}`}
                   ref={(ref) => { ideasScrollRefs.current[rowIndex] = ref; }}
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -3129,7 +2776,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
               ))}
             </View>
           </Animated.View>
-          ) : null}
 
           {/* Error message */}
           {errorMsg && (
