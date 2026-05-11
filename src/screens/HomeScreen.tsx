@@ -74,13 +74,6 @@ const getFeedBackdropColor = () => '#050505';
 
 const isExternalGame = (game: Game) => !!game.embedUrl;
 
-const shouldUseWebViewBackdrop = (game: Game) => {
-  if (!game.embedUrl) return false;
-  if (game.embedUrl.startsWith('/')) return false;
-  if (game.embedUrl.startsWith(API_ORIGIN)) return false;
-  return true;
-};
-
 // Domains to block at request level
 
 const GAME_AUDIO_GUARD_SCRIPT = `
@@ -495,49 +488,7 @@ const EDGE_BLOCK_SCRIPT = `
 true;
 `;
 
-// Inject blurred game thumbnail as CSS background inside WebView
-// Uses body::before pseudo-element so blur stays behind game content
-const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
-(function() {
-  if (window._blurBgActive) return;
-  window._blurBgActive = true;
-  var thumbUrl = '${thumbnailUrl}';
-  var fallback = '${fallbackColor}';
-  var applyBg = function() {
-    var s = document.getElementById('_gt_blur_bg');
-    if (s) s.remove();
-    s = document.createElement('style');
-    s.id = '_gt_blur_bg';
-    s.textContent = [
-      'html, body { background: ' + fallback + ' !important; background-color: ' + fallback + ' !important; margin:0; padding:0; }',
-      'body::before {',
-      '  content: "";',
-      '  position: fixed;',
-      '  top: -20px; left: -20px; right: -20px; bottom: -20px;',
-      '  background: url(' + thumbUrl + ') center/cover no-repeat;',
-      '  filter: blur(30px);',
-      '  -webkit-filter: blur(30px);',
-      '  opacity: 0.5;',
-      '  z-index: -1;',
-      '  pointer-events: none;',
-      '}',
-    ].join('\\n');
-    if (document.head) document.head.appendChild(s);
-    if (document.documentElement) document.documentElement.style.setProperty('background', fallback, 'important');
-    if (document.body) document.body.style.setProperty('background', 'transparent', 'important');
-  };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', applyBg);
-  } else {
-    applyBg();
-  }
-  // Retry a few times while the game bootstraps, without leaving a forever timer.
-  setTimeout(applyBg, 300);
-  setTimeout(applyBg, 1000);
-  setTimeout(applyBg, 2500);
-})();
-true;
-`;
+
 
 // Cloud save script - intercepts localStorage and syncs with server
 // This is a function because we need to inject the gameId and initial data
@@ -1892,9 +1843,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         }
       });
 
-      // Resume the current game (if not on welcome screen)
+      // When swiping to a new game, reset interaction state to show thumbnail
+      setIsGameDeckActive(false);
+      setInteractedGameId(null);
+
+      // Pause the current game initially - it will resume when user taps thumbnail
       if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
-        webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+        webViewRefs.current[currItem.id]?.injectJavaScript(PAUSE_SCRIPT);
       }
 
       prevIndexRef.current = currIdx;
@@ -2565,7 +2520,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   thirdPartyCookiesEnabled={false}
                   sharedCookiesEnabled={false}
                   injectedJavaScriptBeforeContentLoaded={GAME_AUDIO_GUARD_SCRIPT + EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT}
-                  injectedJavaScript={shouldUseWebViewBackdrop(item!.game!) ? createBlurBgScript(getThumbnailUrl(item!.game!), getFeedBackdropColor()) : undefined}
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
@@ -2592,22 +2546,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   javaScriptCanOpenWindowsAutomatically={false}
                   setSupportMultipleWindows={false}
                   onLoadEnd={async () => {
-                    // Inject blurred thumbnail bg after page fully loads (backup)
-                    if (shouldUseWebViewBackdrop(item!.game!)) {
-                      const thumbUrl = getThumbnailUrl(item!.game!);
-                      const fallback = getFeedBackdropColor();
-                      webViewRefs.current[item!.id]?.injectJavaScript(`
-                        document.documentElement.style.setProperty('background', '${fallback}', 'important');
-                        document.body.style.setProperty('background', 'transparent', 'important');
-                        if(!document.getElementById('_gt_blur_bg')){
-                          var s=document.createElement('style');s.id='_gt_blur_bg';
-                          s.textContent='body::before{content:"";position:fixed;top:-20px;left:-20px;right:-20px;bottom:-20px;background:url(${thumbUrl}) center/cover no-repeat;filter:blur(30px);-webkit-filter:blur(30px);opacity:0.5;z-index:-1;pointer-events:none;}';
-                          document.head.appendChild(s);
-                        }
-                        true;
-                      `);
-                    }
-
                     // Only animate the visible game's loading state. Preloaded
                     // neighbors should not run hidden loading animations.
                     if (position === 0) {
@@ -2667,20 +2605,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     pointerEvents={(item!.game!.id !== interactedGameId || position !== 0) ? 'auto' : 'none'}
                     onStartShouldSetResponder={() => (item!.game!.id !== interactedGameId || position !== 0)}
                     onResponderRelease={() => {
-                      if (position === 0 && item!.game!.id !== interactedGameId) {
-                        setInteractedGameId(item!.game!.id);
-                        setIsGameDeckActive(true);
+                      if (position === 0) {
+                        if (item!.game!.id === interactedGameId) {
+                          // Tapping thumbnail while game is playing - reset to show thumbnail
+                          setInteractedGameId(null);
+                          setIsGameDeckActive(false);
+                          // Pause the game
+                          webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
+                        } else {
+                          // Tapping thumbnail to start game
+                          setInteractedGameId(item!.game!.id);
+                          setIsGameDeckActive(true);
+                          // Resume the game
+                          webViewRefs.current[item!.id]?.injectJavaScript(RESUME_SCRIPT);
+                        }
                       }
                     }}
                   >
-                    {/* Blurred background matching Astrocade */}
-                    <Image 
-                      source={{ uri: getThumbnailUrl(item!.game) }} 
-                      style={[StyleSheet.absoluteFillObject, { width: '100%', height: '100%' }]} 
-                      blurRadius={40}
-                    />
-                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.2)' }]} pointerEvents="none" />
-                    
                     {/* The crisp thumbnail card floating on top */}
                     <View style={styles.thumbnailCardContainer}>
                       <View style={styles.thumbnailCardInner}>
@@ -2689,7 +2630,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           style={styles.thumbnailCardImage} 
                         />
                         <View style={styles.thumbnailCardPlayPill}>
-                          <Ionicons name="play" size={12} color="#fff" />
+                          <Ionicons 
+                            name={item!.game!.id === interactedGameId && position === 0 ? "refresh" : "play"} 
+                            size={12} 
+                            color="#fff" 
+                          />
                           <Text style={styles.thumbnailCardPlayText}>
                             {formatCount(item!.game.plays || 0)}
                           </Text>
@@ -3194,13 +3139,14 @@ const styles = StyleSheet.create({
   thumbnailCardContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: '78%',
-    maxWidth: 400,
+    width: '75%', // Narrower to match competitor
+    maxWidth: 360,
     zIndex: 10,
+    marginTop: 60, // Push down from center to match competitor positioning
   },
   thumbnailCardInner: {
     width: '100%',
-    aspectRatio: 0.8,
+    aspectRatio: 0.72, // Taller card like competitor
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#000',
