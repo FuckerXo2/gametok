@@ -630,6 +630,13 @@ export const ai = {
     }, 45000);
   },
 
+  refineConversation: async (prompt: string, conversationHistory: { role: 'ai' | 'user'; text: string }[]) => {
+    return request('/ai/refine-conversation', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, conversationHistory }),
+    }, 30000);
+  },
+
   dreamLabs: (
     prompt: string,
     attachments: any[] = [],

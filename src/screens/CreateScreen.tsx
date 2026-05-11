@@ -56,7 +56,7 @@ const GAMETOK_BG = require('../../assets/gametok_bg.png');
 // =============================================
 // TYPES
 // =============================================
-type DreamPhase = 'idle' | 'generating' | 'preview' | 'publish';
+type DreamPhase = 'idle' | 'refining' | 'generating' | 'preview' | 'publish';
 type StudioTab = 'create' | 'drafts';
 
 interface DraftItem {
@@ -65,6 +65,11 @@ interface DraftItem {
   prompt: string;
   thumbnail?: string;
   created_at: string;
+}
+
+interface ConversationMessage {
+  role: 'ai' | 'user';
+  text: string;
 }
 
 const DRAFT_GRADIENTS: [string, string][] = [
@@ -413,6 +418,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [studioBuildTick, setStudioBuildTick] = useState(0);
+
+  // Refinement conversation state
+  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
+  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [refinementInput, setRefinementInput] = useState('');
+  const conversationScrollRef = useRef<ScrollView>(null);
 
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
@@ -952,7 +963,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   };
 
-  const handleDreamComposerPress = () => {
+  const handleDreamComposerPress = async () => {
     const finalPrompt = prompt.trim();
     if (!finalPrompt) {
       setErrorMsg('Write a quick brief first, or tap Surprise me.');
@@ -961,7 +972,88 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
     setErrorMsg(null);
     Keyboard.dismiss();
-    requestAnimationFrame(() => handleDream(finalPrompt));
+    
+    // Start refinement conversation
+    setPhase('refining');
+    setConversation([]);
+    setIsAiThinking(true);
+    
+    try {
+      const res = await ai.refineConversation(finalPrompt, []) as any;
+      setIsAiThinking(false);
+      
+      if (res.success && res.message) {
+        setConversation([{ role: 'ai', text: res.message }]);
+        
+        // If AI is already done (prompt was detailed enough), go straight to building
+        if (res.isDone) {
+          setTimeout(() => handleDream(finalPrompt), 1000);
+        }
+      }
+    } catch (error) {
+      console.error('Refinement conversation failed:', error);
+      setIsAiThinking(false);
+      // Fall back to direct generation
+      handleDream(finalPrompt);
+    }
+  };
+
+  const handleRefinementMessage = async (userMessage: string) => {
+    if (!userMessage.trim()) return;
+    
+    // Add user message
+    const newConversation = [...conversation, { role: 'user' as const, text: userMessage }];
+    setConversation(newConversation);
+    setRefinementInput('');
+    setIsAiThinking(true);
+    
+    setTimeout(() => {
+      conversationScrollRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+    
+    try {
+      const res = await ai.refineConversation(prompt.trim(), newConversation) as any;
+      setIsAiThinking(false);
+      
+      if (res.success && res.message) {
+        setConversation(prev => [...prev, { role: 'ai', text: res.message }]);
+        
+        setTimeout(() => {
+          conversationScrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+        
+        // If conversation is done, show build button (handled in UI)
+      }
+    } catch (error) {
+      console.error('Refinement message failed:', error);
+      setIsAiThinking(false);
+    }
+  };
+
+  const handleStartBuilding = () => {
+    // Build enriched prompt with conversation context
+    let enrichedPrompt = prompt.trim();
+    
+    if (conversation.length > 0) {
+      enrichedPrompt += '\n\nAdditional context from conversation:';
+      conversation.forEach(msg => {
+        if (msg.role === 'user') {
+          enrichedPrompt += `\n- ${msg.text}`;
+        }
+      });
+    }
+    
+    handleDream(enrichedPrompt);
+  };
+
+  const handleSkipRefinement = () => {
+    handleDream(prompt.trim());
+  };
+
+  const handleBackFromRefinement = () => {
+    setPhase('idle');
+    setConversation([]);
+    setRefinementInput('');
   };
 
   const handleDeleteDraft = (draftId: string, title?: string) => {
@@ -2390,6 +2482,188 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         {renderSharedModals()}
         {exitModal}
       </KeyboardAvoidingView>
+    );
+  }
+
+  // ======================
+  // RENDER: REFINING
+  // ======================
+  if (phase === 'refining') {
+    // Check if we should show the build button
+    const shouldShowBuildButton = conversation.length >= 4 || // At least 2 exchanges
+                                   conversation[conversation.length - 1]?.text?.toLowerCase().includes('ready to build');
+    
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: '#000' }]}>
+        {/* Header */}
+        <View style={styles.headerV2}>
+          <View style={styles.headerV2Side}>
+            <Pressable style={styles.headerMenuBtn} onPress={handleBackFromRefinement}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </Pressable>
+          </View>
+          <View style={styles.headerV2Center} pointerEvents="none">
+            <Text style={styles.headerLogo}>Chat with AI</Text>
+          </View>
+          <View style={[styles.headerV2Side, styles.headerV2SideRight]}>
+            <Pressable onPress={handleSkipRefinement}>
+              <Text style={{ color: '#888', fontSize: 15, fontWeight: '600' }}>Skip</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Conversation */}
+        <ScrollView
+          ref={conversationScrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 20, paddingBottom: 140 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {conversation.map((msg, index) => (
+            <Animated.View
+              key={index}
+              entering={FadeInUp.delay(index * 100).duration(400)}
+              style={{
+                marginBottom: 16,
+                alignItems: msg.role === 'ai' ? 'flex-start' : 'flex-end'
+              }}
+            >
+              {msg.role === 'ai' && (
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', maxWidth: '85%' }}>
+                  <View style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: '#a855f7',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 8
+                  }}>
+                    <Ionicons name="sparkles" size={16} color="#FFF" />
+                  </View>
+                  <View style={{
+                    backgroundColor: '#1a1a1a',
+                    borderRadius: 16,
+                    padding: 14,
+                    borderWidth: 1,
+                    borderColor: '#333'
+                  }}>
+                    <Text style={{ color: '#FFF', fontSize: 15, lineHeight: 22 }}>{msg.text}</Text>
+                  </View>
+                </View>
+              )}
+              {msg.role === 'user' && (
+                <View style={{
+                  backgroundColor: '#a855f7',
+                  borderRadius: 16,
+                  padding: 14,
+                  maxWidth: '75%'
+                }}>
+                  <Text style={{ color: '#FFF', fontSize: 15, lineHeight: 22, fontWeight: '600' }}>{msg.text}</Text>
+                </View>
+              )}
+            </Animated.View>
+          ))}
+          
+          {isAiThinking && (
+            <Animated.View
+              entering={FadeInUp.duration(400)}
+              style={{ flexDirection: 'row', alignItems: 'flex-start', maxWidth: '85%' }}
+            >
+              <View style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: '#a855f7',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 8
+              }}>
+                <Ionicons name="sparkles" size={16} color="#FFF" />
+              </View>
+              <View style={{
+                backgroundColor: '#1a1a1a',
+                borderRadius: 16,
+                padding: 14,
+                borderWidth: 1,
+                borderColor: '#333',
+                flexDirection: 'row',
+                gap: 6
+              }}>
+                <ActivityIndicator size="small" color="#a855f7" />
+                <Text style={{ color: '#888', fontSize: 15 }}>Thinking...</Text>
+              </View>
+            </Animated.View>
+          )}
+        </ScrollView>
+
+        {/* Bottom Input / Build Button */}
+        <View style={{
+          position: 'absolute',
+          bottom: Math.max(insets.bottom, 20),
+          left: 20,
+          right: 20,
+          backgroundColor: '#0a0a0a',
+          borderRadius: 24,
+          padding: 16,
+          borderWidth: 1,
+          borderColor: '#222'
+        }}>
+          {shouldShowBuildButton ? (
+            <Pressable
+              onPress={handleStartBuilding}
+              style={({ pressed }) => ({
+                backgroundColor: pressed ? '#9333ea' : '#a855f7',
+                paddingVertical: 16,
+                borderRadius: 16,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 8
+              })}
+            >
+              <Ionicons name="hammer" size={20} color="#FFF" />
+              <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '700' }}>Start Building</Text>
+            </Pressable>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TextInput
+                value={refinementInput}
+                onChangeText={setRefinementInput}
+                placeholder="Type your answer..."
+                placeholderTextColor="#666"
+                style={{
+                  flex: 1,
+                  color: '#FFF',
+                  fontSize: 15,
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  backgroundColor: '#1a1a1a',
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#333'
+                }}
+                onSubmitEditing={() => handleRefinementMessage(refinementInput)}
+                editable={!isAiThinking}
+              />
+              <Pressable
+                onPress={() => handleRefinementMessage(refinementInput)}
+                disabled={!refinementInput.trim() || isAiThinking}
+                style={({ pressed }) => ({
+                  backgroundColor: refinementInput.trim() && !isAiThinking ? (pressed ? '#9333ea' : '#a855f7') : '#2a2a2a',
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                })}
+              >
+                <Ionicons name="send" size={18} color={refinementInput.trim() && !isAiThinking ? '#FFF' : '#666'} />
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </View>
     );
   }
 
