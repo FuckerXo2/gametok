@@ -2911,12 +2911,25 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
                       try {
                         const res = await ai.getTemplate(tpl.id) as any;
                         if (res?.template?.html_payload) {
-                          setActiveHtml(res.template.html_payload);
-                          setActiveDraftId(tpl.id);
-                          setGameTitle(res.template.title || 'Untitled');
-                          setPhase('preview');
+                          // Templates need to be saved as a new draft before publishing
+                          // because they have sekai_ IDs which aren't valid UUIDs
+                          const saveRes = await ai.saveDraft({
+                            html: res.template.html_payload,
+                            title: res.template.title || 'Untitled',
+                            prompt: `Template: ${res.template.title || 'Untitled'}`,
+                          });
+                          
+                          if (saveRes?.draftId) {
+                            setActiveHtml(res.template.html_payload);
+                            setActiveDraftId(saveRes.draftId);
+                            setGameTitle(res.template.title || 'Untitled');
+                            setPhase('preview');
+                          } else {
+                            Alert.alert('Error', 'Failed to create draft from template');
+                          }
                         }
                       } catch (e) {
+                        console.error('Template load error:', e);
                         Alert.alert('Error', 'Failed to load template');
                       }
                     }}
