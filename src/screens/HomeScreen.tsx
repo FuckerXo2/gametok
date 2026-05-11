@@ -2268,7 +2268,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
     if (swipeUp && idx < total - 1) {
       animateToIndex(idx + 1);
-    } else if (swipeDown && idx > -1) {
+    } else if (swipeDown && idx > 0) {
       animateToIndex(idx - 1);
     } else {
       Animated.spring(translateY, {
@@ -2331,7 +2331,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
         if (swipeUp && idx < total - 1) {
           animateToIndex(idx + 1);
-        } else if (swipeDown && idx > -1) {
+        } else if (swipeDown && idx > 0) {
           animateToIndex(idx - 1);
         } else {
           Animated.spring(translateY, {
@@ -2425,7 +2425,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
         if (swipeUp && idx < total - 1) {
           animateToIndex(idx + 1);
-        } else if (swipeDown && idx > -1) {
+        } else if (swipeDown && idx > 0) {
           animateToIndex(idx - 1);
         } else {
           Animated.spring(translateY, {
@@ -2631,7 +2631,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         />
                         <View style={styles.thumbnailCardPlayPill}>
                           <Ionicons 
-                            name={item!.game!.id === interactedGameId && position === 0 ? "refresh" : "play"} 
+                            name={item!.game!.id === interactedGameId && position === 0 ? "reload" : "play"} 
                             size={12} 
                             color="#fff" 
                           />
