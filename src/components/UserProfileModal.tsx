@@ -90,8 +90,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const { user: currentUser } = useAuth();
-  const [profileStack, setProfileStack] = useState<any[]>(user ? [user] : []);
-  const activeUser = profileStack[profileStack.length - 1] || user;
+  const [profileStack, setProfileStack] = useState<any[]>([]);
+  const activeUser = profileStack.length > 0 ? profileStack[profileStack.length - 1] : user;
   const [isAdded, setIsAdded] = useState(activeUser?.isFriend ?? false);
   const [isMutual, setIsMutual] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -112,9 +112,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
   const isCurrentMe = currentUser?.id === activeUser?.id;
 
+  // Reset stack when modal opens with new user
   React.useEffect(() => {
     if (visible && user) {
       setProfileStack([user]);
+      setShowChat(false);
+      setFollowModalConfig({ visible: false, tab: 'followers' });
+    } else if (!visible) {
+      // Clear stack when modal closes
+      setProfileStack([]);
     }
   }, [visible, user?.id]);
 
@@ -434,11 +440,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               <TouchableOpacity
                 style={[styles.topIconButton, { backgroundColor: colors.surface }]}
                 onPress={() => {
+                  // If we have nested profiles, go back one level
                   if (profileStack.length > 1) {
                     setProfileStack(prev => prev.slice(0, -1));
-                    return;
+                  } else {
+                    // Otherwise close the modal completely
+                    onClose();
                   }
-                  onClose();
                 }}
                 activeOpacity={0.85}
               >

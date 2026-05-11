@@ -88,7 +88,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     tab: 'followers',
   });
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
-  const [reopenFollowModal, setReopenFollowModal] = useState<'followers' | 'following' | null>(null);
   const lastFetchRef = useRef<number>(0);
 
   const username = user?.username || 'guest';
@@ -280,8 +279,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         username={username}
         initialTab={followModalConfig.tab}
         onUserPress={(profileUser) => {
-          setReopenFollowModal(followModalConfig.tab);
-          setFollowModalConfig((prev) => ({ ...prev, visible: false }));
+          setFollowModalConfig({ ...followModalConfig, visible: false });
           setSelectedProfileUser({ ...profileUser, isFriend: false });
         }}
       />
@@ -290,10 +288,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         visible={!!selectedProfileUser}
         onClose={() => {
           setSelectedProfileUser(null);
-          if (reopenFollowModal) {
-            setFollowModalConfig({ visible: true, tab: reopenFollowModal });
-            setReopenFollowModal(null);
-          }
           fetchData(true);
         }}
         user={selectedProfileUser}
