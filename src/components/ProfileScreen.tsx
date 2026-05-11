@@ -448,12 +448,14 @@ const statColStyles = StyleSheet.create({
   col: {
     flex: 1,
     alignItems: 'center',
+    minWidth: 0, // Prevent flex overflow
   },
   value: {
     color: TEXT,
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: -0.6,
+    minHeight: 28, // Fixed height to prevent layout shift
   },
   label: {
     color: TEXT_MUTED,
@@ -461,6 +463,7 @@ const statColStyles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 4,
     letterSpacing: 0.1,
+    minHeight: 16, // Fixed height to prevent layout shift
   },
 });
 
@@ -764,12 +767,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 16,
     paddingHorizontal: 16,
+    minHeight: 36, // Fixed height to prevent layout shift
   },
   statsRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 18,
     marginTop: 10,
+    minHeight: 70, // Fixed height to prevent layout shift
   },
   actionRow: {
     flexDirection: 'row',
