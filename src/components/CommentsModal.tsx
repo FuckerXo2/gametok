@@ -11,8 +11,11 @@ import {
   Platform,
   ActivityIndicator,
   Keyboard,
+  Modal,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
-import { SlideRightModal } from './SlideRightModal';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,8 +64,35 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const inputRef = useRef<TextInput>(null);
   const gifSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const panY = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          panY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.5) {
+          onClose();
+        } else {
+          Animated.spring(panY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
   useEffect(() => {
     if (visible) {
+      panY.setValue(0);
       loadComments();
     }
   }, [visible, gameId]);
@@ -203,16 +233,20 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   }, [visible]);
 
   return (
-    <SlideRightModal visible={visible} onClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
 
-        <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
+        <View style={styles.sheetWrapper} pointerEvents="box-none">
+          <Animated.View style={[styles.sheet, { backgroundColor: colors.surface, transform: [{ translateY: panY }] }]}>
+            <View style={styles.sheetHandleWrap} {...panResponder.panHandlers}>
+            <View style={styles.sheetHandle} />
+          </View>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={styles.header} {...panResponder.panHandlers}>
             <TouchableOpacity onPress={onClose} style={styles.closeBtnHeader}>
               <Ionicons name="chevron-back" size={28} color={colors.text} />
             </TouchableOpacity>
@@ -347,32 +381,48 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
               </Text>
             )}
           </View>
-        </View>
+        </Animated.View>
+      </View>
       </KeyboardAvoidingView>
-    </SlideRightModal>
+    </Modal>
   );
 };
 
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
+  sheetWrapper: {
+    flex: 1,
+    paddingTop: SCREEN_HEIGHT * 0.35,
+  },
   sheet: {
+    flex: 1,
     backgroundColor: '#1C1C1E',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    maxHeight: '88%',
-    minHeight: 430,
+  },
+  sheetHandleWrap: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#555',
   },
   header: {
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingBottom: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: '#3A3A3C',
   },

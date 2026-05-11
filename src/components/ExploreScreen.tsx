@@ -238,14 +238,13 @@ export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen } = useAuthScreen();
-  const { setActiveTab } = useNavigation();
+  const { setActiveTab, searchModalVisible, setSearchModalVisible } = useNavigation();
 
   const [activeTab, setActiveTabState] = useState<ExploreTab>('For You');
   const [allGames, setAllGames] = useState<ExploreGame[]>([]);
   const [creators, setCreators] = useState<ExploreCreator[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ExploreGame[]>([]);
   const [searchCreators, setSearchCreators] = useState<ExploreCreator[]>([]);
@@ -449,7 +448,7 @@ export const ExploreScreen: React.FC = () => {
         {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
           <Text style={styles.topLogo}>gametok</Text>
-          <Pressable style={styles.topIconBtn} onPress={() => setShowSearch(true)} hitSlop={6}>
+          <Pressable style={styles.topIconBtn} onPress={() => setSearchModalVisible(true)} hitSlop={6}>
             <Ionicons name="search" size={19} color={TEXT} />
           </Pressable>
         </View>
@@ -770,10 +769,10 @@ export const ExploreScreen: React.FC = () => {
       </ScrollView>
 
       {/* Search modal */}
-      <Modal visible={showSearch} animationType="slide" onRequestClose={() => setShowSearch(false)}>
+      <Modal visible={searchModalVisible} animationType="slide" onRequestClose={() => setSearchModalVisible(false)}>
         <View style={[styles.searchModal, { paddingTop: insets.top + 8 }]}>
           <View style={styles.searchHeader}>
-            <Pressable onPress={() => { setShowSearch(false); setSearchQuery(''); }} hitSlop={8}>
+            <Pressable onPress={() => { setSearchModalVisible(false); setSearchQuery(''); }} hitSlop={8}>
               <Ionicons name="chevron-back" size={22} color={TEXT} />
             </Pressable>
             <View style={styles.searchInputWrap}>
@@ -838,7 +837,7 @@ export const ExploreScreen: React.FC = () => {
                           key={`top-${c.id}`}
                           style={styles.topCreatorRow}
                           onPress={() => {
-                            setShowSearch(false);
+                            setSearchModalVisible(false);
                             setSelectedCreator({
                               id: c.id,
                               username: c.username,
@@ -873,7 +872,7 @@ export const ExploreScreen: React.FC = () => {
                           key={`top-game-${g.id}`}
                           style={styles.searchGameCard}
                           onPress={() => {
-                            setShowSearch(false);
+                            setSearchModalVisible(false);
                             openGame(g.id);
                           }}
                         >
@@ -917,7 +916,7 @@ export const ExploreScreen: React.FC = () => {
                         key={c.id}
                         style={styles.searchCreatorRow}
                         onPress={() => {
-                          setShowSearch(false);
+                          setSearchModalVisible(false);
                           setSelectedCreator({
                             id: c.id,
                             username: c.username,
@@ -947,7 +946,7 @@ export const ExploreScreen: React.FC = () => {
                           key={g.id}
                           style={styles.searchGameCard}
                           onPress={() => {
-                            setShowSearch(false);
+                            setSearchModalVisible(false);
                             openGame(g.id);
                           }}
                         >

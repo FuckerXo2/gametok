@@ -59,12 +59,32 @@ interface NavigationContextType {
   setActiveTab: (tab: TabName) => void;
   pendingChatUserId: string | null;
   setPendingChatUserId: (userId: string | null) => void;
+  searchModalVisible: boolean;
+  setSearchModalVisible: (visible: boolean) => void;
+  isGameDeckActive: boolean;
+  setIsGameDeckActive: (active: boolean) => void;
+  isHudHidden: boolean;
+  setIsHudHidden: (hidden: boolean) => void;
+  gameRestartTrigger: number;
+  triggerGameRestart: () => void;
+  gameSkipCounter: { direction: 'next' | 'prev', count: number };
+  triggerGameSkip: (direction: 'next' | 'prev') => void;
 }
 const NavigationContext = createContext<NavigationContextType>({ 
   activeTab: 'home', 
   setActiveTab: () => {}, 
   pendingChatUserId: null,
-  setPendingChatUserId: () => {}
+  setPendingChatUserId: () => {},
+  searchModalVisible: false,
+  setSearchModalVisible: () => {},
+  isGameDeckActive: false,
+  setIsGameDeckActive: () => {},
+  isHudHidden: false,
+  setIsHudHidden: () => {},
+  gameRestartTrigger: 0,
+  triggerGameRestart: () => {},
+  gameSkipCounter: { direction: 'next', count: 0 },
+  triggerGameSkip: () => {}
 });
 export const useNavigation = () => useContext(NavigationContext);
 
@@ -75,6 +95,11 @@ const MainApp = () => {
   const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [isGameDeckActive, setIsGameDeckActive] = useState(true);
+  const [isHudHidden, setIsHudHidden] = useState(false);
+  const [gameRestartTrigger, setGameRestartTrigger] = useState(0);
+  const [gameSkipCounter, setGameSkipCounter] = useState<{ direction: 'next' | 'prev', count: number }>({ direction: 'next', count: 0 });
   const { isDark, colors } = useTheme();
 
   const handleTabPress = (tab: TabName) => {
@@ -89,11 +114,41 @@ const MainApp = () => {
     }
     
     setActiveTab(tab);
+    // Reset game deck when switching tabs manually
+    if (tab === 'home') {
+      setIsGameDeckActive(true);
+    } else {
+      setIsGameDeckActive(false);
+      setIsHudHidden(false); // Reset HUD when leaving home
+    }
+  };
+
+  const triggerGameRestart = () => {
+    setGameRestartTrigger(prev => prev + 1);
+  };
+
+  const triggerGameSkip = (direction: 'next' | 'prev') => {
+    setGameSkipCounter(prev => ({ direction, count: prev.count + 1 }));
   };
 
   // Keep all screens mounted, just hide/show them
   return (
-    <NavigationContext.Provider value={{ activeTab, setActiveTab, pendingChatUserId, setPendingChatUserId }}>
+    <NavigationContext.Provider value={{ 
+      activeTab, 
+      setActiveTab, 
+      pendingChatUserId, 
+      setPendingChatUserId, 
+      searchModalVisible, 
+      setSearchModalVisible,
+      isGameDeckActive,
+      setIsGameDeckActive,
+      isHudHidden,
+      setIsHudHidden,
+      gameRestartTrigger,
+      triggerGameRestart,
+      gameSkipCounter,
+      triggerGameSkip
+    }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         {/* Home - always mounted */}
@@ -195,12 +250,7 @@ const AppContent = () => {
     });
   };
 
-  // Hide auth screen when user successfully logs in
-  useEffect(() => {
-    if (isAuthenticated && showAuth) {
-      setShowAuth(false);
-    }
-  }, [isAuthenticated]);
+  // Removed automatic hiding of auth screen so OnboardingFlow can manage its own lifecycle
 
   // Re-check onboarding when user logs out
   useEffect(() => {

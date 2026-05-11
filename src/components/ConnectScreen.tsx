@@ -1474,7 +1474,7 @@ const connectV2Styles = StyleSheet.create({
 // V2 Connect screen — pixel-faithful to mockups
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ConnectFilter = 'following' | 'foryou' | 'friends';
+type ConnectFilter = 'foryou';
 
 const CONNECT_PURPLE = '#a855f7';
 const CONNECT_BG = '#000000';
@@ -1575,12 +1575,7 @@ export const ConnectScreen: React.FC = () => {
     return s === 'online' || s === 'in-game';
   });
   const liveFriend = following.find((f) => presenceMap.get(f.id) === 'in-game');
-  const peopleForStories =
-    filter === 'following'
-      ? following
-      : filter === 'friends'
-      ? following.filter((f) => allOnline.find((o) => o.id === f.id))
-      : (following.length > 0 ? following : recommended);
+  const peopleForStories = following.length > 0 ? following : recommended;
 
   return (
     <View style={connectV3Styles.root}>
@@ -1617,27 +1612,7 @@ export const ConnectScreen: React.FC = () => {
           </Pressable>
         </View>
 
-        {/* Filter pills */}
-        <View style={connectV3Styles.filterRow}>
-          {([
-            { id: 'following', label: 'Following' },
-            { id: 'foryou', label: 'For You' },
-            { id: 'friends', label: 'Friends' },
-          ] as { id: ConnectFilter; label: string }[]).map((f) => {
-            const active = filter === f.id;
-            return (
-              <Pressable
-                key={f.id}
-                onPress={() => setFilter(f.id)}
-                style={[connectV3Styles.filterPill, active && connectV3Styles.filterPillActive]}
-              >
-                <Text style={[connectV3Styles.filterText, active && connectV3Styles.filterTextActive]}>
-                  {f.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+
 
         {/* Stories row */}
         <ScrollView

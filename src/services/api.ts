@@ -619,6 +619,10 @@ export const multiplayer = {
 
 // // DreamStream AI Engine API
 export const ai = {
+  cancelDreamJob: async (jobId: string) => {
+    return request(`/ai/dream/cancel/${jobId}`, { method: 'POST' });
+  },
+
   narrativeChat: async (messages: { role: 'ai' | 'user'; text: string }[]) => {
     return request('/ai/narrative/chat', {
       method: 'POST',
@@ -632,6 +636,15 @@ export const ai = {
     options?: { onJobStarted?: (jobId: string) => void },
   ) => {
     const controller = new AbortController();
+    let remoteJobId: string | null = null;
+
+    const cancelRemoteJob = () => {
+      controller.abort();
+      if (remoteJobId) {
+        request(`/ai/dream/cancel/${remoteJobId}`, { method: 'POST' })
+          .catch((err: any) => console.warn('[DreamLabs] Remote cancel failed:', err?.message || err));
+      }
+    };
     
     const promise = new Promise(async (resolve, reject) => {
       try {
@@ -647,6 +660,7 @@ export const ai = {
         }
 
         const jobId = res.jobId;
+        remoteJobId = jobId || null;
         if (jobId) {
           options?.onJobStarted?.(jobId);
         }
@@ -668,6 +682,9 @@ export const ai = {
             } else if (statusRes.status === 'error') {
               clearInterval(interval);
               reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
             }
           } catch (pollingErr: any) {
             console.warn('[DreamLabs] Polling blip (ignoring):', pollingErr.message);
@@ -681,7 +698,7 @@ export const ai = {
       }
     });
 
-    return { promise, cancel: () => controller.abort() };
+    return { promise, cancel: () => controller.abort(), cancelRemote: cancelRemoteJob };
   },
   dream: (
     prompt: string,
@@ -689,6 +706,15 @@ export const ai = {
     options?: { onJobStarted?: (jobId: string) => void },
   ) => {
     const controller = new AbortController();
+    let remoteJobId: string | null = null;
+
+    const cancelRemoteJob = () => {
+      controller.abort();
+      if (remoteJobId) {
+        request(`/ai/dream/cancel/${remoteJobId}`, { method: 'POST' })
+          .catch((err: any) => console.warn('[DreamStream] Remote cancel failed:', err?.message || err));
+      }
+    };
     
     const promise = new Promise(async (resolve, reject) => {
       try {
@@ -706,6 +732,7 @@ export const ai = {
         }
 
         const jobId = res.jobId;
+        remoteJobId = jobId || null;
         if (jobId) {
           options?.onJobStarted?.(jobId);
         }
@@ -728,6 +755,9 @@ export const ai = {
             } else if (statusRes.status === 'error') {
               clearInterval(interval);
               reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
             } else {
               // Status is 'pending', just keep waiting
               console.log(`[DreamStream] Job ${jobId} is still pending...`);
@@ -744,7 +774,7 @@ export const ai = {
       }
     });
 
-    return { promise, cancel: () => controller.abort() };
+    return { promise, cancel: () => controller.abort(), cancelRemote: cancelRemoteJob };
   },
   resumeDreamJob: (jobId: string) => {
     const controller = new AbortController();
@@ -759,6 +789,10 @@ export const ai = {
           }
           if (statusRes.status === 'error') {
             reject(new Error(statusRes.error || 'Unknown AI server error'));
+            return true;
+          }
+          if (statusRes.status === 'canceled') {
+            reject(new Error(statusRes.error || 'Generation cancelled'));
             return true;
           }
           return false;
@@ -826,6 +860,9 @@ export const ai = {
             } else if (statusRes.status === 'error') {
               clearInterval(interval);
               reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
             }
           } catch (pollingErr: any) {
             console.warn('[DreamStream] Polling blip (ignoring):', pollingErr.message);
@@ -855,8 +892,8 @@ export const ai = {
   deleteDraft: async (draftId: string) => {
     return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
   },
-  publish: async (draftId: string) => {
-    return request(`/ai/publish/${draftId}`, { method: 'POST' });
+  publish: async (draftId: string, title?: string, privacy?: string) => {
+    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy }) });
   },
   reclassifyPublished: async (draftId?: string, limit = 20) => {
     return request('/ai/reclassify-published', {

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/img_game" android:layout_width="120.0dp" android:layout_height="152.0dp" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:roundedCornerRadius="12.0dp" />
-    <mozat.mchatcore.ui.activity.lobah.view.StrokeTextView android:textSize="13.0sp" android:ellipsize="end" android:gravity="center" android:id="@id/tv_game_name" android:layout_width="105.0dp" android:layout_height="wrap_content" android:layout_marginBottom="10.0dp" android:lines="2" android:fontFamily="@font/font_bold" android:paddingStart="8.0dp" android:paddingEnd="8.0dp" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
-</androidx.constraintlayout.widget.ConstraintLayout>

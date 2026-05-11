@@ -43,7 +43,7 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
-import { Avatar } from './Avatar';
+import { Avatar, DicebearConfig, makeDicebearAvatarUri, DICEBEAR_BACKGROUNDS, DICEBEAR_HAIR_COLORS, DICEBEAR_EYE_OPTIONS, DICEBEAR_MOUTH_OPTIONS } from './Avatar';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -51,9 +51,22 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const safeWidth = SCREEN_WIDTH || 375;
 const safeHeight = SCREEN_HEIGHT || 812;
 
-type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'profile';
+const GOOGLE_IOS_CLIENT_ID = '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com';
+const GOOGLE_IOS_WEB_CLIENT_ID = '690098564284-9j4fj28fiqimjg8c20mn2vtjg6b70qr7.apps.googleusercontent.com';
+const GOOGLE_ANDROID_WEB_CLIENT_ID = '516560435127-l6db4akjqei5q57j764kgu3aoaedu45l.apps.googleusercontent.com';
 
-const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'profile'];
+type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'how_heard' | 'genres' | 'avatar' | 'profile';
+
+const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'how_heard', 'genres', 'avatar', 'profile'];
+
+const HOW_HEARD_OPTIONS = [
+  { id: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
+  { id: 'instagram', label: 'Instagram / Reels', icon: 'logo-instagram' },
+  { id: 'youtube', label: 'YouTube', icon: 'logo-youtube' },
+  { id: 'twitter', label: 'X (Twitter)', icon: 'logo-twitter' },
+  { id: 'friend', label: 'Friend / Word of Mouth', icon: 'people-outline' },
+  { id: 'other', label: 'Other', icon: 'sparkles-outline' },
+];
 
 const GAME_GENRES = [
   { id: 'pvp', name: 'PvP', icon: 'flash-outline' as const, color: '#FF4757' },
@@ -384,6 +397,15 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   // Genre selection
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
 
+  // How Heard
+  const [selectedHowHeard, setSelectedHowHeard] = useState<string | null>(null);
+
+  // Avatar Builder
+  const [avatarConfig, setAvatarConfig] = useState<DicebearConfig>({
+    seed: 'gametok',
+    bg: DICEBEAR_BACKGROUNDS[0],
+  });
+
   // Credentials
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -403,10 +425,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       setIsAppleAvailable(available);
     };
     checkApple();
-    GoogleSignin.configure({
-      iosClientId: '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com',
-      webClientId: '690098564284-9j4fj28fiqimjg8c20mn2vtjg6b70qr7.apps.googleusercontent.com',
-    });
+
+    const googleConfig: Parameters<typeof GoogleSignin.configure>[0] = {
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
+      webClientId: Platform.OS === 'android' ? GOOGLE_ANDROID_WEB_CLIENT_ID : GOOGLE_IOS_WEB_CLIENT_ID,
+    };
+
+    GoogleSignin.configure(googleConfig);
   }, []);
 
   // ── Navigation ──
@@ -473,6 +498,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       console.error('[GoogleSignIn] Error:', e.code, e.message, JSON.stringify(e));
       if (e.code === statusCodes.SIGN_IN_CANCELLED) { /* cancelled */ }
       else if (e.code === statusCodes.IN_PROGRESS) { setError('Sign-in already in progress'); }
+      else if (e.code === '10') {
+        setError('Google Sign-In is not configured for this Android build yet.');
+      }
       else { setError(`Google Sign-In failed: ${e.code || e.message}`); }
     } finally {
       setLoading(false);
@@ -505,7 +533,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         await signup(username.trim(), password, username.trim(), email.trim());
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      goTo('profile');
+      setAvatarConfig(prev => ({ ...prev, seed: username.trim() }));
+      goTo('how_heard');
     } catch (e: any) {
       setError(e.message || 'Failed to set username');
     } finally {
@@ -514,12 +543,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   };
 
   const handleProfileContinue = async () => {
-    if (user && (displayName || bio || avatar)) {
+    if (user) {
       try {
         await users.update(user.id, {
           displayName: displayName || undefined,
           bio: bio || undefined,
-          avatar: avatar || undefined,
+          avatar: makeDicebearAvatarUri(avatarConfig),
         });
         await refreshUser();
       } catch (e) { console.error('Failed to update profile:', e); }
@@ -633,7 +662,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   // ═══════════════════════════════════════
   const renderGenres = () => (
     <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('welcome')}>
+      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('how_heard')}>
         <Ionicons name="arrow-back" size={24} color={colors.text} />
       </TouchableOpacity>
 
@@ -663,13 +692,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
         <AnimatedButton
-          onPress={() => goTo('credentials')}
-          disabled={false}
-          colors={['#a855f7', '#ec4899']}
+          onPress={() => goTo('avatar')}
+          disabled={selectedGenres.length === 0}
+          colors={selectedGenres.length > 0 ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
           label="Next"
           delay={400}
         />
-        <TouchableOpacity onPress={() => goTo('credentials')}>
+        <TouchableOpacity onPress={() => goTo('avatar')}>
           <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip</Text>
         </TouchableOpacity>
       </View>
@@ -817,6 +846,128 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   );
 
   // ═══════════════════════════════════════
+  // HOW HEARD SCREEN
+  // ═══════════════════════════════════════
+  const renderHowHeard = () => (
+    <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
+      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('username')}>
+        <Ionicons name="arrow-back" size={24} color={colors.text} />
+      </TouchableOpacity>
+
+      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
+
+      <View style={styles.formContainer}>
+        <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
+          How did you hear about us?
+        </Animated.Text>
+        <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+          Help us understand where our players come from.
+        </Animated.Text>
+
+        <View style={styles.howHeardList}>
+          {HOW_HEARD_OPTIONS.map((option, idx) => {
+            const isSelected = selectedHowHeard === option.id;
+            return (
+              <Animated.View key={option.id} entering={FadeInDown.delay(100 + idx * 50).springify()}>
+                <TouchableOpacity
+                  style={[
+                    styles.howHeardOption,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    isSelected && { borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.1)' }
+                  ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedHowHeard(option.id);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={option.icon as any} size={24} color={isSelected ? '#a855f7' : colors.text} style={{ marginRight: 16 }} />
+                  <Text style={[styles.howHeardText, { color: isSelected ? '#a855f7' : colors.text }]}>{option.label}</Text>
+                  {isSelected && (
+                    <Ionicons name="checkmark-circle" size={24} color="#a855f7" style={{ marginLeft: 'auto' }} />
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
+        <AnimatedButton
+          onPress={() => goTo('genres')}
+          disabled={!selectedHowHeard}
+          colors={selectedHowHeard ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
+          label="Next"
+          delay={400}
+        />
+      </View>
+    </View>
+  );
+
+  // ═══════════════════════════════════════
+  // AVATAR CREATOR SCREEN
+  // ═══════════════════════════════════════
+  const renderAvatar = () => {
+    const rerollAvatar = () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setAvatarConfig(prev => ({
+        ...prev,
+        bg: DICEBEAR_BACKGROUNDS[Math.floor(Math.random() * DICEBEAR_BACKGROUNDS.length)] || prev.bg,
+        hairColor: DICEBEAR_HAIR_COLORS[Math.floor(Math.random() * DICEBEAR_HAIR_COLORS.length)] || prev.hairColor,
+        eyes: DICEBEAR_EYE_OPTIONS[Math.floor(Math.random() * DICEBEAR_EYE_OPTIONS.length)] || prev.eyes,
+        mouth: DICEBEAR_MOUTH_OPTIONS[Math.floor(Math.random() * DICEBEAR_MOUTH_OPTIONS.length)] || prev.mouth,
+      }));
+    };
+
+    return (
+      <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
+        <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('genres')}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+
+        <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
+
+        <View style={[styles.formContainer, { alignItems: 'center' }]}>
+          <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text, textAlign: 'center' }]}>
+            Choose your Avatar
+          </Animated.Text>
+          <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>
+            This is how others will see you in GameTok.
+          </Animated.Text>
+
+          <Animated.View entering={ZoomIn.delay(300).springify()} style={{ marginVertical: 40 }}>
+            <View style={[styles.avatarPreviewRing, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <Avatar uri={makeDicebearAvatarUri(avatarConfig)} userId={displayName || username || 'onboarding'} size={180} />
+            </View>
+          </Animated.View>
+
+          <Animated.View entering={FadeInUp.delay(400).springify()}>
+            <TouchableOpacity
+              style={[styles.rerollBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={rerollAvatar}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="dice-outline" size={22} color={colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.rerollBtnText, { color: colors.primary }]}>Randomize Look</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+
+        <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24, width: '100%' }]}>
+          <AnimatedButton
+            onPress={() => goTo('profile')}
+            disabled={false}
+            colors={['#a855f7', '#ec4899']}
+            label="Looks good!"
+            delay={500}
+          />
+        </View>
+      </View>
+    );
+  };
+
+  // ═══════════════════════════════════════
   // PROFILE SCREEN
   // ═══════════════════════════════════════
   const renderProfile = () => (
@@ -833,7 +984,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
         <Animated.View entering={ZoomIn.delay(300).springify()}>
           <View style={styles.avatarPicker}>
-            <Avatar uri={avatar} userId={displayName || username || 'onboarding'} size={120} />
+            <Avatar uri={makeDicebearAvatarUri(avatarConfig)} userId={displayName || username || 'onboarding'} size={120} />
           </View>
         </Animated.View>
 
@@ -885,6 +1036,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       {step === 'welcome' && renderWelcome()}
       {step === 'credentials' && renderCredentials()}
       {step === 'username' && renderUsername()}
+      {step === 'how_heard' && renderHowHeard()}
+      {step === 'genres' && renderGenres()}
+      {step === 'avatar' && renderAvatar()}
       {step === 'profile' && renderProfile()}
     </View>
   );
@@ -992,6 +1146,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 24, height: 48, marginBottom: 12,
   },
   googleButtonText: { color: '#333', fontSize: 15, fontWeight: '600' },
+
+  // How Heard
+  howHeardList: { marginTop: 16 },
+  howHeardOption: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
+  howHeardText: { fontSize: 16, fontWeight: '500' },
+
+  // Avatar Setup
+  avatarPreviewRing: { padding: 10, borderRadius: 100, borderWidth: 2 },
+  rerollBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 24, borderWidth: 1 },
+  rerollBtnText: { fontSize: 16, fontWeight: '600' },
 });
 
 export default OnboardingFlow;

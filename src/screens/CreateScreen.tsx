@@ -1425,7 +1425,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const handleCancel = async () => {
     detachPendingDreamRef.current = false;
+    const jobIdToCancel = pendingJobId;
     stopLocalDreamPolling();
+    if (jobIdToCancel) {
+      try {
+        await ai.cancelDreamJob(jobIdToCancel);
+      } catch (error: any) {
+        console.warn('[DreamStream] Backend cancel failed:', error?.message || error);
+      }
+    }
     await clearPendingDreamJob();
     setPhase('idle');
   };
@@ -1645,17 +1653,33 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     if (action === 'closeApp') onClose();
   };
 
+  const [isPublishing, setIsPublishing] = useState(false);
+
   const handlePublish = async () => {
-    if (!activeDraftId) return;
+    if (!activeDraftId) {
+      Alert.alert('Error', 'No draft to publish. Please create a game first.');
+      return;
+    }
+    if (!gameTitle.trim()) {
+      Alert.alert('Missing Name', 'Please give your game a name before posting.');
+      return;
+    }
+    setIsPublishing(true);
     try {
-      const res = await ai.publish(activeDraftId);
+      const res = await ai.publish(activeDraftId, gameTitle.trim(), privacySetting);
       if (res.success) {
         console.log('✅ LIVE! Game pushed to Feed:', res.gameId);
-        handleRegenerate();
-        onClose();
+        Alert.alert('🎉 Game Posted!', 'Your game is now live on GameTOK!', [
+          { text: 'Let\'s Go', onPress: () => { handleRegenerate(); onClose(); } }
+        ]);
+      } else {
+        Alert.alert('Publish Failed', res.error || 'Something went wrong. Please try again.');
       }
     } catch (e: any) {
-      console.error(e?.message || e);
+      console.error('Publish error:', e?.message || e);
+      Alert.alert('Publish Failed', e?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -2400,10 +2424,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
           {/* Post Game Button */}
           <Pressable 
-            style={({ pressed }) => [{ backgroundColor: colors.primary, paddingVertical: 18, borderRadius: 30, alignItems: 'center', shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+            style={({ pressed }) => [{ backgroundColor: isPublishing ? '#666' : colors.primary, paddingVertical: 18, borderRadius: 30, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10, shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }, pressed && !isPublishing && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
             onPress={handlePublish}
+            disabled={isPublishing}
           >
-            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>Post Game</Text>
+            {isPublishing && <ActivityIndicator size="small" color="#FFF" />}
+            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>{isPublishing ? 'Posting...' : 'Post Game'}</Text>
           </Pressable>
         </ScrollView>
       </View>

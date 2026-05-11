@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Pressable, Text } from 'react-native';
+import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { useNavigation } from '../../App';
 import { Avatar } from './Avatar';
 import Animated, {
   useSharedValue,
@@ -134,6 +135,7 @@ const CreateButton = ({ onPress }: { onPress: () => void }) => {
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { isGameDeckActive, setIsGameDeckActive, isHudHidden, setIsHudHidden, triggerGameRestart, triggerGameSkip } = useNavigation();
 
   const left: TabSpec[] = [
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
@@ -145,6 +147,85 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
   ];
 
+  // GAME DECK RENDER
+  if (activeTab === 'home' && isGameDeckActive) {
+    return (
+      <View
+        style={[
+          styles.container,
+          styles.gameDeckContainer,
+          { paddingBottom: insets.bottom || 8 },
+        ]}
+      >
+        {/* Left Anchor: Home Button acts as the 'More/Menu' button to show standard tabs */}
+        <Pressable 
+          style={[styles.deckSideBtn, noFocusRing]} 
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // Toggle back to standard navigation
+            setIsGameDeckActive(false);
+            setIsHudHidden(false);
+          }}
+        >
+          <Ionicons name="home-outline" size={24} color={NAV_WHITE} />
+          <Text style={[styles.label, { color: NAV_WHITE }]}>Home</Text>
+        </Pressable>
+
+        {/* Faint divider between Home and media controls */}
+        <View style={{ width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 1 }} />
+
+        {/* Center: The Game Player Scroll Zone */}
+        <View style={styles.deckPlayerZone}>
+          <Pressable 
+            style={[styles.deckPlayerIcon, noFocusRing]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              triggerGameSkip('prev');
+            }}
+          >
+            <MaterialIcons name="skip-previous" size={32} color={NAV_WHITE} />
+          </Pressable>
+          
+          <Pressable 
+            style={[styles.deckPlayBtn, noFocusRing]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              triggerGameRestart();
+            }}
+          >
+            <FontAwesome5 name="play" size={20} color="#000" style={{ marginLeft: 3 }} />
+          </Pressable>
+          
+          <Pressable 
+            style={[styles.deckPlayerIcon, noFocusRing]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              triggerGameSkip('next');
+            }}
+          >
+            <MaterialIcons name="skip-next" size={32} color={NAV_WHITE} />
+          </Pressable>
+        </View>
+
+        {/* Right Anchor: Toggle HUD Visibility */}
+          <Pressable 
+            style={[styles.deckSideBtn, noFocusRing]} 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setIsHudHidden(!isHudHidden);
+            }}
+          >
+            <FontAwesome5 
+              name={isHudHidden ? "chevron-up" : "chevron-down"} 
+              size={22} 
+              color={NAV_WHITE} 
+            />
+          </Pressable>
+      </View>
+    );
+  }
+
+  // STANDARD TABS RENDER
   return (
     <View
       style={[
@@ -180,9 +261,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#000',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#000', // Standard tabs remain #000
     paddingTop: 10,
     paddingHorizontal: 4,
     zIndex: 9999,
@@ -253,5 +332,45 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  
+  /* GAME DECK STYLES */
+  gameDeckContainer: {
+    backgroundColor: '#0a0b16', // Competitor uses a subtle bluish/purplish black
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 0,
+  },
+  deckSideBtn: {
+    width: '15%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  deckPlayerZone: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 32,
+  },
+  deckPlayerZoneHidden: {
+    flex: 1,
+  },
+  deckPlayerIcon: {
+    padding: 10,
+  },
+  deckPlayBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
 });

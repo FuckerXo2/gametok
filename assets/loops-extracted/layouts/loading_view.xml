@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView android:layout_width="match_parent" android:layout_height="match_parent"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <ProgressBar android:layout_gravity="center" android:id="@id/blank_progressBar" android:visibility="visible" android:layout_width="50.0dp" android:layout_height="50.0dp" style="?android:progressBarStyle" />
-</androidx.core.widget.NestedScrollView>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Pressable, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -28,7 +28,6 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GAMES_HOST = 'https://games.gametok.co';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
-const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.15; // 15% for better swipe detection
 const TOP_ZONE_HEIGHT = 0; // Removed top scroll zone so taps at the top of the game work
 const SWIPE_THRESHOLD = 50;
 
@@ -262,9 +261,9 @@ const PAUSE_SCRIPT = `
   // Mute immediately
   muteAll();
 
-  // Keep the inactive WebView silent even if the game starts audio after load.
+  // Keep inactive WebViews silent, but avoid hammering every parked game engine.
   if (!window._muteInterval) {
-    window._muteInterval = setInterval(muteAll, 800);
+    window._muteInterval = setInterval(muteAll, 2500);
   }
   
   // Unity
@@ -296,6 +295,63 @@ const PAUSE_SCRIPT = `
     window._rafQueue.push(cb);
     return window._rafQueue.length;
   };
+})();
+true;
+`;
+
+// Script for the immediate next game: let it paint/warm up, but keep it silent.
+const PRELOAD_SCRIPT = `
+(function() {
+  window._gamePaused = false;
+  window._gametokActive = false;
+  window._gametokMuted = true;
+
+  if (window._origRAF) {
+    window.requestAnimationFrame = window._origRAF;
+    window._rafQueue && window._rafQueue.forEach(cb => window._origRAF(cb));
+    window._rafQueue = [];
+  }
+
+  if (window.createjs && window.createjs.Ticker) {
+    try { window.createjs.Ticker.paused = false; } catch(e) {}
+  }
+  if (window.Phaser && window.Phaser.GAMES) {
+    window.Phaser.GAMES.forEach(g => {
+      try { g.scene && g.scene.resume && g.scene.resume(); } catch(e) {}
+      try { if (g.sound) g.sound.mute = true; } catch(e) {}
+    });
+  }
+
+  const muteOnly = () => {
+    document.querySelectorAll('audio, video').forEach(el => {
+      try {
+        el.pause();
+        el.muted = true;
+        el.volume = 0;
+      } catch(e) {}
+    });
+    if (window._audioContexts) {
+      window._audioContexts.forEach(ctx => {
+        try { ctx.suspend(); } catch(e) {}
+      });
+    }
+    if (window._allGainNodes) {
+      window._allGainNodes.forEach(gain => {
+        try { gain.gain.setValueAtTime(0, gain.context.currentTime); } catch(e) {}
+      });
+    }
+    if (window.Howler) {
+      try { window.Howler.mute(true); } catch(e) {}
+    }
+    if (window.createjs && window.createjs.Sound) {
+      try { window.createjs.Sound.muted = true; } catch(e) {}
+    }
+  };
+
+  muteOnly();
+  if (!window._muteInterval) {
+    window._muteInterval = setInterval(muteOnly, 2500);
+  }
 })();
 true;
 `;
@@ -398,7 +454,7 @@ const EDGE_BLOCK_SCRIPT = `
   if (window._edgeBlockActive) return;
   window._edgeBlockActive = true;
   
-  const EDGE_ZONE = window.innerHeight * 0.15; // 15% of screen height
+  const TOP_EDGE_ZONE = window.innerHeight * 0.15; // 15% for top swipe detection
   
   // Block touch events in edge zones at capture phase
   // This prevents games from capturing swipes that should go to native gesture handlers
@@ -409,7 +465,7 @@ const EDGE_BLOCK_SCRIPT = `
     const screenHeight = window.innerHeight;
     
     // If touch is in edge zone, stop it from reaching game
-    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+    if (y < TOP_EDGE_ZONE) {
       e.stopPropagation();
       e.stopImmediatePropagation();
       // Don't preventDefault - let native handle it
@@ -425,7 +481,7 @@ const EDGE_BLOCK_SCRIPT = `
   const blockEdgePointer = (e) => {
     const y = e.clientY;
     const screenHeight = window.innerHeight;
-    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+    if (y < TOP_EDGE_ZONE) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     }
@@ -475,7 +531,10 @@ const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
   } else {
     applyBg();
   }
-  setInterval(applyBg, 1500);
+  // Retry a few times while the game bootstraps, without leaving a forever timer.
+  setTimeout(applyBg, 300);
+  setTimeout(applyBg, 1000);
+  setTimeout(applyBg, 2500);
 })();
 true;
 `;
@@ -550,12 +609,19 @@ const HUD_INTERACTION_BRIDGE_SCRIPT = `
   window._hudInteractionBridgeActive = true;
 
   let lastHudPing = 0;
+  let lastInteractionPing = 0;
   let swipeStartY = null;
   let swipeStartX = null;
   const notifyInteraction = (type) => {
     const now = Date.now();
-    if (now - lastHudPing < 1200) return;
-    lastHudPing = now;
+    if (type === 'USER_SWIPE_INTENT') {
+      if (now - lastHudPing < 1200) return;
+      lastHudPing = now;
+    } else if (type === 'USER_INTERACTION') {
+      if (now - lastInteractionPing < 500) return;
+      lastInteractionPing = now;
+    }
+    
     window.ReactNativeWebView?.postMessage(JSON.stringify({
       type,
       ts: now
@@ -563,6 +629,7 @@ const HUD_INTERACTION_BRIDGE_SCRIPT = `
   };
 
   const handleTouchStart = (event) => {
+    notifyInteraction('USER_INTERACTION');
     const point = event.touches && event.touches[0];
     if (!point) return;
     swipeStartY = point.clientY;
@@ -781,118 +848,6 @@ const createFeed = (games: Game[], cycle: number = 0): FeedItem[] => {
   return result;
 };
 
-// Swipe Up Hand Icon Component
-const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, color = LoopsColors.white }) => (
-  <Svg width={size} height={size} viewBox="0 0 116.91 122.88" fill="none">
-    <G fill={color}>
-      <Path d="M40.75,67.62c-0.15-0.07-0.33-0.18-0.48-0.29c-1.95-1.55-4.09-3.28-5.93-4.79c-2.69-2.21-5.78-4.75-7.95-6.55 c-1.47-1.21-3.17-2.06-4.75-2.39c-1.03-0.18-1.95-0.18-2.69,0.11c-0.59,0.26-1.1,0.74-1.44,1.47c-0.44,0.99-0.66,2.39-0.55,4.31 c0.11,1.69,0.7,3.53,1.47,5.34c1.14,2.61,2.72,5.04,3.9,6.59c0.07,0.11,0.15,0.18,0.18,0.29l23.3,33.28 c0.29,0.44,0.48,0.92,0.52,1.4c0.48,3.83,1.29,6.74,2.47,8.54c0.88,1.33,1.99,1.99,3.42,1.95H88.9c2.28-0.04,4.34-0.7,6.26-2.02 c2.1-1.44,3.98-3.68,5.71-6.7c0.04-0.04,0.07-0.11,0.11-0.15c0.66-1.14,1.55-2.61,2.39-4.01c3.72-6.11,6.96-11.45,7.33-19.03 l-0.22-10.45c-0.04-0.15-0.04-0.29-0.04-0.44c0-0.15,0-1.14,0.04-2.47c0.07-6.92,0.18-15.46-6.15-16.53h-4.09 c-0.04,1.95-0.15,3.94-0.26,5.85c-0.11,1.73-0.22,3.35-0.22,4.93c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06 c0-1.58,0.11-3.42,0.22-5.34c0.41-6.52,0.88-13.99-4.31-14.91h-4.05c-0.22,0-0.44-0.04-0.66-0.07c0.04,2.36-0.11,4.79-0.26,7.14 c-0.11,1.73-0.22,3.35-0.22,4.93c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06c0-1.58,0.11-3.42,0.22-5.34 c0.4-6.52,0.88-13.99-4.31-14.91h-4.05c-0.29,0-0.55-0.04-0.81-0.11v11.89c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06V17.23 c0-5.34-2.17-8.72-4.97-10.12c-1.03-0.52-2.14-0.77-3.2-0.77c-1.07,0-2.17,0.26-3.2,0.77c-2.76,1.4-4.9,4.79-4.9,10.27v55.92 c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06v-5.67H40.75L40.75,67.62z M0.81,12.28c-1.04,0.99-1.08,2.64-0.09,3.68 C1.71,17,3.35,17.04,4.4,16.05l7.69-7.35v22.08c0,1.44,1.17,2.61,2.61,2.61s2.61-1.17,2.61-2.61V8.68l7.73,7.37 c1.04,0.99,2.69,0.95,3.68-0.09c0.99-1.04,0.95-2.69-0.09-3.68L16.49,0.72c-1-0.95-2.58-0.96-3.59,0L0.81,12.28L0.81,12.28z M69.32,31.33c0.26-0.07,0.52-0.11,0.81-0.11h4.23c0.22,0,0.48,0.04,0.7,0.07c5.63,0.88,8.17,4.16,9.2,8.43 c0.4-0.18,0.85-0.29,1.29-0.29h4.23c0.22,0,0.48,0.04,0.7,0.07c6.07,0.96,8.5,4.67,9.39,9.39c0.15-0.04,0.29-0.04,0.48-0.04h4.23 c0.22,0,0.48,0.04,0.7,0.07c11.63,1.8,11.49,13.36,11.37,22.68v2.43l0.26,10.75v0.33c-0.44,9.17-4.05,15.09-8.21,21.94 c-0.7,1.14-1.4,2.32-2.36,3.94c-0.04,0.04-0.04,0.07-0.07,0.11c-2.17,3.79-4.67,6.7-7.55,8.69c-2.91,2.02-6.15,3.06-9.68,3.09 H52.42c-3.64,0.07-6.48-1.51-8.58-4.64c-1.69-2.5-2.8-6.04-3.39-10.45L17.63,75.17l-0.11-0.11c-1.36-1.8-3.2-4.64-4.6-7.77 c-1.03-2.36-1.8-4.9-1.99-7.4c-0.18-2.98,0.22-5.34,1.07-7.22c1.03-2.32,2.72-3.83,4.75-4.64c1.88-0.77,4.01-0.88,6.15-0.44 c2.58,0.52,5.23,1.8,7.47,3.68c1.84,1.55,4.93,4.05,7.95,6.52l2.5,2.06V17.41c0-8.14,3.61-13.36,8.28-15.72 c1.88-0.96,3.9-1.44,5.96-1.44c2.06,0,4.09,0.48,5.96,1.44c4.68,2.36,8.36,7.62,8.36,15.61v14.06L69.32,31.33L69.32,31.33z" />
-    </G>
-  </Svg>
-);
-
-// Swipe hint overlay — shows the hand icon and highlight area in the bottom swipe zone
-// occasionally to remind users where to swipe
-const SwipeHintOverlay: React.FC<{ gameIndex: number; shouldShow: boolean }> = ({ gameIndex, shouldShow }) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const handY = useRef(new Animated.Value(0)).current;
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (!shouldShow) {
-      setVisible(false);
-      return;
-    }
-
-    setVisible(true);
-    opacity.setValue(0);
-    handY.setValue(0);
-
-    // Fade in
-    Animated.timing(opacity, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-
-    // Hand swipe animation - travels from bottom upwards like the welcome screen
-    const swipeAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(handY, {
-          toValue: -80, // Travel up 80px
-          duration: 1000,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(handY, {
-          toValue: 0,
-          duration: 800,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.delay(300), // Pause at bottom before repeating
-      ])
-    );
-    swipeAnimation.start();
-
-    // Fade out after 4 seconds (gives 1s fade out before the 5s mark)
-    const fadeTimer = setTimeout(() => {
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 1000,
-        useNativeDriver: true,
-      }).start(() => {
-        setVisible(false);
-        swipeAnimation.stop();
-      });
-    }, 4000);
-
-    return () => {
-      clearTimeout(fadeTimer);
-      swipeAnimation.stop();
-    };
-  }, [gameIndex, shouldShow]);
-
-  if (!visible || gameIndex < 0) return null; // Don't show on welcome screen
-
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: BOTTOM_ZONE_HEIGHT,
-        opacity,
-        zIndex: 5,
-        backgroundColor: 'rgba(168, 85, 247, 0.15)', // Semi-transparent purple
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(168, 85, 247, 0.3)',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      pointerEvents="none"
-    >
-      <Animated.View style={{
-        alignItems: 'center',
-        transform: [{ translateY: handY }]
-      }}>
-        <SwipeUpHand size={36} color="rgba(255,255,255,0.9)" />
-        <Text style={{
-          color: 'rgba(255,255,255,0.9)',
-          fontSize: 12,
-          fontWeight: '600',
-          marginTop: 4,
-          textShadowColor: 'rgba(0,0,0,0.5)',
-          textShadowOffset: { width: 0, height: 1 },
-          textShadowRadius: 3,
-        }}>Swipe up for next</Text>
-      </Animated.View>
-    </Animated.View>
-  );
-};
-
 // Animated Like Button
 const AnimatedLikeButton = ({
   isLiked,
@@ -1013,7 +968,6 @@ const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) =
   const chevron3Y = useRef(new Animated.Value(0)).current;
   const chevronOpacity = useRef(new Animated.Value(0.5)).current;
   const barWidth = useRef(new Animated.Value(0.6)).current;
-  const handY = useRef(new Animated.Value(0)).current; // New animation for hand
 
   useEffect(() => {
     // Neon glow pulse animation
@@ -1031,25 +985,6 @@ const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) =
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
-      ])
-    ).start();
-
-    // Hand swipe animation - travels from bottom to near tagline
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(handY, {
-          toValue: -80, // Travel up 80px
-          duration: 1000,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(handY, {
-          toValue: 0,
-          duration: 800,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.delay(300), // Pause at bottom before repeating
       ])
     ).start();
 
@@ -1134,24 +1069,6 @@ const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) =
 
       {/* Tagline above bottom zone */}
       <Text style={welcomeStyles.tagline}>Swipe. Play. Repeat.</Text>
-
-      {/* Bottom swipe zone - purple background, no glow */}
-      <View style={welcomeStyles.bottomZone}>
-        <View style={welcomeStyles.purpleBar} />
-      </View>
-
-      {/* Animated swipe hand - positioned absolutely from screen bottom */}
-      <Animated.View style={[
-        welcomeStyles.swipeHandContainer,
-        {
-          transform: [{ translateY: handY }],
-        }
-      ]}>
-        <SwipeUpHand size={32} color={LoopsColors.white} />
-      </Animated.View>
-
-      {/* Transparent scroll zone indicator */}
-      <View style={welcomeStyles.scrollZoneIndicator} pointerEvents="none" />
     </View>
   );
 };
@@ -1167,19 +1084,7 @@ const welcomeStyles = StyleSheet.create({
     left: 0,
     width: SCREEN_WIDTH,
   },
-  scrollZoneIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(168, 85, 247, 0.15)', // Semi-transparent purple
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(168, 85, 247, 0.3)',
-    zIndex: 1,
-  },
+
   brandingContainer: {
     position: 'absolute',
     top: 0,
@@ -1207,7 +1112,7 @@ const welcomeStyles = StyleSheet.create({
   },
   tagline: {
     position: 'absolute',
-    bottom: BOTTOM_ZONE_HEIGHT + 40,
+    bottom: 80,
     left: 0,
     right: 0,
     textAlign: 'center',
@@ -1216,26 +1121,8 @@ const welcomeStyles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 2,
   },
-  bottomZone: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT + 80,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 25,
-  },
-  purpleBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(168, 85, 247, 0.5)',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
+
+
   glowBarContainer: {
     width: 200,
     height: 4,
@@ -1259,22 +1146,8 @@ const welcomeStyles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  swipeHandContainer: {
-    position: 'absolute',
-    bottom: 15,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  swipeText: {
-    fontSize: 15,
-    color: '#a855f7',
-    fontWeight: '600',
-    textShadowColor: '#a855f7',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
-    letterSpacing: 1,
-  },
+
+
 });
 
 // Animated Game Loading Component - Glowing geometric shapes
@@ -1518,12 +1391,50 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refreshTrigger = 0 }) => {
   const insets = useSafeAreaInsets();
   const { sharedGameId, clearSharedGame } = useDeepLink();
-  const { setActiveTab: setRootActiveTab } = useNavigation();
+  const { setActiveTab: setRootActiveTab, setSearchModalVisible, setIsGameDeckActive, isGameDeckActive, isHudHidden, setIsHudHidden, gameRestartTrigger, gameSkipCounter } = useNavigation();
   const { user } = useAuth();
   const { setMyStatus } = useSocket();
   const isFocused = isActive; // Use the prop instead of navigation hook
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1, will be set to 0 if returning user
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [interactedGameId, setInteractedGameId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsGameDeckActive(false);
+  }, [currentIndex, setIsGameDeckActive]);
+
+  // Restore thumbnail state when user exits Game Deck by pressing "Home"
+  useEffect(() => {
+    if (!isGameDeckActive) {
+      setInteractedGameId(null);
+    }
+  }, [isGameDeckActive]);
+
+  useEffect(() => {
+    if (gameSkipCounter.count > 0) {
+      const idx = currentIndexRef.current;
+      const total = feedRef.current.length;
+      if (gameSkipCounter.direction === 'next' && idx < total - 1) {
+        animateToIndex(idx + 1);
+      } else if (gameSkipCounter.direction === 'prev' && idx > 0) {
+        animateToIndex(idx - 1);
+      }
+    }
+  }, [gameSkipCounter]);
+
+  useEffect(() => {
+    if (gameRestartTrigger > 0 && currentIndex >= 0 && feed[currentIndex]) {
+      const activeGameId = feed[currentIndex].id;
+      // Inject a script to restart the game
+      webViewRefs.current[activeGameId]?.injectJavaScript(`
+        if (typeof window !== 'undefined') {
+          // Hard reload the iframe/window
+          window.location.reload();
+        }
+        true;
+      `);
+    }
+  }, [gameRestartTrigger]);
 
   // Toggle presence between 'in-game' (when actively playing) and 'online'
   useEffect(() => {
@@ -1540,11 +1451,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [loading, setLoading] = useState(true);
 
   const [scrollEnabled, setScrollEnabled] = useState(false);
-  const [showSwipeHint, setShowSwipeHint] = useState(false);
-  const swipeHintOpacity = useRef(new Animated.Value(0)).current;
   const [gestureKey, setGestureKey] = useState(0);
   const hudHintOpacity = useRef(new Animated.Value(0.82)).current;
   const hideHintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Animated opacity for the "For You" top bar and game info (bottom left)
+  const overlayInfoOpacity = useRef(new Animated.Value(1)).current;
+
+  // Animated slide for right-side action buttons (vertical)
+  const actionButtonsTranslateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(overlayInfoOpacity, {
+      toValue: isGameDeckActive ? 0 : 1,
+      duration: isGameDeckActive ? 200 : 300,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [isGameDeckActive, overlayInfoOpacity]);
+
+  useEffect(() => {
+    Animated.spring(actionButtonsTranslateY, {
+      toValue: isHudHidden ? 120 : 0,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 10,
+    }).start();
+  }, [isHudHidden, actionButtonsTranslateY]);
 
   // Track which games have finished loading (ready to play)
   const [readyGames, setReadyGames] = useState<Set<string>>(new Set());
@@ -1556,7 +1489,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const activeItem = feed[currentIndex];
       if (activeItem && !readyGames.has(activeItem.id)) {
         timeout = setTimeout(() => {
-          setReadyGames(prev => new Set(prev).add(activeItem.id));
+          setReadyGames(prev => {
+            if (prev.has(activeItem.id)) return prev;
+            const next = new Set(prev);
+            next.add(activeItem.id);
+            return next;
+          });
         }, 15000);
       }
     }
@@ -1944,10 +1882,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const currItem = currIdx >= 0 ? feed[currIdx] : null;
       const currItemId = currItem?.id;
 
-      // Pause all games EXCEPT the current one
+      const nextItem = currIdx === -1 ? feed[0] : feed[currIdx + 1];
+      const nextItemId = nextItem?.id;
+
+      // Freeze old/offscreen games, but let the immediate next game render silently.
       Object.entries(webViewRefs.current).forEach(([id, webView]) => {
         if (webView && id !== currItemId) {
-          webView.injectJavaScript(PAUSE_SCRIPT);
+          webView.injectJavaScript(id === nextItemId ? PRELOAD_SCRIPT : PAUSE_SCRIPT);
         }
       });
 
@@ -2336,38 +2277,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
-      // Update state first — items will change positions
+      // Reset the animated offset before changing the rendered window.
+      // Updating currentIndex while translateY is still +/-height causes a
+      // one-frame flash where the next stack renders with the old offset.
+      clearTimeout(safetyTimer);
+      translateY.setValue(0);
       setCurrentIndex(newIndex);
 
-      // Delay resetting translateY so it aligns perfectly with the next native render tick
       requestAnimationFrame(() => {
-        clearTimeout(safetyTimer);
-        translateY.setValue(0);
         isAnimating.current = false;
         setGestureKey(prev => prev + 1);
       });
     });
-  };
-
-  // Show swipe hint with fade in
-  const showHint = () => {
-    if (currentIndexRef.current !== -1) { // Not on welcome screen
-      setShowSwipeHint(true);
-      Animated.timing(swipeHintOpacity, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-    }
-  };
-
-  // Hide swipe hint with fade out
-  const hideHint = () => {
-    Animated.timing(swipeHintOpacity, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => setShowSwipeHint(false));
   };
 
   // Helper function to update translateY value (for runOnJS)
@@ -2378,7 +2299,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Helper function to handle gesture end (for runOnJS)
   // Uses both distance and velocity for snappy TikTok-like scrolling
   const handleGestureEnd = useCallback((translationY: number, velocityY?: number) => {
-    hideHint();
     setScrollEnabled(false);
 
     if (isAnimating.current) return;
@@ -2408,7 +2328,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Helper to handle gesture start (for runOnJS)
   const handleGestureStart = useCallback(() => {
     setScrollEnabled(true);
-    showHint();
   }, []);
 
   const touchStartY = useRef(0);
@@ -2420,16 +2339,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     PanResponder.create({
       onStartShouldSetPanResponderCapture: (e) => {
         touchStartY.current = e.nativeEvent.pageY;
-        const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT;
-        if (isBottomEdge) restoreHud();
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
         // Use EXACT mathematically precise boundaries based on the latest physical rendered height
         // This flawlessly syncs the invisible PanResponder zone to the visible purple box overlay
-        const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT; 
         const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT; 
-        const isEdge = isBottomEdge || isTopEdge;
+        const isEdge = isTopEdge;
         if (Math.abs(gesture.dy) > 6) restoreHud();
         
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
@@ -2437,9 +2353,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       },
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) => {
-        const isBottomEdge = touchStartY.current > contentHeightRef.current - BOTTOM_ZONE_HEIGHT;
         const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT;
-        const isEdge = isBottomEdge || isTopEdge;
+        const isEdge = isTopEdge;
         if (Math.abs(gesture.dy) > 6) restoreHud();
         
         const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
@@ -2574,57 +2489,43 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     })
   ).current;
 
-  // Keep current plus two items ahead so swipes feel more immediate.
+  // Keep only the swipe neighbors alive. Each item is a full game WebView,
+  // so preloading too far ahead causes home-feed jank on real devices.
   const visibleItems = useMemo(() => {
-    const result: { item: FeedItem | null; position: number; isWelcome: boolean }[] = [];
+    const result: { item: FeedItem | null; position: number }[] = [];
 
-    // Welcome screen at position -1
-    if (currentIndex === -1) {
-      result.push({ item: null, position: 0, isWelcome: true });
-      if (feed[0]) {
-        result.push({ item: feed[0], position: 1, isWelcome: false });
-      }
-    } else {
-      // Previous item (position -1)
-      if (currentIndex === 0) {
-        result.push({ item: null, position: -1, isWelcome: true });
-      } else if (feed[currentIndex - 1]) {
-        result.push({ item: feed[currentIndex - 1], position: -1, isWelcome: false });
-      }
+    // Previous item (position -1)
+    if (currentIndex > 0 && feed[currentIndex - 1]) {
+      result.push({ item: feed[currentIndex - 1], position: -1 });
+    }
 
-      // Current item (position 0)
-      if (feed[currentIndex]) {
-        result.push({ item: feed[currentIndex], position: 0, isWelcome: false });
-      }
+    // Current item (position 0)
+    if (feed[currentIndex]) {
+      result.push({ item: feed[currentIndex], position: 0 });
+    }
 
-      // Next item (position +1)
-      if (feed[currentIndex + 1]) {
-        result.push({ item: feed[currentIndex + 1], position: 1, isWelcome: false });
-      }
-
-      // One more ahead (position +2)
-      if (feed[currentIndex + 2]) {
-        result.push({ item: feed[currentIndex + 2], position: 2, isWelcome: false });
-      }
+    // Next item (position +1)
+    if (feed[currentIndex + 1]) {
+      result.push({ item: feed[currentIndex + 1], position: 1 });
     }
 
     return result;
   }, [feed, currentIndex]);
 
-  if (loading && currentIndex !== -1) {
+  if (loading) {
     return <View style={styles.container} />;
   }
 
-  if (feed.length === 0 && currentIndex !== -1) return null;
+  if (feed.length === 0) return null;
 
   const renderedItems = isFocused ? visibleItems : [];
 
   return (
     <View style={styles.container}>
       <View style={{ flex: 1 }}>
-      {renderedItems.map(({ item, position, isWelcome }) => (
+      {renderedItems.map(({ item, position }) => (
         <Animated.View
-          key={isWelcome ? 'welcome' : item!.id}
+          key={item!.id}
           style={[
             styles.gameContainer,
             {
@@ -2636,17 +2537,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
             }
           ]}
         >
-          {isWelcome ? (
-            // Welcome screen
-            <Animated.View {...fullScreenPanResponder.panHandlers} style={{ flex: 1 }} collapsable={false}>
-              <WelcomeScreen contentHeight={contentHeight} />
-            </Animated.View>
-          ) : (
-            // Game screen - natively tracks edge panning around the webview
-            <Animated.View {...edgePanResponder.panHandlers} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
+          {/* Game screen - conditionally allows swipe only if not interacted */}
+          <Animated.View {...((item!.game!.id !== interactedGameId || position !== 0) ? fullScreenPanResponder.panHandlers : {})} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
               <Animated.View style={{ flex: 1 }}>
                 <WebView
-                  ref={(ref) => { webViewRefs.current[item!.id] = ref; }}
+                  ref={(ref) => {
+                    if (ref) {
+                      webViewRefs.current[item!.id] = ref;
+                    } else {
+                      delete webViewRefs.current[item!.id];
+                    }
+                  }}
                   source={{ uri: getGameUrl(item!.game!) }}
                   style={styles.webview} // Already has backgroundColor: 'transparent'
                   opaque={false} // Crucial for iOS transparent background
@@ -2668,7 +2569,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
-                      if (data.type === 'USER_INTERACTION') return;
+                      if (data.type === 'USER_INTERACTION') {
+                        setIsGameDeckActive(true);
+                        return;
+                      }
                       if (data.type === 'USER_SWIPE_INTENT') {
                         restoreHud();
                         return;
@@ -2704,10 +2608,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       `);
                     }
 
-                    // Page fully loaded — wait 3s for game to render, then mark ready
-                    setTimeout(() => {
-                      setReadyGames(prev => new Set(prev).add(item!.id));
-                    }, 3000);
+                    // Only animate the visible game's loading state. Preloaded
+                    // neighbors should not run hidden loading animations.
+                    if (position === 0) {
+                      setTimeout(() => {
+                        setReadyGames(prev => {
+                          if (prev.has(item!.id)) return prev;
+                          const next = new Set(prev);
+                          next.add(item!.id);
+                          return next;
+                        });
+                      }, 3000);
+                    } else {
+                      setReadyGames(prev => {
+                        if (prev.has(item!.id)) return prev;
+                        const next = new Set(prev);
+                        next.add(item!.id);
+                        return next;
+                      });
+                    }
 
                     if (isExternalGame(item!.game!) && user && item!.game?.id) {
                       try {
@@ -2723,12 +2642,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     }
 
                     const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused;
-                    webViewRefs.current[item!.id]?.injectJavaScript(shouldResume ? RESUME_SCRIPT : PAUSE_SCRIPT);
+                    webViewRefs.current[item!.id]?.injectJavaScript(
+                      shouldResume ? RESUME_SCRIPT : position === 1 ? PRELOAD_SCRIPT : PAUSE_SCRIPT
+                    );
                   }}
                   onLoad={() => {
-                    const shouldPause = position !== 0 || currentIndex === -1;
-                    if (shouldPause && webViewRefs.current[item!.id]) {
-                      webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
+                    const shouldResume = position === 0 && currentIndex !== -1 && isFocused;
+                    if (!shouldResume && webViewRefs.current[item!.id]) {
+                      webViewRefs.current[item!.id]?.injectJavaScript(position === 1 ? PRELOAD_SCRIPT : PAUSE_SCRIPT);
                     }
                   }}
                   onShouldStartLoadWithRequest={(request) => {
@@ -2739,122 +2660,139 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
               {/* Native gesture zones intercept handled earlier via Animated.View pointerEvents box-none */}
 
-                {/* Loading overlay - shows until game is ready */}
-                {!readyGames.has(item!.id) && item!.game && (
-                  <View style={styles.gameLoadingOverlay}>
-                    <GameLoadingScreen
-                      gameName={item!.game.name}
-                      gameThumbnail={getThumbnailUrl(item!.game)}
-                      progress={75} // Can be dynamic if you track actual load progress
+                {/* Thumbnail Overlay - always rendered, opacity-controlled to prevent blink on skip */}
+                {item!.game && (
+                  <View 
+                    style={[StyleSheet.absoluteFill, { zIndex: 5, justifyContent: 'center', alignItems: 'center', opacity: (item!.game!.id !== interactedGameId || position !== 0) ? 1 : 0 }]} 
+                    pointerEvents={(item!.game!.id !== interactedGameId || position !== 0) ? 'auto' : 'none'}
+                    onStartShouldSetResponder={() => (item!.game!.id !== interactedGameId || position !== 0)}
+                    onResponderRelease={() => {
+                      if (position === 0 && item!.game!.id !== interactedGameId) {
+                        setInteractedGameId(item!.game!.id);
+                        setIsGameDeckActive(true);
+                      }
+                    }}
+                  >
+                    {/* Blurred background matching Astrocade */}
+                    <Image 
+                      source={{ uri: getThumbnailUrl(item!.game) }} 
+                      style={[StyleSheet.absoluteFillObject, { width: '100%', height: '100%' }]} 
+                      blurRadius={40}
                     />
+                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.2)' }]} pointerEvents="none" />
+                    
+                    {/* The crisp thumbnail card floating on top */}
+                    <View style={styles.thumbnailCardContainer}>
+                      <View style={styles.thumbnailCardInner}>
+                        <Image 
+                          source={{ uri: getThumbnailUrl(item!.game) }} 
+                          style={styles.thumbnailCardImage} 
+                        />
+                        <View style={styles.thumbnailCardPlayPill}>
+                          <Ionicons name="play" size={12} color="#fff" />
+                          <Text style={styles.thumbnailCardPlayText}>
+                            {formatCount(item!.game.plays || 0)}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
                   </View>
                 )}
 
-                {/* TikTok-style action buttons - right side */}
-                <Animated.View style={[styles.actionButtons, { bottom: 64 }]}>
-                  <AnimatedLikeButton
-                    isLiked={likedGames.has(item!.game!.id)}
-                    onPress={(e) => {
-                      triggerClickAnimation(e);
-                      handleLike(item!.game!.id);
-                    }}
-                    likeCount={getFeedCount(item!.game!.id, 'likes')}
-                    styles={styles}
-                  />
-                  <AnimatedCommentButton
-                    onPress={(e) => {
-                      triggerClickAnimation(e);
-                      handleOpenComments(item!.game!);
-                    }}
-                    commentCount={0}
-                    styles={styles}
-                  />
-                  {/* Share */}
-                  <AnimatedShareButton
-                    onPress={(e) => {
-                      triggerClickAnimation(e);
-                      handleShare(item!.game!);
-                    }}
-                    shareCount={getFeedCount(item!.game!.id, 'shares')}
-                    styles={styles}
-                  />
-                </Animated.View>
+                {/* TikTok-style action buttons - right side - animated slide */}
+                  <Animated.View style={[styles.actionButtons, { bottom: 64, transform: [{ translateY: actionButtonsTranslateY }], opacity: actionButtonsTranslateY.interpolate({ inputRange: [0, 120], outputRange: [1, 0] }) }]}>
+                    <AnimatedLikeButton
+                      isLiked={likedGames.has(item!.game!.id)}
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleLike(item!.game!.id);
+                      }}
+                      likeCount={getFeedCount(item!.game!.id, 'likes')}
+                      styles={styles}
+                    />
+                    <AnimatedCommentButton
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleOpenComments(item!.game!);
+                      }}
+                      commentCount={0}
+                      styles={styles}
+                    />
+                    {/* Share */}
+                    <AnimatedShareButton
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleShare(item!.game!);
+                      }}
+                      shareCount={getFeedCount(item!.game!.id, 'shares')}
+                      styles={styles}
+                    />
+                  </Animated.View>
 
-                {/* Game info - bottom left (V2 mockup-faithful) */}
-                <Animated.View style={styles.gameInfo} pointerEvents="none">
-                  <View style={styles.gameTitleRow}>
-                    <Text style={styles.gameName} numberOfLines={2}>
-                      {item!.game!.name}
-                    </Text>
-                    <View style={styles.gameTitlePill}>
-                      <Ionicons name="game-controller" size={12} color="#fff" />
-                    </View>
-                  </View>
-                  {!!item!.game!.creatorDisplayName && (
-                    <View style={styles.creatorRow}>
-                      <Text style={styles.creatorDisplayName} numberOfLines={1}>
-                        {item!.game!.creatorDisplayName || item!.game!.creatorUsername}
+                {/* Game info - bottom left (V2 mockup-faithful) - animated fade */}
+                  <Animated.View style={[styles.gameInfo, { opacity: overlayInfoOpacity }]} pointerEvents="none">
+                    <View style={styles.gameTitleRow}>
+                      <Text style={styles.gameName} numberOfLines={2}>
+                        {item!.game!.name}
                       </Text>
-                      {item!.game!.creatorVerified ? (
-                        <View style={styles.verifiedDot}>
-                          <Text style={styles.verifiedCheck}>✓</Text>
-                        </View>
-                      ) : null}
+                      <View style={styles.gameTitlePill}>
+                        <Ionicons name="game-controller" size={12} color="#fff" />
+                      </View>
                     </View>
-                  )}
-                  <View style={styles.gameMetaRow}>
-                    <View style={styles.gameMetaPill}>
-                      <Ionicons name="play" size={11} color="rgba(255,255,255,0.85)" />
-                      <Text style={styles.gameMetaText}>
-                        {formatCount(item!.game!.plays || 0)} plays
-                      </Text>
+                    {!!item!.game!.creatorDisplayName && (
+                      <View style={styles.creatorRow}>
+                        <Text style={styles.creatorDisplayName} numberOfLines={1}>
+                          {item!.game!.creatorDisplayName || item!.game!.creatorUsername}
+                        </Text>
+                        {item!.game!.creatorVerified ? (
+                          <View style={styles.verifiedDot}>
+                            <Text style={styles.verifiedCheck}>✓</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    )}
+                    <View style={styles.gameMetaRow}>
+                      <View style={styles.gameMetaPill}>
+                        <Ionicons name="play" size={11} color="rgba(255,255,255,0.85)" />
+                        <Text style={styles.gameMetaText}>
+                          {formatCount(item!.game!.plays || 0)} plays
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                </Animated.View>
+                  </Animated.View>
             </Animated.View>
-          )}
         </Animated.View>
       ))}
 
-      {/* Swipe hint — shows hand icon for 5s on first game */}
-      <SwipeHintOverlay 
-        gameIndex={currentIndex} 
-        shouldShow={currentIndex === 0}
-      />
-
-      {/* V2 Top bar (mockup): gametok / search */}
-      <Animated.View
-        style={[styles.topBarV2, { paddingTop: insets.top + 8 }]}
-        pointerEvents="box-none"
-      >
-        <View style={styles.topBarV2Row}>
-          <View style={styles.topBarV2Side} />
-          <View style={styles.topBarV2Center}>
-            <Text style={styles.gametokLogoV2}>gametok</Text>
+      {/* V2 Top bar (mockup): gametok / search - animated fade */}
+        <Animated.View
+          style={[styles.topBarV2, { paddingTop: insets.top + 8, opacity: overlayInfoOpacity }]}
+          pointerEvents={isGameDeckActive ? 'none' : 'box-none'}
+        >
+          <View style={styles.topBarV2Row}>
+            <View style={styles.topBarV2Side} />
+            <View style={styles.topBarV2Center}>
+              <TouchableOpacity
+                onPress={refreshFeed}
+                activeOpacity={0.85}
+                style={styles.forYouV2Pill}
+              >
+                <Text style={[styles.forYouV2Text, { marginRight: 4 }]}>For You</Text>
+                <View style={styles.forYouV2Dot} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.topBarV2Side, { alignItems: 'flex-end' }]}>
+              <TouchableOpacity
+                style={styles.topV2IconBtn}
+                onPress={() => setSearchModalVisible(true)}
+                activeOpacity={0.85}
+                hitSlop={6}
+              >
+                <Ionicons name="search" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={[styles.topBarV2Side, { alignItems: 'flex-end' }]}>
-            <TouchableOpacity
-              style={styles.topV2IconBtn}
-              onPress={() => setRootActiveTab('explore')}
-              activeOpacity={0.85}
-              hitSlop={6}
-            >
-              <Ionicons name="search" size={18} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.forYouV2Wrap}>
-          <TouchableOpacity
-            onPress={refreshFeed}
-            activeOpacity={0.85}
-            style={styles.forYouV2Pill}
-          >
-            <View style={styles.forYouV2Dot} />
-            <Text style={styles.forYouV2Text}>For You</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
+        </Animated.View>
 
       {/* Scroll overlay - only visible when scroll mode is active */}
       {scrollEnabled && (
@@ -2866,25 +2804,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       {/* Overlay gesture zones removed - scrolling is handled completely by PanResponders now */}
 
-      {/* Swipe hint - permanently visible on the screen */}
-      <Animated.View
-        style={[
-          styles.hintContainer,
-          currentIndex !== -1 && { opacity: hudHintOpacity }
-        ]}
-        pointerEvents="none"
-      >
-        {currentIndex !== -1 && (
-          <>
-            <View style={styles.hintGlow} />
-            <View style={styles.hintSheen} />
-          </>
-        )}
-        <View style={styles.hintHandle}>
-          <View style={styles.hintHandleCore} />
-        </View>
-        <Text style={styles.hintText}>Swipe up to browse</Text>
-      </Animated.View>
+
       </View>
 
       {/* Share Sheet */}
@@ -2918,9 +2838,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         sessionPoints={sessionPoints}
         sessionPlayTime={gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0}
       />
-
-      {/* Onboarding Tooltip Walkthrough */}
-      <OnboardingOverlay onComplete={() => { }} />
 
       {/* Click animations overlay */}
       {clickAnimations.map(anim => (
@@ -3078,20 +2995,11 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    bottom: BOTTOM_ZONE_HEIGHT,
+    bottom: 0,
     backgroundColor: 'transparent',
     zIndex: 5,
   },
-  bottomZone: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'transparent',
-    zIndex: 9999,
-    elevation: 9999,
-  },
+
   topZone: {
     position: 'absolute',
     top: 0,
@@ -3102,61 +3010,12 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
   },
-  hintContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 15,
-  },
-  hintGlow: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(110, 78, 255, 0.08)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(173, 157, 255, 0.16)',
-  },
-  hintSheen: {
-    position: 'absolute',
-    bottom: BOTTOM_ZONE_HEIGHT * 0.18,
-    left: SCREEN_WIDTH * 0.18,
-    right: SCREEN_WIDTH * 0.18,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.045)',
-  },
-  hintHandle: {
-    width: 64,
-    height: 28,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(8,8,12,0.22)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginBottom: 8,
-  },
-  hintHandleCore: {
-    width: 28,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-  },
-  hintText: {
-    color: 'rgba(255, 255, 255, 0.74)',
-    fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 1.6,
-    marginBottom: 12,
-  },
+
+
+
+
+
+
   errorContainer: {
     flex: 1,
     backgroundColor: LoopsColors.black, // Match GameLoadingScreen background
@@ -3321,11 +3180,56 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  gameLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: LoopsColors.black, // Seamless with container
+  thumbnailBgBlur: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 100,
+    width: '100%',
+    height: '100%',
+  },
+  thumbnailOverlayDarken: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 10, 25, 0.7)',
+  },
+  thumbnailCardContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '78%',
+    maxWidth: 400,
+    zIndex: 10,
+  },
+  thumbnailCardInner: {
+    width: '100%',
+    aspectRatio: 0.8,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+  },
+  thumbnailCardImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  thumbnailCardPlayPill: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  thumbnailCardPlayText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 6,
   },
 });
