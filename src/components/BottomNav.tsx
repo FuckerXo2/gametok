@@ -193,7 +193,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
               triggerGameRestart();
             }}
           >
-            <Ionicons name="reload-circle" size={28} color="#000" />
+            <Ionicons name="reload" size={24} color="#000" />
           </Pressable>
           
           <Pressable 
