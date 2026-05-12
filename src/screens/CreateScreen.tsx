@@ -424,6 +424,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [gameSpec, setGameSpec] = useState<GameSpec | null>(null);
   const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
   const [wishInput, setWishInput] = useState('');
+  const wishInputRef = useRef<TextInput>(null);
+  const refiningScrollRef = useRef<ScrollView>(null);
 
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
@@ -985,14 +987,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       if (res.success && res.spec) {
         setGameSpec(res.spec);
       } else {
-        // Fall back to direct generation
-        handleDream(finalPrompt);
+        // Show error and stay on refining screen
+        Alert.alert('Oops', 'Failed to generate game spec. Please try again.', [
+          { text: 'OK', onPress: () => setPhase('idle') }
+        ]);
       }
     } catch (error) {
       console.error('Spec generation failed:', error);
       setIsGeneratingSpec(false);
-      // Fall back to direct generation
-      handleDream(finalPrompt);
+      // Show error and stay on refining screen
+      Alert.alert('Oops', 'Spec generation timed out. Please try again.', [
+        { text: 'OK', onPress: () => setPhase('idle') }
+      ]);
     }
   };
 
@@ -2489,8 +2495,9 @@ Features: ${gameSpec.features.join(', ')}`;
         </View>
 
         <ScrollView
+          ref={refiningScrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 200 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 180 }}
           showsVerticalScrollIndicator={false}
         >
           {isGeneratingSpec ? (
@@ -2500,15 +2507,26 @@ Features: ${gameSpec.features.join(', ')}`;
             </Animated.View>
           ) : gameSpec && (
             <Animated.View entering={FadeInUp.duration(600)}>
-              <Text style={{ color: '#888', fontSize: 14, marginBottom: 16 }}>Ok what do you think of...</Text>
+              {/* Original Prompt Box */}
+              <View style={{
+                backgroundColor: '#1a1a1a',
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 20
+              }}>
+                <Text style={{ color: '#999', fontSize: 14, lineHeight: 20 }}>{prompt}</Text>
+              </View>
+
+              {/* "Ok what do you think of..." */}
+              <Text style={{ color: '#999', fontSize: 14, marginBottom: 12 }}>Ok what do you think of...</Text>
               
               {/* Generated Title */}
               <Text style={{ 
                 color: '#FFF', 
-                fontSize: 32, 
+                fontSize: 28, 
                 fontWeight: '800', 
-                marginBottom: 24,
-                letterSpacing: -0.5
+                marginBottom: 16,
+                letterSpacing: -0.3
               }}>
                 {gameSpec.title}
               </Text>
@@ -2516,30 +2534,23 @@ Features: ${gameSpec.features.join(', ')}`;
               {/* Description */}
               <Text style={{ 
                 color: '#CCC', 
-                fontSize: 16, 
-                lineHeight: 26, 
-                marginBottom: 32 
+                fontSize: 15, 
+                lineHeight: 22, 
+                marginBottom: 20 
               }}>
                 {gameSpec.description}
               </Text>
 
               {/* Feature Bullets */}
               {gameSpec.features && gameSpec.features.length > 0 && (
-                <View style={{ marginBottom: 32 }}>
+                <View style={{ marginBottom: 24 }}>
                   {gameSpec.features.map((feature, idx) => (
-                    <View key={idx} style={{ flexDirection: 'row', marginBottom: 16, alignItems: 'flex-start' }}>
-                      <View style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: '#06b6d4',
-                        marginTop: 8,
-                        marginRight: 12
-                      }} />
+                    <View key={idx} style={{ flexDirection: 'row', marginBottom: 12, alignItems: 'flex-start' }}>
+                      <Text style={{ color: '#FFF', fontSize: 16, marginRight: 8, marginTop: -2 }}>•</Text>
                       <Text style={{ 
-                        color: '#DDD', 
-                        fontSize: 15, 
-                        lineHeight: 24,
+                        color: '#CCC', 
+                        fontSize: 14, 
+                        lineHeight: 20,
                         flex: 1
                       }}>
                         {feature}
@@ -2559,41 +2570,45 @@ Features: ${gameSpec.features.join(', ')}`;
             bottom: 0,
             left: 0,
             right: 0,
-            paddingHorizontal: 24,
-            paddingTop: 20,
-            paddingBottom: Math.max(insets.bottom + 20, 40),
-            backgroundColor: '#000',
-            borderTopWidth: 1,
-            borderTopColor: '#1a1a1a'
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            paddingBottom: Math.max(insets.bottom + 16, 32),
+            backgroundColor: '#000'
           }}>
+            {/* Create Button with Gradient */}
             <Pressable
               onPress={handleStartBuilding}
               style={({ pressed }) => ({
-                backgroundColor: pressed ? '#0ea5e9' : '#06b6d4',
-                paddingVertical: 18,
-                borderRadius: 28,
-                alignItems: 'center',
                 marginBottom: 12,
-                shadowColor: '#06b6d4',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 12
+                opacity: pressed ? 0.9 : 1
               })}
             >
-              <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 }}>Create</Text>
+              <LinearGradient
+                colors={['#06b6d4', '#3b82f6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  paddingVertical: 16,
+                  borderRadius: 24,
+                  alignItems: 'center'
+                }}
+              >
+                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Create</Text>
+              </LinearGradient>
             </Pressable>
             
+            {/* Tap to wish input */}
             <View style={{
               backgroundColor: '#1a1a1a',
-              borderRadius: 24,
-              borderWidth: 1,
-              borderColor: '#2a2a2a',
+              borderRadius: 20,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
               flexDirection: 'row',
               alignItems: 'center',
-              paddingHorizontal: 20,
-              paddingVertical: 4
+              justifyContent: 'space-between'
             }}>
               <TextInput
+                ref={wishInputRef}
                 value={wishInput}
                 onChangeText={setWishInput}
                 placeholder="Tap to wish..."
@@ -2601,8 +2616,7 @@ Features: ${gameSpec.features.join(', ')}`;
                 style={{
                   flex: 1,
                   color: '#FFF',
-                  fontSize: 15,
-                  paddingVertical: 14
+                  fontSize: 14
                 }}
                 onSubmitEditing={() => handleModifySpec(wishInput)}
               />
@@ -2610,18 +2624,55 @@ Features: ${gameSpec.features.join(', ')}`;
                 <Pressable
                   onPress={() => handleModifySpec(wishInput)}
                   style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: '#06b6d4',
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: '#3a3a3a',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    marginLeft: 8
                   }}
                 >
-                  <Ionicons name="arrow-up" size={20} color="#FFF" />
+                  <Ionicons name="arrow-up" size={18} color="#FFF" />
                 </Pressable>
               )}
             </View>
+            
+            {/* Plus button bottom left */}
+            <Pressable
+              onPress={() => wishInputRef.current?.focus()}
+              style={{
+                position: 'absolute',
+                bottom: Math.max(insets.bottom + 80, 96),
+                left: 20,
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: '#1a1a1a',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Ionicons name="add" size={24} color="#FFF" />
+            </Pressable>
+            
+            {/* Up arrow bottom right */}
+            <Pressable
+              onPress={() => refiningScrollRef.current?.scrollTo({ y: 0, animated: true })}
+              style={{
+                position: 'absolute',
+                bottom: Math.max(insets.bottom + 80, 96),
+                right: 20,
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: '#3a3a3a',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Ionicons name="arrow-up" size={20} color="#FFF" />
+            </Pressable>
           </View>
         )}
       </View>
