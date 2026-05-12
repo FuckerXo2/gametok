@@ -684,6 +684,7 @@ export const ai = {
         }
         console.log(`[DreamLabs] Background Job ${jobId} initiated. Polling status...`);
 
+        let pollErrorCount = 0;
         const interval = setInterval(async () => {
           if (controller.signal.aborted) {
             clearInterval(interval);
@@ -704,8 +705,16 @@ export const ai = {
               clearInterval(interval);
               reject(new Error(statusRes.error || 'Generation cancelled'));
             }
+            // Reset error count on successful poll
+            pollErrorCount = 0;
           } catch (pollingErr: any) {
-            console.warn('[DreamLabs] Polling blip (ignoring):', pollingErr.message);
+            pollErrorCount++;
+            console.warn(`[DreamLabs] Polling error ${pollErrorCount}/10:`, pollingErr.message);
+            // After 10 consecutive errors (50 seconds), give up
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
           }
         }, 5000);
 
@@ -757,6 +766,7 @@ export const ai = {
         console.log(`[DreamStream] Background Job ${jobId} initiated. Polling status...`);
 
         // Step 2: Poll the backend every 5 seconds until generation finishes
+        let pollErrorCount = 0;
         const interval = setInterval(async () => {
           if (controller.signal.aborted) {
             clearInterval(interval);
@@ -780,8 +790,16 @@ export const ai = {
               // Status is 'pending', just keep waiting
               console.log(`[DreamStream] Job ${jobId} is still pending...`);
             }
+            // Reset error count on successful poll
+            pollErrorCount = 0;
           } catch (pollingErr: any) {
-            console.warn('[DreamStream] Polling blip (ignoring):', pollingErr.message);
+            pollErrorCount++;
+            console.warn(`[DreamStream] Polling error ${pollErrorCount}/10:`, pollingErr.message);
+            // After 10 consecutive errors (50 seconds), give up
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
           }
         }, 5000);
 
