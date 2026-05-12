@@ -659,6 +659,28 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
   }, [clearPendingDreamJob]);
 
+  const stopCookingNotificationOnly = useCallback(async () => {
+    await cancelLocalNotification(cookingNotificationRef.current);
+    cookingNotificationRef.current = null;
+  }, []);
+
+  const ensureFallbackSpec = useCallback((sourcePrompt: string) => {
+    if (gameSpec) return;
+    const cleanedPrompt = sourcePrompt.trim();
+    const titleWords = cleanedPrompt
+      .replace(/[^a-zA-Z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2)
+      .slice(0, 3);
+    setGameSpec({
+      title: titleWords.length
+        ? titleWords.map(word => word[0].toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+        : 'Retry Build',
+      description: cleanedPrompt || 'Your game build hit an error before it finished.',
+      features: ['Retry the build with the same prompt.', 'Keep the idea and attachments intact.'],
+    });
+  }, [gameSpec]);
+
   const stopLocalDreamPolling = useCallback(() => {
     if (cancelRef.current) {
       cancelRef.current();
@@ -702,11 +724,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     let resumeCancel: (() => void) | null = null;
 
     const resumePendingDream = async () => {
+      let pending: { jobId?: string; prompt?: string; labsMode?: boolean } | null = null;
       try {
         const rawPending = await AsyncStorage.getItem(PENDING_CREATE_JOB_KEY);
         if (!rawPending || cancelled) return;
 
-        const pending = JSON.parse(rawPending);
+        pending = JSON.parse(rawPending);
         if (!pending?.jobId) return;
         if (resumingPendingJobRef.current === pending.jobId) return;
 
@@ -744,9 +767,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         if (!friendlyMessage) {
           return;
         }
+        const failedPrompt = pending?.prompt || prompt;
+        if (failedPrompt && !prompt.trim()) {
+          setPrompt(failedPrompt);
+        }
         setErrorMsg(friendlyMessage);
-        setPhase('idle');
-        await clearPendingDreamJob();
+        ensureFallbackSpec(failedPrompt || prompt);
+        setPhase('refining');
+        await stopCookingNotificationOnly();
       }
     };
 
@@ -760,7 +788,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         resumeCancel();
       }
     };
-  }, [isActive, phase, prompt, clearPendingDreamJob, completePendingDreamJob, fetchDrafts, formatDreamError, applyGenerationStatus]);
+  }, [isActive, phase, prompt, completePendingDreamJob, fetchDrafts, formatDreamError, applyGenerationStatus, ensureFallbackSpec, stopCookingNotificationOnly]);
 
   // Orb animation during generation
   useEffect(() => {
@@ -862,16 +890,36 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       setErrorMsg(null);
       const res = await ai.retryDreamJob(pendingJobId) as any;
       if (res.success && res.jobId) {
-        // Update to the new job ID
         setGenerationProgress(null);
         setGenerationPhase(null);
         setGenerationStatusMessage(null);
         await persistPendingDreamJob({ jobId: res.jobId, prompt, labsMode });
-        // The polling will pick up the new job automatically
+        setPhase('generating');
+
+        const resumed = ai.resumeDreamJob(res.jobId, { onStatus: applyGenerationStatus });
+        cancelRef.current = resumed.cancel;
+        const completed = await resumed.promise as any;
+        cancelRef.current = null;
+
+        if (completed.success && completed.htmlPreview) {
+          await completePendingDreamJob(completed.title || 'Untitled Dream', completed.draftId);
+          setGameConfig({});
+          setEditableSlots([]);
+          setActiveHtml(completed.htmlPreview);
+          setActiveDraftId(completed.draftId);
+          setGameTitle(completed.title || 'Untitled Dream');
+          setPhase('preview');
+          await fetchDrafts();
+        }
       }
     } catch (error: any) {
+      cancelRef.current = null;
       console.error('Retry failed:', error);
-      setErrorMsg('Failed to retry. Please try again.');
+      const friendlyMessage = formatDreamError(error, 'generate') || 'Failed to retry. Please try again.';
+      await stopCookingNotificationOnly();
+      setErrorMsg(friendlyMessage);
+      ensureFallbackSpec(prompt);
+      setPhase('refining');
     }
   };
 
@@ -928,7 +976,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         setPhase('preview');
       } else {
         setErrorMsg(res.error || 'Generation failed');
-        setPhase('idle');
+        ensureFallbackSpec(finalPrompt);
+        setPhase('refining');
       }
     } catch (error: any) {
       cancelRef.current = null;
@@ -940,15 +989,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           setPhase(gameSpec ? 'refining' : 'idle');
           return;
         }
-        await clearPendingDreamJob();
+        await stopCookingNotificationOnly();
         return;
       }
       detachPendingDreamRef.current = false;
       console.warn('AI Generation Warning:', error?.message || error);
-      await clearPendingDreamJob();
+      await stopCookingNotificationOnly();
       setErrorMsg(friendlyMessage);
-      // If we have a spec, stay on refining screen; otherwise go to idle
-      setPhase(gameSpec ? 'refining' : 'idle');
+      ensureFallbackSpec(finalPrompt);
+      setPhase('refining');
     }
   };
 

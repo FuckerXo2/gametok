@@ -90,7 +90,7 @@ export const useNavigation = () => useContext(NavigationContext);
 
 type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
 
-const MainApp = () => {
+const MainApp = ({ openCreateNonce = 0 }: { openCreateNonce?: number }) => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
   const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
@@ -130,6 +130,16 @@ const MainApp = () => {
   const triggerGameSkip = (direction: 'next' | 'prev') => {
     setGameSkipCounter(prev => ({ direction, count: prev.count + 1 }));
   };
+
+  useEffect(() => {
+    if (!openCreateNonce) return;
+    if (activeTab !== 'create') {
+      setPreviousTab(activeTab);
+    }
+    setIsGameDeckActive(false);
+    setIsHudHidden(false);
+    setActiveTab('create');
+  }, [openCreateNonce]);
 
   // Keep all screens mounted, just hide/show them
   return (
@@ -188,6 +198,7 @@ const AppContent = () => {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
+  const [creationNotificationNonce, setCreationNotificationNonce] = useState(0);
   const [showAuth, setShowAuth] = useState(false);
   const [startWithLogin, setStartWithLogin] = useState(false);
   const notificationListener = useRef<any>(null);
@@ -241,6 +252,8 @@ const AppContent = () => {
       // Handle different notification types
       if (data.type === 'game') {
         setSharedGameId(data.gameId as string);
+      } else if (data.type === 'creation') {
+        setCreationNotificationNonce((value) => value + 1);
       } else if (data.type === 'message') {
         // Navigate to inbox
         // You can add a callback here to switch tabs
@@ -338,7 +351,7 @@ const AppContent = () => {
     }}>
       <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame, openSharedGame }}>
         <View style={{ flex: 1 }}>
-          <MainApp />
+          <MainApp openCreateNonce={creationNotificationNonce} />
         </View>
       </DeepLinkContext.Provider>
     </AuthScreenContext.Provider>
