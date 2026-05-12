@@ -623,6 +623,10 @@ export const ai = {
     return request(`/ai/dream/cancel/${jobId}`, { method: 'POST' });
   },
 
+  retryDreamJob: async (jobId: string) => {
+    return request(`/ai/dream/retry/${jobId}`, { method: 'POST' });
+  },
+
   narrativeChat: async (messages: { role: 'ai' | 'user'; text: string }[]) => {
     return request('/ai/narrative/chat', {
       method: 'POST',
@@ -634,6 +638,13 @@ export const ai = {
     return request('/ai/generate-spec', {
       method: 'POST',
       body: JSON.stringify({ prompt }),
+    }, 30000);
+  },
+
+  refineSpec: async (conversationHistory: Array<{ role: 'ai' | 'user'; content: string }>, userMessage: string) => {
+    return request('/ai/refine-spec', {
+      method: 'POST',
+      body: JSON.stringify({ conversationHistory, userMessage }),
     }, 30000);
   },
 

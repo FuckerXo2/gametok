@@ -338,7 +338,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const resumingPendingJobRef = useRef<string | null>(null);
   const cookingNotificationRef = useRef<string | null>(null);
   const webviewRef = useRef<WebView>(null);
-  const enemyIdRef = useRef(0);
   const ideasScrollRefs = useRef<Array<ScrollView | null>>([]);
   const ideasOffsetRefs = useRef([0, 0, 0]);
   const ideasContentWidthRefs = useRef([0, 0, 0]);
@@ -357,11 +356,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [gameTitle, setGameTitle] = useState('');
   const [activeStep, setActiveStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [knightLane, setKnightLane] = useState(1);
-  const [sceneEnemies, setSceneEnemies] = useState<Array<{ id: number; lane: number; depth: number; kind: 'zombie' | 'ghoul' }>>([]);
-  const [defeatedEnemies, setDefeatedEnemies] = useState(0);
-  const [wizardHeat, setWizardHeat] = useState(24);
-  const [swingTick, setSwingTick] = useState(0);
   
   const [showEditor, setShowEditor] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -424,6 +418,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [gameSpec, setGameSpec] = useState<GameSpec | null>(null);
   const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
   const [wishInput, setWishInput] = useState('');
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: 'ai' | 'user'; content: string }>>([]);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
   const wishInputRef = useRef<TextInput>(null);
   const refiningScrollRef = useRef<ScrollView>(null);
 
@@ -817,66 +813,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     return () => clearInterval(interval);
   }, [studioTab, phase]);
 
-  useEffect(() => {
-    if (phase !== 'generating') return;
-
-    enemyIdRef.current = 0;
-    setKnightLane(1);
-    setSceneEnemies([]);
-    setDefeatedEnemies(0);
-    setWizardHeat(24);
-    setSwingTick(0);
-
-    const interval = setInterval(() => {
-      setSwingTick((prev) => prev + 1);
-      setWizardHeat((prev) => Math.max(16, prev - 1));
-      setSceneEnemies((prev) => {
-        let defeated = 0;
-        let slipped = 0;
-
-        let next = prev
-          .map((enemy) => ({ ...enemy, depth: enemy.depth + 1 }))
-          .filter((enemy) => {
-            const inStrikeZone = enemy.depth >= 4 && enemy.depth <= 5 && enemy.lane === knightLane;
-            if (inStrikeZone) {
-              defeated += 1;
-              return false;
-            }
-            if (enemy.depth > 6) {
-              slipped += 1;
-              return false;
-            }
-            return true;
-          });
-
-        if (defeated > 0) {
-          setDefeatedEnemies((prevDefeated) => prevDefeated + defeated);
-          setWizardHeat((prevHeat) => Math.min(100, prevHeat + defeated * 5));
-        }
-
-        if (slipped > 0) {
-          setWizardHeat((prevHeat) => Math.max(8, prevHeat - slipped * 8));
-        }
-
-        if (next.length < 7 && Math.random() < 0.8) {
-          next = [
-            ...next,
-            {
-              id: enemyIdRef.current++,
-              lane: Math.floor(Math.random() * 3),
-              depth: 0,
-              kind: Math.random() > 0.72 ? 'ghoul' : 'zombie',
-            },
-          ];
-        }
-
-        return next;
-      });
-    }, 520);
-
-    return () => clearInterval(interval);
-  }, [phase, knightLane]);
-
   const animatedOrbStyle = useAnimatedStyle(() => ({
     transform: [{ scale: orbPulse.value }, { rotate: `${orbRotation.value}deg` } as any],
   }));
@@ -892,6 +828,23 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+
+  const handleRetryJob = async () => {
+    if (!pendingJobId) return;
+    
+    try {
+      setErrorMsg(null);
+      const res = await ai.retryDreamJob(pendingJobId) as any;
+      if (res.success && res.jobId) {
+        // Update to the new job ID
+        await persistPendingDreamJob({ jobId: res.jobId, prompt, labsMode });
+        // The polling will pick up the new job automatically
+      }
+    } catch (error: any) {
+      console.error('Retry failed:', error);
+      setErrorMsg('Failed to retry. Please try again.');
+    }
+  };
 
   const handleReturnToForge = useCallback(() => {
     if (!pendingJobId) return;
@@ -951,7 +904,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       if (!friendlyMessage) {
         if (detachPendingDreamRef.current) {
           detachPendingDreamRef.current = false;
-          setPhase('idle');
+          // If we have a spec, go back to refining; otherwise go to idle
+          setPhase(gameSpec ? 'refining' : 'idle');
           return;
         }
         await clearPendingDreamJob();
@@ -961,7 +915,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       console.warn('AI Generation Warning:', error?.message || error);
       await clearPendingDreamJob();
       setErrorMsg(friendlyMessage);
-      setPhase('idle');
+      // If we have a spec, stay on refining screen; otherwise go to idle
+      setPhase(gameSpec ? 'refining' : 'idle');
     }
   };
 
@@ -2559,6 +2514,68 @@ Features: ${gameSpec.features.join(', ')}`;
                   ))}
                 </View>
               )}
+
+              {/* AI Message */}
+              {aiMessage && !errorMsg && (
+                <View style={{
+                  backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                  borderLeftWidth: 3,
+                  borderLeftColor: '#06b6d4',
+                  borderRadius: 8,
+                  padding: 16,
+                  marginBottom: 24
+                }}>
+                  <Text style={{ 
+                    color: '#06b6d4', 
+                    fontSize: 15, 
+                    lineHeight: 22 
+                  }}>
+                    {aiMessage}
+                  </Text>
+                </View>
+              )}
+
+              {/* Error Message with Fix It Button */}
+              {errorMsg && (
+                <Animated.View 
+                  entering={FadeInUp.duration(300)}
+                  style={{
+                    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+                    borderLeftWidth: 3,
+                    borderLeftColor: '#FF3B30',
+                    borderRadius: 8,
+                    padding: 16,
+                    marginBottom: 24
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 }}>
+                    <Ionicons name="warning" size={20} color="#FF3B30" style={{ marginRight: 12, marginTop: 2 }} />
+                    <Text style={{ 
+                      color: '#FF6B6B', 
+                      fontSize: 15, 
+                      lineHeight: 22,
+                      flex: 1
+                    }}>
+                      {errorMsg}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={handleRetryJob}
+                    style={({ pressed }) => ({
+                      backgroundColor: '#FF3B30',
+                      paddingVertical: 12,
+                      paddingHorizontal: 20,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      opacity: pressed ? 0.8 : 1
+                    })}
+                  >
+                    <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '700' }}>
+                      Fix It
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              )}
             </Animated.View>
           )}
         </ScrollView>
@@ -2690,6 +2707,8 @@ Features: ${gameSpec.features.join(', ')}`;
         labsMode={labsMode}
         onCancel={handleCancel}
         onMinimize={() => setPhase('idle')}
+        onRetry={handleRetryJob}
+        errorMessage={errorMsg}
         generationSteps={GENERATION_STEPS}
         cookingStatusLines={COOKING_STATUS_LINES}
       />
