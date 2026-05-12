@@ -630,10 +630,10 @@ export const ai = {
     }, 45000);
   },
 
-  refineConversation: async (prompt: string, conversationHistory: { role: 'ai' | 'user'; text: string }[]) => {
-    return request('/ai/refine-conversation', {
+  generateSpec: async (prompt: string) => {
+    return request('/ai/generate-spec', {
       method: 'POST',
-      body: JSON.stringify({ prompt, conversationHistory }),
+      body: JSON.stringify({ prompt }),
     }, 30000);
   },
 

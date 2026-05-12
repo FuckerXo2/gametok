@@ -67,9 +67,10 @@ interface DraftItem {
   created_at: string;
 }
 
-interface ConversationMessage {
-  role: 'ai' | 'user';
-  text: string;
+interface GameSpec {
+  title: string;
+  description: string;
+  features: string[];
 }
 
 const DRAFT_GRADIENTS: [string, string][] = [
@@ -419,11 +420,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [studioBuildTick, setStudioBuildTick] = useState(0);
 
-  // Refinement conversation state
-  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
-  const [isAiThinking, setIsAiThinking] = useState(false);
-  const [refinementInput, setRefinementInput] = useState('');
-  const conversationScrollRef = useRef<ScrollView>(null);
+  // Game spec state
+  const [gameSpec, setGameSpec] = useState<GameSpec | null>(null);
+  const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
+  const [wishInput, setWishInput] = useState('');
 
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
@@ -973,87 +973,66 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     setErrorMsg(null);
     Keyboard.dismiss();
     
-    // Start refinement conversation
+    // Generate game spec
     setPhase('refining');
-    setConversation([]);
-    setIsAiThinking(true);
+    setIsGeneratingSpec(true);
+    setGameSpec(null);
     
     try {
-      const res = await ai.refineConversation(finalPrompt, []) as any;
-      setIsAiThinking(false);
+      const res = await ai.generateSpec(finalPrompt) as any;
+      setIsGeneratingSpec(false);
       
-      if (res.success && res.message) {
-        setConversation([{ role: 'ai', text: res.message }]);
-        
-        // If AI is already done (prompt was detailed enough), go straight to building
-        if (res.isDone) {
-          setTimeout(() => handleDream(finalPrompt), 1000);
-        }
+      if (res.success && res.spec) {
+        setGameSpec(res.spec);
+      } else {
+        // Fall back to direct generation
+        handleDream(finalPrompt);
       }
     } catch (error) {
-      console.error('Refinement conversation failed:', error);
-      setIsAiThinking(false);
+      console.error('Spec generation failed:', error);
+      setIsGeneratingSpec(false);
       // Fall back to direct generation
       handleDream(finalPrompt);
     }
   };
 
-  const handleRefinementMessage = async (userMessage: string) => {
-    if (!userMessage.trim()) return;
+  const handleModifySpec = async (modification: string) => {
+    if (!modification.trim() || !gameSpec) return;
     
-    // Add user message
-    const newConversation = [...conversation, { role: 'user' as const, text: userMessage }];
-    setConversation(newConversation);
-    setRefinementInput('');
-    setIsAiThinking(true);
-    
-    setTimeout(() => {
-      conversationScrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    setIsGeneratingSpec(true);
+    setWishInput('');
     
     try {
-      const res = await ai.refineConversation(prompt.trim(), newConversation) as any;
-      setIsAiThinking(false);
+      const modifiedPrompt = `${prompt}\n\nModification: ${modification}`;
+      const res = await ai.generateSpec(modifiedPrompt) as any;
+      setIsGeneratingSpec(false);
       
-      if (res.success && res.message) {
-        setConversation(prev => [...prev, { role: 'ai', text: res.message }]);
-        
-        setTimeout(() => {
-          conversationScrollRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-        
-        // If conversation is done, show build button (handled in UI)
+      if (res.success && res.spec) {
+        setGameSpec(res.spec);
       }
     } catch (error) {
-      console.error('Refinement message failed:', error);
-      setIsAiThinking(false);
+      console.error('Spec modification failed:', error);
+      setIsGeneratingSpec(false);
     }
   };
 
   const handleStartBuilding = () => {
-    // Build enriched prompt with conversation context
-    let enrichedPrompt = prompt.trim();
+    if (!gameSpec) return;
     
-    if (conversation.length > 0) {
-      enrichedPrompt += '\n\nAdditional context from conversation:';
-      conversation.forEach(msg => {
-        if (msg.role === 'user') {
-          enrichedPrompt += `\n- ${msg.text}`;
-        }
-      });
-    }
+    // Build enriched prompt with spec
+    const enrichedPrompt = `${prompt}
+
+Title: ${gameSpec.title}
+Description: ${gameSpec.description}
+Features: ${gameSpec.features.join(', ')}`;
     
     handleDream(enrichedPrompt);
   };
 
-  const handleSkipRefinement = () => {
-    handleDream(prompt.trim());
-  };
-
   const handleBackFromRefinement = () => {
     setPhase('idle');
-    setConversation([]);
-    setRefinementInput('');
+    setGameSpec(null);
+    setWishInput('');
   };
 
   const handleDeleteDraft = (draftId: string, title?: string) => {
@@ -2489,180 +2468,174 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // RENDER: REFINING
   // ======================
   if (phase === 'refining') {
-    // Check if we should show the build button
-    const shouldShowBuildButton = conversation.length >= 4 || // At least 2 exchanges
-                                   conversation[conversation.length - 1]?.text?.toLowerCase().includes('ready to build');
-    
     return (
       <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: '#000' }]}>
         {/* Header */}
         <View style={styles.headerV2}>
           <View style={styles.headerV2Side}>
-            <Pressable style={styles.headerMenuBtn} onPress={handleBackFromRefinement}>
+            <Pressable 
+              style={[styles.headerMenuBtn, { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' }]} 
+              onPress={handleBackFromRefinement}
+            >
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </Pressable>
           </View>
           <View style={styles.headerV2Center} pointerEvents="none">
-            <Text style={styles.headerLogo}>Chat with AI</Text>
+            <Text style={[styles.headerLogo, { fontSize: 18, fontWeight: '700' }]}>Studio</Text>
           </View>
           <View style={[styles.headerV2Side, styles.headerV2SideRight]}>
-            <Pressable onPress={handleSkipRefinement}>
-              <Text style={{ color: '#888', fontSize: 15, fontWeight: '600' }}>Skip</Text>
-            </Pressable>
+            <Ionicons name="notifications-outline" size={24} color="#fff" />
           </View>
         </View>
 
-        {/* Conversation */}
         <ScrollView
-          ref={conversationScrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 20, paddingBottom: 140 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 200 }}
           showsVerticalScrollIndicator={false}
         >
-          {conversation.map((msg, index) => (
-            <Animated.View
-              key={index}
-              entering={FadeInUp.delay(index * 100).duration(400)}
-              style={{
-                marginBottom: 16,
-                alignItems: msg.role === 'ai' ? 'flex-start' : 'flex-end'
-              }}
-            >
-              {msg.role === 'ai' && (
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', maxWidth: '85%' }}>
-                  <View style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: '#a855f7',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginRight: 8
-                  }}>
-                    <Ionicons name="sparkles" size={16} color="#FFF" />
-                  </View>
-                  <View style={{
-                    backgroundColor: '#1a1a1a',
-                    borderRadius: 16,
-                    padding: 14,
-                    borderWidth: 1,
-                    borderColor: '#333'
-                  }}>
-                    <Text style={{ color: '#FFF', fontSize: 15, lineHeight: 22 }}>{msg.text}</Text>
-                  </View>
-                </View>
-              )}
-              {msg.role === 'user' && (
-                <View style={{
-                  backgroundColor: '#a855f7',
-                  borderRadius: 16,
-                  padding: 14,
-                  maxWidth: '75%'
-                }}>
-                  <Text style={{ color: '#FFF', fontSize: 15, lineHeight: 22, fontWeight: '600' }}>{msg.text}</Text>
-                </View>
-              )}
+          {/* Original Prompt */}
+          <View style={{
+            backgroundColor: '#1a1a1a',
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 32,
+            borderWidth: 1,
+            borderColor: '#2a2a2a'
+          }}>
+            <Text style={{ color: '#FFF', fontSize: 15, lineHeight: 24 }}>{prompt}</Text>
+          </View>
+
+          {isGeneratingSpec ? (
+            <Animated.View entering={FadeInUp.duration(400)} style={{ alignItems: 'center', paddingVertical: 60 }}>
+              <ActivityIndicator size="large" color="#06b6d4" />
+              <Text style={{ color: '#888', fontSize: 15, marginTop: 16 }}>Crafting your game...</Text>
             </Animated.View>
-          ))}
-          
-          {isAiThinking && (
-            <Animated.View
-              entering={FadeInUp.duration(400)}
-              style={{ flexDirection: 'row', alignItems: 'flex-start', maxWidth: '85%' }}
-            >
-              <View style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: '#a855f7',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 8
+          ) : gameSpec && (
+            <Animated.View entering={FadeInUp.duration(600)}>
+              <Text style={{ color: '#888', fontSize: 14, marginBottom: 16 }}>Ok what do you think of...</Text>
+              
+              {/* Generated Title */}
+              <Text style={{ 
+                color: '#FFF', 
+                fontSize: 32, 
+                fontWeight: '800', 
+                marginBottom: 24,
+                letterSpacing: -0.5
               }}>
-                <Ionicons name="sparkles" size={16} color="#FFF" />
-              </View>
-              <View style={{
-                backgroundColor: '#1a1a1a',
-                borderRadius: 16,
-                padding: 14,
-                borderWidth: 1,
-                borderColor: '#333',
-                flexDirection: 'row',
-                gap: 6
+                {gameSpec.title}
+              </Text>
+
+              {/* Description */}
+              <Text style={{ 
+                color: '#CCC', 
+                fontSize: 16, 
+                lineHeight: 26, 
+                marginBottom: 32 
               }}>
-                <ActivityIndicator size="small" color="#a855f7" />
-                <Text style={{ color: '#888', fontSize: 15 }}>Thinking...</Text>
-              </View>
+                {gameSpec.description}
+              </Text>
+
+              {/* Feature Bullets */}
+              {gameSpec.features && gameSpec.features.length > 0 && (
+                <View style={{ marginBottom: 32 }}>
+                  {gameSpec.features.map((feature, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', marginBottom: 16, alignItems: 'flex-start' }}>
+                      <View style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: '#06b6d4',
+                        marginTop: 8,
+                        marginRight: 12
+                      }} />
+                      <Text style={{ 
+                        color: '#DDD', 
+                        fontSize: 15, 
+                        lineHeight: 24,
+                        flex: 1
+                      }}>
+                        {feature}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </Animated.View>
           )}
         </ScrollView>
 
-        {/* Bottom Input / Build Button */}
-        <View style={{
-          position: 'absolute',
-          bottom: Math.max(insets.bottom, 20),
-          left: 20,
-          right: 20,
-          backgroundColor: '#0a0a0a',
-          borderRadius: 24,
-          padding: 16,
-          borderWidth: 1,
-          borderColor: '#222'
-        }}>
-          {shouldShowBuildButton ? (
+        {/* Bottom Actions */}
+        {gameSpec && !isGeneratingSpec && (
+          <View style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            paddingHorizontal: 24,
+            paddingTop: 20,
+            paddingBottom: Math.max(insets.bottom + 20, 40),
+            backgroundColor: '#000',
+            borderTopWidth: 1,
+            borderTopColor: '#1a1a1a'
+          }}>
             <Pressable
               onPress={handleStartBuilding}
               style={({ pressed }) => ({
-                backgroundColor: pressed ? '#9333ea' : '#a855f7',
-                paddingVertical: 16,
-                borderRadius: 16,
+                backgroundColor: pressed ? '#0ea5e9' : '#06b6d4',
+                paddingVertical: 18,
+                borderRadius: 28,
                 alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: 8
+                marginBottom: 12,
+                shadowColor: '#06b6d4',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 12
               })}
             >
-              <Ionicons name="hammer" size={20} color="#FFF" />
-              <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '700' }}>Start Building</Text>
+              <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 }}>Create</Text>
             </Pressable>
-          ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            
+            <View style={{
+              backgroundColor: '#1a1a1a',
+              borderRadius: 24,
+              borderWidth: 1,
+              borderColor: '#2a2a2a',
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 20,
+              paddingVertical: 4
+            }}>
               <TextInput
-                value={refinementInput}
-                onChangeText={setRefinementInput}
-                placeholder="Type your answer..."
+                value={wishInput}
+                onChangeText={setWishInput}
+                placeholder="Tap to wish..."
                 placeholderTextColor="#666"
                 style={{
                   flex: 1,
                   color: '#FFF',
                   fontSize: 15,
-                  paddingVertical: 12,
-                  paddingHorizontal: 16,
-                  backgroundColor: '#1a1a1a',
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: '#333'
+                  paddingVertical: 14
                 }}
-                onSubmitEditing={() => handleRefinementMessage(refinementInput)}
-                editable={!isAiThinking}
+                onSubmitEditing={() => handleModifySpec(wishInput)}
               />
-              <Pressable
-                onPress={() => handleRefinementMessage(refinementInput)}
-                disabled={!refinementInput.trim() || isAiThinking}
-                style={({ pressed }) => ({
-                  backgroundColor: refinementInput.trim() && !isAiThinking ? (pressed ? '#9333ea' : '#a855f7') : '#2a2a2a',
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                })}
-              >
-                <Ionicons name="send" size={18} color={refinementInput.trim() && !isAiThinking ? '#FFF' : '#666'} />
-              </Pressable>
+              {wishInput.trim().length > 0 && (
+                <Pressable
+                  onPress={() => handleModifySpec(wishInput)}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#06b6d4',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Ionicons name="arrow-up" size={20} color="#FFF" />
+                </Pressable>
+              )}
             </View>
-          )}
-        </View>
+          </View>
+        )}
       </View>
     );
   }
