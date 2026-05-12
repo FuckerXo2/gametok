@@ -2493,18 +2493,6 @@ Features: ${gameSpec.features.join(', ')}`;
           contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 200 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Original Prompt */}
-          <View style={{
-            backgroundColor: '#1a1a1a',
-            borderRadius: 16,
-            padding: 20,
-            marginBottom: 32,
-            borderWidth: 1,
-            borderColor: '#2a2a2a'
-          }}>
-            <Text style={{ color: '#FFF', fontSize: 15, lineHeight: 24 }}>{prompt}</Text>
-          </View>
-
           {isGeneratingSpec ? (
             <Animated.View entering={FadeInUp.duration(400)} style={{ alignItems: 'center', paddingVertical: 60 }}>
               <ActivityIndicator size="large" color="#06b6d4" />
