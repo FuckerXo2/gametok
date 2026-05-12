@@ -2430,22 +2430,37 @@ Features: ${gameSpec.features.join(', ')}`;
   // ======================
   if (phase === 'refining') {
     return (
-      <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: '#000' }]}>
+      <View style={[styles.screenWithBottomNav, { paddingTop: insets.top, backgroundColor: '#000' }]}>
         {/* Header */}
         <View style={styles.headerV2}>
           <View style={styles.headerV2Side}>
-            <Pressable 
-              style={[styles.headerMenuBtn, { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' }]} 
-              onPress={handleBackFromRefinement}
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </Pressable>
           </View>
           <View style={styles.headerV2Center} pointerEvents="none">
-            <Text style={[styles.headerLogo, { fontSize: 18, fontWeight: '700' }]}>Studio</Text>
+            {/* Gradient Dream Forge text */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="sparkles" size={24} color="#d946ef" style={{ marginRight: 8 }} />
+              <Svg height="40" width="180">
+                <Defs>
+                  <SvgLinearGradient id="gradRefine" x1="0" y1="0" x2="1" y2="0">
+                    <Stop offset="0" stopColor="#d946ef" stopOpacity="1" />
+                    <Stop offset="0.45" stopColor="#8b5cf6" stopOpacity="1" />
+                    <Stop offset="1" stopColor="#3b82f6" stopOpacity="1" />
+                  </SvgLinearGradient>
+                </Defs>
+                <SvgText
+                  fill="url(#gradRefine)"
+                  fontSize="26"
+                  fontWeight="800"
+                  x="0"
+                  y="28"
+                  letterSpacing="-0.3"
+                >
+                  Dream Forge
+                </SvgText>
+              </Svg>
+            </View>
           </View>
           <View style={[styles.headerV2Side, styles.headerV2SideRight]}>
-            <Ionicons name="notifications-outline" size={24} color="#fff" />
           </View>
         </View>
 
@@ -2464,23 +2479,23 @@ Features: ${gameSpec.features.join(', ')}`;
             <Animated.View entering={FadeInUp.duration(600)}>
               {/* Original Prompt Box */}
               <View style={{
-                backgroundColor: '#1a1a1a',
+                backgroundColor: '#0a0b16',
                 borderRadius: 12,
                 padding: 16,
                 marginBottom: 20
               }}>
-                <Text style={{ color: '#999', fontSize: 14, lineHeight: 20 }}>{prompt}</Text>
+                <Text style={{ color: '#FFF', fontSize: 14, lineHeight: 20 }}>{prompt}</Text>
               </View>
 
               {/* "Ok what do you think of..." */}
-              <Text style={{ color: '#999', fontSize: 14, marginBottom: 12 }}>Ok what do you think of...</Text>
+              <Text style={{ color: '#FFF', fontSize: 16, marginBottom: 32 }}>Ok what do you think of...</Text>
               
               {/* Generated Title */}
               <Text style={{ 
                 color: '#FFF', 
                 fontSize: 28, 
                 fontWeight: '800', 
-                marginBottom: 16,
+                marginBottom: 32,
                 letterSpacing: -0.3
               }}>
                 {gameSpec.title}
@@ -2514,6 +2529,31 @@ Features: ${gameSpec.features.join(', ')}`;
                   ))}
                 </View>
               )}
+
+              {/* Create Button - Inline with content */}
+              <Pressable
+                onPress={handleStartBuilding}
+                style={({ pressed }) => ({
+                  width: '85%',
+                  alignSelf: 'center',
+                  marginBottom: 24,
+                  opacity: pressed ? 0.9 : 1
+                })}
+              >
+                <LinearGradient
+                  colors={['#06b6d4', '#3b82f6']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    paddingVertical: 18,
+                    borderRadius: 32,
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 }}>Create</Text>
+                </LinearGradient>
+              </Pressable>
 
               {/* AI Message */}
               {aiMessage && !errorMsg && (
@@ -2580,7 +2620,7 @@ Features: ${gameSpec.features.join(', ')}`;
           )}
         </ScrollView>
 
-        {/* Bottom Actions */}
+        {/* Bottom Input Container - Fixed */}
         {gameSpec && !isGeneratingSpec && (
           <View style={{
             position: 'absolute',
@@ -2590,106 +2630,76 @@ Features: ${gameSpec.features.join(', ')}`;
             paddingHorizontal: 20,
             paddingTop: 16,
             paddingBottom: Math.max(insets.bottom + 16, 32),
-            backgroundColor: '#000'
+            backgroundColor: '#000',
+            minHeight: 180
           }}>
-            {/* Create Button with Gradient */}
-            <Pressable
-              onPress={handleStartBuilding}
-              style={({ pressed }) => ({
-                marginBottom: 12,
-                opacity: pressed ? 0.9 : 1
-              })}
-            >
-              <LinearGradient
-                colors={['#06b6d4', '#3b82f6']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{
-                  paddingVertical: 16,
-                  borderRadius: 24,
-                  alignItems: 'center'
-                }}
-              >
-                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '700' }}>Create</Text>
-              </LinearGradient>
-            </Pressable>
-            
-            {/* Tap to wish input */}
+            {/* Large container with input and floating buttons */}
             <View style={{
               backgroundColor: '#1a1a1a',
               borderRadius: 20,
               paddingHorizontal: 16,
               paddingVertical: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between'
+              minHeight: 140,
+              position: 'relative'
             }}>
+              {/* Tap to wish input at top of container */}
               <TextInput
                 ref={wishInputRef}
                 value={wishInput}
                 onChangeText={setWishInput}
                 placeholder="Tap to wish..."
                 placeholderTextColor="#666"
+                multiline
                 style={{
-                  flex: 1,
                   color: '#FFF',
-                  fontSize: 14
+                  fontSize: 14,
+                  minHeight: 40
                 }}
                 onSubmitEditing={() => handleModifySpec(wishInput)}
               />
-              {wishInput.trim().length > 0 && (
-                <Pressable
-                  onPress={() => handleModifySpec(wishInput)}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: '#3a3a3a',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginLeft: 8
-                  }}
-                >
-                  <Ionicons name="arrow-up" size={18} color="#FFF" />
-                </Pressable>
-              )}
+
+              {/* Plus button - bottom left inside container */}
+              <Pressable
+                onPress={() => wishInputRef.current?.focus()}
+                style={{
+                  position: 'absolute',
+                  bottom: 16,
+                  left: 16,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: '#000',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Ionicons name="add" size={24} color="#FFF" />
+              </Pressable>
+
+              {/* Up arrow - bottom right inside container */}
+              <Pressable
+                onPress={() => {
+                  if (wishInput.trim().length > 0) {
+                    handleModifySpec(wishInput);
+                  } else {
+                    refiningScrollRef.current?.scrollTo({ y: 0, animated: true });
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  bottom: 16,
+                  right: 16,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: '#3a3a3a',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Ionicons name="arrow-up" size={20} color="#FFF" />
+              </Pressable>
             </View>
-            
-            {/* Plus button bottom left */}
-            <Pressable
-              onPress={() => wishInputRef.current?.focus()}
-              style={{
-                position: 'absolute',
-                bottom: Math.max(insets.bottom + 80, 96),
-                left: 20,
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: '#1a1a1a',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <Ionicons name="add" size={24} color="#FFF" />
-            </Pressable>
-            
-            {/* Up arrow bottom right */}
-            <Pressable
-              onPress={() => refiningScrollRef.current?.scrollTo({ y: 0, animated: true })}
-              style={{
-                position: 'absolute',
-                bottom: Math.max(insets.bottom + 80, 96),
-                right: 20,
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: '#3a3a3a',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <Ionicons name="arrow-up" size={20} color="#FFF" />
-            </Pressable>
           </View>
         )}
       </View>
@@ -3337,6 +3347,15 @@ const styles = StyleSheet.create({
   // ── Existing styles ─────────────────────────────────────────────────────
   screen: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#08080C',
+    zIndex: 99999,
+  },
+  screenWithBottomNav: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 80,
     backgroundColor: '#08080C',
     zIndex: 99999,
   },
