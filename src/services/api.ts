@@ -651,7 +651,7 @@ export const ai = {
   dreamLabs: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void },
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
   ) => {
     const controller = new AbortController();
     let remoteJobId: string | null = null;
@@ -694,6 +694,7 @@ export const ai = {
 
           try {
             const statusRes = await request(`/ai/dream/status/${jobId}`);
+            options?.onStatus?.(statusRes);
             
             if (statusRes.status === 'complete') {
               clearInterval(interval);
@@ -730,7 +731,7 @@ export const ai = {
   dream: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void },
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
   ) => {
     const controller = new AbortController();
     let remoteJobId: string | null = null;
@@ -776,6 +777,7 @@ export const ai = {
 
           try {
             const statusRes = await request(`/ai/dream/status/${jobId}`);
+            options?.onStatus?.(statusRes);
             
             if (statusRes.status === 'complete') {
               clearInterval(interval);
@@ -812,13 +814,14 @@ export const ai = {
 
     return { promise, cancel: () => controller.abort(), cancelRemote: cancelRemoteJob };
   },
-  resumeDreamJob: (jobId: string) => {
+  resumeDreamJob: (jobId: string, options?: { onStatus?: (status: any) => void }) => {
     const controller = new AbortController();
 
     const promise = new Promise(async (resolve, reject) => {
       try {
         const checkStatus = async () => {
           const statusRes = await request(`/ai/dream/status/${jobId}`);
+          options?.onStatus?.(statusRes);
           if (statusRes.status === 'complete') {
             resolve(statusRes);
             return true;

@@ -412,6 +412,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<number | null>(null);
+  const [generationPhase, setGenerationPhase] = useState<string | null>(null);
+  const [generationStatusMessage, setGenerationStatusMessage] = useState<string | null>(null);
   const [studioBuildTick, setStudioBuildTick] = useState(0);
 
   // Game spec state
@@ -595,12 +598,34 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const clearPendingDreamJob = useCallback(async () => {
     setPendingJobId(null);
+    setGenerationProgress(null);
+    setGenerationPhase(null);
+    setGenerationStatusMessage(null);
     await cancelLocalNotification(cookingNotificationRef.current);
     cookingNotificationRef.current = null;
     try {
       await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
     } catch (e) {
       console.warn('Failed to clear pending dream job:', e);
+    }
+  }, []);
+
+  const applyGenerationStatus = useCallback((status: any) => {
+    if (typeof status?.progress === 'number') {
+      const nextProgress = Math.max(0, Math.min(100, status.progress));
+      setGenerationProgress(nextProgress);
+      setActiveStep(
+        nextProgress >= 88 ? 3
+          : nextProgress >= 68 ? 2
+            : nextProgress >= 35 ? 1
+              : 0
+      );
+    }
+    if (typeof status?.phase === 'string') {
+      setGenerationPhase(status.phase);
+    }
+    if (typeof status?.statusMessage === 'string') {
+      setGenerationStatusMessage(status.statusMessage);
     }
   }, []);
 
@@ -693,7 +718,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         setPhase('generating');
         setErrorMsg(null);
 
-        const { promise, cancel } = ai.resumeDreamJob(pending.jobId);
+        const { promise, cancel } = ai.resumeDreamJob(pending.jobId, { onStatus: applyGenerationStatus });
         resumeCancel = cancel;
         cancelRef.current = cancel;
         const res = await promise as any;
@@ -735,7 +760,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         resumeCancel();
       }
     };
-  }, [isActive, phase, prompt, clearPendingDreamJob, completePendingDreamJob, fetchDrafts, formatDreamError]);
+  }, [isActive, phase, prompt, clearPendingDreamJob, completePendingDreamJob, fetchDrafts, formatDreamError, applyGenerationStatus]);
 
   // Orb animation during generation
   useEffect(() => {
@@ -762,6 +787,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // Step progression during generation
   useEffect(() => {
     if (phase !== 'generating') return;
+    if (generationProgress !== null) return;
     setActiveStep(0);
     const interval = setInterval(() => {
       setActiveStep((prev) => {
@@ -770,7 +796,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       });
     }, 3000);
     return () => clearInterval(interval);
-  }, [phase]);
+  }, [phase, generationProgress]);
 
   useEffect(() => {
     if (!pendingJobId || phase === 'generating') return;
@@ -837,6 +863,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const res = await ai.retryDreamJob(pendingJobId) as any;
       if (res.success && res.jobId) {
         // Update to the new job ID
+        setGenerationProgress(null);
+        setGenerationPhase(null);
+        setGenerationStatusMessage(null);
         await persistPendingDreamJob({ jobId: res.jobId, prompt, labsMode });
         // The polling will pick up the new job automatically
       }
@@ -863,6 +892,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
     setPhase('generating');
     setErrorMsg(null);
+    setGenerationProgress(null);
+    setGenerationPhase(null);
+    setGenerationStatusMessage(null);
 
     try {
       const attachments = attachedAssets.map(({ type, role, url, thumb, thumbnail, title, label, instruction, duration }) => ({
@@ -880,8 +912,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode });
       };
       const { promise, cancel } = labsMode
-        ? ai.dreamLabs(finalPrompt, attachments, { onJobStarted })
-        : ai.dream(finalPrompt, attachments, { onJobStarted });
+        ? ai.dreamLabs(finalPrompt, attachments, { onJobStarted, onStatus: applyGenerationStatus })
+        : ai.dream(finalPrompt, attachments, { onJobStarted, onStatus: applyGenerationStatus });
       cancelRef.current = cancel;
       const res = await promise as any;
       cancelRef.current = null;
@@ -2721,6 +2753,9 @@ Features: ${gameSpec.features.join(', ')}`;
         errorMessage={errorMsg}
         generationSteps={GENERATION_STEPS}
         cookingStatusLines={COOKING_STATUS_LINES}
+        generationProgress={generationProgress}
+        generationPhase={generationPhase}
+        generationStatusMessage={generationStatusMessage}
       />
     );
   }

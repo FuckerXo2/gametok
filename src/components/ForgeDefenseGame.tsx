@@ -20,8 +20,13 @@ interface ForgeDefenseGameProps {
   labsMode: boolean;
   onCancel: () => void;
   onMinimize: () => void;
+  onRetry: () => void;
+  errorMessage: string | null;
   generationSteps: { icon: string; text: string }[];
   cookingStatusLines: string[];
+  generationProgress?: number | null;
+  generationPhase?: string | null;
+  generationStatusMessage?: string | null;
 }
 
 const FRAME_MS = 1000 / 24;
@@ -35,8 +40,13 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
   labsMode,
   onCancel,
   onMinimize,
+  onRetry,
+  errorMessage,
   generationSteps,
   cookingStatusLines,
+  generationProgress,
+  generationPhase,
+  generationStatusMessage,
 }) => {
   const insets = useSafeAreaInsets();
   const [frame, setFrame] = useState(0);
@@ -60,7 +70,9 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
   const inkMid = labsMode ? '#09161A' : '#10192B';
   const inkBottom = labsMode ? '#04070F' : '#070B14';
 
-  const progress = clamp(28 + activeStep * 18 + Math.sin(time * 0.7) * 5, 14, 96);
+  const progress = typeof generationProgress === 'number'
+    ? clamp(generationProgress, 0, 100)
+    : clamp(28 + activeStep * 18 + Math.sin(time * 0.7) * 5, 14, 96);
   const energy = clamp(56 + activeStep * 10 + Math.sin(time * 1.2) * 14, 30, 98);
   const beamScale = 0.92 + (Math.sin(time * 2.2) + 1) * 0.09;
   const haloScale = 0.9 + (Math.sin(time * 1.7) + 1) * 0.1;
@@ -127,13 +139,16 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
         ? 'Shaping the feel'
         : 'Finishing the magic';
 
-  const stepChip = activeStep === 0
+  const fallbackStepChip = activeStep === 0
     ? 'World layout'
     : activeStep === 1
       ? 'Rules and loops'
       : activeStep === 2
         ? 'Camera and feel'
         : 'Polish pass';
+  const stepChip = generationPhase
+    ? generationPhase.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+    : fallbackStepChip;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -419,7 +434,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
               {cookingStatusLines[activeStep % cookingStatusLines.length]}
             </Text>
             <Text style={styles.statusMeta} numberOfLines={1}>
-              {generationSteps[activeStep]?.text || 'Finishing up...'}
+              {generationStatusMessage || generationSteps[activeStep]?.text || 'Finishing up...'}
             </Text>
           </View>
         </View>
