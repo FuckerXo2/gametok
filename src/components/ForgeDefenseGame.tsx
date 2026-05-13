@@ -70,10 +70,8 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
   const inkMid = labsMode ? '#09161A' : '#10192B';
   const inkBottom = labsMode ? '#04070F' : '#070B14';
 
-  const progress = typeof generationProgress === 'number'
-    ? clamp(generationProgress, 0, 100)
-    : clamp(28 + activeStep * 18 + Math.sin(time * 0.7) * 5, 14, 96);
-  const energy = clamp(56 + activeStep * 10 + Math.sin(time * 1.2) * 14, 30, 98);
+  const hasBackendProgress = typeof generationProgress === 'number';
+  const progress = hasBackendProgress ? clamp(generationProgress, 0, 100) : 0;
   const beamScale = 0.92 + (Math.sin(time * 2.2) + 1) * 0.09;
   const haloScale = 0.9 + (Math.sin(time * 1.7) + 1) * 0.1;
 
@@ -131,13 +129,15 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
     []
   );
 
-  const phaseTitle = activeStep === 0
-    ? 'Forging your world'
-    : activeStep === 1
-      ? 'Assembling the systems'
-      : activeStep === 2
-        ? 'Shaping the feel'
-        : 'Finishing the magic';
+  const phaseTitle = generationPhase
+    ? generationPhase.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+    : activeStep === 0
+      ? 'Forging your world'
+      : activeStep === 1
+        ? 'Assembling the systems'
+        : activeStep === 2
+          ? 'Shaping the feel'
+          : 'Finishing the magic';
 
   const fallbackStepChip = activeStep === 0
     ? 'World layout'
@@ -399,7 +399,9 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
           <View style={styles.panelTopRow}>
             <View>
               <Text style={styles.panelLabel}>ASSEMBLY PROGRESS</Text>
-              <Text style={styles.panelHeadline}>{Math.round(progress)}% complete</Text>
+              <Text style={styles.panelHeadline}>
+                {hasBackendProgress ? `${Math.round(progress)}% complete` : 'Waiting for backend'}
+              </Text>
             </View>
             <View style={styles.panelChip}>
               <Text style={styles.panelChipText}>{stepChip}</Text>
@@ -414,11 +416,11 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
             />
           </View>
           <View style={styles.energyRow}>
-            <Text style={styles.energyLabel}>Forge energy</Text>
+            <Text style={styles.energyLabel}>Backend signal</Text>
             <View style={styles.energyMeter}>
-              <View style={[styles.progressFillSoft, { width: `${energy}%`, backgroundColor: cold }]} />
+              <View style={[styles.progressFillSoft, { width: hasBackendProgress ? `${progress}%` : '0%', backgroundColor: cold }]} />
             </View>
-            <Text style={styles.energyValue}>{Math.round(energy)}%</Text>
+            <Text style={styles.energyValue}>{hasBackendProgress ? 'live' : 'waiting'}</Text>
           </View>
         </View>
       </View>
