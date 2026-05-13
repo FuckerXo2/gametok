@@ -2430,7 +2430,7 @@ Features: ${gameSpec.features.join(', ')}`;
         </Animated.View>
 
         {/* === GAME WEBVIEW === */}
-        <View style={styles.webviewContainer}>
+        <View style={[styles.webviewContainer, { top: insets.top + 66 }]}>
           <WebView
             ref={webviewRef}
             source={{ html: activeHtml, baseUrl: 'https://gametok.app' }}
