@@ -733,6 +733,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   useEffect(() => {
     if (!isActive) return;
     if (phase === 'preview') return;
+    if (phase !== 'idle' && phase !== 'generating') return;
     if (cancelRef.current) return;
     if (resumingPendingJobRef.current) return;
 
@@ -1037,6 +1038,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     }
     setErrorMsg(null);
     Keyboard.dismiss();
+
+    const staleJobId = pendingJobId;
+    if (staleJobId) {
+      stopLocalDreamPolling();
+      try {
+        await ai.cancelDreamJob(staleJobId);
+      } catch (error: any) {
+        console.warn('[DreamStream] Could not cancel stale job before refinement:', error?.message || error);
+      }
+      await clearPendingDreamJob();
+    }
     
     // Generate game spec
     setPhase('refining');
