@@ -337,7 +337,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               <SheetItem
                 icon="mail-outline"
                 label="Contact Us"
-                onPress={() => Linking.openURL('mailto:gametokapp@gmail.com')}
+                onPress={() => Linking.openURL('mailto:info@gametok.com')}
               />
               <SheetItem
                 icon="shield-outline"

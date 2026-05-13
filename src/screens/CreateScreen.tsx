@@ -1104,6 +1104,16 @@ Features: ${gameSpec.features.join(', ')}`;
     setWishInput('');
   };
 
+  // Auto-scroll to Create button when spec is ready
+  useEffect(() => {
+    if (gameSpec && !isGeneratingSpec && phase === 'refining') {
+      // Small delay to ensure layout is complete
+      setTimeout(() => {
+        refiningScrollRef.current?.scrollTo({ y: 300, animated: true });
+      }, 300);
+    }
+  }, [gameSpec, isGeneratingSpec, phase]);
+
   const handleDeleteDraft = (draftId: string, title?: string) => {
     Alert.alert(
       'Delete draft?',
