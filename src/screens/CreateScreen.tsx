@@ -412,6 +412,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [pendingJobStatus, setPendingJobStatus] = useState<'idle' | 'queued' | 'running' | 'failed' | 'canceled'>('idle');
   const [generationProgress, setGenerationProgress] = useState<number | null>(null);
   const [generationPhase, setGenerationPhase] = useState<string | null>(null);
   const [generationStatusMessage, setGenerationStatusMessage] = useState<string | null>(null);
@@ -566,6 +567,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const activeStudioStepIndex = pendingJobId ? (phase === 'generating' ? activeStep : studioBuildTick % GENERATION_STEPS.length) : 0;
   const activeStudioStep = GENERATION_STEPS[activeStudioStepIndex];
   const activeStudioStatusLine = COOKING_STATUS_LINES[studioBuildTick % COOKING_STATUS_LINES.length];
+  const pendingBuildFailed = pendingJobStatus === 'failed' || Boolean(errorMsg && pendingJobId && phase !== 'generating');
+  const activeBuildStatusText = pendingBuildFailed
+    ? 'Build failed · Tap to fix'
+    : `Forging in background · ${generationStatusMessage || activeStudioStep.text}`;
 
   // Fetch drafts when screen becomes active or tab switches to drafts
   const fetchDrafts = useCallback(async () => {
@@ -598,6 +603,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const clearPendingDreamJob = useCallback(async () => {
     setPendingJobId(null);
+    setPendingJobStatus('idle');
     setGenerationProgress(null);
     setGenerationPhase(null);
     setGenerationStatusMessage(null);
@@ -611,6 +617,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   }, []);
 
   const applyGenerationStatus = useCallback((status: any) => {
+    if (typeof status?.status === 'string') {
+      setPendingJobStatus(
+        status.status === 'error' ? 'failed'
+          : status.status === 'canceled' ? 'canceled'
+            : status.status === 'complete' ? 'idle'
+              : status.status === 'queued' ? 'queued'
+                : 'running'
+      );
+    }
     if (typeof status?.progress === 'number') {
       const nextProgress = Math.max(0, Math.min(100, status.progress));
       setGenerationProgress(nextProgress);
@@ -637,6 +652,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const persistPendingDreamJob = useCallback(async (payload: { jobId: string; prompt: string; labsMode: boolean }) => {
     setPendingJobId(payload.jobId);
+    setPendingJobStatus('queued');
     await armCookingNotification(payload.jobId, payload.prompt);
     try {
       await AsyncStorage.setItem(
@@ -735,6 +751,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
         resumingPendingJobRef.current = pending.jobId;
         setPendingJobId(pending.jobId);
+        setPendingJobStatus('running');
         if (pending.prompt && !prompt.trim()) {
           setPrompt(pending.prompt);
         }
@@ -772,6 +789,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           setPrompt(failedPrompt);
         }
         setErrorMsg(friendlyMessage);
+        setPendingJobStatus('failed');
         ensureFallbackSpec(failedPrompt || prompt);
         setPhase('refining');
         await stopCookingNotificationOnly();
@@ -888,6 +906,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     
     try {
       setErrorMsg(null);
+      setPendingJobStatus('running');
       const res = await ai.retryDreamJob(pendingJobId) as any;
       if (res.success && res.jobId) {
         setGenerationProgress(null);
@@ -918,6 +937,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const friendlyMessage = formatDreamError(error, 'generate') || 'Failed to retry. Please try again.';
       await stopCookingNotificationOnly();
       setErrorMsg(friendlyMessage);
+      setPendingJobStatus('failed');
       ensureFallbackSpec(prompt);
       setPhase('refining');
     }
@@ -925,9 +945,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
 
   const handleReturnToForge = useCallback(() => {
     if (!pendingJobId) return;
+    if (pendingBuildFailed) {
+      setPhase('refining');
+      return;
+    }
     setErrorMsg(null);
+    setPendingJobStatus('running');
     setPhase('generating');
-  }, [pendingJobId]);
+  }, [pendingBuildFailed, pendingJobId]);
 
   const handleDream = async (promptOverride?: string) => {
     const finalPrompt = (promptOverride ?? prompt).trim();
@@ -976,6 +1001,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         setPhase('preview');
       } else {
         setErrorMsg(res.error || 'Generation failed');
+        setPendingJobStatus('failed');
         ensureFallbackSpec(finalPrompt);
         setPhase('refining');
       }
@@ -996,6 +1022,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       console.warn('AI Generation Warning:', error?.message || error);
       await stopCookingNotificationOnly();
       setErrorMsg(friendlyMessage);
+      setPendingJobStatus('failed');
       ensureFallbackSpec(finalPrompt);
       setPhase('refining');
     }
@@ -3016,8 +3043,8 @@ Features: ${gameSpec.features.join(', ')}`;
             <Animated.View entering={FadeInUp.delay(110).duration(360)}>
               <Pressable style={styles.activeBuildCard} onPressIn={handleReturnToForge}>
                 <View style={styles.activeBuildStrip}>
-                  <View style={styles.activeBuildStatusDot} />
-                  <Text style={styles.activeBuildStatusText}>Forging in background · {activeStudioStep.text}</Text>
+                  <View style={[styles.activeBuildStatusDot, pendingBuildFailed && { backgroundColor: '#FF6B6B' }]} />
+                  <Text style={styles.activeBuildStatusText}>{activeBuildStatusText}</Text>
                   <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.48)" />
                 </View>
               </Pressable>
