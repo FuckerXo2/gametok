@@ -421,11 +421,13 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   // Game spec state
   const [gameSpec, setGameSpec] = useState<GameSpec | null>(null);
   const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
+  const [isRefiningSpecMessage, setIsRefiningSpecMessage] = useState(false);
   const [wishInput, setWishInput] = useState('');
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: 'ai' | 'user'; content: string }>>([]);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const wishInputRef = useRef<TextInput>(null);
   const refiningScrollRef = useRef<ScrollView>(null);
+  const hasAutoScrolledToSpecRef = useRef(false);
 
 
   // === WEBVIEW BRIDGE (Rezona Architecture) ===
@@ -1132,7 +1134,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     // Generate game spec
     setPhase('refining');
     setIsGeneratingSpec(true);
+    setIsRefiningSpecMessage(false);
     setGameSpec(null);
+    setConversationHistory([]);
+    setAiMessage(null);
+    hasAutoScrolledToSpecRef.current = false;
     
     try {
       const res = await ai.generateSpec(finalPrompt) as any;
@@ -1140,6 +1146,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       
       if (res.success && res.spec) {
         setGameSpec(res.spec);
+        const introMessage = `I shaped this into ${res.spec.title}. You can tweak the idea here, or tap Create when it feels right.`;
+        setAiMessage(introMessage);
+        setConversationHistory([
+          { role: 'user', content: finalPrompt },
+          { role: 'ai', content: introMessage },
+        ]);
       } else {
         // Show error and stay on refining screen
         Alert.alert('Oops', 'Failed to generate game spec. Please try again.', [
@@ -1157,22 +1169,46 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   };
 
   const handleModifySpec = async (modification: string) => {
-    if (!modification.trim() || !gameSpec) return;
-    
-    setIsGeneratingSpec(true);
+    const userMessage = modification.trim();
+    if (!userMessage || !gameSpec || isRefiningSpecMessage) return;
+
+    const historyBeforeTurn = conversationHistory.length > 0
+      ? conversationHistory
+      : [
+          { role: 'user' as const, content: prompt.trim() },
+          { role: 'ai' as const, content: `Current concept: ${gameSpec.title}. ${gameSpec.description} Features: ${gameSpec.features.join(', ')}` },
+        ];
+    const optimisticHistory = [
+      ...historyBeforeTurn,
+      { role: 'user' as const, content: userMessage },
+    ];
+
     setWishInput('');
-    
+    setErrorMsg(null);
+    setIsRefiningSpecMessage(true);
+    setConversationHistory(optimisticHistory);
+
     try {
-      const modifiedPrompt = `${prompt}\n\nModification: ${modification}`;
-      const res = await ai.generateSpec(modifiedPrompt) as any;
-      setIsGeneratingSpec(false);
-      
+      const res = await ai.refineSpec(historyBeforeTurn, userMessage) as any;
+      setIsRefiningSpecMessage(false);
+
       if (res.success && res.spec) {
         setGameSpec(res.spec);
+        const responseMessage = res.aiMessage || res.question || 'Updated the concept.';
+        setAiMessage(responseMessage);
+        setConversationHistory([
+          ...optimisticHistory,
+          { role: 'ai', content: responseMessage },
+        ]);
+      } else {
+        setConversationHistory(historyBeforeTurn);
+        setErrorMsg(res.error || 'Could not refine the concept. Please try again.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Spec modification failed:', error);
-      setIsGeneratingSpec(false);
+      setIsRefiningSpecMessage(false);
+      setConversationHistory(historyBeforeTurn);
+      setErrorMsg(error?.message || 'Could not refine the concept. Please try again.');
     }
   };
 
@@ -1193,11 +1229,16 @@ Features: ${gameSpec.features.join(', ')}`;
     setPhase('idle');
     setGameSpec(null);
     setWishInput('');
+    setConversationHistory([]);
+    setAiMessage(null);
+    setIsRefiningSpecMessage(false);
+    hasAutoScrolledToSpecRef.current = false;
   };
 
   // Auto-scroll to Create button when spec is ready
   useEffect(() => {
-    if (gameSpec && !isGeneratingSpec && phase === 'refining') {
+    if (gameSpec && !isGeneratingSpec && phase === 'refining' && !hasAutoScrolledToSpecRef.current) {
+      hasAutoScrolledToSpecRef.current = true;
       // Small delay to ensure layout is complete
       setTimeout(() => {
         refiningScrollRef.current?.scrollTo({ y: 300, animated: true });
@@ -2745,6 +2786,35 @@ Features: ${gameSpec.features.join(', ')}`;
                 </View>
               )}
 
+              {conversationHistory.length > 2 && (
+                <View style={{ marginBottom: 24 }}>
+                  {conversationHistory.slice(2).map((message, idx) => (
+                    <View
+                      key={`${message.role}-${idx}`}
+                      style={{
+                        alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+                        maxWidth: '88%',
+                        backgroundColor: message.role === 'user' ? '#1f2937' : 'rgba(6, 182, 212, 0.1)',
+                        borderColor: message.role === 'user' ? '#374151' : 'rgba(6, 182, 212, 0.35)',
+                        borderWidth: 1,
+                        borderRadius: 16,
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        marginBottom: 10
+                      }}
+                    >
+                      <Text style={{
+                        color: message.role === 'user' ? '#FFF' : '#9eeafd',
+                        fontSize: 14,
+                        lineHeight: 20
+                      }}>
+                        {message.content}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {/* Create Button - Inline with content */}
               <Pressable
                 onPress={handleStartBuilding}
@@ -2865,11 +2935,13 @@ Features: ${gameSpec.features.join(', ')}`;
                 placeholder="Tap to wish..."
                 placeholderTextColor="#666"
                 multiline
-                style={{
-                  color: '#FFF',
-                  fontSize: 14,
-                  minHeight: 40
+                  style={{
+                    color: '#FFF',
+                    fontSize: 14,
+                  minHeight: 40,
+                  paddingRight: 48
                 }}
+                editable={!isRefiningSpecMessage}
                 onSubmitEditing={() => handleModifySpec(wishInput)}
               />
 
@@ -2894,7 +2966,7 @@ Features: ${gameSpec.features.join(', ')}`;
               {/* Up arrow - bottom right inside container */}
               <Pressable
                 onPress={() => {
-                  if (wishInput.trim().length > 0) {
+                  if (wishInput.trim().length > 0 && !isRefiningSpecMessage) {
                     handleModifySpec(wishInput);
                   } else {
                     refiningScrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -2912,7 +2984,11 @@ Features: ${gameSpec.features.join(', ')}`;
                   justifyContent: 'center'
                 }}
               >
-                <Ionicons name="arrow-up" size={20} color="#FFF" />
+                {isRefiningSpecMessage ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Ionicons name="arrow-up" size={20} color="#FFF" />
+                )}
               </Pressable>
             </View>
           </View>
