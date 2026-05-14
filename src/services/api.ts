@@ -842,6 +842,7 @@ export const ai = {
           return;
         }
 
+        let pollErrorCount = 0;
         const interval = setInterval(async () => {
           if (controller.signal.aborted) {
             clearInterval(interval);
@@ -854,8 +855,14 @@ export const ai = {
             if (resolved) {
               clearInterval(interval);
             }
+            pollErrorCount = 0;
           } catch (pollingErr: any) {
-            console.warn('[DreamStream] Resume polling blip (ignoring):', pollingErr.message);
+            pollErrorCount++;
+            console.warn(`[DreamStream] Resume polling error ${pollErrorCount}/10:`, pollingErr.message);
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
           }
         }, 5000);
 
