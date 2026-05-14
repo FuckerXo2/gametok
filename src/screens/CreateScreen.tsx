@@ -564,13 +564,19 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const orbRotation = useSharedValue(0);
   const studioChipData = GENRE_CHIPS;
   const studioChipRows = chunkIntoRows(studioChipData, 3).map((row) => [...row, ...row]);
-  const activeStudioStepIndex = pendingJobId ? (phase === 'generating' ? activeStep : studioBuildTick % GENERATION_STEPS.length) : 0;
+  const pendingBuildActive = pendingJobStatus === 'queued' || pendingJobStatus === 'running';
+  const pendingBuildCanceled = pendingJobStatus === 'canceled';
+  const pendingBuildFailed = pendingJobStatus === 'failed' || Boolean(errorMsg && pendingJobId && phase !== 'generating');
+  const activeStudioStepIndex = pendingJobId && pendingBuildActive ? (phase === 'generating' ? activeStep : studioBuildTick % GENERATION_STEPS.length) : 0;
   const activeStudioStep = GENERATION_STEPS[activeStudioStepIndex];
   const activeStudioStatusLine = COOKING_STATUS_LINES[studioBuildTick % COOKING_STATUS_LINES.length];
-  const pendingBuildFailed = pendingJobStatus === 'failed' || Boolean(errorMsg && pendingJobId && phase !== 'generating');
   const activeBuildStatusText = pendingBuildFailed
     ? 'Build failed · Tap to fix'
-    : `Forging in background · ${generationStatusMessage || activeStudioStep.text}`;
+    : pendingBuildCanceled
+      ? 'Build stopped'
+      : pendingBuildActive
+        ? `Forging in background · ${generationStatusMessage || activeStudioStep.text}`
+        : 'No active build';
 
   // Fetch drafts when screen becomes active or tab switches to drafts
   const fetchDrafts = useCallback(async () => {
@@ -846,12 +852,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   }, [phase, generationProgress]);
 
   useEffect(() => {
-    if (!pendingJobId || phase === 'generating') return;
+    if (!pendingJobId || !pendingBuildActive || phase === 'generating') return;
     const interval = setInterval(() => {
       setStudioBuildTick((prev) => prev + 1);
     }, 2600);
     return () => clearInterval(interval);
-  }, [pendingJobId, phase]);
+  }, [pendingBuildActive, pendingJobId, phase]);
 
   useEffect(() => {
     ideasOffsetRefs.current = [0, 0, 0];
@@ -3065,7 +3071,7 @@ Features: ${gameSpec.features.join(', ')}`;
             <Animated.View entering={FadeInUp.delay(110).duration(360)}>
               <Pressable style={styles.activeBuildCard} onPressIn={handleReturnToForge}>
                 <View style={styles.activeBuildStrip}>
-                  <View style={[styles.activeBuildStatusDot, pendingBuildFailed && { backgroundColor: '#FF6B6B' }]} />
+                  <View style={[styles.activeBuildStatusDot, (pendingBuildFailed || pendingBuildCanceled) && { backgroundColor: '#FF6B6B' }]} />
                   <Text style={styles.activeBuildStatusText}>{activeBuildStatusText}</Text>
                   <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.48)" />
                 </View>
