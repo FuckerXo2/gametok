@@ -505,15 +505,88 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     true;
   `, []);
 
+  const PREVIEW_NAVIGATION_GUARD_JS = useMemo(() => `
+    (function() {
+      var allowedOrigin = 'https://gametok.app';
+      function isAllowedUrl(rawUrl) {
+        if (!rawUrl) return true;
+        try {
+          var url = new URL(rawUrl, allowedOrigin);
+          return url.protocol === 'about:' ||
+            url.protocol === 'data:' ||
+            url.protocol === 'blob:' ||
+            url.origin === allowedOrigin;
+        } catch (e) {
+          return false;
+        }
+      }
+      window.open = function(url) {
+        if (!isAllowedUrl(url) && window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'BLOCKED_NAVIGATION', url: String(url || '') }));
+        }
+        return null;
+      };
+      document.addEventListener('click', function(event) {
+        var target = event.target;
+        while (target && target.tagName !== 'A') target = target.parentElement;
+        if (!target) return;
+        var href = target.getAttribute('href') || '';
+        if (!isAllowedUrl(href)) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'BLOCKED_NAVIGATION', url: href }));
+          }
+        }
+      }, true);
+      document.addEventListener('submit', function(event) {
+        var action = event.target && event.target.getAttribute ? event.target.getAttribute('action') : '';
+        if (!isAllowedUrl(action)) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'BLOCKED_NAVIGATION', url: action || 'form-submit' }));
+          }
+        }
+      }, true);
+    })();
+    true;
+  `, []);
+
   // Handle messages from the WebView game
   const showPreviewError = useCallback((message: string) => {
     if (!message) return;
     setErrorMsg(message.length > 180 ? message.slice(0, 177) + '...' : message);
   }, []);
 
+  const handlePreviewNavigationRequest = useCallback((request: any) => {
+    const rawUrl = String(request?.url || '');
+    if (!rawUrl) return true;
+    const url = rawUrl.toLowerCase();
+    const isAllowed =
+      url.startsWith('about:') ||
+      url.startsWith('data:') ||
+      url.startsWith('blob:') ||
+      url.startsWith('https://gametok.app') ||
+      url.startsWith('http://gametok.app');
+
+    if (isAllowed || request?.isTopFrame === false) {
+      return true;
+    }
+
+    console.warn('[CreatePreview] Blocked generated game navigation:', rawUrl);
+    showPreviewError('Blocked generated game from opening an external website.');
+    return false;
+  }, [showPreviewError]);
+
   const handleWebViewMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'BLOCKED_NAVIGATION') {
+        console.warn('[CreatePreview] Blocked generated game navigation:', data.url);
+        showPreviewError('Blocked generated game from opening an external website.');
+        return;
+      }
       if (data.type === 'GAME_BRIDGE_INIT') {
         if (data.config && Object.keys(data.config).length > 0) {
           setGameConfig(data.config);
@@ -2299,7 +2372,10 @@ Features: ${gameSpec.features.join(', ')}`;
                 originWhitelist={['*']}
                 allowsInlineMediaPlayback={true}
                 mediaPlaybackRequiresUserAction={true}
+                setSupportMultipleWindows={false}
+                injectedJavaScriptBeforeContentLoaded={PREVIEW_NAVIGATION_GUARD_JS}
                 injectedJavaScript={MUTE_WEBVIEW_JS}
+                onShouldStartLoadWithRequest={handlePreviewNavigationRequest}
               />
               <View style={{ position: 'absolute', bottom: 12, right: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 }}>
                 <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Edit</Text>
@@ -2472,7 +2548,10 @@ Features: ${gameSpec.features.join(', ')}`;
             mixedContentMode="always"
             allowUniversalAccessFromFileURLs={true}
             allowFileAccessFromFileURLs={true}
+            setSupportMultipleWindows={false}
+            injectedJavaScriptBeforeContentLoaded={PREVIEW_NAVIGATION_GUARD_JS}
             injectedJavaScript={BRIDGE_INJECT_JS}
+            onShouldStartLoadWithRequest={handlePreviewNavigationRequest}
             onLoadStart={() => setErrorMsg(null)}
             onMessage={handleWebViewMessage}
             onError={(e) => {
