@@ -840,7 +840,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         setPhase('generating');
         setErrorMsg(null);
 
-        const { promise, cancel } = ai.resumeOpenGameJob(pending.jobId, { onStatus: applyGenerationStatus });
+        const { promise, cancel } = ai.resumeDreamJob(pending.jobId, { onStatus: applyGenerationStatus });
         resumeCancel = cancel;
         cancelRef.current = cancel;
         const res = await promise as any;
@@ -994,7 +994,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       setGenerationProgress(null);
       setGenerationPhase(null);
       setGenerationStatusMessage(null);
-      const retryJob = ai.opengame(retryPrompt, [], {
+      const retryJob = ai.dream(retryPrompt, [], {
         onJobStarted: (jobId: string) => {
           persistPendingDreamJob({ jobId, prompt: retryPrompt, labsMode });
         },
@@ -1071,7 +1071,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const onJobStarted = (jobId: string) => {
         persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode });
       };
-      const { promise, cancel } = ai.opengame(finalPrompt, attachments, { onJobStarted, onStatus: applyGenerationStatus });
+      const { promise, cancel } = ai.dream(finalPrompt, attachments, { onJobStarted, onStatus: applyGenerationStatus });
       cancelRef.current = cancel;
       const res = await promise as any;
       cancelRef.current = null;
@@ -1127,7 +1127,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     if (staleJobId) {
       stopLocalDreamPolling();
       try {
-        await ai.cancelOpenGameJob(staleJobId);
+        await ai.cancelDreamJob(staleJobId);
       } catch (error: any) {
         console.warn('[DreamStream] Could not cancel stale job before refinement:', error?.message || error);
       }
@@ -1506,7 +1506,7 @@ Features: ${gameSpec.features.join(', ')}`;
     stopLocalDreamPolling();
     if (jobIdToCancel) {
       try {
-        await ai.cancelOpenGameJob(jobIdToCancel);
+        await ai.cancelDreamJob(jobIdToCancel);
       } catch (error: any) {
         console.warn('[DreamStream] Backend cancel failed:', error?.message || error);
       }
