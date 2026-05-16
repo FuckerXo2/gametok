@@ -619,6 +619,10 @@ export const multiplayer = {
 
 // // DreamStream AI Engine API
 export const ai = {
+  cancelOpenGameJob: async (jobId: string) => {
+    return request(`/opengame/jobs/${jobId}/cancel`, { method: 'POST' });
+  },
+
   cancelDreamJob: async (jobId: string) => {
     return request(`/ai/dream/cancel/${jobId}`, { method: 'POST' });
   },
@@ -646,6 +650,142 @@ export const ai = {
       method: 'POST',
       body: JSON.stringify({ conversationHistory, userMessage }),
     }, 30000);
+  },
+
+  opengame: (
+    prompt: string,
+    attachments: any[] = [],
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
+  ) => {
+    const controller = new AbortController();
+    let remoteJobId: string | null = null;
+
+    const cancelRemoteJob = () => {
+      controller.abort();
+      if (remoteJobId) {
+        request(`/opengame/jobs/${remoteJobId}/cancel`, { method: 'POST' })
+          .catch((err: any) => console.warn('[OpenGame] Remote cancel failed:', err?.message || err));
+      }
+    };
+
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const res = await request('/opengame/jobs', {
+          method: 'POST',
+          body: JSON.stringify({
+            prompt,
+            title: 'OpenGame Build',
+            payload: { attachments },
+          }),
+          signal: controller.signal,
+        }, 60000);
+
+        const jobId = res.jobId;
+        remoteJobId = jobId || null;
+        if (jobId) {
+          options?.onJobStarted?.(jobId);
+        }
+        console.log(`[OpenGame] Background Job ${jobId} initiated. Polling status...`);
+
+        let pollErrorCount = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/opengame/jobs/${jobId}`);
+            options?.onStatus?.(statusRes);
+
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'failed' || statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'OpenGame generation failed'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
+            } else {
+              console.log(`[OpenGame] Job ${jobId} is ${statusRes.status || 'pending'}...`);
+            }
+            pollErrorCount = 0;
+          } catch (pollingErr: any) {
+            pollErrorCount++;
+            console.warn(`[OpenGame] Polling error ${pollErrorCount}/10:`, pollingErr.message);
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort(), cancelRemote: cancelRemoteJob };
+  },
+
+  resumeOpenGameJob: (jobId: string, options?: { onStatus?: (status: any) => void }) => {
+    const controller = new AbortController();
+
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const checkStatus = async () => {
+          const statusRes = await request(`/opengame/jobs/${jobId}`);
+          options?.onStatus?.(statusRes);
+          if (statusRes.status === 'complete') {
+            resolve(statusRes);
+            return true;
+          }
+          if (statusRes.status === 'failed' || statusRes.status === 'error') {
+            reject(new Error(statusRes.error || 'OpenGame generation failed'));
+            return true;
+          }
+          if (statusRes.status === 'canceled') {
+            reject(new Error(statusRes.error || 'Generation cancelled'));
+            return true;
+          }
+          return false;
+        };
+
+        const resolvedImmediately = await checkStatus();
+        if (resolvedImmediately) return;
+
+        let pollErrorCount = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const resolved = await checkStatus();
+            if (resolved) clearInterval(interval);
+            pollErrorCount = 0;
+          } catch (pollingErr: any) {
+            pollErrorCount++;
+            console.warn(`[OpenGame] Resume polling error ${pollErrorCount}/10:`, pollingErr.message);
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort() };
   },
 
   dreamLabs: (
