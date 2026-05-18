@@ -334,6 +334,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const remoteCancelRef = useRef<(() => void) | null>(null);
   const detachPendingDreamRef = useRef(false);
   const resumingPendingJobRef = useRef<string | null>(null);
   const cookingNotificationRef = useRef<string | null>(null);
@@ -786,6 +787,15 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     resumingPendingJobRef.current = null;
   }, []);
 
+  const stopRemoteDreamJob = useCallback(async (jobId?: string | null) => {
+    if (remoteCancelRef.current) {
+      remoteCancelRef.current();
+      remoteCancelRef.current = null;
+    } else if (jobId) {
+      await ai.cancelDreamJob(jobId);
+    }
+  }, []);
+
   const formatDreamError = useCallback((error: any, mode: 'generate' | 'edit' = 'generate') => {
     const fallback = mode === 'edit'
       ? 'Could not update the game right now. Please try again.'
@@ -843,9 +853,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         const { promise, cancel } = ai.resumeDreamJob(pending.jobId, { onStatus: applyGenerationStatus });
         resumeCancel = cancel;
         cancelRef.current = cancel;
+        remoteCancelRef.current = null;
         const res = await promise as any;
         if (cancelled) return;
         cancelRef.current = null;
+        remoteCancelRef.current = null;
         resumingPendingJobRef.current = null;
 
         if (res.success && res.htmlPreview) {
@@ -861,6 +873,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       } catch (error: any) {
         if (cancelled) return;
         cancelRef.current = null;
+        remoteCancelRef.current = null;
         resumingPendingJobRef.current = null;
         const friendlyMessage = formatDreamError(error, 'generate');
         if (!friendlyMessage) {
@@ -885,6 +898,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       if (resumeCancel) {
         resumingPendingJobRef.current = null;
         cancelRef.current = null;
+        remoteCancelRef.current = null;
         resumeCancel();
       }
     };
@@ -1001,8 +1015,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
         onStatus: applyGenerationStatus,
       });
       cancelRef.current = retryJob.cancel;
+      remoteCancelRef.current = retryJob.cancelRemote;
       const res = await retryJob.promise as any;
       cancelRef.current = null;
+      remoteCancelRef.current = null;
       if (res.success && res.jobId) {
         setGenerationProgress(null);
         setGenerationPhase(null);
@@ -1020,6 +1036,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       }
     } catch (error: any) {
       cancelRef.current = null;
+      remoteCancelRef.current = null;
       console.error('Retry failed:', error);
       const friendlyMessage = formatDreamError(error, 'generate') || 'Failed to retry. Please try again.';
       await stopCookingNotificationOnly();
@@ -1071,10 +1088,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const onJobStarted = (jobId: string) => {
         persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode });
       };
-      const { promise, cancel } = ai.dream(finalPrompt, attachments, { onJobStarted, onStatus: applyGenerationStatus });
+      const { promise, cancel, cancelRemote } = ai.dream(finalPrompt, attachments, { onJobStarted, onStatus: applyGenerationStatus });
       cancelRef.current = cancel;
+      remoteCancelRef.current = cancelRemote;
       const res = await promise as any;
       cancelRef.current = null;
+      remoteCancelRef.current = null;
       detachPendingDreamRef.current = false;
       if (res.success && res.htmlPreview) {
         await completePendingDreamJob(res.title || 'Untitled Dream', res.draftId);
@@ -1092,6 +1111,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       }
     } catch (error: any) {
       cancelRef.current = null;
+      remoteCancelRef.current = null;
       const friendlyMessage = formatDreamError(error, 'generate');
       if (!friendlyMessage) {
         if (detachPendingDreamRef.current) {
@@ -1506,9 +1526,15 @@ Features: ${gameSpec.features.join(', ')}`;
     stopLocalDreamPolling();
     if (jobIdToCancel) {
       try {
-        await ai.cancelDreamJob(jobIdToCancel);
+        await stopRemoteDreamJob(jobIdToCancel);
       } catch (error: any) {
         console.warn('[DreamStream] Backend cancel failed:', error?.message || error);
+      }
+    } else {
+      try {
+        await stopRemoteDreamJob(null);
+      } catch (error: any) {
+        console.warn('[DreamStream] Remote cancel failed:', error?.message || error);
       }
     }
     await clearPendingDreamJob();
