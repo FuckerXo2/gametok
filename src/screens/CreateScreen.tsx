@@ -3261,39 +3261,43 @@ Features: ${gameSpec.features.join(', ')}`;
             </Animated.View>
           )}
 
-          {activeHtml && (
-            <Animated.View entering={FadeInUp.delay(150).duration(400)}>
-              <Pressable style={styles.generatedPreviewCard} onPress={() => setPhase('preview')}>
-                <Image source={GAMETOK_BG} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                <LinearGradient
-                  colors={['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.24)', 'rgba(0,0,0,0.82)']}
-                  locations={[0, 0.45, 1]}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <View style={styles.generatedBadge}>
-                  <Ionicons name="sparkles" size={12} color="#25F4EE" />
-                  <Text style={styles.generatedBadgeText}>Generated</Text>
-                </View>
-                <View style={styles.generatedPlayBtn}>
-                  <Ionicons name="play" size={20} color="#FFF" />
-                </View>
-                <View style={styles.generatedMetaRow}>
-                  <View style={styles.generatedMetaPill}>
-                    <Ionicons name="game-controller" size={13} color="#a855f7" />
-                    <Text style={styles.generatedMetaText}>Racing</Text>
+          {activeHtml && (() => {
+            const currentDraft = drafts.find(d => d.id === activeDraftId);
+            const thumbnailSource = currentDraft?.thumbnail ? { uri: currentDraft.thumbnail } : GAMETOK_BG;
+            const displayTitle = gameTitle || currentDraft?.title || 'Untitled Game';
+
+            return (
+              <Animated.View entering={FadeInUp.delay(150).duration(400)}>
+                <Pressable style={styles.generatedPreviewCard} onPress={() => setPhase('preview')}>
+                  <Image source={thumbnailSource} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.24)', 'rgba(0,0,0,0.82)']}
+                    locations={[0, 0.45, 1]}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <View style={styles.generatedBadge}>
+                    <Ionicons name="sparkles" size={12} color="#25F4EE" />
+                    <Text style={styles.generatedBadgeText}>Generated</Text>
                   </View>
-                  <View style={styles.generatedMetaPill}>
-                    <Ionicons name="people" size={13} color="#FFF" />
-                    <Text style={styles.generatedMetaText}>1-8 Players</Text>
+                  <View style={styles.generatedPlayBtn}>
+                    <Ionicons name="play" size={20} color="#FFF" />
                   </View>
-                  <View style={styles.generatedMetaPill}>
-                    <Ionicons name="time-outline" size={13} color="#FFF" />
-                    <Text style={styles.generatedMetaText}>2-5 min</Text>
+                  <View style={styles.generatedMetaRow}>
+                    <View style={[styles.generatedMetaPill, { backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12 }]}>
+                      <Ionicons name="game-controller" size={13} color="#a855f7" />
+                      <Text style={[styles.generatedMetaText, { fontWeight: '700', fontSize: 13 }]} numberOfLines={1}>
+                        {displayTitle}
+                      </Text>
+                    </View>
+                    <View style={[styles.generatedMetaPill, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+                      <Ionicons name="phone-portrait" size={13} color="#FFF" />
+                      <Text style={styles.generatedMetaText}>Mobile Playable</Text>
+                    </View>
                   </View>
-                </View>
-              </Pressable>
-            </Animated.View>
-          )}
+                </Pressable>
+              </Animated.View>
+            );
+          })()}
 
           {/* === MEDIA TOOLBAR === */}
           <Animated.View entering={FadeInUp.delay(210).duration(400)}>
