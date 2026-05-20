@@ -2698,6 +2698,22 @@ Features: ${gameSpec.features.join(', ')}`;
           >
             <Ionicons name="warning" size={18} color="#FFF" />
             <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={2}>{errorMsg}</Text>
+            
+            <Pressable 
+              onPress={() => {
+                const msg = errorMsg;
+                setErrorMsg(null);
+                if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('fail')) {
+                   handleEdit(`Fix this issue: ${msg}`);
+                } else {
+                   handleRetryJob();
+                }
+              }}
+              style={{ backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginRight: 8 }}
+            >
+              <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>Fix It</Text>
+            </Pressable>
+
             <Pressable onPress={() => setErrorMsg(null)}>
               <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.7)" />
             </Pressable>
