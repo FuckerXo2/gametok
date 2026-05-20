@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
+import { Audio } from 'expo-av';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -212,6 +213,13 @@ const AppContent = () => {
     // Start background download of multiplayer games immediately on native.
     if (Platform.OS !== 'web') {
       startGameDownload().catch(e => console.log('[GameDownload] Background download error:', e));
+      
+      // Configure audio so WebViews can play sound even if iOS silent switch is ON
+      Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+      }).catch(e => console.log('[AudioConfig] Error:', e));
     }
 
     // Request notification permission on app start (for existing users after update)
