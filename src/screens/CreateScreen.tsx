@@ -338,6 +338,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
   const detachPendingDreamRef = useRef(false);
   const resumingPendingJobRef = useRef<string | null>(null);
   const cookingNotificationRef = useRef<string | null>(null);
+  const completionDataRef = useRef<{ htmlPreview: string; draftId: string; title: string } | null>(null);
   const webviewRef = useRef<WebView>(null);
   const ideasScrollRefs = useRef<Array<ScrollView | null>>([]);
   const ideasOffsetRefs = useRef([0, 0, 0]);
@@ -724,6 +725,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     if (typeof status?.statusMessage === 'string') {
       setGenerationStatusMessage(status.statusMessage);
     }
+    // Capture completion data so the watchdog can force-transition to preview
+    if (status?.status === 'complete' && status?.htmlPreview && status?.draftId) {
+      completionDataRef.current = {
+        htmlPreview: status.htmlPreview,
+        draftId: status.draftId,
+        title: status.title || 'Untitled Dream',
+      };
+    }
   }, []);
 
   const armCookingNotification = useCallback(async (jobId?: string | null, jobPrompt?: string) => {
@@ -869,6 +878,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           setGameTitle(res.title || 'Untitled Dream');
           setPhase('preview');
           await fetchDrafts();
+        } else {
+          setErrorMsg(res.error || 'Generation failed to load preview.');
+          setPendingJobStatus('failed');
+          ensureFallbackSpec(pending?.prompt || prompt);
+          setPhase('refining');
         }
       } catch (error: any) {
         if (cancelled) return;
@@ -948,6 +962,35 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
     return () => clearInterval(interval);
   }, [pendingBuildActive, pendingJobId, phase]);
 
+  // Completion watchdog: if applyGenerationStatus captured completion data
+  // but the promise chain hasn't transitioned to preview yet, force it.
+  useEffect(() => {
+    if (phase !== 'generating') {
+      // Clear stale completion data when not generating
+      completionDataRef.current = null;
+      return;
+    }
+    if (!completionDataRef.current) return;
+    const data = completionDataRef.current;
+    // Give the normal promise chain 1.5s to handle it first
+    const timeout = setTimeout(async () => {
+      if (phase !== 'generating' || !completionDataRef.current) return;
+      console.log('[Watchdog] Force-transitioning to preview — promise chain may be stuck');
+      completionDataRef.current = null;
+      try {
+        await completePendingDreamJob(data.title, data.draftId);
+      } catch (e) { /* ignore */ }
+      setGameConfig({});
+      setEditableSlots([]);
+      setActiveHtml(data.htmlPreview);
+      setActiveDraftId(data.draftId);
+      setGameTitle(data.title);
+      setPhase('preview');
+      fetchDrafts().catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timeout);
+  }, [phase, pendingJobStatus, generationProgress, completePendingDreamJob, fetchDrafts]);
+
   useEffect(() => {
     ideasOffsetRefs.current = [0, 0, 0];
     ideasContentWidthRefs.current = [0, 0, 0];
@@ -1017,7 +1060,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
       const res = await retryJob.promise as any;
       cancelRef.current = null;
       remoteCancelRef.current = null;
-      if (res.success && res.jobId) {
+      if (res.success && (res.draftId || res.htmlPreview)) {
         setGenerationProgress(null);
         setGenerationPhase(null);
         setGenerationStatusMessage(null);
@@ -1031,6 +1074,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({ isActive, onClose })
           setPhase('preview');
           await fetchDrafts();
         }
+      } else {
+        setErrorMsg(res.error || 'Generation failed');
+        setPendingJobStatus('failed');
+        ensureFallbackSpec(prompt);
+        setPhase('refining');
       }
     } catch (error: any) {
       cancelRef.current = null;
