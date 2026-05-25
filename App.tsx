@@ -307,7 +307,7 @@ const AppContent = () => {
 
   const parseDeepLink = (url: string) => {
     try {
-      // Handle gametok://game/flappy-bird or https://gametok.app/game.html?id=flappy-bird
+      // Handle gametok://game/flappy-bird or https://gametok.co/game.html?id=flappy-bird
       const gameMatch = url.match(/game[\/=]([^\/\?&]+)/);
       if (gameMatch) {
         const gameId = gameMatch[1];

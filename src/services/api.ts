@@ -776,7 +776,7 @@ export const ai = {
           }
 
           try {
-            const statusRes = await request(`/ai/dream/status/${jobId}`);
+            const statusRes = await request(`/ai/dream/status/${jobId}?t=${Date.now()}`);
             options?.onStatus?.(statusRes);
             
             if (statusRes.status === 'complete') {
@@ -820,7 +820,7 @@ export const ai = {
     const promise = new Promise(async (resolve, reject) => {
       try {
         const checkStatus = async () => {
-          const statusRes = await request(`/ai/dream/status/${jobId}`);
+          const statusRes = await request(`/ai/dream/status/${jobId}?t=${Date.now()}`);
           options?.onStatus?.(statusRes);
           if (statusRes.status === 'complete') {
             resolve(statusRes);
@@ -899,7 +899,7 @@ export const ai = {
           }
 
           try {
-            const statusRes = await request(`/ai/dream/status/${jobId}`);
+            const statusRes = await request(`/ai/dream/status/${jobId}?t=${Date.now()}`);
             if (statusRes.status === 'complete') {
               clearInterval(interval);
               resolve(statusRes);
