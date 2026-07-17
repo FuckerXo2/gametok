@@ -16,7 +16,7 @@ import {
   useColorScheme,
   Pressable,
 } from 'react-native';
-import { Image } from 'expo-image';
+import { CustomImage as Image } from './CustomImage';
 import Animated, { FadeInRight, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

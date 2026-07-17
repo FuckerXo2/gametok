@@ -12,7 +12,7 @@ import {
   Modal,
   StatusBar,
 } from 'react-native';
-import { Image } from 'expo-image';
+import { CustomImage as Image } from './CustomImage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
