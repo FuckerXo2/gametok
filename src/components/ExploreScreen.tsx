@@ -424,22 +424,40 @@ export const ExploreScreen: React.FC = () => {
     }
   };
 
-  const handleHeroCta = (slide: HeroSlide) => {
-    if (slide.ctaTarget === 'create') {
-      setActiveTab('create');
-    } else if (slide.game) {
-      openGame(slide.game.id);
-    }
-  };
+  const trendingGames = useMemo(() => {
+    return [...allGames].sort((a, b) => (b.plays || 0) - (a.plays || 0));
+  }, [allGames]);
 
-  const goToHero = (index: number) => {
-    setHeroIndex(index);
-    heroScrollRef.current?.scrollTo({ x: index * HERO_WIDTH, animated: true });
-  };
+  const freshGames = allGames;
 
-  const currentHero = heroSlides[heroIndex] || heroSlides[0];
+  const CARD_WIDTH = (Dimensions.get('window').width - 52) / 3;
 
+  const renderGameRow = (title: string, gamesList: ExploreGame[]) => {
+    if (gamesList.length === 0) return null;
     return (
+      <View style={styles.gameRowSection}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gameRowScroll}>
+          {gamesList.map((g) => (
+            <Pressable key={g.id} style={[styles.gameCard, { width: CARD_WIDTH }]} onPress={() => openGame(g.id)}>
+              <View style={[styles.gameCardThumb, { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 }]}>
+                <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+              </View>
+              <View style={styles.gameCardMeta}>
+                <Text style={styles.gameCardName} numberOfLines={1}>{g.name}</Text>
+                <View style={styles.gameCardPlays}>
+                  <Ionicons name="play" size={10} color="#a1a1aa" style={{ marginRight: 3 }} />
+                  <Text style={styles.gameCardPlaysText}>{formatCount(g.plays || 0)}</Text>
+                </View>
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  return (
     <View style={styles.root}>
       <ScrollView
         style={{ flex: 1 }}
@@ -449,324 +467,63 @@ export const ExploreScreen: React.FC = () => {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
         }
       >
-        {/* Top bar */}
-        <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-          <Text style={styles.topLogo}>gametok</Text>
-          <Pressable style={styles.topIconBtn} onPress={() => setSearchModalVisible(true)} hitSlop={6}>
-            <Ionicons name="search" size={19} color={TEXT} />
+        {/* Header matching mobile website */}
+        <View style={[styles.exploreHeader, { paddingTop: insets.top + 12 }]}>
+          <View>
+            <Text style={styles.headerSub}>GAMETOK</Text>
+            <Text style={styles.headerTitle}>Explore</Text>
+          </View>
+          <Pressable style={styles.createBtn} onPress={() => setActiveTab('create')}>
+            <Ionicons name="sparkles" size={14} color="#fff" style={{ marginRight: 6 }} />
+            <Text style={styles.createBtnText}>Create</Text>
           </Pressable>
         </View>
 
-        {/* Tabs */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsScroll}
-        >
-          {TABS.map((tab) => {
-            const active = activeTab === tab;
-            return (
-              <Pressable
-                key={tab}
-                style={[styles.tabBtn, active && styles.tabBtnActive]}
-                onPress={() => setActiveTabState(tab)}
-                hitSlop={6}
-              >
-                {active ? <View style={styles.tabActiveDot} /> : null}
-                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* Search bar matching mobile website */}
+        <Pressable style={styles.searchBarBox} onPress={() => setSearchModalVisible(true)}>
+          <Ionicons name="search" size={18} color="#686868" style={{ marginRight: 8 }} />
+          <Text style={styles.searchBarPlaceholder}>Search games, creators, worlds</Text>
+        </Pressable>
 
-        {/* For You hero carousel */}
-        {activeTab === 'For You' && currentHero ? (
-          <View style={styles.heroWrap}>
-            <ScrollView
-              ref={heroScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={HERO_WIDTH}
-              decelerationRate="fast"
-              scrollEventThrottle={16}
-              onMomentumScrollEnd={(event) => {
-                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / HERO_WIDTH);
-                setHeroIndex(Math.max(0, Math.min(nextIndex, heroSlides.length - 1)));
-              }}
-            >
-              {heroSlides.map((slide) => (
-                <View key={slide.id} style={styles.heroSlide}>
-                  <ImageBackground
-                    source={
-                      slide.imageSource
-                        ? slide.imageSource
-                        : slide.imageUri
-                          ? { uri: slide.imageUri }
-                          : GAMETOK_BG
-                    }
-                    style={styles.heroCard}
-                    imageStyle={styles.heroCardImage}
-                    resizeMode="cover"
-                  >
-                    {/* Dream Forge / Trending pill */}
-                    <View style={styles.heroPillWrap}>
-                      <LinearGradient
-                        colors={['rgba(12,14,30,0.78)', 'rgba(31,18,48,0.72)']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.heroPill}
-                      >
-                        <Ionicons name={slide.pillIcon} size={12} color={PURPLE} />
-                        <Text style={styles.heroPillText}>{slide.pillLabel}</Text>
-                      </LinearGradient>
-                    </View>
-
-                    {/* Title + subtitle + CTA */}
-                    <View style={styles.heroBody}>
-                      {slide.id === 'dream-forge' ? (
-                        <View style={styles.heroDreamTitleBlock}>
-                          <Text style={styles.heroDreamTitle}>Make a</Text>
-                          <Text style={styles.heroDreamTitle}>playable</Text>
-                          <Text style={[styles.heroDreamTitle, styles.heroTitleAccent]}>world.</Text>
-                        </View>
-                      ) : (
-                        <>
-                          <Text style={styles.heroTitleLine1}>
-                            {slide.title.line1}
-                            {slide.title.accent === 'first' ? (
-                              <Text style={styles.heroTitleAccent}> {slide.title.line2}</Text>
-                            ) : null}
-                          </Text>
-                          <Text style={styles.heroTitleLine2}>
-                            {slide.title.accent === 'second' ? (
-                              <Text style={styles.heroTitleAccent}>{slide.title.line2}</Text>
-                            ) : (
-                              slide.title.line2
-                            )}
-                          </Text>
-                        </>
-                      )}
-                      {slide.id === 'dream-forge' ? (
-                        <View style={styles.heroSubtitleStack}>
-                          <Text style={styles.heroSubtitle}>You imagine it.</Text>
-                          <Text style={styles.heroSubtitle}>We build it.</Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.heroSubtitle}>{slide.subtitle}</Text>
-                      )}
-                      <Pressable style={styles.heroCta} onPress={() => handleHeroCta(slide)}>
-                        <Ionicons name={slide.ctaIcon} size={15} color={TEXT} />
-                        <Text style={styles.heroCtaText}>{slide.ctaLabel}</Text>
-                      </Pressable>
-                    </View>
-                  </ImageBackground>
-                </View>
-              ))}
-            </ScrollView>
-
-            {/* Pagination dots */}
-            <View style={styles.heroDots}>
-              {heroSlides.map((s, i) => (
-                <Pressable key={s.id} onPress={() => goToHero(i)} hitSlop={4}>
-                  <View
-                              style={[
-                      styles.heroDot,
-                      i === heroIndex && styles.heroDotActive,
-                    ]}
-                  />
-                </Pressable>
-                          ))}
-                        </View>
-                      </View>
-                    ) : null}
-
-        {/* Tab content */}
-        {activeTab !== 'For You' ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roleplayChipRow}>
-            {categoryChips.map((chip) => {
-              const active = activeCategory === chip.label;
-              return (
+        {/* Creators strip */}
+        {creators.length > 0 && (
+          <View style={styles.creatorSection}>
+            <Text style={styles.sectionTitle}>People to follow</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.creatorScrollContent}>
+              {creators.slice(0, 20).map((c) => (
                 <Pressable
-                  key={chip.label}
-                  style={[styles.roleplayChip, active && styles.roleplayChipActive]}
+                  key={c.id}
+                  style={styles.creatorCol}
                   onPress={() =>
-                    setActiveCategoryByTab((prev) => ({
-                      ...prev,
-                      [activeTab as NonForYouTab]: chip.label,
-                    }))
+                    setSelectedCreator({
+                      id: c.id,
+                      username: c.username,
+                      displayName: c.displayName,
+                      avatar: c.avatar,
+                      verified: c.verified,
+                      isFriend: false,
+                    })
                   }
                 >
-                  <Text style={[styles.roleplayChipText, active && styles.roleplayChipTextActive]}>
-                    {chip.label}
+                  <View style={styles.creatorAvatarWrap}>
+                    <Avatar uri={c.avatar} userId={c.id} size={62} />
+                  </View>
+                  <Text style={styles.creatorHandle} numberOfLines={1}>
+                    @{c.username}
                   </Text>
                 </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : null}
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
-        {activeTab === 'For You' ? (
-          tabSections.map((section, sectionIndex) => (
-            <React.Fragment key={`${activeTab}-${section.title}`}>
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
-                  <Pressable hitSlop={8}>
-                    <Text style={styles.sectionSeeAll}>See all</Text>
-                  </Pressable>
-                </View>
-                {section.games.length === 0 ? (
-                  <Text style={styles.sectionEmpty}>No games here yet.</Text>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingRow}>
-                    {section.games.map((g, index) => (
-                      <Pressable key={`${section.title}-${g.id}`} style={[styles.trendCard, sectionIndex === 1 && styles.trendCardFeatured]} onPress={() => openGame(g.id)}>
-                        <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                        <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFillObject} />
-                        <View style={styles.trendBody}>
-                          <Text style={styles.trendTitle} numberOfLines={1}>{g.name}</Text>
-                          <View style={styles.trendMetaRow}>
-                            <Ionicons name="people" size={10} color="rgba(255,255,255,0.85)" />
-                            <Text style={styles.trendMeta}>{cardMetaForTab(activeTab, g, index)}</Text>
-                          </View>
-                        </View>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
+        {/* Game Rows */}
+        {renderGameRow('Trending', trendingGames)}
+        {renderGameRow('New', freshGames)}
 
-              {sectionIndex === 0 && creators.length > 0 ? (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, styles.sectionTitleInset]}>Popular Creators</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.creatorRow}
-                  >
-                    {creators.slice(0, 12).map((c) => (
-                      <Pressable
-                        key={c.id}
-                        style={styles.creatorCol}
-                        onPress={() =>
-                          setSelectedCreator({
-                            id: c.id,
-                            username: c.username,
-                            displayName: c.displayName,
-                            avatar: c.avatar,
-                            verified: c.verified,
-                            isFriend: false,
-                          })
-                        }
-                      >
-                        <View style={styles.creatorAvatarWrap}>
-                          <Avatar uri={c.avatar} userId={c.id} size={62} />
-                        </View>
-                        <Text style={styles.creatorHandle} numberOfLines={1}>
-                          @{c.username}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-              ) : null}
-            </React.Fragment>
-          ))
-        ) : activeTab === 'Games' ? (
-          <View style={styles.section}>
-            <View style={styles.catalogGrid}>
-              {categoryGames.slice(0, 16).map((g, index) => (
-                <Pressable key={`catalog-${g.id}`} style={[styles.feedTile, index % 3 === 0 && styles.feedTileTall]} onPress={() => openGame(g.id)}>
-                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                  <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.05)', 'rgba(0,0,0,0.82)']} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFillObject} />
-                  <View style={styles.feedCountPill}>
-                    <Ionicons name="heart" size={12} color={TEXT} />
-                    <Text style={styles.feedCountText}>{formatCount(g.likes || g.plays || 0)}</Text>
-                  </View>
-                  <View style={styles.feedTileBody}>
-                    <Text style={styles.feedTileTitle} numberOfLines={2}>{g.name}</Text>
-                    <View style={styles.feedTileMetaRow}>
-                      <Ionicons name={index % 2 === 0 ? 'flash' : 'game-controller'} size={11} color="rgba(255,255,255,0.86)" />
-                      <Text style={styles.feedTileMeta}>{cardMetaForTab(activeTab, g, index)}</Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : activeTab === 'Horror' ? (
-          <View style={styles.section}>
-            <View style={styles.catalogGrid}>
-              {categoryGames.slice(0, 16).map((g, index) => (
-                <Pressable key={`horror-${g.id}`} style={[styles.feedTile, styles.horrorTile, index % 4 === 1 && styles.feedTileTall]} onPress={() => openGame(g.id)}>
-                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                  <LinearGradient colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.9)']} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFillObject} />
-                  <View style={styles.feedCountPill}>
-                    <Ionicons name="heart" size={12} color={TEXT} />
-                    <Text style={styles.feedCountText}>{formatCount(g.likes || g.plays || 0)}</Text>
-                  </View>
-                  <View style={styles.feedTileBody}>
-                    <Text style={styles.feedTileTitle} numberOfLines={2}>{g.name}</Text>
-                    <View style={styles.feedTileMetaRow}>
-                      <Ionicons name="moon" size={11} color="#ff4aa2" />
-                      <Text style={styles.feedTileMeta}>{cardMetaForTab(activeTab, g, index)}</Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : activeTab === 'Roleplay' ? (
-          <View style={styles.section}>
-            <View style={styles.roleplayGrid}>
-              {categoryGames.slice(0, 12).map((g, index) => (
-                <Pressable key={`room-${g.id}`} style={[styles.roleplayCard, index % 3 === 0 && styles.roleplayCardTall]} onPress={() => openGame(g.id)}>
-                  <View style={styles.roleplayImageWrap}>
-                    <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                    <View style={styles.roleplayViews}>
-                      <Ionicons name="eye" size={12} color={TEXT} />
-                      <Text style={styles.roleplayViewsText}>{formatCount(g.plays || 0)}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.roleplayBody}>
-                    <Text style={styles.roleplayTitle} numberOfLines={2}>{g.name}</Text>
-                    <Text style={styles.roleplayDesc} numberOfLines={3}>
-                      {index % 2 === 0 ? 'Step into a living world with players already building the story.' : 'Choose a role, meet characters, and shape what happens next.'}
-                    </Text>
-                    <View style={styles.roleplayTags}>
-                      {['Roleplay', index % 2 === 0 ? 'Fantasy' : 'Social'].map((tag) => (
-                        <View key={tag} style={styles.roleplayTag}>
-                          <Text style={styles.roleplayTagText}>{tag}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <View style={styles.catalogGrid}>
-              {categoryGames.slice(0, 16).map((g, index) => (
-                <Pressable key={`quiz-${g.id}`} style={[styles.feedTile, styles.quizFeedTile]} onPress={() => openGame(g.id)}>
-                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                  <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.04)', 'rgba(0,0,0,0.84)']} locations={[0, 0.52, 1]} style={StyleSheet.absoluteFillObject} />
-                  <View style={styles.feedCountPill}>
-                    <Ionicons name="heart" size={12} color={TEXT} />
-                    <Text style={styles.feedCountText}>{formatCount(g.likes || g.plays || 0)}</Text>
-                  </View>
-                  <View style={styles.feedTileBody}>
-                    <Text style={styles.feedTileTitle} numberOfLines={2}>{g.name}</Text>
-                    <View style={styles.feedTileMetaRow}>
-                      <Ionicons name="help-circle" size={11} color="rgba(255,255,255,0.86)" />
-                      <Text style={styles.feedTileMeta}>{cardMetaForTab(activeTab, g, index)}</Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
+        {trendingGames.length === 0 && freshGames.length === 0 && (
+          <View style={styles.exploreEmpty}>
+            <Text style={styles.exploreEmptyText}>No games found.</Text>
           </View>
         )}
 
@@ -1873,6 +1630,112 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 12,
     fontWeight: '800',
+  },
+  exploreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  headerSub: {
+    color: '#a1a1aa',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  createBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#a855f7',
+    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+  },
+  createBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  searchBarBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginHorizontal: 16,
+    marginBottom: 20,
+  },
+  searchBarPlaceholder: {
+    color: '#686868',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  creatorSection: {
+    marginBottom: 24,
+  },
+  creatorScrollContent: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  gameRowSection: {
+    marginBottom: 28,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+    marginHorizontal: 16,
+    marginBottom: 10,
+  },
+  gameRowScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  gameCard: {
+    flexDirection: 'column',
+    gap: 6,
+  },
+  gameCardThumb: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    position: 'relative',
+  },
+  gameCardMeta: {
+    paddingHorizontal: 2,
+  },
+  gameCardName: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  gameCardPlays: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  gameCardPlaysText: {
+    color: '#a1a1aa',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  exploreEmpty: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  exploreEmptyText: {
+    color: '#a1a1aa',
+    fontSize: 14,
   },
 });
 
