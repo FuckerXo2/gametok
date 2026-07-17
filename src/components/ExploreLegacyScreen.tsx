@@ -10,13 +10,13 @@ import {
   Keyboard,
   RefreshControl,
   Dimensions,
-  Image,
   Modal,
   StatusBar,
   FlatList,
   useColorScheme,
   Pressable,
 } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, { FadeInRight, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,6 +68,8 @@ interface GameItem {
   category?: string;
   plays?: number;
   embedUrl?: string;
+  creatorDisplayName?: string | null;
+  creatorUsername?: string | null;
   _fakePlays?: number;
 }
 
@@ -407,6 +409,7 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
 
   const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
+  const [loadProgress, setLoadProgress] = useState(0); // real WebView progress, 0-100
 
   const [showFindFriends, setShowFindFriends] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
@@ -543,6 +546,7 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
   const playGame = (game: GameItem) => {
     setPlayingGame(game);
     setGameLoaded(false);
+    setLoadProgress(0);
   };
 
   const isSearchActive = searchQuery.length >= 2;
@@ -790,7 +794,11 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
               backgroundColor="transparent"
               scrollEnabled={false}
               bounces={false}
+              onLoadProgress={({ nativeEvent }) => {
+                setLoadProgress(Math.round((nativeEvent.progress || 0) * 100));
+              }}
               onLoadEnd={() => {
+                setLoadProgress(100);
                 // Inject blurred thumbnail bg after page fully loads (backup)
                 const thumbUrl = playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`;
                 const fallback = playingGame?.color || '#1a1a2e';
@@ -825,7 +833,8 @@ export const ExploreLegacyScreen: React.FC<ExploreLegacyScreenProps> = ({ showHe
               <GameLoadingScreen
                 gameName={playingGame.name}
                 gameThumbnail={playingGame.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame.id}.png`}
-                progress={75}
+                creatorName={playingGame.creatorDisplayName || playingGame.creatorUsername}
+                progress={loadProgress}
               />
             </View>
           )}

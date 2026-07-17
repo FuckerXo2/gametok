@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,11 @@ import {
   Pressable,
   TextInput,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, { FadeInUp, FadeInRight, useSharedValue, useAnimatedStyle, withSpring, withDelay } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,7 +27,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuthScreen, useNavigation, useDeepLink } from '../../App';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
-import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
+import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi, ai as aiApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
@@ -39,8 +40,8 @@ const resolveSharedGameThumbnail = (thumbnail?: string | null, gameId?: string) 
   return resolveGameThumbnail(thumbnail, gameId);
 };
 
-type TabName = 'play' | 'messages';
 type InboxLane = 'chats' | 'requests' | 'activity';
+type InboxMode = 'messages' | 'activity';
 
 interface Conversation {
   id: string;
@@ -73,6 +74,7 @@ interface UserItem {
   displayName?: string;
   avatar?: string;
   isFollowing?: boolean;
+  isMutual?: boolean;
 }
 
 interface ActivityItem {
@@ -85,83 +87,92 @@ interface ActivityItem {
   createdAt: string;
 }
 
-// Animated Tab Button Component
-const TabButton: React.FC<{
-  label: string;
-  icon: string;
-  isActive: boolean;
-  onPress: () => void;
-}> = ({ label, icon, isActive, onPress }) => {
-  const scale = useSharedValue(1);
-  const { colors } = useTheme();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+// Relative time label for a chat row. Module-scope + pure so it stays a
+// stable reference (keeps ChatRow's memoization intact).
+const formatChatTime = (dateStr: string) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(diff / 86400000)}d`;
+};
 
-  const handlePressIn = () => {
-    scale.value = withSpring(0.95, { damping: 12, stiffness: 200 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 10, stiffness: 250 });
-  };
-
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
-
+// Memoized conversation row. The inbox re-renders on every socket presence /
+// typing event; without memo that re-reconciles the whole (non-virtualized)
+// chat list each time — which is what made the inbox hang. With a boolean
+// `isOnline` prop + a stable `onOpen`, only rows that actually changed re-render.
+type ChatRowProps = {
+  chat: Conversation;
+  isOnline: boolean;
+  animateEntry: boolean;
+  entryDelay: number;
+  colors: any;
+  onOpen: (chat: Conversation) => void;
+};
+const ChatRow = React.memo(function ChatRow({ chat, isOnline, animateEntry, entryDelay, colors, onOpen }: ChatRowProps) {
+  const isUnread = !!chat.lastMessage?.isUnread;
   return (
-    <Animated.View style={[styles.tabButton, animatedStyle]}>
-      <Pressable
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handlePress}
-        style={[
-          styles.tabButtonInner,
-          {
-            backgroundColor: isActive ? BRAND_PURPLE : colors.surface,
-          },
-        ]}
-      >
-        <Ionicons
-          name={icon as any}
-          size={20}
-          color={isActive ? LoopsColors.white : colors.textSecondary}
-        />
-        <Text
-          style={[
-            styles.tabButtonText,
-            {
-              color: isActive ? LoopsColors.white : colors.textSecondary,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
+    <Animated.View entering={animateEntry ? FadeInRight.delay(entryDelay).springify().damping(18) : undefined}>
+      <TouchableOpacity style={styles.chatItem} onPress={() => onOpen(chat)}>
+        <View>
+          <Avatar uri={chat.user.avatar} userId={chat.user.id} size={52} />
+          {isOnline && <View style={[styles.onlineDot, { borderColor: colors.background }]} />}
+        </View>
+        <View style={styles.chatContent}>
+          <View style={styles.chatHeader}>
+            <Text style={[styles.chatUsername, { color: colors.text, fontWeight: isUnread ? '700' : '600' }]}>
+              {chat.user.displayName}
+            </Text>
+            {chat.streak > 0 && <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>}
+          </View>
+          <Text
+            style={[
+              styles.chatPreview,
+              { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' },
+            ]}
+            numberOfLines={1}
+          >
+            {chat.lastMessage?.text || 'Start chatting'}
+          </Text>
+        </View>
+        <View style={styles.chatMeta}>
+          {chat.lastMessage && (
+            <Text style={[styles.chatTime, { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' }]}>
+              {formatChatTime(chat.lastMessage.createdAt)}
+            </Text>
+          )}
+          {isUnread && <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />}
+        </View>
+      </TouchableOpacity>
     </Animated.View>
   );
-};
+});
 
 // Messages Tab
 const MessagesTab: React.FC<{
   initialConversation?: Conversation | null;
+  mode?: InboxMode;
   closeOnChatBack?: boolean;
   onClose?: () => void;
-}> = ({ initialConversation = null, closeOnChatBack = false, onClose }) => {
+}> = ({ initialConversation = null, mode = 'messages', closeOnChatBack = false, onClose }) => {
   const { colors } = useTheme();
   const { user } = useAuth();
   const { chatSocket, onlineUsers, typingUsers, joinConversation, leaveConversation, sendTyping, stopTyping } = useSocket();
+  const { openSharedGame } = useDeepLink();
+  const { setActiveTab, setPendingDraftId } = useNavigation();
   const insets = useSafeAreaInsets();
+  const [remixingGameId, setRemixingGameId] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [pendingRequests, setPendingRequests] = useState<UserItem[]>([]);
+  const [acceptingRequestIds, setAcceptingRequestIds] = useState<Set<string>>(new Set());
   const [storyUsers, setStoryUsers] = useState<any[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<UserItem[]>([]);
-  const [activeLane, setActiveLane] = useState<InboxLane>('chats');
+  const [activeLane, setActiveLane] = useState<InboxLane>(mode === 'activity' ? 'activity' : 'chats');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -188,22 +199,34 @@ const MessagesTab: React.FC<{
 
   const loadData = useCallback(async () => {
     try {
-      const [convRes, activityRes, storiesRes, followingRes, requestsRes] = await Promise.all([
-        messagesApi.getConversations().catch(() => ({ conversations: [] })),
-        feed.activity(30).catch(() => ({ activity: [] })),
-        storiesApi.list().catch(() => ({ stories: [] })),
-        users.following(user?.id || '').catch(() => []),
-        users.pendingRequests(user?.id || '').catch(() => []),
+      // Guard against a request that never settles (no fetch timeout upstream) —
+      // without this the whole inbox is stuck on the spinner forever. Race the
+      // load against a timeout so `loading` always clears; whatever resolved by
+      // then is used, the rest falls back to empty.
+      const results = await Promise.race([
+        Promise.all([
+          messagesApi.getConversations().catch(() => ({ conversations: [] })),
+          feed.activity(30).catch(() => ({ activity: [] })),
+          storiesApi.list().catch(() => ({ stories: [] })),
+          users.following(user?.id || '').catch(() => []),
+          users.pendingRequests(user?.id || '').catch(() => []),
+        ]),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
       ]);
 
-      setConversations(Array.isArray(convRes.conversations) ? convRes.conversations : []);
-      setActivity(Array.isArray(activityRes.activity) ? activityRes.activity : []);
-      setStoryUsers(Array.isArray(storiesRes.stories) ? storiesRes.stories : []);
+      if (results) {
+        const [convRes, activityRes, storiesRes, followingRes, requestsRes] = results;
+        setConversations(Array.isArray(convRes.conversations) ? convRes.conversations : []);
+        setActivity(Array.isArray(activityRes.activity) ? activityRes.activity : []);
+        setStoryUsers(Array.isArray(storiesRes.stories) ? storiesRes.stories : []);
 
-      const friends = Array.isArray(followingRes) ? followingRes : [];
-      const requests = Array.isArray(requestsRes) ? requestsRes : [];
-      setSuggestedUsers(friends.slice(0, 6));
-      setPendingRequests(requests);
+        const friends = Array.isArray(followingRes) ? followingRes : [];
+        const requests = Array.isArray(requestsRes) ? requestsRes.filter((request) => !request.isMutual) : [];
+        setSuggestedUsers(friends.slice(0, 6));
+        setPendingRequests(requests);
+      } else {
+        console.warn('[Connect] inbox load timed out; showing what we have');
+      }
     } catch (error) {
       console.error('Load messages data error:', error);
     } finally {
@@ -211,28 +234,54 @@ const MessagesTab: React.FC<{
     }
   }, [user?.id]);
 
+  // Lightweight, debounced refresh of just the conversation previews — used on
+  // every incoming socket message instead of reloading all 5 endpoints.
+  const convRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleConversationRefresh = useCallback(() => {
+    if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
+    convRefreshTimer.current = setTimeout(async () => {
+      try {
+        const res = await messagesApi.getConversations();
+        setConversations(Array.isArray(res.conversations) ? res.conversations : []);
+      } catch (e) {
+        console.warn('[Connect] conversation refresh failed', e);
+      }
+    }, 600);
+  }, []);
+  useEffect(() => () => {
+    if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setActiveLane(mode === 'activity' ? 'activity' : 'chats');
+  }, [mode]);
 
   // Socket.io messaging listener - real-time messages
   useEffect(() => {
     if (!chatSocket) return;
 
     const handleNewMessage = ({ conversationId, message }: any) => {
-      // If we're in this conversation, add the message
+      // If we're in this conversation, add the message — but guard against
+      // duplicates (our own optimistic add + the server echoing it back).
       if (selectedChat && (selectedChat.id === conversationId || selectedChat.user.id === message.senderId)) {
-        setChatMessages(prev => [...prev, {
-          id: message.id,
-          text: message.text,
-          createdAt: message.createdAt,
-          isMe: message.senderId === user?.id,
-          isRead: false,
-          gameShare: message.gameShare || null
-        }]);
+        setChatMessages(prev => {
+          if (prev.some(m => m.id === message.id)) return prev;
+          return [...prev, {
+            id: message.id,
+            text: message.text,
+            createdAt: message.createdAt,
+            isMe: message.senderId === user?.id,
+            isRead: false,
+            gameShare: message.gameShare || null
+          }];
+        });
       }
-      // Refresh conversation list
-      loadData();
+      // Refresh just the conversation previews (debounced), not all 5 endpoints.
+      scheduleConversationRefresh();
     };
 
     const handleMessagesRead = ({ conversationId, messageIds }: any) => {
@@ -250,7 +299,7 @@ const MessagesTab: React.FC<{
       chatSocket.off('chat:new_message', handleNewMessage);
       chatSocket.off('chat:messages_read', handleMessagesRead);
     };
-  }, [chatSocket, selectedChat, user?.id, loadData]);
+  }, [chatSocket, selectedChat, user?.id, scheduleConversationRefresh]);
 
   // Join/leave conversation room when chat opens/closes
   useEffect(() => {
@@ -273,7 +322,10 @@ const MessagesTab: React.FC<{
       try {
         const data = await users.search(searchQuery);
         setSearchResults(data.users || []);
-      } catch (e) { }
+      } catch (e) {
+        console.warn('[Connect] user search failed', e);
+        setSearchResults([]);
+      }
       setSearching(false);
     }, 300);
     return () => clearTimeout(timeout);
@@ -291,8 +343,79 @@ const MessagesTab: React.FC<{
     try {
       const data = await messagesApi.getConversation(conversation.user.id);
       setChatMessages(data.messages || []);
-    } catch (e) { }
+    } catch (e) {
+      console.warn('[Connect] open chat failed', e);
+    }
     setLoadingChat(false);
+  };
+
+  // Stable reference for the memoized ChatRow (openChat is recreated each render).
+  const openChatRef = useRef(openChat);
+  openChatRef.current = openChat;
+  const handleOpenChat = useCallback((c: Conversation) => openChatRef.current(c), []);
+
+  // Start (or resume) a DM with a user we may not have a conversation with yet —
+  // used by the "new chat" / search flow. The endpoint creates the conversation
+  // if needed and returns it fully-formed.
+  const openChatWithUser = async (person: UserItem) => {
+    try {
+      const data = await messagesApi.getConversation(person.id);
+      const conv = data?.conversation;
+      openChat({
+        id: conv?.id ?? person.id,
+        user: {
+          id: person.id,
+          username: person.username,
+          displayName: person.displayName || conv?.user?.display_name || conv?.user?.displayName,
+          avatar: person.avatar ?? conv?.user?.avatar,
+        },
+        streak: conv?.streak ?? 0,
+      });
+    } catch (e) {
+      console.warn('[Connect] start chat failed', e);
+    }
+  };
+
+  // Message list is rendered inverted, so reverse once here instead of
+  // rebuilding the array for every row (that was an O(n²) hang on long chats).
+  const reversedMessages = useMemo(() => [...chatMessages].reverse(), [chatMessages]);
+
+  // Play a game shared inside a DM — close the inbox, jump to the feed, and
+  // hand the game id to the player via the shared-game deep link.
+  const handlePlayShared = (gameId?: string) => {
+    if (!gameId) return;
+    onClose?.();
+    setActiveTab('home');
+    openSharedGame(gameId);
+  };
+
+  // Remix a shared game: resolve its AI source id from the game record, kick off
+  // a remix draft, then drop the user straight into the create/edit flow.
+  const handleRemixShared = async (gameId?: string) => {
+    if (!gameId || remixingGameId) return;
+    setRemixingGameId(gameId);
+    try {
+      const detail = await gamesApi.get(gameId);
+      const game = detail?.game || detail;
+      const embed: string | undefined = game?.embedUrl || game?.embed_url;
+      const sourceId = embed?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+      if (!sourceId) {
+        Alert.alert('Remix unavailable', "This game can't be remixed.");
+        return;
+      }
+      const res = await aiApi.remixGame(sourceId);
+      if (res?.draftId) {
+        onClose?.();
+        setPendingDraftId(res.draftId);
+        setActiveTab('create');
+      } else {
+        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
+      }
+    } catch (e: any) {
+      Alert.alert('Remix failed', e?.message || String(e));
+    } finally {
+      setRemixingGameId(null);
+    }
   };
 
   const closeChat = () => {
@@ -318,8 +441,8 @@ const MessagesTab: React.FC<{
     
     try {
       const data = await messagesApi.send({ recipientId: selectedChat.user.id, text });
-      setChatMessages(prev => [...prev, data.message]);
-      loadData();
+      setChatMessages(prev => (prev.some(m => m.id === data.message?.id) ? prev : [...prev, data.message]));
+      scheduleConversationRefresh();
     } catch (e) {
       setMessageText(text);
     }
@@ -341,8 +464,12 @@ const MessagesTab: React.FC<{
   };
 
   const handleRequestAction = async (person: UserItem) => {
+    if (acceptingRequestIds.has(person.id)) return;
+    setAcceptingRequestIds((prev) => new Set([...prev, person.id]));
     try {
-      await users.follow(person.id);
+      if (!person.isMutual) {
+        await users.acceptRequest(person.id);
+      }
       setPendingRequests((prev) => prev.filter((item) => item.id !== person.id));
       const existingConvo = conversations.find((c) => c.user.id === person.id);
       if (existingConvo) {
@@ -350,6 +477,12 @@ const MessagesTab: React.FC<{
       }
     } catch (e) {
       console.log('Request action error:', e);
+    } finally {
+      setAcceptingRequestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(person.id);
+        return next;
+      });
     }
   };
 
@@ -410,13 +543,24 @@ const MessagesTab: React.FC<{
     }
   };
 
-  if (loading) {
+  // Only block on the list load when there's no chat already open. A direct
+  // chat (opened from a conversation tap or notification) must render its own
+  // modal immediately instead of waiting behind the inbox list's 5 fetches.
+  if (loading && !selectedChat) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator color={LoopsColors.color1} size="large" />
       </View>
     );
   }
+
+  const inboxLanes = mode === 'activity'
+    ? [{ key: 'activity' as InboxLane, label: 'Activity', count: activity.length }]
+    : [
+        { key: 'chats' as InboxLane, label: 'Chats', count: conversations.length },
+        { key: 'requests' as InboxLane, label: 'Requests', count: pendingRequests.length },
+      ];
+  const showLaneSwitcher = inboxLanes.length > 1;
 
   return (
     <>
@@ -432,49 +576,48 @@ const MessagesTab: React.FC<{
           />
         }
       >
-        {/* Search Bar */}
-        <Animated.View entering={FadeInRight.delay(50).springify().damping(18)}>
-          <TouchableOpacity
-            style={[styles.searchBar, { backgroundColor: colors.surface }]}
-            onPress={() => setShowSearch(true)}
-          >
-            <Ionicons name="search" size={18} color={colors.textSecondary} />
-            <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search people and chats</Text>
-          </TouchableOpacity>
-        </Animated.View>
+        {mode === 'messages' ? (
+          <Animated.View entering={FadeInRight.delay(50).springify().damping(18)}>
+            <TouchableOpacity
+              style={[styles.searchBar, { backgroundColor: colors.surface }]}
+              onPress={() => setShowSearch(true)}
+            >
+              <Ionicons name="search" size={18} color={colors.textSecondary} />
+              <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search people and chats</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        ) : null}
 
-        <Animated.View entering={FadeInRight.delay(100).springify().damping(18)} style={styles.inboxLaneWrap}>
-          <View style={[styles.inboxLaneBar, { backgroundColor: colors.surface }]}>
-            {[
-              { key: 'chats' as InboxLane, label: 'Chats', count: conversations.length },
-              { key: 'requests' as InboxLane, label: 'Requests', count: pendingRequests.length },
-              { key: 'activity' as InboxLane, label: 'Activity', count: activity.length },
-            ].map((lane) => {
-              const active = activeLane === lane.key;
-              return (
-                <TouchableOpacity
-                  key={lane.key}
-                  style={[
-                    styles.inboxLanePill,
-                    active && { backgroundColor: LoopsColors.color1 },
-                  ]}
-                  onPress={() => setActiveLane(lane.key)}
-                >
-                  <Text style={[styles.inboxLaneText, { color: active ? '#fff' : colors.textSecondary }]}>
-                    {lane.label}
-                  </Text>
-                  {lane.count > 0 && (
-                    <View style={[styles.inboxLaneBadge, { backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'rgba(168,85,247,0.18)' }]}>
-                      <Text style={[styles.inboxLaneBadgeText, { color: active ? '#fff' : LoopsColors.color1 }]}>
-                        {lane.count}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </Animated.View>
+        {showLaneSwitcher ? (
+          <Animated.View entering={FadeInRight.delay(100).springify().damping(18)} style={styles.inboxLaneWrap}>
+            <View style={[styles.inboxLaneBar, { backgroundColor: colors.surface }]}>
+              {inboxLanes.map((lane) => {
+                const active = activeLane === lane.key;
+                return (
+                  <TouchableOpacity
+                    key={lane.key}
+                    style={[
+                      styles.inboxLanePill,
+                      active && { backgroundColor: LoopsColors.color1 },
+                    ]}
+                    onPress={() => setActiveLane(lane.key)}
+                  >
+                    <Text style={[styles.inboxLaneText, { color: active ? '#fff' : colors.textSecondary }]}>
+                      {lane.label}
+                    </Text>
+                    {lane.count > 0 && (
+                      <View style={[styles.inboxLaneBadge, { backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'rgba(168,85,247,0.18)' }]}>
+                        <Text style={[styles.inboxLaneBadgeText, { color: active ? '#fff' : LoopsColors.color1 }]}>
+                          {lane.count}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Animated.View>
+        ) : null}
 
         {activeLane === 'chats' && (
           <>
@@ -524,52 +667,17 @@ const MessagesTab: React.FC<{
             </Animated.View>
 
             {conversations.length > 0 ? (
-              conversations.map((chat, index) => {
-                const isUnread = !!chat.lastMessage?.isUnread;
-                return (
-                  <Animated.View
-                    key={chat.id}
-                    entering={index < 8 ? FadeInRight.delay(200 + index * 50).springify().damping(18) : undefined}
-                  >
-                    <TouchableOpacity style={styles.chatItem} onPress={() => openChat(chat)}>
-                      <View>
-                        <Avatar uri={chat.user.avatar} userId={chat.user.id} size={52} />
-                        {onlineUsers.includes(chat.user.id) && (
-                          <View style={[styles.onlineDot, { borderColor: colors.background }]} />
-                        )}
-                      </View>
-                      <View style={styles.chatContent}>
-                        <View style={styles.chatHeader}>
-                          <Text style={[styles.chatUsername, { color: colors.text, fontWeight: isUnread ? '700' : '600' }]}>
-                            {chat.user.displayName}
-                          </Text>
-                          {chat.streak > 0 && <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>}
-                        </View>
-                        <Text
-                          style={[
-                            styles.chatPreview,
-                            {
-                              color: isUnread ? colors.text : colors.textSecondary,
-                              fontWeight: isUnread ? '600' : '400',
-                            },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {chat.lastMessage?.text || 'Start chatting'}
-                        </Text>
-                      </View>
-                      <View style={styles.chatMeta}>
-                        {chat.lastMessage && (
-                          <Text style={[styles.chatTime, { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' }]}>
-                            {formatTime(chat.lastMessage.createdAt)}
-                          </Text>
-                        )}
-                        {isUnread && <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />}
-                      </View>
-                    </TouchableOpacity>
-                  </Animated.View>
-                );
-              })
+              conversations.map((chat, index) => (
+                <ChatRow
+                  key={chat.id}
+                  chat={chat}
+                  isOnline={onlineUsers.includes(chat.user.id)}
+                  animateEntry={index < 8}
+                  entryDelay={200 + index * 50}
+                  colors={colors}
+                  onOpen={handleOpenChat}
+                />
+              ))
             ) : (
               <Animated.View entering={FadeInRight.delay(200).springify().damping(18)} style={styles.emptyMessages}>
                 <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
@@ -592,32 +700,40 @@ const MessagesTab: React.FC<{
             </Animated.View>
 
             {pendingRequests.length > 0 ? (
-              pendingRequests.map((person, index) => (
-                <Animated.View
-                  key={person.id}
-                  entering={index < 8 ? FadeInRight.delay(180 + index * 45).springify().damping(18) : undefined}
-                >
-                  <View style={styles.requestRow}>
-                    <TouchableOpacity style={styles.requestIdentity} onPress={() => openUserProfile(person)}>
-                      <Avatar uri={person.avatar} userId={person.id} size={52} />
-                      <View style={styles.requestCopy}>
-                        <Text style={[styles.chatUsername, { color: colors.text }]}>
-                          {person.displayName || person.username}
-                        </Text>
-                        <Text style={[styles.requestSubtitle, { color: colors.textSecondary }]}>
-                          wants to connect and play together
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.requestAction, { backgroundColor: LoopsColors.color1 }]}
-                      onPress={() => handleRequestAction(person)}
-                    >
-                      <Text style={styles.requestActionText}>Accept</Text>
-                    </TouchableOpacity>
-                  </View>
-                </Animated.View>
-              ))
+              pendingRequests.map((person, index) => {
+                const accepting = acceptingRequestIds.has(person.id);
+                return (
+                  <Animated.View
+                    key={person.id}
+                    entering={index < 8 ? FadeInRight.delay(180 + index * 45).springify().damping(18) : undefined}
+                  >
+                    <View style={styles.requestRow}>
+                      <TouchableOpacity style={styles.requestIdentity} onPress={() => openUserProfile(person)}>
+                        <Avatar uri={person.avatar} userId={person.id} size={52} />
+                        <View style={styles.requestCopy}>
+                          <Text style={[styles.chatUsername, { color: colors.text }]}>
+                            {person.displayName || person.username}
+                          </Text>
+                          <Text style={[styles.requestSubtitle, { color: colors.textSecondary }]}>
+                            wants to connect and play together
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.requestAction, { backgroundColor: LoopsColors.color1, opacity: accepting ? 0.7 : 1 }]}
+                        onPress={() => handleRequestAction(person)}
+                        disabled={accepting}
+                      >
+                        {accepting ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.requestActionText}>Accept</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </Animated.View>
+                );
+              })
             ) : (
               <Animated.View entering={FadeInRight.delay(180).springify().damping(18)} style={styles.emptyMessages}>
                 <Ionicons name="mail-open-outline" size={64} color={colors.textSecondary} />
@@ -721,7 +837,7 @@ const MessagesTab: React.FC<{
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.searchResult, { borderBottomColor: colors.border }]}
-                  onPress={() => { setShowSearch(false); openUserProfile(item); }}
+                  onPress={() => { setShowSearch(false); setSearchQuery(''); openChatWithUser(item); }}
                 >
                   <Avatar uri={item.avatar} userId={item.id} size={48} />
                   <View style={styles.searchResultContent}>
@@ -756,7 +872,7 @@ const MessagesTab: React.FC<{
                 style={styles.chatModalUser}
                 onPress={() => openUserProfile(selectedChat.user)}
               >
-                <Avatar uri={selectedChat.user.avatar} userId={selectedChat.user.id} size={36} />
+                <Avatar uri={selectedChat.user.avatar} userId={selectedChat.user.id} size={48} />
                 <View>
                   <Text style={[styles.chatModalUsername, { color: colors.text }]}>
                     {selectedChat.user.displayName || selectedChat.user.username}
@@ -775,7 +891,7 @@ const MessagesTab: React.FC<{
               <ActivityIndicator style={{ flex: 1 }} color={LoopsColors.color1} />
             ) : (
               <FlatList
-                data={[...chatMessages].reverse()}
+                data={reversedMessages}
                 keyExtractor={(item) => item.id}
                 style={styles.chatMessagesList}
                 contentContainerStyle={{ padding: 16, flexGrow: 1 }}
@@ -784,9 +900,8 @@ const MessagesTab: React.FC<{
                   const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
                   const hasGameShare = !!item.gameShare;
                   const thumbUri = resolveSharedGameThumbnail(item.gameShare?.thumbnail, item.gameShare?.id);
-                  
+
                   // Message grouping - check if previous message (in reversed order) is from same person
-                  const reversedMessages = [...chatMessages].reverse();
                   const prevMsg = reversedMessages[index + 1];
                   const nextMsg = reversedMessages[index - 1];
                   const isFirstInGroup = !prevMsg || prevMsg.isMe !== item.isMe;
@@ -802,7 +917,10 @@ const MessagesTab: React.FC<{
                         { maxWidth: '70%', marginBottom: isLastInGroup ? 12 : 2 },
                         item.isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
                       ]}>
-                        <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}>
+                        <Pressable
+                          onPress={() => handlePlayShared(item.gameShare.id)}
+                          style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}
+                        >
                           {thumbUri ? (
                             <Image
                               source={{ uri: thumbUri }}
@@ -822,13 +940,31 @@ const MessagesTab: React.FC<{
                             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
                               {item.gameShare.name}
                             </Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
-                              <Ionicons name="play-circle" size={14} color="rgba(255,255,255,0.9)" />
-                              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, marginLeft: 4, fontWeight: '500' }}>
-                                Tap to play
-                              </Text>
-                            </View>
                           </View>
+                        </Pressable>
+                        {/* Play / Remix actions */}
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                          <TouchableOpacity
+                            onPress={() => handlePlayShared(item.gameShare.id)}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: LoopsColors.color1 }}
+                          >
+                            <Ionicons name="play" size={15} color="#fff" />
+                            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Play</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleRemixShared(item.gameShare.id)}
+                            disabled={remixingGameId === item.gameShare.id}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                          >
+                            {remixingGameId === item.gameShare.id ? (
+                              <ActivityIndicator size="small" color={colors.text} />
+                            ) : (
+                              <>
+                                <Ionicons name="git-branch" size={15} color={colors.text} />
+                                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Remix</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
                         </View>
                         {cleanText ? (
                           <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>
@@ -937,538 +1073,6 @@ interface FollowingUser {
   verified?: boolean;
 }
 
-const PlayTogetherTab: React.FC = () => {
-  const { user } = useAuth();
-  const { presenceMap } = useSocket();
-  const { setActiveTab } = useNavigation();
-  const [following, setFollowing] = useState<FollowingUser[]>([]);
-  const [recommended, setRecommended] = useState<FollowingUser[]>([]);
-  const [trendingGames, setTrendingGames] = useState<Array<{ id: string; name: string; thumbnail?: string; plays?: number; creatorDisplayName?: string | null }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
-  const { openSharedGame } = useDeepLink();
-
-  const loadData = useCallback(async () => {
-    if (!user?.id) return;
-    setLoading(true);
-    try {
-      const [followingRes, recommendedRes, trendingRes] = await Promise.allSettled([
-        users.following(user.id),
-        users.recommended(),
-        gamesApi.list(8, 0, { sort: 'trending' }).catch(() => ({ games: [] })),
-      ]);
-
-      if (followingRes.status === 'fulfilled') {
-        setFollowing(followingRes.value?.users || followingRes.value?.following || []);
-      }
-      if (recommendedRes.status === 'fulfilled') {
-        setRecommended(recommendedRes.value?.users || []);
-      }
-      if (trendingRes.status === 'fulfilled') {
-        const fetched = trendingRes.value?.games || [];
-        setTrendingGames(fetched.slice(0, 8));
-      }
-    } catch (err) {
-      console.log('[Connect/Play] load failed', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const liveFriend = following.find((f) => presenceMap.get(f.id) === 'in-game');
-  const onlineFollowing = following.filter((f) => {
-    const status = presenceMap.get(f.id);
-    return status === 'online' || status === 'in-game';
-  });
-
-  if (loading && following.length === 0 && recommended.length === 0) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#a855f7" size="small" />
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingBottom: 120 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} tintColor="#fff" />}
-    >
-      {/* Stories row */}
-      <View style={connectV2Styles.storiesSection}>
-        <Text style={connectV2Styles.sectionTitle}>Stories</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={connectV2Styles.storiesScroll}>
-          <Pressable style={connectV2Styles.storyAddCol}>
-            <View style={connectV2Styles.storyAddBubble}>
-              <Ionicons name="add" size={26} color="#fff" />
-            </View>
-            <Text style={connectV2Styles.storyName} numberOfLines={1}>You</Text>
-          </Pressable>
-          {(following.length > 0 ? following : recommended).slice(0, 14).map((u) => {
-            const status = presenceMap.get(u.id);
-            return (
-              <Pressable
-                key={u.id}
-                style={connectV2Styles.storyCol}
-                onPress={() => setSelectedProfileUser(u)}
-              >
-                <View style={[
-                  connectV2Styles.storyRing,
-                  status === 'in-game' && { borderColor: '#a855f7' },
-                  status === 'online' && { borderColor: '#22c55e' },
-                  !status && { borderColor: 'rgba(255,255,255,0.18)' },
-                ]}>
-                  <View style={connectV2Styles.storyAvatarFrame}>
-                    <Avatar uri={u.avatar} userId={u.id} size={56} />
-                  </View>
-                  {status === 'online' || status === 'in-game' ? (
-                    <View style={[
-                      connectV2Styles.storyDot,
-                      status === 'in-game' && { backgroundColor: '#a855f7' },
-                    ]} />
-                  ) : null}
-                </View>
-                <Text style={connectV2Styles.storyName} numberOfLines={1}>
-                  {u.displayName || u.username}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* LIVE NOW card */}
-      {liveFriend ? (
-        <Pressable
-          style={connectV2Styles.liveCard}
-          onPress={() => setSelectedProfileUser(liveFriend)}
-        >
-          <LinearGradient
-            colors={['rgba(168,85,247,0.4)', 'rgba(124,58,237,0.18)', 'rgba(17,17,23,0.94)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={connectV2Styles.liveBadgeRow}>
-            <View style={connectV2Styles.liveBadge}>
-              <View style={connectV2Styles.liveBadgeDot} />
-              <Text style={connectV2Styles.liveBadgeText}>LIVE NOW</Text>
-            </View>
-          </View>
-          <View style={connectV2Styles.liveBody}>
-            <View style={connectV2Styles.liveAvatar}>
-              <Avatar uri={liveFriend.avatar} userId={liveFriend.id} size={52} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={connectV2Styles.liveName}>
-                {liveFriend.displayName || liveFriend.username}
-              </Text>
-              <Text style={connectV2Styles.liveSubtitle}>
-                In-game right now · tap to view
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.6)" />
-          </View>
-        </Pressable>
-      ) : (
-        <View style={connectV2Styles.liveCardEmpty}>
-          <View style={connectV2Styles.liveCardEmptyDot} />
-          <Text style={connectV2Styles.liveCardEmptyTitle}>
-            {onlineFollowing.length > 0
-              ? `${onlineFollowing.length} ${onlineFollowing.length === 1 ? 'friend is' : 'friends are'} online`
-              : 'No friends online yet'}
-          </Text>
-          <Text style={connectV2Styles.liveCardEmptyBody}>
-            We&apos;ll show a LIVE banner here when someone you follow is in-game.
-          </Text>
-        </View>
-      )}
-
-      {/* Friends are playing */}
-      <View style={connectV2Styles.section}>
-        <Text style={connectV2Styles.sectionTitle}>Friends are playing</Text>
-        {trendingGames.length === 0 ? (
-          <Text style={connectV2Styles.sectionEmpty}>Nothing trending yet — try refreshing.</Text>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={connectV2Styles.gameRow}>
-            {trendingGames.map((g) => (
-              <Pressable
-                key={g.id}
-                style={connectV2Styles.gameCardSm}
-                onPress={() => {
-                  openSharedGame(g.id);
-                  setActiveTab('home');
-                }}
-              >
-                {g.thumbnail ? (
-                  <Image
-                    source={{ uri: resolveSharedGameThumbnail(g.thumbnail, g.id) || '' }}
-                    style={StyleSheet.absoluteFillObject}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
-                )}
-                <LinearGradient
-                  colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']}
-                  locations={[0, 0.5, 1]}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <View style={connectV2Styles.gameCardBody}>
-                  <Text style={connectV2Styles.gameCardTitle} numberOfLines={2}>
-                    {g.name}
-                  </Text>
-                  {g.creatorDisplayName ? (
-                    <Text style={connectV2Styles.gameCardCreator} numberOfLines={1}>
-                      @{g.creatorDisplayName}
-                    </Text>
-                  ) : null}
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-        )}
-      </View>
-
-      {/* Popular creators */}
-      {recommended.length > 0 ? (
-        <View style={connectV2Styles.section}>
-          <Text style={connectV2Styles.sectionTitle}>Popular creators</Text>
-          <View style={connectV2Styles.creatorList}>
-            {recommended.slice(0, 6).map((u) => {
-              const status = presenceMap.get(u.id);
-              return (
-                <Pressable
-                  key={u.id}
-                  style={connectV2Styles.creatorRow}
-                  onPress={() => setSelectedProfileUser(u)}
-                >
-                  <View style={connectV2Styles.creatorAvatarWrap}>
-                    <Avatar uri={u.avatar} userId={u.id} size={42} />
-                    {status === 'online' || status === 'in-game' ? (
-                      <View style={[
-                        connectV2Styles.creatorStatusDot,
-                        status === 'in-game' && { backgroundColor: '#a855f7' },
-                      ]} />
-                    ) : null}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={connectV2Styles.creatorName}>
-                        {u.displayName || u.username}
-                      </Text>
-                      {u.verified ? (
-                        <View style={connectV2Styles.creatorVerifiedDot}>
-                          <Text style={connectV2Styles.creatorVerifiedCheck}>✓</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <Text style={connectV2Styles.creatorHandle}>@{u.username}</Text>
-                  </View>
-                  <View style={connectV2Styles.creatorFollowBtn}>
-                    <Text style={connectV2Styles.creatorFollowText}>View</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
-
-      <UserProfileModal
-        visible={!!selectedProfileUser}
-        onClose={() => setSelectedProfileUser(null)}
-        user={selectedProfileUser}
-      />
-    </ScrollView>
-  );
-};
-
-const connectV2Styles = StyleSheet.create({
-  section: {
-    marginTop: 24,
-    paddingHorizontal: 16,
-  },
-  storiesSection: {
-    marginTop: 8,
-    paddingLeft: 16,
-  },
-  sectionTitle: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    marginBottom: 12,
-    paddingRight: 16,
-  },
-  sectionEmpty: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
-    paddingVertical: 18,
-  },
-  storiesScroll: {
-    gap: 14,
-    paddingRight: 16,
-  },
-  storyCol: {
-    alignItems: 'center',
-    width: 70,
-  },
-  storyAddCol: {
-    alignItems: 'center',
-    width: 70,
-  },
-  storyAddBubble: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(168,85,247,0.16)',
-    borderWidth: 2,
-    borderColor: 'rgba(168,85,247,0.6)',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  storyRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    padding: 2,
-    marginBottom: 6,
-    position: 'relative',
-  },
-  storyAvatarFrame: {
-    flex: 1,
-    borderRadius: 30,
-    overflow: 'hidden',
-  },
-  storyAvatar: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  storyAvatarFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(168,85,247,0.18)',
-  },
-  storyAvatarInitial: {
-    color: '#fff',
-    fontWeight: '900',
-    fontSize: 18,
-  },
-  storyDot: {
-    position: 'absolute',
-    right: 0,
-    bottom: 4,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#22c55e',
-    borderWidth: 2,
-    borderColor: '#0a0a0f',
-  },
-  storyName: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  liveCard: {
-    marginHorizontal: 16,
-    marginTop: 24,
-    borderRadius: 22,
-    overflow: 'hidden',
-    height: 110,
-    borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.4)',
-  },
-  liveBadgeRow: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    zIndex: 5,
-  },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: '#ef4444',
-  },
-  liveBadgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#fff',
-  },
-  liveBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  liveBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  liveAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: '#a855f7',
-  },
-  liveName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  liveSubtitle: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  liveCardEmpty: {
-    marginHorizontal: 16,
-    marginTop: 24,
-    padding: 18,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  liveCardEmptyDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#22c55e',
-    marginBottom: 8,
-  },
-  liveCardEmptyTitle: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  liveCardEmptyBody: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 6,
-  },
-  gameRow: {
-    gap: 12,
-    paddingRight: 16,
-  },
-  gameCardSm: {
-    width: 140,
-    height: 184,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  gameCardBody: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 10,
-  },
-  gameCardTitle: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  gameCardCreator: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 3,
-  },
-  creatorList: {
-    gap: 12,
-  },
-  creatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-  creatorAvatarWrap: {
-    position: 'relative',
-  },
-  creatorAvatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-  },
-  creatorStatusDot: {
-    position: 'absolute',
-    right: 0,
-    bottom: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#22c55e',
-    borderWidth: 2,
-    borderColor: '#0a0a0f',
-  },
-  creatorName: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  creatorVerifiedDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#a855f7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  creatorVerifiedCheck: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '900',
-    marginTop: -1,
-  },
-  creatorHandle: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  creatorFollowBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: 'rgba(168,85,247,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.4)',
-  },
-  creatorFollowText: {
-    color: '#d8b4fe',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // V2 Connect screen — pixel-faithful to mockups
@@ -1482,10 +1086,11 @@ const CONNECT_TEXT_MUTED = '#9a9aa8';
 
 export const ConnectScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const { user, isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
   const { presenceMap } = useSocket();
-  const { setActiveTab } = useNavigation();
+  const { setActiveTab, activeTab, pendingChatUserId, setPendingChatUserId, activityRequestNonce } = useNavigation();
   const { openSharedGame } = useDeepLink();
 
   const [filter, setFilter] = useState<ConnectFilter>('foryou');
@@ -1496,8 +1101,14 @@ export const ConnectScreen: React.FC = () => {
   const [storyUsers, setStoryUsers] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showFriendsPlaying, setShowFriendsPlaying] = useState(false);
+  const [inboxMode, setInboxMode] = useState<InboxMode>('messages');
   const [inboxInitialChat, setInboxInitialChat] = useState<Conversation | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserItem[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const loadConnectData = useCallback(async () => {
     if (!user?.id) return;
@@ -1505,7 +1116,7 @@ export const ConnectScreen: React.FC = () => {
       const [followingRes, recommendedRes, trendingRes, convRes, storiesRes] = await Promise.allSettled([
         users.following(user.id),
         users.recommended(),
-        gamesApi.list(8, 0, { sort: 'trending' }).catch(() => ({ games: [] })),
+        gamesApi.list(24, 0, { sort: 'trending' }).catch(() => ({ games: [] })),
         messagesApi.getConversations().catch(() => ({ conversations: [] })),
         storiesApi.list().catch(() => ({ stories: [] })),
       ]);
@@ -1517,7 +1128,7 @@ export const ConnectScreen: React.FC = () => {
         setRecommended(recommendedRes.value?.users || []);
       }
       if (trendingRes.status === 'fulfilled') {
-        setTrendingGames((trendingRes.value?.games || []).slice(0, 6));
+        setTrendingGames(trendingRes.value?.games || []);
       }
       if (convRes.status === 'fulfilled') {
         setConversations(Array.isArray(convRes.value?.conversations) ? convRes.value.conversations : []);
@@ -1533,6 +1144,96 @@ export const ConnectScreen: React.FC = () => {
   useEffect(() => {
     loadConnectData();
   }, [loadConnectData]);
+
+  // Refresh when the user opens the Connect tab so DMs / stories / friends
+  // aren't stale (the screen stays mounted, so it otherwise only loads once).
+  useEffect(() => {
+    if (activeTab === 'connect') loadConnectData();
+  }, [activeTab, loadConnectData]);
+
+  // Deep-link from a message notification: open the inbox straight into the
+  // sender's DM. Prefer an already-loaded conversation; otherwise resolve it
+  // by userId (the endpoint creates the conversation if it doesn't exist yet).
+  useEffect(() => {
+    if (!pendingChatUserId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const existing = conversations.find((c) => c.user.id === pendingChatUserId);
+        if (existing) {
+          setInboxMode('messages');
+          setInboxInitialChat(existing);
+          setShowInbox(true);
+          return;
+        }
+        const data = await messagesApi.getConversation(pendingChatUserId);
+        if (cancelled) return;
+        const conv = data?.conversation;
+        if (conv?.id) {
+          setInboxMode('messages');
+          setInboxInitialChat({
+            id: conv.id,
+            user: {
+              id: conv.user?.id ?? pendingChatUserId,
+              username: conv.user?.username ?? '',
+              displayName: conv.user?.display_name ?? conv.user?.displayName,
+              avatar: conv.user?.avatar,
+            },
+            streak: conv.streak ?? 0,
+          });
+          setShowInbox(true);
+        }
+      } catch (e) {
+        console.log('[Connect] deep-link chat open failed', e);
+      } finally {
+        if (!cancelled) setPendingChatUserId(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingChatUserId]);
+
+  // Deep-link from a follow / social notification: open the Activity feed.
+  useEffect(() => {
+    if (!activityRequestNonce) return;
+    setInboxMode('activity');
+    setInboxInitialChat(null);
+    setShowInbox(true);
+  }, [activityRequestNonce]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearching(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const data = await users.search(query);
+        if (!cancelled) {
+          setSearchResults(Array.isArray(data?.users) ? data.users : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setSearchResults([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSearching(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [searchQuery]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1600,6 +1301,7 @@ export const ConnectScreen: React.FC = () => {
           <Pressable
             style={connectV3Styles.topIconBtn}
             onPress={() => {
+              setInboxMode('activity');
               setInboxInitialChat(null);
               setShowInbox(true);
             }}
@@ -1612,7 +1314,15 @@ export const ConnectScreen: React.FC = () => {
           </Pressable>
         </View>
 
-
+        <Animated.View entering={FadeInRight.delay(50).springify().damping(18)}>
+          <TouchableOpacity
+            style={[styles.searchBar, { backgroundColor: colors.surface }]}
+            onPress={() => setShowSearch(true)}
+          >
+            <Ionicons name="search" size={18} color={colors.textSecondary} />
+            <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search people and chats</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Stories row */}
         <ScrollView
@@ -1620,16 +1330,6 @@ export const ConnectScreen: React.FC = () => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={connectV3Styles.storiesScroll}
         >
-          <Pressable style={connectV3Styles.storyCol}>
-            <View style={connectV3Styles.storyAddRing}>
-              <Ionicons name="add" size={26} color="#fff" />
-            </View>
-            <Text style={connectV3Styles.storyName} numberOfLines={1}>
-              Add Story
-            </Text>
-            <Text style={connectV3Styles.storyStatus} numberOfLines={1} />
-          </Pressable>
-
           {peopleForStories.slice(0, 12).map((u) => {
             const status = presenceMap.get(u.id);
             const statusLabel =
@@ -1758,7 +1458,7 @@ export const ConnectScreen: React.FC = () => {
         <View style={connectV3Styles.section}>
           <View style={connectV3Styles.sectionHeader}>
             <Text style={connectV3Styles.sectionTitle}>Friends are playing</Text>
-            <Pressable hitSlop={8}>
+            <Pressable hitSlop={8} onPress={() => setShowFriendsPlaying(true)}>
               <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
             </Pressable>
           </View>
@@ -1817,11 +1517,24 @@ export const ConnectScreen: React.FC = () => {
 
         {/* Active Conversations preview */}
         <View style={connectV3Styles.section}>
-          <Text style={connectV3Styles.sectionTitle}>Active Conversations</Text>
+          <View style={connectV3Styles.sectionHeader}>
+            <Text style={connectV3Styles.sectionTitle}>Active Conversations</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => {
+                setInboxMode('messages');
+                setInboxInitialChat(null);
+                setShowInbox(true);
+              }}
+            >
+              <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
+            </Pressable>
+          </View>
           {conversations.length === 0 ? (
             <Pressable
               style={connectV3Styles.convoEmpty}
               onPress={() => {
+                setInboxMode('messages');
                 setInboxInitialChat(null);
                 setShowInbox(true);
               }}
@@ -1842,6 +1555,7 @@ export const ConnectScreen: React.FC = () => {
                   key={c.id}
                   style={connectV3Styles.convoRow}
                   onPress={() => {
+                    setInboxMode('messages');
                     setInboxInitialChat(c);
                     setShowInbox(true);
                   }}
@@ -1887,28 +1601,165 @@ export const ConnectScreen: React.FC = () => {
         user={selectedProfileUser}
       />
 
+      <SlideRightModal visible={showFriendsPlaying} onClose={() => setShowFriendsPlaying(false)}>
+        <View style={[connectV3Styles.fullListModal, { paddingTop: insets.top }]}>
+          <View style={connectV3Styles.fullListHeader}>
+            <TouchableOpacity onPress={() => setShowFriendsPlaying(false)} style={connectV3Styles.fullListBackBtn}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={connectV3Styles.fullListTitle}>Friends are playing</Text>
+            <View style={connectV3Styles.fullListBackBtn} />
+          </View>
+
+          {trendingGames.length === 0 ? (
+            <View style={connectV3Styles.fullListEmpty}>
+              <Ionicons name="game-controller-outline" size={48} color={CONNECT_TEXT_MUTED} />
+              <Text style={connectV3Styles.fullListEmptyText}>No games trending right now.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={trendingGames}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={connectV3Styles.fullListContent}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={connectV3Styles.fullListRow}
+                  onPress={() => {
+                    setShowFriendsPlaying(false);
+                    openSharedGame(item.id);
+                    setActiveTab('home');
+                  }}
+                >
+                  <View style={connectV3Styles.fullListThumb}>
+                    {item.thumbnail ? (
+                      <Image
+                        source={{ uri: resolveSharedGameThumbnail(item.thumbnail, item.id) || '' }}
+                        style={StyleSheet.absoluteFillObject}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a22' }]} />
+                    )}
+                  </View>
+                  <View style={connectV3Styles.fullListCopy}>
+                    <Text style={connectV3Styles.fullListGameTitle} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={connectV3Styles.fullListGameMeta} numberOfLines={1}>
+                      {following.length > 0 ? `${Math.min(following.length, 9)} friends` : 'Trending'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={CONNECT_TEXT_MUTED} />
+                </Pressable>
+              )}
+            />
+          )}
+        </View>
+      </SlideRightModal>
+
+      <SlideRightModal visible={showSearch} onClose={() => { setShowSearch(false); setSearchQuery(''); }}>
+        <View style={[styles.searchModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <View style={styles.searchModalHeader}>
+            <TouchableOpacity onPress={() => { setShowSearch(false); setSearchQuery(''); }}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <View style={[styles.searchModalInput, { backgroundColor: colors.surface }]}>
+              <Ionicons name="search" size={18} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search people..."
+                placeholderTextColor={colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {searching ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={LoopsColors.color1} />
+          ) : searchQuery.length < 2 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="search-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.searchHintText, { color: colors.textSecondary }]}>
+                Search for people by username
+              </Text>
+            </View>
+          ) : searchResults.length === 0 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="person-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.searchHintText, { color: colors.textSecondary }]}>
+                No users found for "{searchQuery}"
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.searchResult, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    setShowSearch(false);
+                    setSearchQuery('');
+                    setSelectedProfileUser(item);
+                  }}
+                >
+                  <Avatar uri={item.avatar} userId={item.id} size={48} />
+                  <View style={styles.searchResultContent}>
+                    <Text style={[styles.searchResultName, { color: colors.text }]}>
+                      {item.displayName || item.username}
+                    </Text>
+                    <Text style={[styles.searchResultUsername, { color: colors.textSecondary }]}>
+                      @{item.username}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </SlideRightModal>
+
       {/* Inbox modal — shows the existing MessagesTab */}
       {showInbox ? (
         <View style={connectV3Styles.inboxOverlay}>
-          <View style={[connectV3Styles.inboxCard, { paddingTop: inboxInitialChat ? 0 : insets.top + 8 }]}>
-            {!inboxInitialChat ? (
-              <View style={connectV3Styles.inboxHeader}>
-                <Pressable
-                  onPress={() => {
-                    setShowInbox(false);
-                    setInboxInitialChat(null);
-                  }}
-                  hitSlop={8}
-                  style={connectV3Styles.topIconBtn}
-                >
-                  <Ionicons name="chevron-back" size={20} color="#fff" />
-                </Pressable>
-                <Text style={connectV3Styles.topTitle}>Inbox</Text>
-                <View style={connectV3Styles.topIconBtn} />
-              </View>
-            ) : null}
+          <View style={[connectV3Styles.inboxCard, { paddingTop: insets.top + 8 }]}>
+            <View style={connectV3Styles.inboxHeader}>
+              <Pressable
+                onPress={() => {
+                  setShowInbox(false);
+                  setInboxInitialChat(null);
+                }}
+                hitSlop={8}
+                style={connectV3Styles.topIconBtn}
+              >
+                <Ionicons name="chevron-back" size={20} color="#fff" />
+              </Pressable>
+              <Text style={connectV3Styles.topTitle}>
+                {inboxMode === 'activity' ? 'Activity' : 'Inbox'}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setShowInbox(false);
+                  setInboxInitialChat(null);
+                  setActiveTab('profile');
+                }}
+                hitSlop={8}
+                style={connectV3Styles.topAvatarWrap}
+              >
+                <Avatar uri={user?.avatar} userId={user?.id} size={36} />
+              </Pressable>
+            </View>
             <MessagesTab
               initialConversation={inboxInitialChat}
+              mode={inboxMode}
               closeOnChatBack={!!inboxInitialChat}
               onClose={() => {
                 setShowInbox(false);
@@ -2283,6 +2134,79 @@ const connectV3Styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     fontSize: 9,
     fontWeight: '700',
+  },
+  fullListModal: {
+    flex: 1,
+    backgroundColor: CONNECT_BG,
+  },
+  fullListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  fullListBackBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullListTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  fullListContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 36,
+  },
+  fullListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+  },
+  fullListThumb: {
+    width: 72,
+    height: 56,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  fullListCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  fullListGameTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  fullListGameMeta: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  fullListEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  fullListEmptyText: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
   },
   convoEmpty: {
     flexDirection: 'row',

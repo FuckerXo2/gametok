@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Image,
   ImageBackground,
   Dimensions,
   RefreshControl,
@@ -13,6 +12,7 @@ import {
   Modal,
   StatusBar,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -163,6 +163,7 @@ interface ExploreGame {
   color?: string;
   category?: string;
   creatorDisplayName?: string | null;
+  creatorUsername?: string | null;
 }
 
 interface ExploreCreator {
@@ -252,6 +253,7 @@ export const ExploreScreen: React.FC = () => {
   const [selectedCreator, setSelectedCreator] = useState<any>(null);
   const [playingGame, setPlayingGame] = useState<ExploreGame | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
+  const [loadProgress, setLoadProgress] = useState(0); // real WebView progress, 0-100
   const [activeCategoryByTab, setActiveCategoryByTab] = useState<Record<NonForYouTab, string>>({
     Games: 'Recommend',
     Horror: 'Recommend',
@@ -403,6 +405,7 @@ export const ExploreScreen: React.FC = () => {
     if (existingGame) {
       setPlayingGame(existingGame);
       setGameLoaded(false);
+      setLoadProgress(0);
       gamesApi.recordPlay(existingGame.id).catch(() => {});
       return;
     }
@@ -413,6 +416,7 @@ export const ExploreScreen: React.FC = () => {
       if (fetchedGame?.id) {
         setPlayingGame(fetchedGame);
         setGameLoaded(false);
+        setLoadProgress(0);
         gamesApi.recordPlay(fetchedGame.id).catch(() => {});
       }
     } catch (err) {
@@ -1005,7 +1009,11 @@ export const ExploreScreen: React.FC = () => {
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
               allowsAirPlayForMediaPlayback={false}
+              onLoadProgress={({ nativeEvent }) => {
+                setLoadProgress(Math.round((nativeEvent.progress || 0) * 100));
+              }}
               onLoadEnd={() => {
+                setLoadProgress(100);
                 setTimeout(() => setGameLoaded(true), 1200);
               }}
             />
@@ -1016,7 +1024,8 @@ export const ExploreScreen: React.FC = () => {
               <GameLoadingScreen
                 gameName={playingGame.name}
                 gameThumbnail={resolveThumbnail(playingGame.thumbnail, playingGame.id, playingGame)}
-                progress={75}
+                creatorName={playingGame.creatorDisplayName || playingGame.creatorUsername}
+                progress={loadProgress}
               />
             </View>
           ) : null}
