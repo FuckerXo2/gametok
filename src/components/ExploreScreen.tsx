@@ -298,7 +298,7 @@ export const ExploreScreen: React.FC = () => {
   const loadData = async () => {
     try {
       const [gamesRes, recRes] = await Promise.allSettled([
-        gamesApi.list(40, 0, { sort: 'trending' }),
+        gamesApi.list(200, 0, { sort: 'trending' }),
         usersApi.recommended(),
       ]);
       if (gamesRes.status === 'fulfilled') {
@@ -434,25 +434,40 @@ export const ExploreScreen: React.FC = () => {
 
   const renderGameRow = (title: string, gamesList: ExploreGame[]) => {
     if (gamesList.length === 0) return null;
+
+    const chunks: ExploreGame[][] = [];
+    const CHUNK_SIZE = 30;
+    for (let i = 0; i < gamesList.length; i += CHUNK_SIZE) {
+      chunks.push(gamesList.slice(i, i + CHUNK_SIZE));
+    }
+
     return (
       <View style={styles.gameRowSection}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gameRowScroll}>
-          {gamesList.map((g) => (
-            <Pressable key={g.id} style={[styles.gameCard, { width: CARD_WIDTH }]} onPress={() => openGame(g.id)}>
-              <View style={[styles.gameCardThumb, { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 }]}>
-                <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-              </View>
-              <View style={styles.gameCardMeta}>
-                <Text style={styles.gameCardName} numberOfLines={1}>{g.name}</Text>
-                <View style={styles.gameCardPlays}>
-                  <Ionicons name="play" size={10} color="#a1a1aa" style={{ marginRight: 3 }} />
-                  <Text style={styles.gameCardPlaysText}>{formatCount(g.plays || 0)}</Text>
+        {chunks.map((chunk, chunkIndex) => (
+          <ScrollView
+            key={`${title}-row-${chunkIndex}`}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.gameRowScroll}
+            style={{ marginBottom: chunkIndex < chunks.length - 1 ? 14 : 0 }}
+          >
+            {chunk.map((g) => (
+              <Pressable key={g.id} style={[styles.gameCard, { width: CARD_WIDTH }]} onPress={() => openGame(g.id)}>
+                <View style={[styles.gameCardThumb, { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 }]}>
+                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
                 </View>
-              </View>
-            </Pressable>
-          ))}
-        </ScrollView>
+                <View style={styles.gameCardMeta}>
+                  <Text style={styles.gameCardName} numberOfLines={1}>{g.name}</Text>
+                  <View style={styles.gameCardPlays}>
+                    <Ionicons name="play" size={10} color="#a1a1aa" style={{ marginRight: 3 }} />
+                    <Text style={styles.gameCardPlaysText}>{formatCount(g.plays || 0)}</Text>
+                  </View>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ))}
       </View>
     );
   };
