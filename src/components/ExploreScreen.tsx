@@ -800,13 +800,7 @@ export const ExploreScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Auth gate overlay */}
-      {!isAuthenticated ? (
-        <Pressable
-          style={styles.authBlock}
-          onPress={showAuthScreen}
-        />
-      ) : null}
+
 
       <UserProfileModal
         visible={!!selectedCreator}
@@ -1451,10 +1445,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  authBlock: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-  },
+
   searchModal: {
     flex: 1,
     backgroundColor: BG,
