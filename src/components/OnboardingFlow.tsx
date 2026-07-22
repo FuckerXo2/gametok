@@ -43,7 +43,21 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
-import { Avatar, DicebearConfig, makeDicebearAvatarUri, DICEBEAR_BACKGROUNDS, DICEBEAR_HAIR_COLORS, DICEBEAR_EYE_OPTIONS, DICEBEAR_MOUTH_OPTIONS } from './Avatar';
+import {
+  Avatar,
+  DicebearConfig,
+  makeDicebearAvatarUri,
+  DICEBEAR_ACCESSORY_OPTIONS,
+  DICEBEAR_BACKGROUNDS,
+  DICEBEAR_BROW_OPTIONS,
+  DICEBEAR_EARRING_OPTIONS,
+  DICEBEAR_EYE_OPTIONS,
+  DICEBEAR_FEATURE_OPTIONS,
+  DICEBEAR_HAIR_COLORS,
+  DICEBEAR_HAIR_OPTIONS,
+  DICEBEAR_MOUTH_OPTIONS,
+  DICEBEAR_SKIN_TONES,
+} from './Avatar';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -54,6 +68,11 @@ const safeHeight = SCREEN_HEIGHT || 812;
 const GOOGLE_IOS_CLIENT_ID = '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com';
 const GOOGLE_IOS_WEB_CLIENT_ID = '690098564284-9j4fj28fiqimjg8c20mn2vtjg6b70qr7.apps.googleusercontent.com';
 const GOOGLE_ANDROID_WEB_CLIENT_ID = '516560435127-l6db4akjqei5q57j764kgu3aoaedu45l.apps.googleusercontent.com';
+
+const randomOption = <T,>(options: T[], current?: T) => {
+  const pool = current === undefined ? options : options.filter((option) => option !== current);
+  return (pool.length > 0 ? pool : options)[Math.floor(Math.random() * (pool.length > 0 ? pool.length : options.length))];
+};
 
 type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'how_heard' | 'genres' | 'avatar' | 'profile';
 
@@ -913,10 +932,17 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setAvatarConfig(prev => ({
         ...prev,
-        bg: DICEBEAR_BACKGROUNDS[Math.floor(Math.random() * DICEBEAR_BACKGROUNDS.length)] || prev.bg,
-        hairColor: DICEBEAR_HAIR_COLORS[Math.floor(Math.random() * DICEBEAR_HAIR_COLORS.length)] || prev.hairColor,
-        eyes: DICEBEAR_EYE_OPTIONS[Math.floor(Math.random() * DICEBEAR_EYE_OPTIONS.length)] || prev.eyes,
-        mouth: DICEBEAR_MOUTH_OPTIONS[Math.floor(Math.random() * DICEBEAR_MOUTH_OPTIONS.length)] || prev.mouth,
+        seed: `${username.trim() || 'gametok'}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        bg: randomOption(DICEBEAR_BACKGROUNDS, prev.bg),
+        skinColor: randomOption(DICEBEAR_SKIN_TONES, prev.skinColor),
+        hairColor: randomOption(DICEBEAR_HAIR_COLORS, prev.hairColor),
+        hair: randomOption(DICEBEAR_HAIR_OPTIONS, prev.hair),
+        eyes: randomOption(DICEBEAR_EYE_OPTIONS, prev.eyes),
+        eyebrows: randomOption(DICEBEAR_BROW_OPTIONS, prev.eyebrows),
+        mouth: randomOption(DICEBEAR_MOUTH_OPTIONS, prev.mouth),
+        accessory: randomOption(DICEBEAR_ACCESSORY_OPTIONS, prev.accessory),
+        feature: randomOption(DICEBEAR_FEATURE_OPTIONS, prev.feature),
+        earrings: randomOption(DICEBEAR_EARRING_OPTIONS, prev.earrings),
       }));
     };
 

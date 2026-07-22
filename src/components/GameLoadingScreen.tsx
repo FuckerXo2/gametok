@@ -9,15 +9,20 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 interface GameLoadingScreenProps {
   gameName: string;
   gameThumbnail?: string;
-  progress?: number; // 0-100
+  creatorName?: string | null;
+  progress?: number; // 0-100 — real load progress fed by the host WebView
 }
 
 export const GameLoadingScreen: React.FC<GameLoadingScreenProps> = ({
   gameName,
   gameThumbnail,
-  progress = 0, // Kept for backwards compatibility if needed elsewhere
+  creatorName,
+  progress = 0,
 }) => {
-  const [fakeProgress, setFakeProgress] = React.useState(0);
+  const [displayProgress, setDisplayProgress] = React.useState(0);
+  // Gentle trickle so the bar shows motion before the first real
+  // onLoadProgress event lands; caps at 12% and never moves backwards.
+  const [trickle, setTrickle] = React.useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -46,27 +51,36 @@ export const GameLoadingScreen: React.FC<GameLoadingScreenProps> = ({
       ])
     ).start();
 
-    // Smooth progress animation to 100%
-    // Reaches 100% in ~2.8s, just before the 3s onLoadEnd dismissal
-    Animated.timing(progressAnim, {
-      toValue: 100,
-      duration: 2800,
-      useNativeDriver: false,
-    }).start();
-
-    // Update the local text state to match the animated value
+    // Keep the number label in sync with the animated bar.
     const listenerId = progressAnim.addListener(({ value }) => {
-      setFakeProgress(Math.floor(value));
+      setDisplayProgress(Math.round(value));
     });
+
+    const trickleId = setInterval(() => {
+      setTrickle((t) => (t >= 12 ? t : t + 1));
+    }, 120);
 
     return () => {
       progressAnim.removeListener(listenerId);
+      clearInterval(trickleId);
     };
   }, []);
+
+  // Drive the bar toward the real load progress. `target` is monotonic
+  // (both inputs only grow), so the bar never jumps backwards.
+  useEffect(() => {
+    const target = Math.min(100, Math.max(progress, trickle));
+    Animated.timing(progressAnim, {
+      toValue: target,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [progress, trickle]);
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
   });
 
   return (
@@ -110,15 +124,14 @@ export const GameLoadingScreen: React.FC<GameLoadingScreenProps> = ({
           {gameName}
         </Text>
 
-        {/* "By GameTok" branding */}
-        <Text style={styles.branding}>By GameTok</Text>
+        <Text style={styles.branding}>By {creatorName?.trim() || 'GameTok'}</Text>
 
         {/* Progress bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
             <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
           </View>
-          <Text style={styles.progressText}>{fakeProgress}%</Text>
+          <Text style={styles.progressText}>{displayProgress}%</Text>
         </View>
 
         {/* Loading text */}

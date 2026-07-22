@@ -82,7 +82,7 @@ export const savePushToken = async (token: string, authToken: string): Promise<v
 };
 
 // Remove push token from backend (on logout)
-export const removePushToken = async (authToken: string): Promise<void> => {
+export const removePushToken = async (authToken: string, pushToken?: string): Promise<void> => {
   try {
     await fetch(`${API_URL}/api/notifications/unregister`, {
       method: 'POST',
@@ -90,6 +90,8 @@ export const removePushToken = async (authToken: string): Promise<void> => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`,
       },
+      // Send this device's token so only it is detached (not the user's other devices).
+      body: JSON.stringify(pushToken ? { pushToken } : {}),
     });
     console.log('[Notifications] Token removed from backend');
   } catch (error) {

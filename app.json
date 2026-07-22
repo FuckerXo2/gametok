@@ -3,7 +3,7 @@
     "name": "GameTOK",
     "slug": "gametok",
     "scheme": "gametok",
-    "version": "2.1.0",
+    "version": "2.1.2",
     "orientation": "portrait",
     "newArchEnabled": false,
     "icon": "./assets/icon.png",
@@ -25,7 +25,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.olasubomi.gametok",
-      "buildNumber": "52",
+      "buildNumber": "54",
       "associatedDomains": [
         "applinks:gametok.co"
       ],
@@ -44,12 +44,13 @@
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 52
+      "versionCode": 54
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/with-ios-audio-session",
       [
         "expo-av",
         {

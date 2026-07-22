@@ -7,15 +7,18 @@ import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
-import { API_URL, games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress } from '../services/api';
+import { API_URL, games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress, ai as aiApi, users as usersApi } from '../services/api';
 import { ShareSheet } from '../components/ShareSheet';
+import { RemixModal } from '../components/RemixModal';
 import { LeaderboardModal } from '../components/LeaderboardModal';
 import { GameLoadingScreen } from '../components/GameLoadingScreen';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CommentsModal } from '../components/CommentsModal';
+import { Avatar } from '../components/Avatar';
+import { UserProfileModal } from '../components/UserProfileModal';
 import { useDeepLink, useNavigation } from '../../App';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -46,10 +49,12 @@ interface Game {
   subcategory?: string | null;
   primaryTab?: string | null;
   discoveryChips?: string[];
+  creatorId?: string | null;
   creatorDisplayName?: string | null;
   creatorUsername?: string | null;
   creatorVerified?: boolean;
   creatorAvatar?: string | null;
+  remixedFrom?: string | null;
 }
 
 // Feed contains games
@@ -57,6 +62,21 @@ interface FeedItem {
   game?: Game;
   id: string;
 }
+
+const normalizeFollowKey = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+const getCreatorFollowKey = (game?: Game | null) => (
+  normalizeFollowKey(game?.creatorId || game?.creatorUsername)
+);
+
+const isCreatorFollowed = (followedKeys: Set<string>, game?: Game | null) => {
+  const creatorIdKey = normalizeFollowKey(game?.creatorId);
+  const usernameKey = normalizeFollowKey(game?.creatorUsername);
+  return Boolean(
+    (creatorIdKey && followedKeys.has(creatorIdKey)) ||
+    (usernameKey && followedKeys.has(usernameKey))
+  );
+};
 
 const getGameUrl = (game: Game) => {
   const rawUrl = game.embedUrl
@@ -84,15 +104,144 @@ const GAME_AUDIO_GUARD_SCRIPT = `
   window._gametokMuted = true;
   window._audioContexts = window._audioContexts || [];
 
-  const muteMedia = function() {
+  // Walk this window plus every same-origin child frame. A lot of HTML5 games
+  // (especially distribution/ad-wrapped ones) run their actual audio inside a
+  // nested <iframe>, which the top-frame mute never reached - that is why the
+  // previous game kept playing after a scroll or after leaving the screen.
+  var forEachFrame = function(win, cb) {
+    try { cb(win); } catch (e) {}
+    var frames;
+    try { frames = win.frames; } catch (e) { return; }
+    if (!frames) return;
+    for (var i = 0; i < frames.length; i++) {
+      var child;
+      try {
+        child = frames[i];
+        void child.document; // throws for cross-origin frames -> skip them
+      } catch (e) { continue; }
+      if (child && child !== win) forEachFrame(child, cb);
+    }
+  };
+  window.__gametokForEachFrame = function(cb) { forEachFrame(window, cb); };
+
+  var muteWindow = function(win) {
+    try { win._gametokActive = false; win._gametokMuted = true; } catch (e) {}
     try {
-      document.querySelectorAll('audio, video').forEach(function(el) {
-        try {
-          el.muted = true;
-          el.volume = 0;
-          if (!window._gametokActive) el.pause();
-        } catch (e) {}
+      win.document && win.document.querySelectorAll('audio, video').forEach(function(el) {
+        try { el.pause(); el.muted = true; el.volume = 0; } catch (e) {}
       });
+    } catch (e) {}
+    try { (win._audioContexts || []).forEach(function(ctx) { try { ctx.suspend(); } catch (e) {} }); } catch (e) {}
+    try { if (win.Howler) win.Howler.mute(true); } catch (e) {}
+    try {
+      if (win.Phaser && win.Phaser.GAMES) win.Phaser.GAMES.forEach(function(g) {
+        try { if (g && g.sound) { g.sound.mute = true; g.sound.pauseAll && g.sound.pauseAll(); } } catch (e) {}
+      });
+    } catch (e) {}
+    try { if (win.createjs && win.createjs.Sound) win.createjs.Sound.muted = true; } catch (e) {}
+  };
+
+  var unmuteWindow = function(win) {
+    try { win._gametokActive = true; win._gametokMuted = false; } catch (e) {}
+    try { (win._audioContexts || []).forEach(function(ctx) { try { ctx.resume(); } catch (e) {} }); } catch (e) {}
+    try {
+      win.document && win.document.querySelectorAll('audio, video').forEach(function(el) {
+        try { el.muted = false; el.volume = 1; } catch (e) {}
+      });
+    } catch (e) {}
+    try { if (win.Howler) win.Howler.mute(false); } catch (e) {}
+    try {
+      if (win.Phaser && win.Phaser.GAMES) win.Phaser.GAMES.forEach(function(g) {
+        try { if (g && g.sound) g.sound.mute = false; } catch (e) {}
+      });
+    } catch (e) {}
+    try { if (win.createjs && win.createjs.Sound) win.createjs.Sound.muted = false; } catch (e) {}
+  };
+
+  window.__gametokMuteAll = function() {
+    window._gametokActive = false;
+    window._gametokMuted = true;
+    try { window._gamePaused = true; } catch (e) {}
+    try { window.dispatchEvent(new Event('blur')); } catch (e) {}
+    try { document.dispatchEvent(new Event('gametok:pause')); } catch (e) {}
+    forEachFrame(window, muteWindow);
+    try {
+      if (navigator.mediaSession) {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'paused';
+      }
+    } catch (e) {}
+  };
+  window.__gametokUnmuteAll = function() {
+    window._gametokActive = true;
+    window._gametokMuted = false;
+    try { window._gamePaused = false; } catch (e) {}
+    try { window.dispatchEvent(new Event('focus')); } catch (e) {}
+    try { document.dispatchEvent(new Event('gametok:resume')); } catch (e) {}
+    forEachFrame(window, unmuteWindow);
+    try {
+      if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
+    } catch (e) {}
+  };
+
+  // Install the Audio / AudioContext / <media>.play guards into a window realm.
+  // Each same-origin frame has its own constructors and prototypes, so the
+  // guard has to be installed per realm (top frame + nested frames).
+  var installInWindow = function(win) {
+    try {
+      if (win.__gametokRealmGuarded) return;
+      win.__gametokRealmGuarded = true;
+      win._audioContexts = win._audioContexts || [];
+
+      var NativeAudio = win.Audio;
+      if (NativeAudio && !NativeAudio.__gametokWrapped) {
+        var WrappedAudio = function(src) {
+          var audio = new NativeAudio(src);
+          try { audio.muted = true; audio.volume = 0; } catch (e) {}
+          var nativePlay = audio.play ? audio.play.bind(audio) : null;
+          if (nativePlay) {
+            audio.play = function() {
+              if (!window._gametokActive || window._gametokMuted) {
+                try { audio.muted = true; audio.volume = 0; } catch (e) {}
+                return Promise.resolve();
+              }
+              return nativePlay();
+            };
+          }
+          return audio;
+        };
+        WrappedAudio.prototype = NativeAudio.prototype;
+        WrappedAudio.__gametokWrapped = true;
+        win.Audio = WrappedAudio;
+      }
+
+      var NativeAudioContext = win.AudioContext || win.webkitAudioContext;
+      if (NativeAudioContext && !NativeAudioContext.__gametokWrapped) {
+        var WrappedAudioContext = function() {
+          var ctx = new NativeAudioContext();
+          try { win._audioContexts.push(ctx); } catch (e) {}
+          if (!window._gametokActive || window._gametokMuted) {
+            try { ctx.suspend(); } catch (e) {}
+          }
+          return ctx;
+        };
+        WrappedAudioContext.prototype = NativeAudioContext.prototype;
+        WrappedAudioContext.__gametokWrapped = true;
+        win.AudioContext = WrappedAudioContext;
+        win.webkitAudioContext = WrappedAudioContext;
+      }
+
+      if (win.HTMLMediaElement && win.HTMLMediaElement.prototype && !win.HTMLMediaElement.prototype.__gametokPlayWrapped) {
+        var nativeMediaPlay = win.HTMLMediaElement.prototype.play;
+        win.HTMLMediaElement.prototype.play = function() {
+          if (!window._gametokActive || window._gametokMuted) {
+            try { this.muted = true; this.volume = 0; this.pause(); } catch (e) {}
+            return Promise.resolve();
+          }
+          return nativeMediaPlay.apply(this, arguments);
+        };
+        win.HTMLMediaElement.prototype.__gametokPlayWrapped = true;
+      }
     } catch (e) {}
   };
 
@@ -103,67 +252,32 @@ const GAME_AUDIO_GUARD_SCRIPT = `
     }
   } catch (e) {}
 
-  const NativeAudio = window.Audio;
-  if (NativeAudio && !NativeAudio.__gametokWrapped) {
-    const WrappedAudio = function(src) {
-      const audio = new NativeAudio(src);
-      audio.muted = true;
-      audio.volume = 0;
-      const nativePlay = audio.play ? audio.play.bind(audio) : null;
-      if (nativePlay) {
-        audio.play = function() {
-          if (!window._gametokActive || window._gametokMuted) {
-            audio.muted = true;
-            audio.volume = 0;
-            return Promise.resolve();
-          }
-          return nativePlay();
-        };
-      }
-      return audio;
-    };
-    WrappedAudio.prototype = NativeAudio.prototype;
-    WrappedAudio.__gametokWrapped = true;
-    window.Audio = WrappedAudio;
-  }
+  installInWindow(window);
 
-  const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
-  if (NativeAudioContext && !NativeAudioContext.__gametokWrapped) {
-    const WrappedAudioContext = function() {
-      const ctx = new NativeAudioContext();
-      window._audioContexts.push(ctx);
-      if (!window._gametokActive || window._gametokMuted) {
-        try { ctx.suspend(); } catch (e) {}
-      }
-      return ctx;
-    };
-    WrappedAudioContext.prototype = NativeAudioContext.prototype;
-    WrappedAudioContext.__gametokWrapped = true;
-    window.AudioContext = WrappedAudioContext;
-    window.webkitAudioContext = WrappedAudioContext;
-  }
+  // Guard nested same-origin frames as they appear and keep them silent while
+  // this WebView is the inactive/background game.
+  var sweepFrames = function() {
+    forEachFrame(window, function(win) {
+      if (win === window) return;
+      installInWindow(win);
+      if (!window._gametokActive || window._gametokMuted) muteWindow(win);
+    });
+  };
 
-  if (window.HTMLMediaElement && window.HTMLMediaElement.prototype && !window.HTMLMediaElement.prototype.__gametokPlayWrapped) {
-    const nativeMediaPlay = window.HTMLMediaElement.prototype.play;
-    window.HTMLMediaElement.prototype.play = function() {
-      if (!window._gametokActive || window._gametokMuted) {
-        try {
-          this.muted = true;
-          this.volume = 0;
-          this.pause();
-        } catch (e) {}
-        return Promise.resolve();
-      }
-      return nativeMediaPlay.apply(this, arguments);
-    };
-    window.HTMLMediaElement.prototype.__gametokPlayWrapped = true;
-  }
-
-  const installObserver = function() {
-    muteMedia();
+  var installObserver = function() {
+    if (!window._gametokActive || window._gametokMuted) window.__gametokMuteAll();
+    sweepFrames();
     if (!window._gametokMediaObserver && document.body) {
-      window._gametokMediaObserver = new MutationObserver(muteMedia);
+      window._gametokMediaObserver = new MutationObserver(function() {
+        if (!window._gametokActive || window._gametokMuted) {
+          window.__gametokMuteAll();
+          sweepFrames();
+        }
+      });
       window._gametokMediaObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    if (!window._gametokFrameSweep) {
+      window._gametokFrameSweep = setInterval(sweepFrames, 1000);
     }
   };
 
@@ -172,6 +286,17 @@ const GAME_AUDIO_GUARD_SCRIPT = `
   } else {
     installObserver();
   }
+
+  var handleHostMessage = function(event) {
+    try {
+      var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      if (!data || !data.type) return;
+      if (data.type === 'GAMETOK_PAUSE') window.__gametokMuteAll();
+      if (data.type === 'GAMETOK_RESUME') window.__gametokUnmuteAll();
+    } catch (e) {}
+  };
+  window.addEventListener('message', handleHostMessage);
+  document.addEventListener('message', handleHostMessage);
 })();
 true;
 `;
@@ -180,6 +305,10 @@ true;
 // Script to pause/freeze a game
 const PAUSE_SCRIPT = `
 (function() {
+  if (window.__gametokMuteAll) {
+    try { window.__gametokMuteAll(); } catch(e) {}
+  }
+
   // Immediately mute everything
   window._gamePaused = true;
   window._gametokActive = false;
@@ -249,8 +378,11 @@ const PAUSE_SCRIPT = `
     if (window.createjs && window.createjs.Sound) {
       try { window.createjs.Sound.muted = true; } catch(e) {}
     }
+
+    // 6. Recurse through same-origin child frames (nested-iframe games)
+    if (window.__gametokMuteAll) { try { window.__gametokMuteAll(); } catch(e) {} }
   };
-  
+
   // Mute immediately
   muteAll();
 
@@ -288,63 +420,6 @@ const PAUSE_SCRIPT = `
     window._rafQueue.push(cb);
     return window._rafQueue.length;
   };
-})();
-true;
-`;
-
-// Script for the immediate next game: let it paint/warm up, but keep it silent.
-const PRELOAD_SCRIPT = `
-(function() {
-  window._gamePaused = false;
-  window._gametokActive = false;
-  window._gametokMuted = true;
-
-  if (window._origRAF) {
-    window.requestAnimationFrame = window._origRAF;
-    window._rafQueue && window._rafQueue.forEach(cb => window._origRAF(cb));
-    window._rafQueue = [];
-  }
-
-  if (window.createjs && window.createjs.Ticker) {
-    try { window.createjs.Ticker.paused = false; } catch(e) {}
-  }
-  if (window.Phaser && window.Phaser.GAMES) {
-    window.Phaser.GAMES.forEach(g => {
-      try { g.scene && g.scene.resume && g.scene.resume(); } catch(e) {}
-      try { if (g.sound) g.sound.mute = true; } catch(e) {}
-    });
-  }
-
-  const muteOnly = () => {
-    document.querySelectorAll('audio, video').forEach(el => {
-      try {
-        el.pause();
-        el.muted = true;
-        el.volume = 0;
-      } catch(e) {}
-    });
-    if (window._audioContexts) {
-      window._audioContexts.forEach(ctx => {
-        try { ctx.suspend(); } catch(e) {}
-      });
-    }
-    if (window._allGainNodes) {
-      window._allGainNodes.forEach(gain => {
-        try { gain.gain.setValueAtTime(0, gain.context.currentTime); } catch(e) {}
-      });
-    }
-    if (window.Howler) {
-      try { window.Howler.mute(true); } catch(e) {}
-    }
-    if (window.createjs && window.createjs.Sound) {
-      try { window.createjs.Sound.muted = true; } catch(e) {}
-    }
-  };
-
-  muteOnly();
-  if (!window._muteInterval) {
-    window._muteInterval = setInterval(muteOnly, 2500);
-  }
 })();
 true;
 `;
@@ -423,6 +498,9 @@ const RESUME_SCRIPT = `
   if (window.createjs && window.createjs.Sound) {
     try { window.createjs.Sound.muted = false; } catch(e) {}
   }
+
+  // Resume same-origin child frames (nested-iframe games) too
+  if (window.__gametokUnmuteAll) { try { window.__gametokUnmuteAll(); } catch(e) {} }
 })();
 true;
 `;
@@ -910,6 +988,91 @@ const AnimatedCommentButton = ({
   );
 };
 
+const AnimatedFollowBadge = ({
+  loading,
+  followed,
+  disabled,
+  onPress,
+  styles
+}: {
+  loading: boolean;
+  followed: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const ringScale = useRef(new Animated.Value(0.7)).current;
+  const ringOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!loading && !followed) return;
+
+    scale.setValue(0.72);
+    ringScale.setValue(0.7);
+    ringOpacity.setValue(0.5);
+
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scale, {
+          toValue: 1.22,
+          friction: 4,
+          tension: 150,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          friction: 5,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(ringScale, {
+        toValue: 1.75,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+      Animated.timing(ringOpacity, {
+        toValue: 0,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [followed, loading, ringOpacity, ringScale, scale]);
+
+  return (
+    <Pressable
+      style={styles.creatorFollowBadgeWrap}
+      onPress={onPress}
+      disabled={disabled || loading || followed}
+      hitSlop={10}
+    >
+      <Animated.View
+        style={[
+          styles.creatorFollowPulse,
+          {
+            opacity: ringOpacity,
+            transform: [{ scale: ringScale }],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.creatorFollowBadge,
+          followed && styles.creatorFollowBadgeDone,
+          { transform: [{ scale }] },
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color="#FFF" />
+        ) : (
+          <Ionicons name={followed ? "checkmark" : "add"} size={20} color="#FFF" />
+        )}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
 const GameLoadingAnimation: React.FC = () => {
   // Shape rotations
   const rotation1 = useRef(new Animated.Value(0)).current;
@@ -1150,24 +1313,205 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refreshTrigger = 0 }) => {
   const insets = useSafeAreaInsets();
   const { sharedGameId, clearSharedGame } = useDeepLink();
-  const { setActiveTab: setRootActiveTab, setSearchModalVisible, setIsGameDeckActive, isGameDeckActive, isHudHidden, setIsHudHidden, gameRestartTrigger, gameSkipCounter } = useNavigation();
+  const { setActiveTab: setRootActiveTab, setPendingDraftId, setSearchModalVisible, setIsGameDeckActive, isGameDeckActive, isHudHidden, setIsHudHidden, gameRestartTrigger, gameSkipCounter } = useNavigation();
   const { user } = useAuth();
   const { setMyStatus } = useSocket();
   const isFocused = isActive; // Use the prop instead of navigation hook
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [interactedGameId, setInteractedGameId] = useState<string | null>(null);
+  const [followingCreatorIds, setFollowingCreatorIds] = useState<Set<string>>(new Set());
+  const [followingLoadingIds, setFollowingLoadingIds] = useState<Set<string>>(new Set());
+  const [followSuccessIds, setFollowSuccessIds] = useState<Set<string>>(new Set());
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  const [webViewResetKeys, setWebViewResetKeys] = useState<Record<string, number>>({});
+  const followSuccessTimeouts = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     setIsGameDeckActive(false);
   }, [currentIndex, setIsGameDeckActive]);
 
-  // Restore thumbnail state when user exits Game Deck by pressing "Home"
   useEffect(() => {
-    if (!isGameDeckActive) {
-      setInteractedGameId(null);
+    if (!user?.id) {
+      setFollowingCreatorIds(new Set());
+      setFollowingLoadingIds(new Set());
+      setFollowSuccessIds(new Set());
+      return;
     }
-  }, [isGameDeckActive]);
+
+    let cancelled = false;
+    usersApi.following(user.id)
+      .then((res: any) => {
+        if (cancelled) return;
+        const following = Array.isArray(res)
+          ? res
+          : res?.users || res?.following || [];
+        setFollowingCreatorIds(
+          new Set(
+            following
+              .flatMap((item: any) => [
+                normalizeFollowKey(item?.id || item?.userId),
+                normalizeFollowKey(item?.username),
+              ])
+              .filter(Boolean),
+          ),
+        );
+      })
+      .catch((error) => {
+        console.warn("Failed to load following creators:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(followSuccessTimeouts.current).forEach(clearTimeout);
+      followSuccessTimeouts.current = {};
+    };
+  }, []);
+
+  const resolveCreatorId = useCallback(async (creatorId?: string | null, creatorUsername?: string | null) => {
+    if (creatorId) return creatorId;
+    const username = creatorUsername?.trim();
+    if (!username) return null;
+
+    const result = await usersApi.search(username);
+    const users = Array.isArray(result) ? result : result?.users || [];
+    const matchedUser = users.find((candidate: any) => (
+      String(candidate?.username || "").toLowerCase() === username.toLowerCase()
+    )) || users[0];
+
+    return matchedUser?.id ? String(matchedUser.id) : null;
+  }, []);
+
+  const handleOpenCreatorProfile = useCallback(async (game: Game) => {
+    const fallbackId = game.creatorId || game.creatorUsername;
+    if (!fallbackId) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (game.creatorId) {
+      setSelectedProfileUser({
+        id: game.creatorId,
+        username: game.creatorUsername || game.creatorDisplayName || 'creator',
+        displayName: game.creatorDisplayName || game.creatorUsername || 'Creator',
+        avatar: game.creatorAvatar || null,
+        verified: Boolean(game.creatorVerified),
+        status: 'GAME CREATOR',
+        isOnline: false,
+        isFriend: isCreatorFollowed(followingCreatorIds, game),
+      });
+      return;
+    }
+
+    try {
+      const resolvedId = await resolveCreatorId(null, game.creatorUsername);
+      const profile = resolvedId ? await usersApi.get(resolvedId) : null;
+      const profileUser = profile?.user || {};
+      setSelectedProfileUser({
+        id: profileUser.id || resolvedId || fallbackId,
+        username: profileUser.username || game.creatorUsername || 'creator',
+        displayName: profileUser.displayName || game.creatorDisplayName || game.creatorUsername || 'Creator',
+        avatar: profileUser.avatar || game.creatorAvatar || null,
+        verified: Boolean(profileUser.verified ?? game.creatorVerified),
+        status: 'GAME CREATOR',
+        isOnline: false,
+        isFriend: Boolean(profile?.isFollowing),
+      });
+    } catch (error) {
+      console.warn("Failed to open creator profile:", error);
+      setSelectedProfileUser({
+        id: fallbackId,
+        username: game.creatorUsername || 'creator',
+        displayName: game.creatorDisplayName || game.creatorUsername || 'Creator',
+        avatar: game.creatorAvatar || null,
+        verified: Boolean(game.creatorVerified),
+        status: 'GAME CREATOR',
+        isOnline: false,
+        isFriend: false,
+      });
+    }
+  }, [followingCreatorIds, resolveCreatorId]);
+
+  const handleFollowCreator = useCallback(async (creatorId?: string | null, creatorUsername?: string | null) => {
+    const optimisticId = normalizeFollowKey(creatorId || creatorUsername);
+    if (!optimisticId || optimisticId === normalizeFollowKey(user?.id) || followingLoadingIds.has(optimisticId)) {
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFollowingLoadingIds(prev => {
+      const next = new Set(prev);
+      next.add(optimisticId);
+      return next;
+    });
+
+    try {
+      const resolvedCreatorId = await resolveCreatorId(creatorId, creatorUsername);
+      if (!resolvedCreatorId || normalizeFollowKey(resolvedCreatorId) === normalizeFollowKey(user?.id)) {
+        throw new Error("Creator id unavailable");
+      }
+      const resolvedCreatorKey = normalizeFollowKey(resolvedCreatorId);
+      const creatorUsernameKey = normalizeFollowKey(creatorUsername);
+
+      const result = await usersApi.follow(resolvedCreatorId);
+      if (result?.following === false) {
+        setFollowingCreatorIds(prev => {
+          const next = new Set(prev);
+          next.delete(resolvedCreatorKey);
+          if (creatorUsernameKey) next.delete(creatorUsernameKey);
+          return next;
+        });
+        return;
+      }
+
+      setFollowingCreatorIds(prev => {
+        const next = new Set(prev);
+        next.add(resolvedCreatorKey);
+        if (creatorUsernameKey) next.add(creatorUsernameKey);
+        return next;
+      });
+      setFollowSuccessIds(prev => {
+        const next = new Set(prev);
+        next.add(optimisticId);
+        next.add(resolvedCreatorKey);
+        return next;
+      });
+
+      if (followSuccessTimeouts.current[optimisticId]) {
+        clearTimeout(followSuccessTimeouts.current[optimisticId]);
+      }
+      followSuccessTimeouts.current[optimisticId] = setTimeout(() => {
+        setFollowSuccessIds(prev => {
+          const next = new Set(prev);
+          next.delete(optimisticId);
+          next.delete(resolvedCreatorKey);
+          return next;
+        });
+        delete followSuccessTimeouts.current[optimisticId];
+      }, 900);
+    } catch (error) {
+      setFollowingCreatorIds(prev => {
+        const next = new Set(prev);
+        const creatorIdKey = normalizeFollowKey(creatorId);
+        const creatorUsernameKey = normalizeFollowKey(creatorUsername);
+        if (creatorIdKey) next.delete(creatorIdKey);
+        if (creatorUsernameKey) next.delete(creatorUsernameKey);
+        return next;
+      });
+      console.warn("Failed to follow creator:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setFollowingLoadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(optimisticId);
+        return next;
+      });
+    }
+  }, [followingLoadingIds, resolveCreatorId, user?.id]);
 
   useEffect(() => {
     if (gameSkipCounter.count > 0) {
@@ -1300,6 +1644,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [showComments, setShowComments] = useState(false);
   const [commentGameId, setCommentGameId] = useState<string>('');
   const [commentGameName, setCommentGameName] = useState<string>('');
+  const [remixTarget, setRemixTarget] = useState<Game | null>(null);
+  const [remixLoading, setRemixLoading] = useState(false);
 
   // Click animation state - track position of last tap
   const [clickAnimations, setClickAnimations] = useState<Array<{ id: string; x: number; y: number }>>([]);
@@ -1333,8 +1679,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     setShowLeaderboard(true);
   };
 
-  // Calculate actual content height (screen minus tab bar)
-  const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
+  // Keep the playable surface inside the phone chrome boundaries.
+  const contentHeight = SCREEN_HEIGHT - insets.top - TAB_BAR_HEIGHT - insets.bottom;
   const contentHeightRef = useRef(contentHeight);
   
   useEffect(() => {
@@ -1513,6 +1859,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     }
   };
 
+  const handleRemix = (game: Game) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    const sourceId = game.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    if (!sourceId) {
+      Alert.alert('Cannot remix', "This game can't be remixed.");
+      return;
+    }
+    setRemixTarget(game);
+  };
+
+  const confirmRemix = async () => {
+    if (!remixTarget || remixLoading) return;
+    const sourceId = remixTarget.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    if (!sourceId) { setRemixTarget(null); return; }
+    setRemixLoading(true);
+    try {
+      const res = await aiApi.remixGame(sourceId);
+      if (res?.draftId) {
+        setRemixTarget(null);
+        // Jump straight into editing the fresh remix draft.
+        setPendingDraftId(res.draftId);
+        setRootActiveTab('create');
+      } else {
+        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
+      }
+    } catch (e: any) {
+      Alert.alert('Remix failed', e?.message || String(e));
+    } finally {
+      setRemixLoading(false);
+    }
+  };
+
   const handleOpenComments = (game: Game) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1549,14 +1929,81 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const currentIndexRef = useRef(0);
   const feedRef = useRef<FeedItem[]>([]);
   const translateY = useRef(new Animated.Value(0)).current;
+  const isAnimating = useRef(false);
+  const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
+  const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
+
+  const pauseWebView = useCallback((webView?: WebViewType | null) => {
+    if (!webView) return;
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_PAUSE' }));
+    webView.injectJavaScript(PAUSE_SCRIPT);
+  }, []);
+
+  const resumeWebView = useCallback((webView?: WebViewType | null) => {
+    if (!webView) return;
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RESUME' }));
+    webView.injectJavaScript(RESUME_SCRIPT);
+  }, []);
+
+  const pauseAllWebViews = useCallback(() => {
+    Object.values(webViewRefs.current).forEach(pauseWebView);
+  }, [pauseWebView]);
+
+  const resetWebView = useCallback((itemId?: string | null) => {
+    if (!itemId) return;
+    const webView = webViewRefs.current[itemId];
+    if (webView) {
+      pauseWebView(webView);
+      try {
+        webView.stopLoading?.();
+      } catch {}
+      try {
+        webView.injectJavaScript(`
+          try {
+            if (window.__gametokMuteAll) window.__gametokMuteAll();
+            document.querySelectorAll('audio, video').forEach(function(el) {
+              try { el.pause(); el.src = ''; el.load && el.load(); } catch(e) {}
+            });
+            window.location.replace('about:blank');
+          } catch(e) {}
+          true;
+        `);
+      } catch {}
+    }
+    delete webViewRefs.current[itemId];
+    setReadyGames(prev => {
+      if (!prev.has(itemId)) return prev;
+      const next = new Set(prev);
+      next.delete(itemId);
+      return next;
+    });
+    setWebViewResetKeys(prev => ({
+      ...prev,
+      [itemId]: (prev[itemId] || 0) + 1,
+    }));
+  }, [pauseWebView]);
+
+  const resetAllWebViews = useCallback(() => {
+    Object.keys(webViewRefs.current).forEach(resetWebView);
+  }, [resetWebView]);
+
+  // Restore thumbnail state when user exits Game Deck by pressing "Home".
+  // This hard-resets the WebViews instead of only injecting pause, because some
+  // games/audio engines keep playing after soft pause.
+  useEffect(() => {
+    if (!isGameDeckActive) {
+      setInteractedGameId(null);
+      resetAllWebViews();
+    }
+  }, [isGameDeckActive, resetAllWebViews]);
 
   // Listen for AppState changes to unlock broken gestures
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'background' || state === 'inactive') {
-        Object.values(webViewRefs.current).forEach(webView => {
-          webView?.injectJavaScript(PAUSE_SCRIPT);
-        });
+        resetAllWebViews();
+        setInteractedGameId(null);
+        setIsGameDeckActive(false);
         if (!isAnimating.current) {
           translateY.setValue(0);
         }
@@ -1565,25 +2012,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         // Only resume if the game was already being played (interacted with)
         const currItem = currentIndexRef.current >= 0 ? feedRef.current[currentIndexRef.current] : null;
         if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
-          webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+          resumeWebView(webViewRefs.current[currItem.id]);
         }
       }
     });
     return () => sub.remove();
-  }, [translateY, isFocused, interactedGameId]);
-  const isAnimating = useRef(false);
-  const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
-  const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
+  }, [translateY, isFocused, interactedGameId, resetAllWebViews, resumeWebView, setIsGameDeckActive]);
 
   // Pause/resume WebViews when focus changes (navigating to/from other tabs)
   useEffect(() => {
     if (!isFocused) {
       // Pause ALL games when leaving the tab
-      Object.values(webViewRefs.current).forEach(webView => {
-        if (webView) {
-          webView.injectJavaScript(PAUSE_SCRIPT);
-        }
-      });
+      resetAllWebViews();
+      setInteractedGameId(null);
 
       // Record play time when leaving tab
       if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
@@ -1612,7 +2053,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       // Resume current game ONLY if it was already being played (interacted with)
       const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
       if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
-        webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+        resumeWebView(webViewRefs.current[currItem.id]);
       }
 
       // Restart play time tracking when coming back
@@ -1628,7 +2069,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         }
       }
     }
-  }, [isFocused]);
+  }, [isFocused, resetAllWebViews, resumeWebView, currentIndex, feed, interactedGameId, user]);
 
   // Pause/resume WebViews when index changes
   useEffect(() => {
@@ -1642,13 +2083,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const currItem = currIdx >= 0 ? feed[currIdx] : null;
       const currItemId = currItem?.id;
 
-      const nextItem = currIdx === -1 ? feed[0] : feed[currIdx + 1];
-      const nextItemId = nextItem?.id;
-
-      // Freeze old/offscreen games, but let the immediate next game render silently.
+      // Freeze old/offscreen games. Do not "preload by resuming" because games
+      // can start audio before the user taps them.
       Object.entries(webViewRefs.current).forEach(([id, webView]) => {
         if (webView && id !== currItemId) {
-          webView.injectJavaScript(id === nextItemId ? PRELOAD_SCRIPT : PAUSE_SCRIPT);
+          resetWebView(id);
         }
       });
 
@@ -1658,12 +2097,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       // Pause the current game initially - it will resume when user taps thumbnail
       if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
-        webViewRefs.current[currItem.id]?.injectJavaScript(PAUSE_SCRIPT);
+        resetWebView(currItem.id);
       }
 
       prevIndexRef.current = currIdx;
     }
-  }, [currentIndex, feed, isFocused]);
+  }, [currentIndex, feed, isFocused, resetWebView, setIsGameDeckActive]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
@@ -2287,24 +2726,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   return (
     <View style={styles.container}>
       <View style={{ flex: 1 }}>
-      {renderedItems.map(({ item, position }) => (
-        <Animated.View
-          key={item!.id}
-          style={[
-            styles.gameContainer,
-            {
-              height: contentHeight,
-              transform: [{
-                translateY: Animated.add(translateY, position * contentHeight)
-              }],
-              zIndex: position === 0 ? 1 : 0,
-            }
-          ]}
-        >
+      <View style={[styles.gameViewport, { top: insets.top, height: contentHeight }]}>
+        {renderedItems.map(({ item, position }) => (
+          <Animated.View
+            key={item!.id}
+            style={[
+              styles.gameContainer,
+              {
+                height: contentHeight,
+                transform: [{
+                  translateY: Animated.add(translateY, position * contentHeight)
+                }],
+                zIndex: position === 0 ? 1 : 0,
+              }
+            ]}
+          >
           {/* Game screen - conditionally allows swipe only if not interacted */}
           <Animated.View {...((item!.game!.id !== interactedGameId || position !== 0) ? fullScreenPanResponder.panHandlers : {})} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
               <Animated.View style={{ flex: 1 }}>
                 <WebView
+                  key={`${item!.id}-webview-${webViewResetKeys[item!.id] || 0}`}
                   ref={(ref) => {
                     if (ref) {
                       webViewRefs.current[item!.id] = ref;
@@ -2391,16 +2832,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
                     // Otherwise, keep it paused so it doesn't play in the background
                     const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused && item!.game!.id === interactedGameId;
-                    webViewRefs.current[item!.id]?.injectJavaScript(
-                      shouldResume ? RESUME_SCRIPT : position === 1 ? PRELOAD_SCRIPT : PAUSE_SCRIPT
-                    );
+                    if (shouldResume) {
+                      resumeWebView(webViewRefs.current[item!.id]);
+                    } else {
+                      pauseWebView(webViewRefs.current[item!.id]);
+                    }
                   }}
                   onLoad={() => {
                     // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
                     // Otherwise, keep it paused so it doesn't play in the background
                     const shouldResume = position === 0 && currentIndex !== -1 && isFocused && item!.game!.id === interactedGameId;
                     if (!shouldResume && webViewRefs.current[item!.id]) {
-                      webViewRefs.current[item!.id]?.injectJavaScript(position === 1 ? PRELOAD_SCRIPT : PAUSE_SCRIPT);
+                      pauseWebView(webViewRefs.current[item!.id]);
                     }
                   }}
                   onShouldStartLoadWithRequest={(request) => {
@@ -2424,13 +2867,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           setInteractedGameId(null);
                           setIsGameDeckActive(false);
                           // Pause the game
-                          webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
+                          resetWebView(item!.id);
                         } else {
                           // Tapping thumbnail to start game
                           setInteractedGameId(item!.game!.id);
                           setIsGameDeckActive(true);
                           // Resume the game
-                          webViewRefs.current[item!.id]?.injectJavaScript(RESUME_SCRIPT);
+                          resumeWebView(webViewRefs.current[item!.id]);
                         }
                       }
                     }}
@@ -2448,9 +2891,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                             size={12} 
                             color="#fff" 
                           />
-                          <Text style={styles.thumbnailCardPlayText}>
-                            {formatCount(item!.game.plays || 0)}
-                          </Text>
                         </View>
                       </View>
                     </View>
@@ -2485,10 +2925,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       shareCount={getFeedCount(item!.game!.id, 'shares')}
                       styles={styles}
                     />
+                    {/* Remix */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      activeOpacity={0.9}
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleRemix(item!.game!);
+                      }}
+                    >
+                      <Ionicons name="git-branch" size={30} color={LoopsColors.white} />
+                      <Text style={styles.actionCount}>Remix</Text>
+                    </TouchableOpacity>
                   </Animated.View>
 
                 {/* Game info - bottom left (V2 mockup-faithful) - animated fade */}
-                  <Animated.View style={[styles.gameInfo, { opacity: overlayInfoOpacity }]} pointerEvents="none">
+                  <Animated.View style={[styles.gameInfo, { opacity: overlayInfoOpacity }]} pointerEvents="box-none">
                     <View style={styles.gameTitleRow}>
                       <Text style={styles.gameName} numberOfLines={2}>
                         {item!.game!.name}
@@ -2499,28 +2951,68 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     </View>
                     {!!item!.game!.creatorDisplayName && (
                       <View style={styles.creatorRow}>
-                        <Text style={styles.creatorDisplayName} numberOfLines={1}>
-                          {item!.game!.creatorDisplayName || item!.game!.creatorUsername}
-                        </Text>
-                        {item!.game!.creatorVerified ? (
-                          <View style={styles.verifiedDot}>
-                            <Text style={styles.verifiedCheck}>✓</Text>
-                          </View>
-                        ) : null}
+                        <View style={styles.creatorAvatarWrap}>
+                          <Pressable
+                            style={styles.creatorAvatarPressable}
+                            onPress={() => handleOpenCreatorProfile(item!.game!)}
+                          >
+                            <Avatar
+                              uri={item!.game!.creatorAvatar || null}
+                              userId={
+                                item!.game!.creatorId ||
+                                item!.game!.creatorUsername ||
+                                item!.game!.creatorDisplayName ||
+                                item!.game!.id
+                              }
+                              size={50}
+                            />
+                          </Pressable>
+                          {(item!.game!.creatorId || item!.game!.creatorUsername) &&
+                            item!.game!.creatorId !== user?.id &&
+                            (
+                              !isCreatorFollowed(followingCreatorIds, item!.game!) ||
+                              followSuccessIds.has(getCreatorFollowKey(item!.game!))
+                            ) && (
+                              <AnimatedFollowBadge
+                                loading={followingLoadingIds.has(getCreatorFollowKey(item!.game!))}
+                                followed={followSuccessIds.has(getCreatorFollowKey(item!.game!))}
+                                disabled={
+                                  followingLoadingIds.has(getCreatorFollowKey(item!.game!)) ||
+                                  followSuccessIds.has(getCreatorFollowKey(item!.game!))
+                                }
+                                onPress={() => handleFollowCreator(item!.game!.creatorId, item!.game!.creatorUsername)}
+                                styles={styles}
+                              />
+                            )}
+                        </View>
+                        <Pressable
+                          style={styles.creatorNameWrap}
+                          onPress={() => handleOpenCreatorProfile(item!.game!)}
+                        >
+                          <Text style={styles.creatorDisplayName} numberOfLines={1}>
+                            {item!.game!.creatorDisplayName || item!.game!.creatorUsername}
+                          </Text>
+                          {item!.game!.creatorVerified ? (
+                            <View style={styles.verifiedDot}>
+                              <MaterialIcons name="verified" size={18} color="#a855f7" />
+                            </View>
+                          ) : null}
+                        </Pressable>
                       </View>
                     )}
-                    <View style={styles.gameMetaRow}>
-                      <View style={styles.gameMetaPill}>
-                        <Ionicons name="play" size={11} color="rgba(255,255,255,0.85)" />
-                        <Text style={styles.gameMetaText}>
-                          {formatCount(item!.game!.plays || 0)} plays
+                    {!!item!.game!.remixedFrom && (
+                      <View style={styles.remixCreditRow}>
+                        <Ionicons name="git-branch" size={11} color="rgba(255,255,255,0.75)" />
+                        <Text style={styles.remixCreditText} numberOfLines={1}>
+                          Remixed from @{item!.game!.remixedFrom}
                         </Text>
                       </View>
-                    </View>
+                    )}
                   </Animated.View>
             </Animated.View>
-        </Animated.View>
-      ))}
+          </Animated.View>
+        ))}
+      </View>
 
       {/* V2 Top bar (mockup): gametok / search - animated fade */}
         <Animated.View
@@ -2574,6 +3066,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         onSendToFriend={handleSendToFriend}
       />
 
+      <RemixModal
+        visible={!!remixTarget}
+        gameName={remixTarget?.name}
+        gameThumbnail={remixTarget ? (remixTarget.thumbnail || resolveGameThumbnail(remixTarget as any)) : null}
+        loading={remixLoading}
+        onCancel={() => { if (!remixLoading) setRemixTarget(null); }}
+        onConfirm={confirmRemix}
+      />
+
       <CommentsModal
         visible={showComments}
         onClose={() => setShowComments(false)}
@@ -2595,6 +3096,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         } : null}
         sessionPoints={sessionPoints}
         sessionPlayTime={gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0}
+      />
+
+      <UserProfileModal
+        visible={!!selectedProfileUser}
+        onClose={() => setSelectedProfileUser(null)}
+        user={selectedProfileUser}
+        onFriendStatusChange={(creatorId, isFollowing) => {
+          setFollowingCreatorIds(prev => {
+            const next = new Set(prev);
+            const creatorIdKey = normalizeFollowKey(creatorId);
+            const usernameKey = normalizeFollowKey(selectedProfileUser?.username);
+            if (isFollowing) {
+              if (creatorIdKey) next.add(creatorIdKey);
+              if (usernameKey) next.add(usernameKey);
+            } else {
+              if (creatorIdKey) next.delete(creatorIdKey);
+              if (usernameKey) next.delete(usernameKey);
+            }
+            return next;
+          });
+        }}
       />
 
       {/* Click animations overlay */}
@@ -2738,6 +3260,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.2,
   },
+  gameViewport: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+    backgroundColor: getFeedBackdropColor(),
+  },
   gameContainer: {
     position: 'absolute',
     top: 0,
@@ -2848,8 +3377,75 @@ const styles = StyleSheet.create({
   creatorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     marginBottom: 8,
+  },
+  creatorAvatarWrap: {
+    position: 'relative',
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorAvatarPressable: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorFollowBadgeWrap: {
+    position: 'absolute',
+    right: -3,
+    bottom: -4,
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorFollowPulse: {
+    position: 'absolute',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 45, 85, 0.35)',
+  },
+  creatorFollowBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ff2d55',
+    borderWidth: 2,
+    borderColor: '#050505',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ff2d55',
+    shadowOpacity: 0.65,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  creatorFollowBadgeDone: {
+    backgroundColor: '#22c55e',
+    shadowColor: '#22c55e',
+  },
+  creatorNameWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 1,
+    paddingTop: 2,
+  },
+  remixCreditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  remixCreditText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '600',
   },
   creatorAvatarBubble: {
     width: 28,
@@ -2879,10 +3475,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   verifiedDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#a855f7',
     alignItems: 'center',
     justifyContent: 'center',
   },

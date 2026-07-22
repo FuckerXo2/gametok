@@ -32,6 +32,8 @@ interface FollowListModalProps {
     username: string;
     initialTab?: 'followers' | 'following';
     onUserPress?: (user: UserItem) => void;
+    // Fires once this modal has fully closed — use to chain into another modal.
+    onClosed?: () => void;
 }
 
 export const FollowListModal: React.FC<FollowListModalProps> = ({
@@ -41,6 +43,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     username,
     initialTab = 'followers',
     onUserPress,
+    onClosed,
 }) => {
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
@@ -133,7 +136,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     };
 
     return (
-        <SlideRightModal visible={visible} onClose={onClose}>
+        <SlideRightModal visible={visible} onClose={onClose} onClosed={onClosed}>
             <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>
                     <TouchableOpacity style={styles.iconButton} onPress={onClose}>

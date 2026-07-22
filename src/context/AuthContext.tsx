@@ -175,10 +175,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    // Remove push token from backend
+    // Remove this device's push token from backend so it stops receiving
+    // notifications for the account being logged out of.
     const authToken = await getToken();
     if (authToken) {
-      await removePushToken(authToken);
+      const pushToken = await AsyncStorage.getItem('pushToken');
+      await removePushToken(authToken, pushToken || undefined);
     }
 
     await auth.logout();

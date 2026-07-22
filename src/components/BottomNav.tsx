@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Pressable, Text } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, View, StyleSheet, Pressable, Text, Animated as RNAnimated } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,8 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -136,6 +138,108 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { isGameDeckActive, setIsGameDeckActive, isHudHidden, setIsHudHidden, triggerGameRestart, triggerGameSkip } = useNavigation();
+  const [showDeckCoach, setShowDeckCoach] = useState(false);
+  const [hasShownDeckCoachThisOpen, setHasShownDeckCoachThisOpen] = useState(false);
+  const coachOpacity = useRef(new RNAnimated.Value(0)).current;
+  const coachScale = useRef(new RNAnimated.Value(0.96)).current;
+  const coachGlowOpacity = useSharedValue(0.18);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setHasShownDeckCoachThisOpen(false);
+        setShowDeckCoach(false);
+        coachOpacity.stopAnimation();
+        coachScale.stopAnimation();
+        coachOpacity.setValue(0);
+        coachScale.setValue(0.96);
+        coachGlowOpacity.value = 0;
+      }
+    });
+    return () => sub.remove();
+  }, [coachGlowOpacity, coachOpacity]);
+
+  useEffect(() => {
+    if (activeTab !== 'home' || !isGameDeckActive || hasShownDeckCoachThisOpen) return;
+    coachOpacity.stopAnimation();
+    coachScale.stopAnimation();
+    coachOpacity.setValue(0);
+    coachScale.setValue(0.96);
+    coachGlowOpacity.value = 0;
+    setShowDeckCoach(true);
+    setHasShownDeckCoachThisOpen(true);
+  }, [activeTab, coachGlowOpacity, coachOpacity, coachScale, hasShownDeckCoachThisOpen, isGameDeckActive]);
+
+  useEffect(() => {
+    if (!showDeckCoach) return;
+    coachOpacity.stopAnimation();
+    coachScale.stopAnimation();
+    coachOpacity.setValue(0);
+    coachScale.setValue(0.96);
+    coachGlowOpacity.value = 0.12;
+    RNAnimated.timing(coachOpacity, {
+      toValue: 1,
+      duration: 850,
+      useNativeDriver: true,
+    }).start();
+    RNAnimated.sequence([
+      RNAnimated.timing(coachScale, {
+        toValue: 1,
+        duration: 850,
+        useNativeDriver: true,
+      }),
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(coachScale, {
+            toValue: 1.025,
+            duration: 900,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(coachScale, {
+            toValue: 1,
+            duration: 900,
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    ]).start();
+    coachGlowOpacity.value = withRepeat(
+      withSequence(
+        withTiming(0.32, { duration: 780 }),
+        withTiming(0.12, { duration: 780 }),
+      ),
+      -1,
+      false,
+    );
+    const fadeOut = setTimeout(() => {
+      coachScale.stopAnimation();
+      RNAnimated.timing(coachOpacity, {
+        toValue: 0,
+        duration: 650,
+        useNativeDriver: true,
+      }).start();
+      RNAnimated.timing(coachScale, {
+        toValue: 0.98,
+        duration: 650,
+        useNativeDriver: true,
+      }).start();
+      coachGlowOpacity.value = withTiming(0, { duration: 420 });
+    }, 4350);
+    const hide = setTimeout(() => setShowDeckCoach(false), 5000);
+    return () => {
+      coachScale.stopAnimation();
+      clearTimeout(fadeOut);
+      clearTimeout(hide);
+    };
+  }, [coachGlowOpacity, coachOpacity, coachScale, showDeckCoach]);
+
+  const deckCoachAnimatedStyle = {
+    opacity: coachOpacity,
+    transform: [{ scale: coachScale }],
+  };
+  const deckCoachGlowAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: coachGlowOpacity.value,
+  }));
 
   const left: TabSpec[] = [
     { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
@@ -150,32 +254,50 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
   // GAME DECK RENDER
   if (activeTab === 'home' && isGameDeckActive) {
     return (
-      <View
-        style={[
-          styles.container,
-          styles.gameDeckContainer,
-          { paddingBottom: insets.bottom || 8 },
-        ]}
-      >
-        {/* Left Anchor: Home Button acts as the 'More/Menu' button to show standard tabs */}
-        <Pressable 
-          style={[styles.deckSideBtn, noFocusRing]} 
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            // Toggle back to standard navigation
-            setIsGameDeckActive(false);
-            setIsHudHidden(false);
-          }}
+      <View style={styles.deckShell} pointerEvents="box-none">
+        {showDeckCoach && (
+          <RNAnimated.View
+            pointerEvents="none"
+            style={[
+              styles.deckCoach,
+              { bottom: (insets.bottom || 8) + 78 },
+              deckCoachAnimatedStyle,
+            ]}
+          >
+            <Animated.View
+              style={[styles.deckCoachGlow, deckCoachGlowAnimatedStyle]}
+            />
+            <Text style={styles.deckCoachText}>
+              Use the center controls to switch games or restart.
+            </Text>
+          </RNAnimated.View>
+        )}
+        <View
+          style={[
+            styles.container,
+            styles.gameDeckContainer,
+            { paddingBottom: insets.bottom || 8 },
+          ]}
         >
-          <Ionicons name="home-outline" size={24} color={NAV_WHITE} />
-          <Text style={[styles.label, { color: NAV_WHITE }]}>Home</Text>
-        </Pressable>
+          {/* Left Anchor: Home Button acts as the 'More/Menu' button to show standard tabs */}
+          <Pressable 
+            style={[styles.deckSideBtn, noFocusRing]} 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              // Toggle back to standard navigation
+              setIsGameDeckActive(false);
+              setIsHudHidden(false);
+            }}
+          >
+            <Ionicons name="home-outline" size={24} color={NAV_WHITE} />
+            <Text style={[styles.label, { color: NAV_WHITE }]}>Home</Text>
+          </Pressable>
 
-        {/* Faint divider between Home and media controls */}
-        <View style={{ width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 1 }} />
+          {/* Faint divider between Home and media controls */}
+          <View style={{ width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 1 }} />
 
-        {/* Center: The Game Player Scroll Zone */}
-        <View style={styles.deckPlayerZone}>
+          {/* Center: The Game Player Scroll Zone */}
+          <View style={styles.deckPlayerZone}>
           <Pressable 
             style={[styles.deckPlayerIcon, noFocusRing]}
             onPress={() => {
@@ -205,22 +327,23 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
           >
             <MaterialIcons name="skip-next" size={32} color={NAV_WHITE} />
           </Pressable>
-        </View>
+          </View>
 
-        {/* Right Anchor: Toggle HUD Visibility */}
-          <Pressable 
-            style={[styles.deckSideBtn, noFocusRing]} 
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setIsHudHidden(!isHudHidden);
-            }}
-          >
-            <FontAwesome5 
-              name={isHudHidden ? "chevron-up" : "chevron-down"} 
-              size={22} 
-              color={NAV_WHITE} 
-            />
-          </Pressable>
+          {/* Right Anchor: Toggle HUD Visibility */}
+            <Pressable 
+              style={[styles.deckSideBtn, noFocusRing]} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setIsHudHidden(!isHudHidden);
+              }}
+            >
+              <FontAwesome5 
+                name={isHudHidden ? "chevron-up" : "chevron-down"} 
+                size={22} 
+                color={NAV_WHITE} 
+              />
+            </Pressable>
+        </View>
       </View>
     );
   }
@@ -335,6 +458,46 @@ const styles = StyleSheet.create({
   },
   
   /* GAME DECK STYLES */
+  deckShell: {
+    position: 'relative',
+    zIndex: 10000,
+    elevation: 10000,
+  },
+  deckCoach: {
+    position: 'absolute',
+    alignSelf: 'center',
+    maxWidth: '86%',
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.72)',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    shadowColor: '#fff',
+    shadowOpacity: 0.38,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+    overflow: 'visible',
+  },
+  deckCoachGlow: {
+    position: 'absolute',
+    top: -5,
+    left: -5,
+    right: -5,
+    bottom: -5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  deckCoachText: {
+    color: '#111',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    letterSpacing: 0,
+    textAlign: 'center',
+  },
   gameDeckContainer: {
     backgroundColor: '#0a0b16', // Competitor uses a subtle bluish/purplish black
     justifyContent: 'space-between',

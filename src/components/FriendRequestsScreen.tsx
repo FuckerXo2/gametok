@@ -38,12 +38,13 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ visi
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [addedBack, setAddedBack] = useState<Set<string>>(new Set());
+  const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
 
   const fetchFollowers = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return;
     try {
       const data = await users.pendingRequests(user.id);
-      setFollowers(Array.isArray(data) ? data : []);
+      setFollowers(Array.isArray(data) ? data.filter((request) => !request.isMutual) : []);
     } catch (error) {
       console.log('Failed to fetch pending requests:', error);
     } finally {
@@ -59,11 +60,20 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ visi
   }, [visible, fetchFollowers]);
 
   const handleAddBack = async (userId: string) => {
+    if (acceptingIds.has(userId)) return;
+    setAcceptingIds(prev => new Set([...prev, userId]));
     try {
-      await users.follow(userId);
+      await users.acceptRequest(userId);
       setAddedBack(prev => new Set([...prev, userId]));
+      setFollowers(prev => prev.filter((item) => item.id !== userId));
     } catch (error) {
       console.log('Follow back error:', error);
+    } finally {
+      setAcceptingIds(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
     }
   };
 
@@ -105,41 +115,46 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ visi
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
           }
-          renderItem={({ item }) => (
-            <View style={[styles.requestItem, { borderBottomColor: colors.border }]}>
-              <Avatar uri={item.avatar || null} userId={item.id} size={48} />
-              <View style={styles.requestContent}>
-                <Text style={[styles.requestName, { color: colors.text }]}>
-                  {item.displayName || item.username}
-                </Text>
-                <Text style={[styles.requestText, { color: colors.textSecondary }]}>
-                  {(item.isMutual || addedBack.has(item.id)) ? 'You are now friends' : 'wants to be friends'}
-                </Text>
+          renderItem={({ item }) => {
+            const accepting = acceptingIds.has(item.id);
+            return (
+              <View style={[styles.requestItem, { borderBottomColor: colors.border }]}>
+                <Avatar uri={item.avatar || null} userId={item.id} size={48} />
+                <View style={styles.requestContent}>
+                  <Text style={[styles.requestName, { color: colors.text }]}>
+                    {item.displayName || item.username}
+                  </Text>
+                  <Text style={[styles.requestText, { color: colors.textSecondary }]}>
+                    {(item.isMutual || addedBack.has(item.id)) ? 'You are now friends' : 'wants to be friends'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.addBtn, { backgroundColor: colors.primary, opacity: accepting ? 0.7 : 1 }]}
+                  disabled={accepting}
+                  onPress={() => {
+                    if (item.isMutual || addedBack.has(item.id)) {
+                      onOpenChat?.({
+                        id: item.id,
+                        username: item.username,
+                        displayName: item.displayName,
+                        avatar: item.avatar,
+                      });
+                    } else {
+                      handleAddBack(item.id);
+                    }
+                  }}
+                >
+                  {accepting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (item.isMutual || addedBack.has(item.id)) ? (
+                    <Ionicons name="chatbubble" size={18} color="#fff" />
+                  ) : (
+                    <Ionicons name="person-add" size={18} color="#fff" />
+                  )}
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.addBtn, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  if (item.isMutual || addedBack.has(item.id)) {
-                    // Open chat with this user
-                    onOpenChat?.({
-                      id: item.id,
-                      username: item.username,
-                      displayName: item.displayName,
-                      avatar: item.avatar,
-                    });
-                  } else {
-                    handleAddBack(item.id);
-                  }
-                }}
-              >
-                {(item.isMutual || addedBack.has(item.id)) ? (
-                  <Ionicons name="chatbubble" size={18} color="#fff" />
-                ) : (
-                  <Ionicons name="person-add" size={18} color="#fff" />
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
+            );
+          }}
         />
       )}
     </View>

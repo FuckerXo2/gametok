@@ -45,6 +45,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { ai, API_URL, getToken } from "../services/api";
+import { WishStudioScreen } from "./WishStudioScreen";
 import {
   cancelLocalNotification,
   scheduleCookingNotification,
@@ -53,8 +54,10 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useAuthScreen } from "../../App";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { Audio, ResizeMode, Video } from "expo-av";
 import { ForgeDefenseGame } from "../components/ForgeDefenseGame";
 import { Avatar } from "../components/Avatar";
 import Svg, {
@@ -120,12 +123,130 @@ const getTimeAgo = (dateStr: string) => {
   return `Created ${diffDays} days ago`;
 };
 
+const getDraftThumbnail = (draft?: { thumbnail?: string | null } | null) => {
+  const thumbnail = draft?.thumbnail?.trim();
+  return thumbnail ? thumbnail : null;
+};
+
+const toTitleCase = (value: string) =>
+  value
+    .trim()
+    .split(/\s+/)
+    .map((word) =>
+      word ? `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}` : "",
+    )
+    .join(" ");
+
+const getEditRefinementTitle = (instructions: string) => {
+  const cleaned = instructions
+    .replace(/^(please\s+)?(can you\s+)?(could you\s+)?/i, "")
+    .replace(/^(make|add|include|put|bring|restore)\s+/i, "")
+    .replace(/\b(back|again)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const titleBase = cleaned || instructions.trim() || "Update";
+  return toTitleCase(
+    titleBase.length > 34 ? `${titleBase.slice(0, 31).trim()}...` : titleBase,
+  );
+};
+
+const needsEditClarification = (instructions: string) =>
+  /\bbackground\b/i.test(instructions) &&
+  !/\b(neon|city|space|forest|sky|night|day|dark|light|image|photo|video|animated|pixel|cartoon|gradient|room|street|ocean|desert)\b/i.test(
+    instructions,
+  );
+
+const buildEditRefinementSpec = (instructions: string): GameSpec => ({
+  title: getEditRefinementTitle(instructions),
+  description: instructions,
+  features: [
+    "Keep the current game and controls intact.",
+    "Apply this change cleanly without changing the core loop.",
+    "Make the update feel intentional on mobile.",
+  ],
+});
+
+const buildFallbackEditIntent = (instructions: string): EditIntent => ({
+  summary: getEditRefinementTitle(instructions),
+  finalInstruction: instructions,
+  needsClarification: needsEditClarification(instructions),
+  question: needsEditClarification(instructions)
+    ? "What kind of background should I add?"
+    : null,
+  suggestions: needsEditClarification(instructions)
+    ? EDIT_BACKGROUND_CHOICES.map((choice) => choice.label)
+    : [],
+  confidence: needsEditClarification(instructions) ? "medium" : "high",
+});
+
+const EDIT_BACKGROUND_CHOICES = [
+  {
+    label: "Original",
+    value:
+      "Use the original background style if recoverable; otherwise recreate a matching background that feels like it was always there.",
+  },
+  {
+    label: "Neon",
+    value: "Use a vivid neon background with strong contrast and mobile-friendly readability.",
+  },
+  {
+    label: "Space",
+    value: "Use a space background with depth, stars, and subtle motion.",
+  },
+  {
+    label: "City",
+    value: "Use a city background that matches the current game mood.",
+  },
+  {
+    label: "Surprise me",
+    value: "Choose the best background direction for the current game and make it feel intentional.",
+  },
+];
+
 interface CreateScreenProps {
   isActive: boolean;
   onClose: () => void;
+  openDraftId?: string | null;
+  onDraftOpened?: () => void;
 }
 
 const PENDING_CREATE_JOB_KEY = "createScreenPendingDreamJob";
+const PENDING_CREATE_JOB_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+type PendingDreamJobStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "failed"
+  | "canceled";
+
+type PendingDreamJob = {
+  jobId: string;
+  prompt: string;
+  labsMode: boolean;
+  savedAt: string;
+  status: PendingDreamJobStatus;
+  progress: number | null;
+  phase: string | null;
+  statusMessage: string | null;
+  error?: string | null;
+};
+
+type PendingEditRequest = {
+  draftId: string;
+  instructions: string;
+  newAsset?: { key: string; base64: string };
+  attachments: StructuredAttachment[];
+};
+
+type EditIntent = {
+  summary: string;
+  finalInstruction: string;
+  needsClarification: boolean;
+  question?: string | null;
+  suggestions: string[];
+  confidence?: "high" | "medium" | "low";
+};
 
 type StructuredAttachment = {
   type: string;
@@ -149,6 +270,65 @@ type AttachmentRole =
   | "sfx"
   | "reference";
 
+const isMissingLocalFileDreamError = (message: string) =>
+  /could not read the local image|no such file or directory|os error 2/i.test(
+    message,
+  );
+
+const normalizePendingDreamStatus = (status?: string): PendingDreamJobStatus => {
+  if (status === "failed" || status === "error") return "failed";
+  if (status === "canceled") return "canceled";
+  if (status === "queued") return "queued";
+  if (status === "idle" || status === "complete") return "idle";
+  return "running";
+};
+
+const makePendingDreamJob = (payload: {
+  jobId: string;
+  prompt?: string;
+  labsMode?: boolean;
+  savedAt?: string;
+  status?: string;
+  progress?: number | null;
+  phase?: string | null;
+  statusMessage?: string | null;
+  error?: string | null;
+}): PendingDreamJob => ({
+  jobId: payload.jobId,
+  prompt: payload.prompt || "",
+  labsMode: Boolean(payload.labsMode),
+  savedAt: payload.savedAt || new Date().toISOString(),
+  status: normalizePendingDreamStatus(payload.status || "queued"),
+  progress:
+    typeof payload.progress === "number"
+      ? Math.max(0, Math.min(100, payload.progress))
+      : null,
+  phase: payload.phase || null,
+  statusMessage: payload.statusMessage || null,
+  error: payload.error || null,
+});
+
+const parsePendingDreamJobs = (rawPending: string | null): PendingDreamJob[] => {
+  if (!rawPending) return [];
+  try {
+    const parsed = JSON.parse(rawPending);
+    const rawJobs = Array.isArray(parsed) ? parsed : parsed?.jobs || [parsed];
+    return rawJobs
+      .filter((job: any) => job?.jobId)
+      .map((job: any) => makePendingDreamJob(job))
+      .filter((job: PendingDreamJob) => {
+        const savedAtTime = new Date(job.savedAt).getTime();
+        return (
+          savedAtTime &&
+          !Number.isNaN(savedAtTime) &&
+          Date.now() - savedAtTime <= PENDING_CREATE_JOB_MAX_AGE_MS
+        );
+      });
+  } catch {
+    return [];
+  }
+};
+
 // =============================================
 // GENRE CHIP DATA
 // =============================================
@@ -159,8 +339,8 @@ const GENRE_CHIPS = [
     label: "Platformer",
     prompts: [
       "Create an immersive, high-speed 2D cyberpunk platformer where you control a rogue ninja. The player must fluidly double-jump over glowing lava pits, wall-jump between glass skyscrapers, and dash through laser barriers. Include a robust particle system with neon sparks whenever the ninja lands, a scoring multiplier for consecutive jumps, and a dynamic camera that smooth-scrolls based on velocity. The UI should have a sleek, glassmorphic HUD showing health, score, and a combo meter.",
-      "Build a brutally challenging precision platformer set in a haunted, pixelated dungeon. The physics must feel tight and responsive like Celeste. The map is filled with crumbling platforms, swinging pendulums, and ghost enemies that chase you if you stay still for too long. Add satisfying screen-shake effects on hard impacts, a timer tracking milliseconds for speedrunners, and hidden collectibles tucked away in secret corners. Use soft, eerie lighting effects around the player.",
-      "Design a gravity-flipping puzzle platformer where the player can tap the screen to invert gravity instantly. The levels should consist of mirrored architecture where the ceiling is just as treacherous as the floor, featuring dual threats like spikes on the bottom and acid on top. The game loop must smoothly transition gravity with a 180-degree camera flip, leaving a trail of glowing dust behind the player. Include a chill synthwave background track.",
+      "Build a brutally challenging 2D precision platformer set in a haunted, pixelated dungeon. The physics must feel tight and responsive like Celeste. The map is filled with crumbling platforms, swinging pendulums, and ghost enemies that chase you if you stay still for too long. Add satisfying screen-shake effects on hard impacts, a timer tracking milliseconds for speedrunners, and hidden collectibles tucked away in secret corners. Use soft, eerie lighting effects around the player.",
+      "Design a 3D gravity-flipping platformer where the player can tap the screen to invert gravity instantly. The levels should consist of mirrored architecture where the ceiling is just as treacherous as the floor, featuring dual threats like spikes on the bottom and acid on top. The game loop must smoothly transition gravity with a 180-degree camera flip, leaving a trail of glowing dust behind the player. Include a chill synthwave background track.",
     ],
   },
   {
@@ -168,9 +348,9 @@ const GENRE_CHIPS = [
     iconColor: "#25F4EE",
     label: "Puzzle",
     prompts: [
-      'Program a highly polished, addictive color-matching puzzle game similar to Candy Crush but with a unique twist: the board is a perfect circle and the tiles fall toward the center. When chains of 4 or more are matched, trigger absolute chaos with massive particle explosions, cascading combos, and satisfying "POP" sound effects. Implement a multiplier system that ramps up exponentially, screen-shakes for mega clears, and a sleek modern UI with floating UI text.',
-      "Create a complex, physics-based contraption puzzle where the player uses their finger to draw rigid lines, bouncy trampolines, and acceleration ramps. The goal is to safely guide a fragile, rolling glass egg into a woven basket. The egg must shatter realistically if it hits the ground too hard. Include dynamic 2D lighting, a beautifully painted sunset background, and physics materials (friction, restitution) that feel incredibly intuitive to the touch.",
-      "Develop a brain-teasing sliding tile puzzle set on a frictionless ice rink. The player controls a small penguin block that slides continuously until it hits a wall or an obstacle. Design intricate mazes with teleporters, breakable ice walls, and buttons that toggle gates on and off. The aesthetics must be a relaxing winter wonderland with falling snowflakes, smooth icy reflections, and soft ambient wind sound effects.",
+      'Program a highly polished, addictive 2D color-matching puzzle game similar to Candy Crush but with a unique twist: the board is a perfect circle and the tiles fall toward the center. When chains of 4 or more are matched, trigger absolute chaos with massive particle explosions, cascading combos, and satisfying "POP" sound effects. Implement a multiplier system that ramps up exponentially, screen-shakes for mega clears, and a sleek modern UI with floating UI text.',
+      "Create a complex, 2D physics-based contraption puzzle where the player uses their finger to draw rigid lines, bouncy trampolines, and acceleration ramps. The goal is to safely guide a fragile, rolling glass egg into a woven basket. The egg must shatter realistically if it hits the ground too hard. Include dynamic 2D lighting, a beautifully painted sunset background, and physics materials (friction, restitution) that feel incredibly intuitive to the touch.",
+      "Develop a brain-teasing 3D sliding-block puzzle set on a frictionless ice rink. The player controls a small penguin block that slides continuously until it hits a wall or an obstacle. Design intricate mazes with teleporters, breakable ice walls, and buttons that toggle gates on and off. The aesthetics must be a relaxing winter wonderland with falling snowflakes, smooth icy reflections, and soft ambient wind sound effects.",
     ],
   },
   {
@@ -178,9 +358,9 @@ const GENRE_CHIPS = [
     iconColor: "#FF6B9D",
     label: "Space",
     prompts: [
-      "Develop an intense, retro 80s arcade vertical space shooter with bullet hell mechanics. The player controls a heavily armed starship facing endless, procedurally generated waves of alien fighter swarms. The ship can pick up power-ups perfectly bouncing around the screen to upgrade to spread-shots, homing lasers, and a giant screen-clearing plasma bomb. Add extreme screen-bloom for the lasers, thumping synth music, and giant boss fights at every wave 10.",
-      "Create a mesmerizing, high-speed endless runner set entirely within a 3D-styled geometric hyperspace tunnel. The player must rotate 360 degrees around the inner wall of the tunnel to dodge rapidly approaching crimson laser grids and floating asteroids. The speed should progressively increase until it becomes a blur of motion. Integrate a heavy electronic dance music visualizer effect where the colors of the tunnel pulse according to the implicit beat of the music.",
-      "Code a highly realistic physics simulation where the player pilots a lunar excursion module. You must manage a limited fuel supply while perfectly balancing left, right, and main thrusters to achieve a soft touchdown on randomized, jagged lunar terrain. Include variable gravity, realistic inertia, completely custom particle physics for the thruster exhaust bouncing off the terrain, and a retro CRT monitor aesthetic for the heads-up display.",
+      "Develop an intense, retro 80s arcade 2D vertical space shooter with bullet hell mechanics. The player controls a heavily armed starship facing endless, procedurally generated waves of alien fighter swarms. The ship can pick up power-ups perfectly bouncing around the screen to upgrade to spread-shots, homing lasers, and a giant screen-clearing plasma bomb. Add extreme screen-bloom for the lasers, thumping synth music, and giant boss fights at every wave 10.",
+      "Create a mesmerizing, high-speed endless runner set entirely within a fully 3D geometric hyperspace tunnel. The player must rotate 360 degrees around the inner wall of the tunnel to dodge rapidly approaching crimson laser grids and floating asteroids. The speed should progressively increase until it becomes a blur of motion. Integrate a heavy electronic dance music visualizer effect where the colors of the tunnel pulse according to the implicit beat of the music.",
+      "Code a highly realistic 3D physics simulation where the player pilots a lunar excursion module. You must manage a limited fuel supply while perfectly balancing left, right, and main thrusters to achieve a soft touchdown on randomized, jagged lunar terrain. Include variable gravity, realistic inertia, completely custom particle physics for the thruster exhaust bouncing off the terrain, and a retro CRT monitor aesthetic for the heads-up display.",
     ],
   },
   {
@@ -188,20 +368,39 @@ const GENRE_CHIPS = [
     iconColor: "#FFA726",
     label: "Battle",
     prompts: [
-      'Build a chaotic, physics-driven auto-battler set on a grand strategy grid. The player drops different units—heavy knights, rapid-fire archers, and area-of-effect wizards—onto the battlefield before pressing "BATTLE". The armies then charge into hundreds of green goblins with hilarious ragdoll physics and huge sweeping attacks. The screen should be filled with floating damage numbers, sword clashes, fireball explosions, and intense screenshake for critical hits.',
-      "Create a frantic, fast-paced arena survival game where time only moves when the player moves, similar to SUPERHOT. The player is trapped in a minimalist white void and must dodge incoming slow-motion red bullets while throwing katanas and shooting back at enemies. The entire aesthetic should be extremely stark: brilliant white background, stark black geometry, and vibrant crimson for enemies and their attacks. Include slow-mo sound effects and dramatic camera zooming.",
-      "Design a top-down rogue-lite magical combat game. The player is a wizard who can combine elements: drawing a circle casts a protective earth shield, while swiping casts a blazing fire wall. Survive against endless waves of bouncing slime monsters that split into smaller ones when killed. The game needs highly juicy game feel—heavy hit-stop on impacts, massive colorful spells, smooth player dashing, and a combo counter that rewards aggressive playstyles.",
+      'Build a chaotic, physics-driven 3D auto-battler set on a grand strategy grid. The player drops different units—heavy knights, rapid-fire archers, and area-of-effect wizards—onto the battlefield before pressing "BATTLE". The armies then charge into hundreds of green goblins with hilarious ragdoll physics and huge sweeping attacks. The screen should be filled with floating damage numbers, sword clashes, fireball explosions, and intense screenshake for critical hits.',
+      "Create a frantic, fast-paced 3D arena survival game where time only moves when the player moves, similar to SUPERHOT. The player is trapped in a minimalist white void and must dodge incoming slow-motion red bullets while throwing katanas and shooting back at enemies. The entire aesthetic should be extremely stark: brilliant white background, stark black geometry, and vibrant crimson for enemies and their attacks. Include slow-mo sound effects and dramatic camera zooming.",
+      "Design a 2D top-down rogue-lite magical combat game. The player is a wizard who can combine elements: drawing a circle casts a protective earth shield, while swiping casts a blazing fire wall. Survive against endless waves of bouncing slime monsters that split into smaller ones when killed. The game needs highly juicy game feel—heavy hit-stop on impacts, massive colorful spells, smooth player dashing, and a combo counter that rewards aggressive playstyles.",
+    ],
+  },
+  {
+    icon: "flame",
+    iconColor: "#EF4444",
+    label: "Action",
+    prompts: [
+      "Build a fast, stylish 3D third-person character-action brawler where the player dashes, dodges, and chains melee combos into air-launcher juggles against relentless waves of robotic enemies. Nail the game feel with responsive hit-stop on every strike, screen-shake on heavy hits, slow-mo finishers, and glowing slash trails carving through the air. Add a rising style meter that ranks combos from D to S, chunky impact sound design, particle sparks on every clash, and a dramatic camera that snaps in for the final blow.",
+      "Create a punchy 2D side-scrolling run-and-gun where the player sprints, slides, and dual-wields guns through a crumbling neon industrial base swarming with enemies. Bullets fly in every direction, explosions rip through the screen, and precise dashes dodge incoming fire in a blaze of muzzle flashes and shell casings. Pile on heavy screenshake, chunky pixel-art explosions, a combo multiplier for kill streaks without taking damage, a driving rock soundtrack, and a boss at the end of each stretch that fills half the screen.",
+      "Design a frantic 3D top-down twin-stick shooter where the player strafes and blasts through neon arenas overrun by glowing enemy swarms. One stick moves, the other aims, as the player unleashes spread shots, rockets, and a screen-clearing overdrive that detonates everything. Amp the spectacle with bloom-soaked lasers, satisfying enemy pop-and-shatter effects, floating combo numbers, thumping electronic beats, and escalating waves that flood the arena until the screen is pure chaos.",
+    ],
+  },
+  {
+    icon: "compass",
+    iconColor: "#22D3EE",
+    label: "Adventure",
+    prompts: [
+      "Build a charming 3D exploration adventure set in a vibrant low-poly world where the player roams open meadows, climbs ruins, and solves environmental puzzles to collect scattered relics. Reward curiosity with hidden paths, gentle platforming, and glowing collectibles that chime as they're gathered. Wrap it in soft stylized lighting, a soothing orchestral soundtrack, drifting ambient particles, and a floaty, satisfying jump—capturing that cozy sense of wonder as a new area opens up over the hill.",
+      "Create a 2D top-down Zelda-style adventure where the player explores an interconnected world of dungeons, swinging a sword, bombing cracked walls, and collecting tools that unlock new areas. Fill it with secret rooms, block-pushing puzzles, heart pickups, and menacing bosses that guard each dungeon's treasure. Use crisp pixel-art, satisfying sword-slash effects and screen-shake on hits, chiming item-get fanfares, and a lush overworld packed with the thrill of discovering what's behind the next locked door.",
+      "Design a moody 2D metroidvania where the player explores a vast, interconnected underground kingdom, unlocking abilities—double-jump, wall-cling, dash—that open previously unreachable paths. Backtrack through atmospheric, hand-painted biomes, battle tricky enemies with tight combat, and uncover shortcuts and hidden upgrades. Add fluid movement, a haunting ambient score, glowing save points, satisfying ability-unlock moments, and the addictive pull of a map slowly filling in as every secret corner is finally revealed.",
     ],
   },
   {
     icon: "basketball",
-    iconColor: "#a855f7",
+    iconColor: "#FB923C",
     label: "Sports",
     prompts: [
-      "A basketball dunk contest game with physics-based throws",
-      "A top-down arcade soccer game where you slide tackle and shoot",
-      "An extreme downhill snowboarding game dodging pine trees",
-      "A mini-golf game with portals, windmills, and bouncy walls",
+      "Build a hyper-satisfying 3D arcade basketball dunk contest where the player drags to aim the arc, flicks to launch, and taps mid-air to trigger spinning trick dunks. Every slam should shatter the rim with a thunderous screenshake, explode the crowd into cheering particles, and freeze into a slow-motion replay for stylish finishes. Add a style multiplier that rewards backboard bounces and buzzer-beaters, thumping stadium bass, and a glossy scoreboard that rains confetti on a new high score.",
+      "Create a fast, 2D top-down arcade soccer game built entirely around one-touch flow. The player slide-tackles to steal, curves shots with a flick, and threads one-touch passes to break the defense. Goals detonate with a net-ripping screenshake, a slow-mo camera push, and a roaring crowd, while the ball leaves a glowing motion trail on powerful strikes. Keep the pitch clean and vibrant with sharp lighting, snappy player animations, and an escalating combo meter for keep-away streaks.",
+      "Design an extreme 3D downhill snowboarding game where the player carves at breakneck speed down an endless, procedurally generated mountain. Weave between pine trees, launch off cliffs, and tap to spin grabs and flips that stack a trick multiplier. The sense of speed must be intense—motion-blur, spraying snow particles, and a camera that pulls back as you accelerate. Add crunchy carving audio, a wipeout ragdoll on crashes, and glowing gates that reward tight lines.",
     ],
   },
   {
@@ -209,10 +408,9 @@ const GENRE_CHIPS = [
     iconColor: "#FF3B30",
     label: "Survival",
     prompts: [
-      "A zombie survival game where you defend a base with traps",
-      "A vampire-survivors style endless horde runner with auto-attacks",
-      "A harsh winter survival clicker where you manage a campfire",
-      "An asteroid mining survival game where oxygen is running out",
+      "Build an explosive 2D top-down vampire-survivors style horde survivor where the player only moves while weapons auto-fire at a screen-filling swarm of monsters. Every few levels the player picks from randomized upgrades—spread shots, orbiting blades, chain lightning—that stack into absurd, screen-clearing builds. Enemies pour in by the hundreds, drop glowing XP gems, and burst into satisfying particle showers. Pile on heavy screenshake, floating damage numbers, a tense escalating soundtrack, and a menacing boss that crashes in every few minutes.",
+      "Create a tense 3D first-person zombie survival game where the player fortifies a compound by day and holds the line through relentless night hordes. Board up windows, place turrets and spike traps with scavenged resources, then aim down the sights as waves of undead claw through the barricades with chunky ragdoll deaths. Add a dynamic day-night cycle, flickering muzzle-flash lighting, blood-splatter particles, escalating wave sizes, and a nerve-shredding countdown before each night that ramps the tension.",
+      "Design a bleak 2D frozen-wasteland survival game about managing a single dying campfire. The player rations scavenged wood, food, and warmth while a brutal blizzard closes in and the temperature meter ticks down. Every choice—venture out for supplies or huddle by the flame—risks frostbite and starvation, with the screen frosting over and audio muffling as the cold bites. Use a muted, painterly art style, howling wind ambience, drifting snow, and a warm firelight glow that shrinks as fuel runs low.",
     ],
   },
   {
@@ -220,44 +418,19 @@ const GENRE_CHIPS = [
     iconColor: "#38BDF8",
     label: "Racing",
     prompts: [
-      "A first-person neon drifting game with sharp turns, boost pads, and reactive city lights.",
-      "An arcade street racer where you weave through midnight traffic and chain drift combos for score.",
+      "Create an adrenaline-pumping 3D first-person neon drifting game set on rain-slicked city streets at midnight. The player feathers the throttle and taps to initiate long, smoky drifts through hairpin turns, chaining them for a score multiplier as reactive neon signs streak past in a blur. Nail the game feel with tight arcade handling, tire-smoke particles, boost pads that slam the FOV wider, and a pulsing synthwave soundtrack. Add glowing drift trails, screen-warping speed lines, and a combo meter that roars as the chain climbs.",
+      "Build a slick 2D top-down arcade racer where the player rips around tight neon city circuits from a bird's-eye view, weaving through traffic and throwing the car into long power-slides around every corner. Chain drifts to bank boost, then unleash it in a burst of speed-lines and light streaks. Reward tight racing lines with a rising combo multiplier, punish clips with a satisfying spin-out, and wrap it in a glowing top-down skyline, thumping bass, tire-smoke trails, and reactive light that smears across the asphalt as you fly past.",
+      "Design a blistering 3D anti-gravity pod racer that screams through a glowing tube-track suspended in the sky. The craft banks and barrel-rolls around impossible curves as the player dodges energy gates and slams through boost rings for speed. Push the sense of velocity to a blur—warping starfield backdrops, a widening FOV on boost, and neon light-trails peeling off the pod. Add a driving electronic soundtrack, a heat-building boost meter, and a photo-finish camera that snaps to slow-mo across the line.",
     ],
   },
   {
-    icon: "musical-notes",
-    iconColor: "#F472B6",
-    label: "Rhythm",
-    prompts: [
-      "A rhythm game where the player taps and swipes to a glitchy hyperpop beat while the stage pulses with light.",
-      "A musical reaction game where each lane has a different instrument and perfect timing stacks a combo meter.",
-    ],
-  },
-  {
-    icon: "eye",
-    iconColor: "#F87171",
+    icon: "flashlight",
+    iconColor: "#A78BFA",
     label: "Horror",
     prompts: [
-      "A psychological horror game where each answer changes the room and the player slowly realizes they are being watched.",
-      "A low-light survey game with whispering audio, false exits, and escalating tension after each choice.",
-    ],
-  },
-  {
-    icon: "brush",
-    iconColor: "#22D3EE",
-    label: "Creative",
-    prompts: [
-      "A mesmerizing drawing toy where mirrored strokes bloom into glowing kaleidoscope patterns.",
-      "A chill visual sandbox where adding particles changes the music and builds generative art in real time.",
-    ],
-  },
-  {
-    icon: "school",
-    iconColor: "#C084FC",
-    label: "Quiz",
-    prompts: [
-      "A fast-paced trivia game with streak bonuses, dramatic reveals, and playful wrong-answer animations.",
-      "A weird internet quiz where the questions get stranger the more correct answers you give.",
+      "Create a heart-pounding 3D first-person horror escape where the player is trapped in a pitch-black abandoned hospital overrun by shambling undead, armed only with a flickering flashlight and a dwindling battery. Creep through corridors searching for keys and exits while the beam reveals lurching silhouettes just before they lunge. Crank the dread with directional whispering audio, sudden jump-scares, a pounding heartbeat that spikes when the dead draw near, and a battery meter that plunges you into terrifying darkness when it dies.",
+      "Design a terrifying 3D stealth-horror game where a relentless monster stalks the player through a fog-drenched forest at night. The player must move silently—every sprint, snapped twig, or dropped flashlight beam draws the creature closer—while gathering the items needed to escape. Build unbearable tension with a proximity heartbeat, a listening mechanic that visualizes sound, blood-freezing chase sequences when spotted, and a grainy, desaturated aesthetic where the monster is only ever half-glimpsed at the edge of the dark.",
+      "Build a claustrophobic 2D zombie-horde shooter set in the flickering dark of a barricaded subway station. Ammo is scarce, so every shot counts as rotting hands smash through boarded windows from all sides and the player pivots to hold each breach. Amp the horror with muzzle-flash lighting that strobes the darkness, gushing gore particles, a rising groan of the swarm, and heart-stopping moments when the lights cut out and you fire blindly toward the shuffling silhouettes.",
     ],
   },
   {
@@ -265,8 +438,39 @@ const GENRE_CHIPS = [
     iconColor: "#F59E0B",
     label: "Builder",
     prompts: [
-      "A toy builder game where the player snaps ramps, platforms, and launchers together to solve chaos puzzles.",
-      "A construction sandbox with physics blocks, moving parts, and a goal object that must reach a target zone.",
+      "Create a delightfully chaotic 2D contraption builder where the player snaps together ramps, launchers, fans, and bumpers to guide a bouncing ball into a distant goal. Hit 'GO' to watch the whole Rube-Goldberg machine spring to life with satisfying physics, then tweak and retry when it hilariously overshoots. Add juicy impact sounds, colorful particle bursts at every bounce, a slow-mo finish as the ball drops into the cup, and a sandbox with just enough moving parts to make each solution feel like a tiny triumph.",
+      "Build a 2D physics-driven bridge-construction puzzle where the player draws beams and supports across a chasm, then sends a heavy vehicle rolling over to test it. Watch the structure flex, groan, and buckle under real stress as joints strain to their limit—triumphant when it holds, gloriously catastrophic when it snaps and plunges into the ravine. Include a live stress-color overlay, satisfying creaks and crashes, a slow-mo collapse camera, and a limited budget of materials that turns every build into a clever balancing act.",
+      "Design a 3D physics sandbox tower-stacking game where the player hoists and balances wildly mismatched blocks—crates, barrels, wobbling furniture—to build the tallest possible tower before it topples. Each piece swings on a crane and must be dropped with careful timing as the whole structure sways in the wind. Reward height with escalating tension, add a teetering wobble meter, crunchy wooden physics, a slow-mo collapse when it all comes crashing down, and a bright, playful art style that makes the inevitable disaster feel joyful.",
+    ],
+  },
+  {
+    icon: "shield-half",
+    iconColor: "#34D399",
+    label: "Tower Defense",
+    prompts: [
+      "Create a polished 2D tower-defense game where the player places cannons, frost towers, and lightning coils along a winding path to stop endless waves of marching goblins from reaching the gate. Upgrade towers mid-battle, watch enemies freeze, burn, and shatter with juicy particle effects, and feel the weight of each critical hit with satisfying screenshake and floating damage numbers. Add escalating boss waves, a golden coin economy, a speed-up button for confident runs, and a vibrant, readable board where every tower's range glows on hover.",
+      "Build a fast, arcadey 2D tower-defense twist where the player draws mazes out of turrets to force a snaking horde of robots down the longest possible kill-corridor. Combine tower types for elemental synergies—shock plus oil ignites chains of explosions—while a relentless wave counter climbs. Pile on crunchy explosions, glowing bullet tracers, satisfying wave-clear fanfares, escalating armored enemies, and a rising-intensity soundtrack that peaks during the boss rush at every tenth wave.",
+      "Design a 3D hero tower-defense hybrid where the player both places defensive towers and directly controls a powerful hero unit dashing across the battlefield to plug gaps in the line. Rally the towers against swarming undead while unleashing the hero's screen-clearing ultimate at the perfect moment. Add loot drops that upgrade the hero between waves, chunky hit-stop on big hits, glowing ability effects, escalating night waves under a blood moon, and a satisfying gold-and-XP economy that fuels an ever-stronger defense.",
+    ],
+  },
+  {
+    icon: "trending-up",
+    iconColor: "#FBBF24",
+    label: "Idle",
+    prompts: [
+      "Build an insanely satisfying idle clicker where every tap on a giant glowing crystal spews a fountain of coins and floating numbers. Spend earnings on auto-miners, multipliers, and prestige upgrades that make the numbers explode from hundreds to quadrillions. Nail the dopamine with escalating tap-particle showers, a rising 'ka-ching' pitch as income grows, screen-filling number pop-ups, and that irresistible loop of watching your per-second income tick ever upward even while idle. Add a prestige reset that trades progress for permanent, game-warping multipliers.",
+      "Create an addictive incremental empire builder where the player starts with a single lemonade stand and compounds it into a sprawling business tycoon. Reinvest profits into new shops, hire managers to automate income, and unlock upgrades that multiply everything. Keep the loop juicy with satisfying cash-register sounds, animated money flying into the bank, milestone celebrations with confetti, and unlockable prestige currency that resets the world for exponential gains. Every purchase should feel like the numbers are about to break the screen.",
+      "Design a cosmic idle game where the player grows a tiny spark into an entire galaxy, one exponential upgrade at a time. Tap to birth stars, then automate with orbital harvesters and dark-matter multipliers that push the counter into absurd, name-defying numbers. Wrap it in a mesmerizing deep-space aesthetic with glowing particle nebulae, a soothing ambient soundtrack, gentle number-pop feedback, and a prestige 'big bang' reset that trades your universe for permanent power. The joy is watching everything snowball while you barely lift a finger.",
+    ],
+  },
+  {
+    icon: "finger-print",
+    iconColor: "#F472B6",
+    label: "One-Tap",
+    prompts: [
+      "Create an instantly addictive one-tap arcade game where a single tap flaps a tiny glowing creature upward through an endless gauntlet of neon obstacles. The controls are dead simple but the challenge is brutally precise—one wrong tap and it's over, daring you into just one more try. Add buttery-smooth physics, a satisfying flap sound, particle trails, a snappy score pop on every gap cleared, escalating speed, and a slick, minimalist neon aesthetic with a screen-flash and gentle screenshake on each near-miss.",
+      "Build a hyper-minimalist one-tap reflex game where a ball bounces automatically and a single tap makes it switch direction or jump to dodge an endless stream of oncoming spikes. The pace ramps relentlessly until it's a pure test of rhythm and nerve. Keep it stark and gorgeous—clean geometric shapes, a single bold accent color, smooth easing on every bounce, a satisfying click on each tap, and a combo-driven color shift that intensifies the deeper the run goes. Punish failure with an instant, snappy restart that begs for another go.",
+      "Design a slick one-tap endless game where a rolling shape auto-runs across a zig-zagging path and each tap makes it leap between platforms floating over a void. Mistime it and you plummet, but nail the rhythm and the tempo climbs into a hypnotic flow state. Add smooth camera easing, a satisfying landing thud, trailing particle wisps, a pulsing minimalist soundtrack that syncs to your jumps, and a clean color palette that gradually shifts as your score climbs—making every long run feel like a mesmerizing performance.",
     ],
   },
 ];
@@ -379,9 +583,12 @@ const StepIndicator = ({
 export const CreateScreen: React.FC<CreateScreenProps> = ({
   isActive,
   onClose,
+  openDraftId,
+  onDraftOpened,
 }) => {
   const { colors, isDark } = useTheme();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const { showAuthScreen } = useAuthScreen();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -391,6 +598,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const cookingNotificationRef = useRef<string | null>(null);
   const completionDataRef = useRef<{
     htmlPreview: string;
+    gameUrl?: string;
     draftId: string;
     title: string;
   } | null>(null);
@@ -416,13 +624,21 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<DreamPhase>("idle");
   const [activeHtml, setActiveHtml] = useState<string | null>(null);
+  const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [activeDraftThumbnail, setActiveDraftThumbnail] = useState<
+    string | null
+  >(null);
+  const [pendingEditRequest, setPendingEditRequest] =
+    useState<PendingEditRequest | null>(null);
+  const [editIntent, setEditIntent] = useState<EditIntent | null>(null);
   const [gameTitle, setGameTitle] = useState("");
   const [activeStep, setActiveStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [showEditor, setShowEditor] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatedImageUri, setGeneratedImageUri] = useState<string | null>(
     null,
@@ -449,12 +665,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
   const [selectedAudio, setSelectedAudio] = useState<any | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
+  const audioPreviewRef = useRef<Audio.Sound | null>(null);
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
   const [selectedCommunityImage, setSelectedCommunityImage] = useState<
     any | null
   >(null);
   const [attachedAssets, setAttachedAssets] = useState<StructuredAttachment[]>(
     [],
   );
+  // Wish studio handoff: Forge It opens the studio with this brief.
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [studioPrompt, setStudioPrompt] = useState("");
   const [showAssetIntentModal, setShowAssetIntentModal] = useState(false);
   const [pendingAssetIntent, setPendingAssetIntent] =
     useState<StructuredAttachment | null>(null);
@@ -492,6 +713,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [studioTab, setStudioTab] = useState<StudioTab>("create");
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
+  const [pendingJobs, setPendingJobs] = useState<PendingDreamJob[]>([]);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [pendingJobStatus, setPendingJobStatus] = useState<
     "idle" | "queued" | "running" | "failed" | "canceled"
@@ -510,6 +732,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
   const [isRefiningSpecMessage, setIsRefiningSpecMessage] = useState(false);
   const [wishInput, setWishInput] = useState("");
+  const [refinementBrief, setRefinementBrief] = useState("");
   const [conversationHistory, setConversationHistory] = useState<
     Array<{ role: "ai" | "user"; content: string }>
   >([]);
@@ -680,6 +903,12 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     ...row,
     ...row,
   ]);
+  const focusedPendingJob = pendingJobId
+    ? pendingJobs.find((job) => job.jobId === pendingJobId)
+    : pendingJobs[0] || null;
+  const activePendingJobs = pendingJobs.filter(
+    (job) => job.status === "queued" || job.status === "running",
+  );
   const pendingBuildActive =
     pendingJobStatus === "queued" || pendingJobStatus === "running";
   const pendingBuildCanceled = pendingJobStatus === "canceled";
@@ -702,38 +931,233 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       : pendingBuildActive
         ? `Forging in background · ${generationStatusMessage || activeStudioStep.text}`
         : "No active build";
+  const activeDraftFromList = useMemo(
+    () =>
+      activeDraftId
+        ? drafts.find((draft) => draft.id === activeDraftId) || null
+        : null,
+    [activeDraftId, drafts],
+  );
 
   // Fetch drafts when screen becomes active or tab switches to drafts
   const fetchDrafts = useCallback(async () => {
+    if (!isAuthenticated) {
+      setDrafts([]);
+      setDraftsLoading(false);
+      setActiveDraftThumbnail(null);
+      return;
+    }
+
     try {
       setDraftsLoading(true);
       const res = (await ai.drafts()) as any;
       if (res?.drafts) {
         setDrafts(res.drafts);
+        if (activeDraftId) {
+          const activeDraft = res.drafts.find(
+            (draft: DraftItem) => draft.id === activeDraftId,
+          );
+          const thumbnail = getDraftThumbnail(activeDraft);
+          if (thumbnail) {
+            setActiveDraftThumbnail(thumbnail);
+          }
+        }
       }
     } catch (e) {
       console.error("Failed to fetch drafts:", e);
     } finally {
       setDraftsLoading(false);
     }
-  }, []);
+  }, [activeDraftId, isAuthenticated]);
 
   useEffect(() => {
-    if (isActive) {
+    if (isActive && isAuthenticated) {
       fetchDrafts();
     } else {
       webviewRef.current?.injectJavaScript(MUTE_WEBVIEW_JS);
     }
-  }, [isActive, fetchDrafts, MUTE_WEBVIEW_JS]);
+  }, [isActive, isAuthenticated, fetchDrafts, MUTE_WEBVIEW_JS]);
+
+  // Load a draft straight into the preview/edit view (used by the drafts list
+  // and by the Remix hand-off from the feed).
+  const openDraftInEditor = useCallback(async (draftId: string) => {
+    try {
+      const res = (await ai.getDraft(draftId)) as any;
+      if (res?.draft?.html_payload || res?.draft?.game_url) {
+        setActiveHtml(res.draft.html_payload || null);
+        setActiveGameUrl(res.draft.game_url || null);
+        setActiveDraftId(res.draft.id);
+        setActiveDraftThumbnail(getDraftThumbnail(res.draft));
+        setGameTitle(res.draft.title || "Untitled Game");
+        setPhase("preview");
+      }
+    } catch (e) {
+      console.error("Failed to open draft:", e);
+    }
+  }, []);
+
+  // When the feed hands us a freshly-remixed draft, open it for editing.
+  useEffect(() => {
+    if (isActive && openDraftId) {
+      openDraftInEditor(openDraftId);
+      onDraftOpened?.();
+    }
+  }, [isActive, openDraftId, openDraftInEditor, onDraftOpened]);
 
   useEffect(() => {
-    if (studioTab === "drafts") {
+    if (studioTab === "drafts" && isAuthenticated) {
       fetchDrafts();
     }
-  }, [studioTab, fetchDrafts]);
+  }, [studioTab, isAuthenticated, fetchDrafts]);
+
+  useEffect(() => {
+    const thumbnail = getDraftThumbnail(activeDraftFromList);
+    if (thumbnail) {
+      setActiveDraftThumbnail(thumbnail);
+    }
+  }, [activeDraftFromList]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !activeDraftId || (!activeHtml && !activeGameUrl)) {
+      setActiveDraftThumbnail(null);
+      return;
+    }
+    if (activeDraftThumbnail) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const refreshActiveDraftThumbnail = async (attempt = 0) => {
+      try {
+        const res = (await ai.drafts()) as any;
+        const nextDrafts = Array.isArray(res?.drafts) ? res.drafts : [];
+        if (cancelled) return;
+
+        if (nextDrafts.length > 0) {
+          setDrafts(nextDrafts);
+        }
+
+        const activeDraft = nextDrafts.find(
+          (draft: DraftItem) => draft.id === activeDraftId,
+        );
+        const thumbnail = getDraftThumbnail(activeDraft);
+        if (thumbnail) {
+          setActiveDraftThumbnail(thumbnail);
+          return;
+        }
+      } catch (e) {
+        console.warn("Failed to refresh active draft thumbnail:", e);
+      }
+
+      if (!cancelled && attempt < 5) {
+        retryTimer = setTimeout(
+          () => refreshActiveDraftThumbnail(attempt + 1),
+          1200 + attempt * 700,
+        );
+      }
+    };
+
+    refreshActiveDraftThumbnail();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [isAuthenticated, activeDraftId, activeHtml, activeDraftThumbnail]);
+
+  const writePendingDreamJobs = useCallback(async (jobs: PendingDreamJob[]) => {
+    const activeJobs = jobs.filter((job) => job.status !== "idle");
+    setPendingJobs(activeJobs);
+    try {
+      if (activeJobs.length > 0) {
+        await AsyncStorage.setItem(
+          PENDING_CREATE_JOB_KEY,
+          JSON.stringify({ jobs: activeJobs }),
+        );
+      } else {
+        await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+      }
+    } catch (e) {
+      console.warn("Failed to persist pending dream jobs:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    let cancelled = false;
+    const hydratePendingDreamJobs = async () => {
+      try {
+        const rawPending = await AsyncStorage.getItem(PENDING_CREATE_JOB_KEY);
+        if (cancelled) return;
+
+        const jobs = parsePendingDreamJobs(rawPending);
+        setPendingJobs(jobs);
+
+        if (jobs.length > 0 && !pendingJobId) {
+          const job = jobs[0];
+          setPendingJobId(job.jobId);
+          setPendingJobStatus(job.status === "idle" ? "queued" : job.status);
+          setGenerationProgress(job.progress);
+          setGenerationPhase(job.phase);
+          setGenerationStatusMessage(job.statusMessage);
+          if (job.prompt && !prompt.trim()) {
+            setPrompt(job.prompt);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to hydrate pending dream jobs:", e);
+      }
+    };
+
+    hydratePendingDreamJobs();
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive]);
+
+  const upsertPendingDreamJob = useCallback(
+    async (job: PendingDreamJob) => {
+      let nextJobs: PendingDreamJob[] = [];
+      setPendingJobs((prev) => {
+        const withoutJob = prev.filter((item) => item.jobId !== job.jobId);
+        nextJobs = [job, ...withoutJob].slice(0, 3);
+        return nextJobs;
+      });
+      await writePendingDreamJobs(nextJobs);
+    },
+    [writePendingDreamJobs],
+  );
+
+  const removePendingDreamJob = useCallback(
+    async (jobId?: string | null) => {
+      if (!jobId) return;
+      let nextJobs: PendingDreamJob[] = [];
+      setPendingJobs((prev) => {
+        nextJobs = prev.filter((job) => job.jobId !== jobId);
+        return nextJobs;
+      });
+      if (pendingJobId === jobId) {
+        const nextFocusedJob = nextJobs[0] || null;
+        setPendingJobId(nextFocusedJob?.jobId || null);
+        setPendingJobStatus(nextFocusedJob?.status || "idle");
+        setGenerationProgress(nextFocusedJob?.progress || null);
+        setGenerationPhase(nextFocusedJob?.phase || null);
+        setGenerationStatusMessage(nextFocusedJob?.statusMessage || null);
+      }
+      await writePendingDreamJobs(nextJobs);
+    },
+    [pendingJobId, writePendingDreamJobs],
+  );
 
   const clearPendingDreamJob = useCallback(async () => {
-    setPendingJobId(null);
+    const jobIdToClear = pendingJobId;
+    if (jobIdToClear) {
+      await removePendingDreamJob(jobIdToClear);
+    }
+    setPendingJobId((prev) => (prev === jobIdToClear ? null : prev));
     setPendingJobStatus("idle");
     setGenerationProgress(null);
     setGenerationPhase(null);
@@ -741,32 +1165,158 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     await cancelLocalNotification(cookingNotificationRef.current);
     cookingNotificationRef.current = null;
     try {
-      await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+      if (!jobIdToClear) {
+        await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+        setPendingJobs([]);
+      }
     } catch (e) {
       console.warn("Failed to clear pending dream job:", e);
     }
-  }, []);
+  }, [pendingJobId, removePendingDreamJob]);
 
   const clearPersistedPendingDreamJob = useCallback(async () => {
-    setPendingJobId(null);
+    const jobIdToClear = pendingJobId;
+    if (jobIdToClear) {
+      await removePendingDreamJob(jobIdToClear);
+    }
+    setPendingJobId((prev) => (prev === jobIdToClear ? null : prev));
     await cancelLocalNotification(cookingNotificationRef.current);
     cookingNotificationRef.current = null;
     try {
-      await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+      if (!jobIdToClear) {
+        await AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY);
+        setPendingJobs([]);
+      }
     } catch (e) {
       console.warn("Failed to clear persisted pending dream job:", e);
     }
-  }, []);
+  }, [pendingJobId, removePendingDreamJob]);
 
-  const markPendingDreamJobFailed = useCallback(async () => {
-    await clearPersistedPendingDreamJob();
+  const markPendingDreamJobFailed = useCallback(async (
+    message?: string | null,
+    jobIdOverride?: string | null,
+  ) => {
+    const jobIdToMark = jobIdOverride || pendingJobId;
+    if (jobIdToMark) {
+      const failedPatch = {
+        status: "failed" as PendingDreamJobStatus,
+        progress: null,
+        phase: null,
+        statusMessage: null,
+        error: message || null,
+      };
+      setPendingJobs((prev) =>
+        prev.map((job) =>
+          job.jobId === jobIdToMark ? { ...job, ...failedPatch } : job,
+        ),
+      );
+      try {
+        const rawPending = await AsyncStorage.getItem(PENDING_CREATE_JOB_KEY);
+        const storedJobs = parsePendingDreamJobs(rawPending);
+        const patchedJobs =
+          storedJobs.length > 0
+            ? storedJobs.map((job) =>
+                job.jobId === jobIdToMark ? { ...job, ...failedPatch } : job,
+              )
+            : [
+                makePendingDreamJob({
+                  jobId: jobIdToMark,
+                  prompt,
+                  labsMode,
+                  status: "failed",
+                  error: message || null,
+                }),
+              ];
+        await writePendingDreamJobs(patchedJobs);
+      } catch (e) {
+        console.warn("Failed to persist failed pending dream job:", e);
+      }
+    } else {
+      await clearPersistedPendingDreamJob();
+    }
     setPendingJobStatus("failed");
     setGenerationProgress(null);
     setGenerationPhase(null);
     setGenerationStatusMessage(null);
-  }, [clearPersistedPendingDreamJob]);
+  }, [
+    clearPersistedPendingDreamJob,
+    labsMode,
+    pendingJobId,
+    prompt,
+    writePendingDreamJobs,
+  ]);
 
   const applyGenerationStatus = useCallback((status: any) => {
+    const statusJobId = status?.jobId || pendingJobId;
+    const nextStatus = normalizePendingDreamStatus(status?.status);
+    const nextProgress =
+      typeof status?.progress === "number"
+        ? Math.max(0, Math.min(100, status.progress))
+        : null;
+
+    if (statusJobId) {
+      const nextJobPatch = {
+        status: nextStatus,
+        progress: nextProgress,
+        phase: typeof status?.phase === "string" ? status.phase : undefined,
+        statusMessage:
+          typeof status?.statusMessage === "string"
+            ? status.statusMessage
+            : undefined,
+        error: status?.error || undefined,
+      };
+      setPendingJobs((prev) =>
+        prev.map((job) =>
+          job.jobId === statusJobId
+            ? {
+                ...job,
+                status: nextJobPatch.status,
+                progress:
+                  nextJobPatch.progress !== null ? nextJobPatch.progress : job.progress,
+                phase:
+                  nextJobPatch.phase !== undefined ? nextJobPatch.phase : job.phase,
+                statusMessage:
+                  nextJobPatch.statusMessage !== undefined
+                    ? nextJobPatch.statusMessage
+                    : job.statusMessage,
+                error: nextJobPatch.error || job.error || null,
+              }
+            : job,
+        ),
+      );
+      if (nextStatus === "queued" || nextStatus === "running") {
+        void AsyncStorage.getItem(PENDING_CREATE_JOB_KEY)
+          .then((rawPending) => {
+            const storedJobs = parsePendingDreamJobs(rawPending);
+            const patchedJobs = storedJobs.map((job) =>
+              job.jobId === statusJobId
+                ? {
+                    ...job,
+                    status: nextJobPatch.status,
+                    progress:
+                      nextJobPatch.progress !== null
+                        ? nextJobPatch.progress
+                        : job.progress,
+                    phase:
+                      nextJobPatch.phase !== undefined
+                        ? nextJobPatch.phase
+                        : job.phase,
+                    statusMessage:
+                      nextJobPatch.statusMessage !== undefined
+                        ? nextJobPatch.statusMessage
+                        : job.statusMessage,
+                    error: nextJobPatch.error || job.error || null,
+                  }
+                : job,
+            );
+            return writePendingDreamJobs(patchedJobs);
+          })
+          .catch((e) =>
+            console.warn("Failed to persist pending dream status:", e),
+          );
+      }
+    }
+
     if (typeof status?.status === "string") {
       setPendingJobStatus(
         status.status === "error" || status.status === "failed"
@@ -804,9 +1354,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       status?.status === "failed" ||
       status?.status === "canceled"
     ) {
-      void AsyncStorage.removeItem(PENDING_CREATE_JOB_KEY).catch((e) =>
-        console.warn("Failed to clear failed pending dream job:", e),
-      );
+      if (statusJobId) {
+        void removePendingDreamJob(statusJobId);
+      }
       void cancelLocalNotification(cookingNotificationRef.current).then(() => {
         cookingNotificationRef.current = null;
       });
@@ -814,16 +1364,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     // Capture completion data so the watchdog can force-transition to preview
     if (
       status?.status === "complete" &&
-      status?.htmlPreview &&
+      (status?.htmlPreview || status?.gameUrl) &&
       status?.draftId
     ) {
       completionDataRef.current = {
         htmlPreview: status.htmlPreview,
+        gameUrl: status.gameUrl,
         draftId: status.draftId,
         title: status.title || "Untitled Dream",
       };
     }
-  }, []);
+  }, [pendingJobId, removePendingDreamJob, writePendingDreamJobs]);
 
   const armCookingNotification = useCallback(
     async (jobId?: string | null, jobPrompt?: string) => {
@@ -839,22 +1390,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
 
   const persistPendingDreamJob = useCallback(
     async (payload: { jobId: string; prompt: string; labsMode: boolean }) => {
+      const pendingJob = makePendingDreamJob({
+        ...payload,
+        status: "queued",
+      });
       setPendingJobId(payload.jobId);
       setPendingJobStatus("queued");
       await armCookingNotification(payload.jobId, payload.prompt);
-      try {
-        await AsyncStorage.setItem(
-          PENDING_CREATE_JOB_KEY,
-          JSON.stringify({
-            ...payload,
-            savedAt: new Date().toISOString(),
-          }),
-        );
-      } catch (e) {
-        console.warn("Failed to persist pending dream job:", e);
-      }
+      await upsertPendingDreamJob(pendingJob);
     },
-    [armCookingNotification],
+    [armCookingNotification, upsertPendingDreamJob],
   );
 
   const completePendingDreamJob = useCallback(
@@ -958,16 +1503,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     let resumeCancel: (() => void) | null = null;
 
     const resumePendingDream = async () => {
-      let pending: {
-        jobId?: string;
-        prompt?: string;
-        labsMode?: boolean;
-      } | null = null;
+      let pending: PendingDreamJob | null = null;
       try {
         const rawPending = await AsyncStorage.getItem(PENDING_CREATE_JOB_KEY);
-        if (!rawPending || cancelled) return;
+        if (cancelled) return;
 
-        pending = JSON.parse(rawPending);
+        const pendingDreamJobs = parsePendingDreamJobs(rawPending);
+        await writePendingDreamJobs(pendingDreamJobs);
+        pending =
+          pendingDreamJobs.find((job) => job.jobId === pendingJobId) ||
+          pendingDreamJobs[0] ||
+          null;
         if (!pending?.jobId) return;
         if (resumingPendingJobRef.current === pending.jobId) return;
 
@@ -977,11 +1523,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         if (pending.prompt && !prompt.trim()) {
           setPrompt(pending.prompt);
         }
-        setPhase("generating");
         setErrorMsg(null);
 
         const { promise, cancel } = ai.resumeDreamJob(pending.jobId, {
-          onStatus: applyGenerationStatus,
+          onStatus: (status: any) =>
+            applyGenerationStatus({ ...status, jobId: status?.jobId || pending?.jobId }),
         });
         resumeCancel = cancel;
         cancelRef.current = cancel;
@@ -992,23 +1538,34 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         remoteCancelRef.current = null;
         resumingPendingJobRef.current = null;
 
-        if (res.success && res.htmlPreview) {
+        if (res.success && (res.htmlPreview || res.gameUrl)) {
           await completePendingDreamJob(
             res.title || "Untitled Dream",
             res.draftId,
           );
           setGameConfig({});
           setEditableSlots([]);
-          setActiveHtml(res.htmlPreview);
+          setActiveHtml(res.htmlPreview || null);
+          setActiveGameUrl(res.gameUrl || null);
           setActiveDraftId(res.draftId);
+          setActiveDraftThumbnail(getDraftThumbnail(res));
           setGameTitle(res.title || "Untitled Dream");
           setPhase("preview");
           await fetchDrafts();
         } else {
-          setErrorMsg(res.error || "Generation failed to load preview.");
-          await markPendingDreamJobFailed();
-          ensureFallbackSpec(pending?.prompt || prompt);
-          setPhase("refining");
+          const message = res.error || "Generation failed to load preview.";
+          if (isMissingLocalFileDreamError(message)) {
+            await clearPendingDreamJob();
+            setErrorMsg(null);
+            setPhase("idle");
+            return;
+          }
+          setErrorMsg(message);
+          await markPendingDreamJobFailed(message, pending?.jobId);
+          if (phase === "generating") {
+            ensureFallbackSpec(pending?.prompt || prompt);
+            setPhase("refining");
+          }
         }
       } catch (error: any) {
         if (cancelled) return;
@@ -1023,10 +1580,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         if (failedPrompt && !prompt.trim()) {
           setPrompt(failedPrompt);
         }
+        if (isMissingLocalFileDreamError(friendlyMessage)) {
+          await clearPendingDreamJob();
+          setErrorMsg(null);
+          setPhase("idle");
+          return;
+        }
         setErrorMsg(friendlyMessage);
-        await markPendingDreamJobFailed();
-        ensureFallbackSpec(failedPrompt || prompt);
-        setPhase("refining");
+        await markPendingDreamJobFailed(friendlyMessage, pending?.jobId);
+        if (phase === "generating") {
+          ensureFallbackSpec(failedPrompt || prompt);
+          setPhase("refining");
+        }
       }
     };
 
@@ -1049,8 +1614,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     fetchDrafts,
     formatDreamError,
     applyGenerationStatus,
+    clearPendingDreamJob,
     ensureFallbackSpec,
     markPendingDreamJobFailed,
+    pendingJobId,
+    writePendingDreamJobs,
   ]);
 
   // Orb animation during generation
@@ -1121,8 +1689,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       }
       setGameConfig({});
       setEditableSlots([]);
-      setActiveHtml(data.htmlPreview);
+      setActiveHtml(data.htmlPreview || null);
+      setActiveGameUrl(data.gameUrl || null);
       setActiveDraftId(data.draftId);
+      setActiveDraftThumbnail(null);
       setGameTitle(data.title);
       setPhase("preview");
       fetchDrafts().catch(() => {});
@@ -1191,6 +1761,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   };
 
   const handleRetryJob = async () => {
+    let retryJobId: string | null = null;
     try {
       setErrorMsg(null);
       setPendingJobStatus("running");
@@ -1204,35 +1775,42 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       setGenerationStatusMessage(null);
       const retryJob = ai.dream(retryPrompt, [], {
         onJobStarted: (jobId: string) => {
+          retryJobId = jobId;
           persistPendingDreamJob({ jobId, prompt: retryPrompt, labsMode });
         },
-        onStatus: applyGenerationStatus,
+        onStatus: (status: any) =>
+          applyGenerationStatus({ ...status, jobId: status?.jobId || retryJobId }),
       });
       cancelRef.current = retryJob.cancel;
       remoteCancelRef.current = retryJob.cancelRemote;
       const res = (await retryJob.promise) as any;
       cancelRef.current = null;
       remoteCancelRef.current = null;
-      if (res.success && (res.draftId || res.htmlPreview)) {
+      if (res.success && (res.draftId || res.htmlPreview || res.gameUrl)) {
         setGenerationProgress(null);
         setGenerationPhase(null);
         setGenerationStatusMessage(null);
-        if (res.htmlPreview) {
+        if (res.htmlPreview || res.gameUrl) {
           await completePendingDreamJob(
             res.title || "Untitled Dream",
             res.draftId,
           );
           setGameConfig({});
           setEditableSlots([]);
-          setActiveHtml(res.htmlPreview);
+          setActiveHtml(res.htmlPreview || null);
+          setActiveGameUrl(res.gameUrl || null);
           setActiveDraftId(res.draftId);
+          setActiveDraftThumbnail(getDraftThumbnail(res));
           setGameTitle(res.title || "Untitled Dream");
           setPhase("preview");
           await fetchDrafts();
         }
       } else {
         setErrorMsg(res.error || "Generation failed");
-        await markPendingDreamJobFailed();
+        await markPendingDreamJobFailed(
+          res.error || "Generation failed",
+          retryJobId,
+        );
         ensureFallbackSpec(prompt);
         setPhase("refining");
       }
@@ -1245,11 +1823,34 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         "Failed to retry. Please try again.";
       await stopCookingNotificationOnly();
       setErrorMsg(friendlyMessage);
-      await markPendingDreamJobFailed();
+      await markPendingDreamJobFailed(friendlyMessage, retryJobId);
       ensureFallbackSpec(prompt);
       setPhase("refining");
     }
   };
+
+  const getPendingJobTitle = useCallback((job: PendingDreamJob) => {
+    const cleanedPrompt = job.prompt.trim().replace(/\s+/g, " ");
+    return cleanedPrompt.length > 42
+      ? `${cleanedPrompt.slice(0, 39)}...`
+      : cleanedPrompt || "Untitled build";
+  }, []);
+
+  const getPendingJobStatusText = useCallback(
+    (job: PendingDreamJob) => {
+      if (job.status === "failed") return job.error || "Build failed";
+      if (job.status === "canceled") return "Build stopped";
+      const progress =
+        typeof job.progress === "number" ? `${Math.round(job.progress)}%` : "";
+      const detail =
+        job.statusMessage ||
+        (job.jobId === pendingJobId
+          ? generationStatusMessage || activeStudioStep.text
+          : "Forging in background");
+      return progress ? `${progress} · ${detail}` : detail;
+    },
+    [activeStudioStep.text, generationStatusMessage, pendingJobId],
+  );
 
   const handleReturnToForge = useCallback(() => {
     if (!pendingJobId) return;
@@ -1262,7 +1863,33 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     setPhase("generating");
   }, [pendingBuildFailed, pendingJobId]);
 
+  const handleOpenPendingJob = useCallback(
+    (job: PendingDreamJob) => {
+      setPendingJobId(job.jobId);
+      setPendingJobStatus(job.status);
+      setGenerationProgress(job.progress);
+      setGenerationPhase(job.phase);
+      setGenerationStatusMessage(job.statusMessage);
+      setPrompt((current) => current || job.prompt);
+      if (job.status === "failed") {
+        setErrorMsg(job.error || "Generation failed");
+        setPhase("refining");
+        return;
+      }
+      if (job.status !== "canceled") {
+        setErrorMsg(null);
+        setPhase("generating");
+      }
+    },
+    [],
+  );
+
   const handleDream = async (promptOverride?: string) => {
+    if (!isAuthenticated) {
+      showAuthScreen();
+      return;
+    }
+
     const finalPrompt = (promptOverride ?? prompt).trim();
     if (phase === "generating") return;
     if (!finalPrompt) {
@@ -1276,6 +1903,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     setGenerationProgress(null);
     setGenerationPhase(null);
     setGenerationStatusMessage(null);
+    let dreamJobId: string | null = null;
 
     try {
       const attachments = attachedAssets.map(
@@ -1302,12 +1930,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         }),
       );
       const onJobStarted = (jobId: string) => {
+        dreamJobId = jobId;
         persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode });
       };
       const { promise, cancel, cancelRemote } = ai.dream(
         finalPrompt,
         attachments,
-        { onJobStarted, onStatus: applyGenerationStatus },
+        {
+          onJobStarted,
+          onStatus: (status: any) =>
+            applyGenerationStatus({ ...status, jobId: status?.jobId || dreamJobId }),
+        },
       );
       cancelRef.current = cancel;
       remoteCancelRef.current = cancelRemote;
@@ -1315,20 +1948,26 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       cancelRef.current = null;
       remoteCancelRef.current = null;
       detachPendingDreamRef.current = false;
-      if (res.success && res.htmlPreview) {
+      if (res.success && (res.htmlPreview || res.gameUrl)) {
         await completePendingDreamJob(
           res.title || "Untitled Dream",
           res.draftId,
         );
         setGameConfig({});
         setEditableSlots([]);
-        setActiveHtml(res.htmlPreview);
+        setActiveHtml(res.htmlPreview || null);
+        setActiveGameUrl(res.gameUrl || null);
         setActiveDraftId(res.draftId);
+        setActiveDraftThumbnail(getDraftThumbnail(res));
         setGameTitle(res.title || "Untitled Dream");
         setPhase("preview");
+        await fetchDrafts();
       } else {
         setErrorMsg(res.error || "Generation failed");
-        await markPendingDreamJobFailed();
+        await markPendingDreamJobFailed(
+          res.error || "Generation failed",
+          dreamJobId,
+        );
         ensureFallbackSpec(finalPrompt);
         setPhase("refining");
       }
@@ -1349,13 +1988,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       detachPendingDreamRef.current = false;
       console.warn("AI Generation Warning:", error?.message || error);
       setErrorMsg(friendlyMessage);
-      await markPendingDreamJobFailed();
+      await markPendingDreamJobFailed(friendlyMessage, dreamJobId);
       ensureFallbackSpec(finalPrompt);
       setPhase("refining");
     }
   };
 
   const handleDreamComposerPress = async () => {
+    if (!isAuthenticated) {
+      showAuthScreen();
+      return;
+    }
+
     const finalPrompt = prompt.trim();
     if (!finalPrompt) {
       setErrorMsg("Write a quick brief first, or tap Surprise me.");
@@ -1365,24 +2009,21 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     setErrorMsg(null);
     Keyboard.dismiss();
 
-    const staleJobId = pendingJobId;
-    if (staleJobId) {
+    if (pendingJobId) {
       stopLocalDreamPolling();
-      try {
-        await ai.cancelDreamJob(staleJobId);
-      } catch (error: any) {
-        console.warn(
-          "[DreamStream] Could not cancel stale job before refinement:",
-          error?.message || error,
-        );
-      }
-      await clearPendingDreamJob();
     }
+
+    // Forge It hands the brief (and any attached assets) to the Wish studio,
+    // where Kimi pitches the game and the user taps "Create it" to build.
+    setStudioPrompt(finalPrompt);
+    setStudioOpen(true);
+    return;
 
     // Generate game spec
     setPhase("refining");
     setIsGeneratingSpec(true);
     setIsRefiningSpecMessage(false);
+    setRefinementBrief(finalPrompt);
     setGameSpec(null);
     setConversationHistory([]);
     setAiMessage(null);
@@ -1416,6 +2057,24 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     }
   };
 
+  const interpretEditIntent = useCallback(
+    async (instructions: string) => {
+      const fallbackIntent = buildFallbackEditIntent(instructions);
+      try {
+        const res = (await ai.interpretEdit({
+          instructions,
+          gameTitle,
+          currentSummary: activeDraftFromList?.prompt || "",
+        })) as any;
+        return (res?.intent || fallbackIntent) as EditIntent;
+      } catch (error) {
+        console.warn("Edit interpretation failed:", error);
+        return fallbackIntent;
+      }
+    },
+    [activeDraftFromList?.prompt, gameTitle],
+  );
+
   const handleModifySpec = async (modification: string) => {
     const userMessage = modification.trim();
     if (!userMessage || !gameSpec || isRefiningSpecMessage) return;
@@ -1424,7 +2083,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       conversationHistory.length > 0
         ? conversationHistory
         : [
-            { role: "user" as const, content: prompt.trim() },
+            { role: "user" as const, content: refinementBrief || prompt.trim() },
             {
               role: "ai" as const,
               content: `Current concept: ${gameSpec.title}. ${gameSpec.description} Features: ${gameSpec.features.join(", ")}`,
@@ -1439,6 +2098,28 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     setErrorMsg(null);
     setIsRefiningSpecMessage(true);
     setConversationHistory(optimisticHistory);
+
+    if (pendingEditRequest) {
+      const combinedInstructions = `${pendingEditRequest.instructions}. ${userMessage}`;
+      const intent = await interpretEditIntent(combinedInstructions);
+      const responseMessage =
+        intent.question ||
+        "Perfect. I’ll fold that into the edit.";
+      setPendingEditRequest({
+        ...pendingEditRequest,
+        instructions: intent.finalInstruction || combinedInstructions,
+      });
+      setRefinementBrief(intent.summary || combinedInstructions);
+      setEditIntent(intent);
+      setGameSpec(buildEditRefinementSpec(intent.summary || combinedInstructions));
+      setAiMessage(responseMessage);
+      setConversationHistory([
+        ...optimisticHistory,
+        { role: "ai", content: responseMessage },
+      ]);
+      setIsRefiningSpecMessage(false);
+      return;
+    }
 
     try {
       const res = (await ai.refineSpec(historyBeforeTurn, userMessage)) as any;
@@ -1469,22 +2150,80 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     }
   };
 
+  const applyEditRequest = useCallback(
+    async (editRequest: PendingEditRequest, finalInstructions: string) => {
+      setPhase("generating");
+      setErrorMsg(null);
+
+      try {
+        const { promise, cancel } = ai.edit(
+          editRequest.draftId,
+          finalInstructions,
+          editRequest.newAsset,
+          editRequest.attachments,
+        );
+        cancelRef.current = cancel;
+        const res = (await promise) as any;
+        cancelRef.current = null;
+        if (res.success && (res.htmlPreview || res.gameUrl)) {
+          setActiveHtml(res.htmlPreview || null);
+          setActiveGameUrl(res.gameUrl || null);
+          if (res.draftId) {
+            setActiveDraftId(res.draftId);
+            setActiveDraftThumbnail(getDraftThumbnail(res));
+          } else {
+            setActiveDraftThumbnail(null);
+          }
+          setPendingEditRequest(null);
+          setEditIntent(null);
+          setPhase("preview");
+          await fetchDrafts();
+        } else {
+          throw new Error(res.error || "Failed to modify game.");
+        }
+      } catch (err: any) {
+        cancelRef.current = null;
+        const friendlyMessage = formatDreamError(err, "edit");
+        setErrorMsg(friendlyMessage || "Failed to modify game.");
+        setPhase("refining");
+      }
+    },
+    [fetchDrafts, formatDreamError],
+  );
+
   const handleStartBuilding = () => {
     if (!gameSpec) return;
 
     // Build enriched prompt with spec
-    const enrichedPrompt = `${prompt}
+    const basePrompt = refinementBrief.trim() || prompt;
+    const enrichedPrompt = `${basePrompt}
 
 Title: ${gameSpec.title}
 Description: ${gameSpec.description}
-Features: ${gameSpec.features.join(", ")}`;
+    Features: ${gameSpec.features.join(", ")}`;
+
+    if (pendingEditRequest) {
+      applyEditRequest(
+        pendingEditRequest,
+        editIntent?.finalInstruction ||
+          refinementBrief.trim() ||
+          pendingEditRequest.instructions,
+      );
+      return;
+    }
 
     handleDream(enrichedPrompt);
   };
 
   const handleBackFromRefinement = () => {
-    setPhase("idle");
-    setGameSpec(null);
+    const shouldReturnToPreview = Boolean(pendingEditRequest && (activeHtml || activeGameUrl));
+    setPhase(shouldReturnToPreview ? "preview" : "idle");
+    setPendingEditRequest(null);
+    setEditIntent(null);
+    setRefinementBrief("");
+    if (!shouldReturnToPreview) {
+      setGameSpec(null);
+    }
     setWishInput("");
     setConversationHistory([]);
     setAiMessage(null);
@@ -1770,6 +2509,56 @@ Features: ${gameSpec.features.join(", ")}`;
     }
   };
 
+  const stopAudioPreview = useCallback(async () => {
+    const sound = audioPreviewRef.current;
+    audioPreviewRef.current = null;
+    setPlayingAudioUrl(null);
+    if (sound) {
+      try {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+      } catch (err) {
+        console.warn("Could not stop audio preview:", err);
+      }
+    }
+  }, []);
+
+  const playAudioPreview = useCallback(
+    async (item: any) => {
+      const url = item?.url;
+      if (!url) return;
+
+      if (playingAudioUrl === url) {
+        await stopAudioPreview();
+        return;
+      }
+
+      await stopAudioPreview();
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+        });
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: url },
+          { shouldPlay: true, volume: 1.0 },
+        );
+        audioPreviewRef.current = sound;
+        setPlayingAudioUrl(url);
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            stopAudioPreview();
+          }
+        });
+      } catch (err) {
+        console.warn("Could not play audio preview:", err);
+        setPlayingAudioUrl(null);
+      }
+    },
+    [playingAudioUrl, stopAudioPreview],
+  );
+
   useEffect(() => {
     if (showVideosModal) fetchCommunityAssets("video");
   }, [showVideosModal]);
@@ -1777,6 +2566,18 @@ Features: ${gameSpec.features.join(", ")}`;
   useEffect(() => {
     if (showAudioModal) fetchCommunityAssets(audioTab);
   }, [showAudioModal, audioTab]);
+
+  useEffect(() => {
+    if (!showAudioModal) {
+      stopAudioPreview();
+    }
+  }, [showAudioModal, stopAudioPreview]);
+
+  useEffect(() => {
+    return () => {
+      stopAudioPreview();
+    };
+  }, [stopAudioPreview]);
 
   // Pre-load trending Giphy and Freesound results silently in the background
   useEffect(() => {
@@ -1795,11 +2596,17 @@ Features: ${gameSpec.features.join(", ")}`;
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => setKeyboardVisible(true),
+      (event) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(event.endCoordinates?.height || 0);
+      },
     );
     const hideSub = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setKeyboardVisible(false),
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      },
     );
     return () => {
       showSub.remove();
@@ -1881,6 +2688,16 @@ Features: ${gameSpec.features.join(", ")}`;
   const handleModify = () => setShowModifyModal(true);
   const handleGeneratePhoto = () => setShowImageModal(true);
   const handleSounds = () => setShowSoundsModal(true);
+  const runCreateAction = useCallback(
+    (action: () => void) => {
+      if (errorMsg) {
+        setErrorMsg(null);
+      }
+      action();
+    },
+    [errorMsg],
+  );
+
   const submitImageGeneration = async () => {
     if (!imagePromptText.trim()) return;
     setIsGeneratingImage(true);
@@ -2101,44 +2918,56 @@ Features: ${gameSpec.features.join(", ")}`;
       return;
     }
 
-    setPhase("generating");
-    setErrorMsg(null);
+    const editRequest: PendingEditRequest = {
+      draftId: activeDraftId,
+      instructions,
+      newAsset,
+      attachments,
+    };
 
-    try {
-      const { promise, cancel } = ai.edit(
-        activeDraftId,
-        instructions,
-        newAsset,
-        attachments,
-      );
-      cancelRef.current = cancel;
-      const res = (await promise) as any;
-      cancelRef.current = null;
-      if (res.success && res.htmlPreview) {
-        setActiveHtml(res.htmlPreview);
-        // CRITICAL: Update the active draft to the NEW version so subsequent edits chain correctly
-        if (res.draftId) {
-          setActiveDraftId(res.draftId);
-        }
-        setPhase("preview");
-      } else {
-        throw new Error(res.error || "Failed to modify game.");
-      }
-    } catch (err: any) {
-      const friendlyMessage = formatDreamError(err, "edit");
-      if (friendlyMessage) {
-        setErrorMsg(friendlyMessage);
-        setPhase("preview"); // Stay on preview instead of going to idle — the original game is still playable
-      }
-    }
+    setPendingEditRequest(editRequest);
+    setRefinementBrief(instructions);
+    setPhase("refining");
+    setIsGeneratingSpec(true);
+    setIsRefiningSpecMessage(false);
+    setGameSpec(null);
+    setEditIntent(null);
+    setConversationHistory([{ role: "user", content: instructions }]);
+    setAiMessage(null);
+    setErrorMsg(null);
+    hasAutoScrolledToSpecRef.current = false;
+
+    const intent = await interpretEditIntent(instructions);
+    setIsGeneratingSpec(false);
+    const nextRequest = {
+      ...editRequest,
+      instructions: intent.finalInstruction || instructions,
+    };
+    const introMessage =
+      intent.question ||
+      "I understand the edit. Add details if you want, or apply it now.";
+    setPendingEditRequest(nextRequest);
+    setEditIntent(intent);
+    setRefinementBrief(intent.summary || instructions);
+    setGameSpec(buildEditRefinementSpec(intent.summary || instructions));
+    setConversationHistory([
+      { role: "user", content: instructions },
+      { role: "ai", content: introMessage },
+    ]);
+    setAiMessage(introMessage);
   };
 
   const handleRegenerate = async () => {
     detachPendingDreamRef.current = false;
     stopLocalDreamPolling();
     await clearPendingDreamJob();
+    setPendingEditRequest(null);
+    setEditIntent(null);
+    setRefinementBrief("");
     setActiveHtml(null);
+    setActiveGameUrl(null);
     setActiveDraftId(null);
+    setActiveDraftThumbnail(null);
     setGameTitle("");
     setGameConfig({});
     setEditableSlots([]);
@@ -2165,7 +2994,7 @@ Features: ${gameSpec.features.join(", ")}`;
     }
 
     // Only confirm when leaving a live preview / test surface.
-    if (phase === "preview" && (activeDraftId || activeHtml)) {
+    if (phase === "preview" && (activeDraftId || activeHtml || activeGameUrl)) {
       setShowExitConfirm(actionType);
     } else {
       if (actionType === "closeApp") onClose();
@@ -2243,6 +3072,14 @@ Features: ${gameSpec.features.join(", ")}`;
 
   const renderSharedModals = () => (
     <>
+      {/* Forge It → the Wish studio: Kimi pitches, user creates, game goes live. */}
+      <WishStudioScreen
+        visible={studioOpen}
+        onClose={() => setStudioOpen(false)}
+        initialPrompt={studioPrompt}
+        initialAttachments={attachedAssets}
+      />
+
       <Modal
         visible={showAssetIntentModal}
         transparent
@@ -3023,12 +3860,28 @@ Features: ${gameSpec.features.join(", ")}`;
                         {item.duration || "00:03"}
                       </Text>
                     </View>
-                    <Ionicons
-                      name="play"
-                      size={24}
-                      color="#FFF"
-                      style={{ marginHorizontal: 16 }}
-                    />
+                    <Pressable
+                      onPress={() => playAudioPreview(item)}
+                      hitSlop={10}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        backgroundColor:
+                          playingAudioUrl === item.url
+                            ? "rgba(168,85,247,0.32)"
+                            : "rgba(255,255,255,0.08)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginHorizontal: 8,
+                      }}
+                    >
+                      <Ionicons
+                        name={playingAudioUrl === item.url ? "pause" : "play"}
+                        size={22}
+                        color="#FFF"
+                      />
+                    </Pressable>
                     <View
                       style={{
                         width: 24,
@@ -3256,6 +4109,7 @@ Features: ${gameSpec.features.join(", ")}`;
                   );
                 }
                 const isSelected = selectedVideo?.url === item.url;
+                const videoUrl = item.url || item.videoUrl || item.src;
                 return (
                   <Pressable
                     style={{
@@ -3267,20 +4121,48 @@ Features: ${gameSpec.features.join(", ")}`;
                     }}
                     onPress={() => setSelectedVideo(item)}
                   >
-                    <Image
-                      source={{
-                        uri:
-                          item.thumb ||
-                          item.thumbnail ||
-                          "https://picsum.photos/200/300",
-                      }}
+                    {videoUrl ? (
+                      <Video
+                        source={{ uri: videoUrl }}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          opacity: isSelected ? 0.65 : 1,
+                        }}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay
+                        isLooping
+                        isMuted
+                        useNativeControls={false}
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          flex: 1,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: "rgba(255,255,255,0.04)",
+                        }}
+                      >
+                        <Ionicons name="film-outline" size={26} color="#777" />
+                      </View>
+                    )}
+                    <View
+                      pointerEvents="none"
                       style={{
-                        width: "100%",
-                        height: "100%",
-                        opacity: isSelected ? 0.6 : 0.8,
+                        position: "absolute",
+                        top: 6,
+                        left: 6,
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
+                        backgroundColor: "rgba(0,0,0,0.55)",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
-                      resizeMode="cover"
-                    />
+                    >
+                      <Ionicons name="play" size={14} color="#FFF" />
+                    </View>
                     <View
                       style={{
                         position: "absolute",
@@ -4207,7 +5089,7 @@ Features: ${gameSpec.features.join(", ")}`;
   // ======================
   // RENDER: PUBLISH SETTINGS
   // ======================
-  if (phase === "publish" && activeHtml) {
+  if (phase === "publish" && (activeHtml || activeGameUrl)) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         {/* Header */}
@@ -4245,7 +5127,7 @@ Features: ${gameSpec.features.join(", ")}`;
               }}
             >
               <WebView
-                source={{ html: activeHtml, baseUrl: PREVIEW_BASE_URL }}
+                source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
                 style={{ flex: 1, backgroundColor: "#000" }}
                 scrollEnabled={false}
                 javaScriptEnabled={true}
@@ -4664,7 +5546,7 @@ Features: ${gameSpec.features.join(", ")}`;
     </Modal>
   );
 
-  if (phase === "preview" && activeHtml) {
+  if (phase === "preview" && (activeHtml || activeGameUrl)) {
     return (
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -4736,7 +5618,7 @@ Features: ${gameSpec.features.join(", ")}`;
         <View style={[styles.webviewContainer, { top: insets.top + 66 }]}>
           <WebView
             ref={webviewRef}
-            source={{ html: activeHtml, baseUrl: PREVIEW_BASE_URL }}
+            source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
             style={{ flex: 1, backgroundColor: "#000" }}
             originWhitelist={["*"]}
             javaScriptEnabled={true}
@@ -4780,7 +5662,9 @@ Features: ${gameSpec.features.join(", ")}`;
             exiting={SlideOutDown.duration(300)}
             style={{
               position: "absolute",
-              bottom: 0,
+              bottom: keyboardVisible
+                ? Math.max(keyboardHeight - insets.bottom, 0)
+                : 0,
               left: 0,
               right: 0,
               zIndex: 10,
@@ -4830,7 +5714,7 @@ Features: ${gameSpec.features.join(", ")}`;
                   <Pressable
                     key={i}
                     style={{ alignItems: "center", gap: 6 }}
-                    onPress={tool.action}
+                    onPress={() => runCreateAction(tool.action)}
                   >
                     <Ionicons
                       name={tool.icon as any}
@@ -4956,7 +5840,11 @@ Features: ${gameSpec.features.join(", ")}`;
             >
               {errorMsg}
             </Text>
-            <Pressable onPress={() => setErrorMsg(null)}>
+            <Pressable
+              onPressIn={() => setErrorMsg(null)}
+              hitSlop={12}
+              style={styles.errorDismissBtn}
+            >
               <Ionicons
                 name="close-circle"
                 size={20}
@@ -4985,7 +5873,19 @@ Features: ${gameSpec.features.join(", ")}`;
       >
         {/* Header */}
         <View style={styles.headerV2}>
-          <View style={styles.headerV2Side}></View>
+          <View style={styles.headerV2Side}>
+            <Pressable
+              onPress={handleBackFromRefinement}
+              hitSlop={12}
+              style={styles.refineExitButton}
+            >
+              <Ionicons
+                name={pendingEditRequest ? "close" : "chevron-back"}
+                size={24}
+                color="#FFF"
+              />
+            </Pressable>
+          </View>
           <View style={styles.headerV2Center} pointerEvents="none">
             {/* Gradient Dream Forge text */}
             <View
@@ -5048,7 +5948,7 @@ Features: ${gameSpec.features.join(", ")}`;
             >
               <ActivityIndicator size="large" color="#06b6d4" />
               <Text style={{ color: "#888", fontSize: 15, marginTop: 16 }}>
-                Crafting your game...
+                {pendingEditRequest ? "Thinking through the edit..." : "Crafting your game..."}
               </Text>
             </Animated.View>
           ) : (
@@ -5064,13 +5964,14 @@ Features: ${gameSpec.features.join(", ")}`;
                   }}
                 >
                   <Text style={{ color: "#FFF", fontSize: 14, lineHeight: 20 }}>
-                    {prompt}
+                    {refinementBrief || prompt}
                   </Text>
                 </View>
 
-                {/* "Ok what do you think of..." */}
-                <Text style={{ color: "#FFF", fontSize: 16, marginBottom: 32 }}>
-                  Ok what do you think of...
+                <Text style={{ color: "#FFF", fontSize: 16, marginBottom: 20 }}>
+                  {pendingEditRequest
+                    ? "Before I update it..."
+                    : "Ok what do you think of..."}
                 </Text>
 
                 {/* Generated Title */}
@@ -5079,11 +5980,11 @@ Features: ${gameSpec.features.join(", ")}`;
                     color: "#FFF",
                     fontSize: 28,
                     fontWeight: "800",
-                    marginBottom: 32,
+                    marginBottom: pendingEditRequest ? 16 : 32,
                     letterSpacing: -0.3,
                   }}
                 >
-                  {gameSpec.title}
+                  {pendingEditRequest ? "Apply this edit" : gameSpec.title}
                 </Text>
 
                 {/* Description */}
@@ -5095,11 +5996,13 @@ Features: ${gameSpec.features.join(", ")}`;
                     marginBottom: 20,
                   }}
                 >
-                  {gameSpec.description}
+                  {pendingEditRequest
+                    ? `Edit plan: ${editIntent?.summary || gameSpec.description}`
+                    : gameSpec.description}
                 </Text>
 
                 {/* Feature Bullets */}
-                {gameSpec.features && gameSpec.features.length > 0 && (
+                {!pendingEditRequest && gameSpec.features && gameSpec.features.length > 0 && (
                   <View style={{ marginBottom: 24 }}>
                     {gameSpec.features.map((feature, idx) => (
                       <View
@@ -5132,6 +6035,75 @@ Features: ${gameSpec.features.join(", ")}`;
                         </Text>
                       </View>
                     ))}
+                  </View>
+                )}
+
+                {pendingEditRequest && aiMessage && !editIntent?.needsClarification && (
+                  <View
+                    style={{
+                      backgroundColor: "rgba(6, 182, 212, 0.1)",
+                      borderLeftWidth: 3,
+                      borderLeftColor: "#06b6d4",
+                      borderRadius: 8,
+                      padding: 16,
+                      marginBottom: 24,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#06b6d4",
+                        fontSize: 15,
+                        lineHeight: 22,
+                      }}
+                    >
+                      {aiMessage}
+                    </Text>
+                  </View>
+                )}
+
+                {pendingEditRequest && editIntent?.needsClarification && (
+                  <View style={{ marginBottom: 24 }}>
+                    <Text
+                      style={{
+                        color: "#FFF",
+                        fontSize: 17,
+                        fontWeight: "800",
+                        marginBottom: 12,
+                      }}
+                    >
+                      {editIntent.question || "What should I clarify before applying it?"}
+                    </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                      {(editIntent.suggestions.length > 0
+                        ? editIntent.suggestions
+                        : EDIT_BACKGROUND_CHOICES.map((choice) => choice.label)
+                      ).map((suggestion) => (
+                        <Pressable
+                          key={suggestion}
+                          onPress={() => handleModifySpec(suggestion)}
+                          style={({ pressed }) => ({
+                            borderRadius: 999,
+                            paddingHorizontal: 14,
+                            paddingVertical: 10,
+                            backgroundColor: pressed
+                              ? "rgba(6,182,212,0.24)"
+                              : "rgba(255,255,255,0.08)",
+                            borderWidth: 1,
+                            borderColor: "rgba(255,255,255,0.14)",
+                          })}
+                        >
+                          <Text
+                            style={{
+                              color: "#FFF",
+                              fontSize: 13,
+                              fontWeight: "800",
+                            }}
+                          >
+                            {suggestion}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
                   </View>
                 )}
 
@@ -5202,13 +6174,13 @@ Features: ${gameSpec.features.join(", ")}`;
                         letterSpacing: 0.3,
                       }}
                     >
-                      Create
+                      {pendingEditRequest ? "Apply Edit" : "Create"}
                     </Text>
                   </LinearGradient>
                 </Pressable>
 
                 {/* AI Message */}
-                {aiMessage && !errorMsg && (
+                {aiMessage && !errorMsg && !pendingEditRequest && (
                   <View
                     style={{
                       backgroundColor: "rgba(6, 182, 212, 0.1)",
@@ -5301,7 +6273,9 @@ Features: ${gameSpec.features.join(", ")}`;
           <View
             style={{
               position: "absolute",
-              bottom: 0,
+              bottom: keyboardVisible
+                ? Math.max(keyboardHeight - insets.bottom, 0)
+                : 0,
               left: 0,
               right: 0,
               paddingHorizontal: 20,
@@ -5327,7 +6301,11 @@ Features: ${gameSpec.features.join(", ")}`;
                 ref={wishInputRef}
                 value={wishInput}
                 onChangeText={setWishInput}
-                placeholder="Tap to wish..."
+                placeholder={
+                  pendingEditRequest
+                    ? "Answer or add details..."
+                    : "Tap to wish..."
+                }
                 placeholderTextColor="#666"
                 multiline
                 style={{
@@ -5755,7 +6733,12 @@ Features: ${gameSpec.features.join(", ")}`;
                     multiline
                     maxLength={500}
                     value={prompt}
-                    onChangeText={setPrompt}
+                    onChangeText={(value) => {
+                      setPrompt(value);
+                      if (errorMsg) {
+                        setErrorMsg(null);
+                      }
+                    }}
                     textAlignVertical="top"
                     inputAccessoryViewID="gametok-done"
                   />
@@ -5811,39 +6794,71 @@ Features: ${gameSpec.features.join(", ")}`;
               </View>
             </Animated.View>
 
-            {pendingJobId && (
+            {pendingJobs.length > 0 && (
               <Animated.View entering={FadeInUp.delay(110).duration(360)}>
-                <Pressable
-                  style={styles.activeBuildCard}
-                  onPressIn={handleReturnToForge}
-                >
-                  <View style={styles.activeBuildStrip}>
-                    <View
-                      style={[
-                        styles.activeBuildStatusDot,
-                        (pendingBuildFailed || pendingBuildCanceled) && {
-                          backgroundColor: "#FF6B6B",
-                        },
-                      ]}
-                    />
-                    <Text style={styles.activeBuildStatusText}>
-                      {activeBuildStatusText}
+                <View style={styles.activeBuildQueue}>
+                  <View style={styles.activeBuildQueueHeader}>
+                    <Text style={styles.activeBuildQueueTitle}>
+                      {activePendingJobs.length > 1
+                        ? `${activePendingJobs.length} builds cooking`
+                        : "Build queue"}
                     </Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={14}
-                      color="rgba(255,255,255,0.48)"
-                    />
+                    <Text style={styles.activeBuildQueueMeta}>
+                      {pendingJobs.length > 1 ? "Tap one to inspect" : "Live"}
+                    </Text>
                   </View>
-                </Pressable>
+                  {pendingJobs.map((job) => {
+                    const isFocused = job.jobId === focusedPendingJob?.jobId;
+                    const isProblem =
+                      job.status === "failed" || job.status === "canceled";
+                    return (
+                      <Pressable
+                        key={job.jobId}
+                        style={[
+                          styles.activeBuildCard,
+                          isFocused && styles.activeBuildCardFocused,
+                        ]}
+                        onPressIn={() => handleOpenPendingJob(job)}
+                      >
+                        <View
+                          style={[
+                            styles.activeBuildStatusDot,
+                            isProblem && { backgroundColor: "#FF6B6B" },
+                          ]}
+                        />
+                        <View style={styles.activeBuildTextWrap}>
+                          <Text
+                            style={styles.activeBuildTitleCompact}
+                            numberOfLines={1}
+                          >
+                            {getPendingJobTitle(job)}
+                          </Text>
+                          <Text
+                            style={styles.activeBuildStatusText}
+                            numberOfLines={1}
+                          >
+                            {getPendingJobStatusText(job)}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={14}
+                          color="rgba(255,255,255,0.48)"
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </Animated.View>
             )}
 
-            {activeHtml &&
+            {(activeHtml || activeGameUrl) &&
               (() => {
-                const currentDraft = drafts.find((d) => d.id === activeDraftId);
-                const thumbnailSource = currentDraft?.thumbnail
-                  ? { uri: currentDraft.thumbnail }
+                const currentDraft = activeDraftFromList;
+                const thumbnailUri =
+                  activeDraftThumbnail || getDraftThumbnail(currentDraft);
+                const thumbnailSource = thumbnailUri
+                  ? { uri: thumbnailUri }
                   : GAMETOK_BG;
                 const displayTitle =
                   gameTitle || currentDraft?.title || "Untitled Game";
@@ -5926,11 +6941,17 @@ Features: ${gameSpec.features.join(", ")}`;
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                directionalLockEnabled
+                keyboardShouldPersistTaps="handled"
                 contentContainerStyle={styles.mediaRow}
               >
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => setShowCommunityImagesModal(true)}
+                  onPress={() =>
+                    runCreateAction(() =>
+                      setShowCommunityImagesModal(true),
+                    )
+                  }
                 >
                   <View
                     style={[
@@ -5945,7 +6966,9 @@ Features: ${gameSpec.features.join(", ")}`;
 
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => setShowVideosModal(true)}
+                  onPress={() =>
+                    runCreateAction(() => setShowVideosModal(true))
+                  }
                 >
                   <View
                     style={[
@@ -5960,10 +6983,12 @@ Features: ${gameSpec.features.join(", ")}`;
 
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => {
-                    setAudioTab("sfx");
-                    setShowAudioModal(true);
-                  }}
+                  onPress={() =>
+                    runCreateAction(() => {
+                      setAudioTab("sfx");
+                      setShowAudioModal(true);
+                    })
+                  }
                 >
                   <View
                     style={[
@@ -5982,10 +7007,12 @@ Features: ${gameSpec.features.join(", ")}`;
 
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => {
-                    setAudioTab("bgm");
-                    setShowAudioModal(true);
-                  }}
+                  onPress={() =>
+                    runCreateAction(() => {
+                      setAudioTab("bgm");
+                      setShowAudioModal(true);
+                    })
+                  }
                 >
                   <View
                     style={[
@@ -6004,7 +7031,9 @@ Features: ${gameSpec.features.join(", ")}`;
 
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => setShowPhotosModal(true)}
+                  onPress={() =>
+                    runCreateAction(() => setShowPhotosModal(true))
+                  }
                 >
                   <View
                     style={[
@@ -6019,7 +7048,9 @@ Features: ${gameSpec.features.join(", ")}`;
 
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => setShowImageModal(true)}
+                  onPress={() =>
+                    runCreateAction(() => setShowImageModal(true))
+                  }
                 >
                   <View
                     style={[
@@ -6038,7 +7069,9 @@ Features: ${gameSpec.features.join(", ")}`;
 
                 <Pressable
                   style={styles.mediaBtn}
-                  onPress={() => setShowFeaturesModal(true)}
+                  onPress={() =>
+                    runCreateAction(() => setShowFeaturesModal(true))
+                  }
                 >
                   <View
                     style={[
@@ -6073,10 +7106,29 @@ Features: ${gameSpec.features.join(", ")}`;
                     }}
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    scrollEnabled={false}
+                    scrollEnabled
+                    scrollEventThrottle={16}
                     contentContainerStyle={styles.ideasLane}
                     onTouchStart={() => {
                       ideasPauseUntilRef.current = Date.now() + 1200;
+                    }}
+                    onScrollBeginDrag={() => {
+                      // Pause the marquee while the user is actively dragging.
+                      ideasPauseUntilRef.current = Date.now() + 3_600_000;
+                    }}
+                    onScroll={(e) => {
+                      // While paused (user-driven), keep the marquee's offset in
+                      // sync so auto-scroll resumes from where the finger left it.
+                      if (Date.now() < ideasPauseUntilRef.current) {
+                        ideasOffsetRefs.current[rowIndex] =
+                          e.nativeEvent.contentOffset.x;
+                      }
+                    }}
+                    onScrollEndDrag={() => {
+                      ideasPauseUntilRef.current = Date.now() + 1500;
+                    }}
+                    onMomentumScrollEnd={() => {
+                      ideasPauseUntilRef.current = Date.now() + 1500;
                     }}
                     onContentSizeChange={(width) => {
                       ideasContentWidthRefs.current[rowIndex] = width;
@@ -6123,7 +7175,11 @@ Features: ${gameSpec.features.join(", ")}`;
               >
                 <Ionicons name="warning" size={16} color="#FF3B30" />
                 <Text style={styles.errorText}>{errorMsg}</Text>
-                <Pressable onPress={() => setErrorMsg(null)}>
+                <Pressable
+                  onPressIn={() => setErrorMsg(null)}
+                  hitSlop={12}
+                  style={styles.errorDismissBtn}
+                >
                   <Ionicons name="close-circle" size={18} color="#666" />
                 </Pressable>
               </Animated.View>
@@ -6178,9 +7234,14 @@ Features: ${gameSpec.features.join(", ")}`;
                     onPress={async () => {
                       try {
                         const res = (await ai.getDraft(draft.id)) as any;
-                        if (res?.draft?.html_payload) {
-                          setActiveHtml(res.draft.html_payload);
+                        if (res?.draft?.html_payload || res?.draft?.game_url) {
+                          setActiveHtml(res.draft.html_payload || null);
+                          setActiveGameUrl(res.draft.game_url || null);
                           setActiveDraftId(res.draft.id);
+                          setActiveDraftThumbnail(
+                            getDraftThumbnail(res.draft) ||
+                              getDraftThumbnail(draft),
+                          );
                           setGameTitle(res.draft.title || "Untitled Game");
                           setPhase("preview");
                         }
@@ -6340,6 +7401,14 @@ const styles = StyleSheet.create({
   },
   headerV2SideRight: {
     justifyContent: "flex-end",
+  },
+  refineExitButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerV2Center: {
     flex: 1,
@@ -6631,13 +7700,46 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 4,
   },
-  activeBuildCard: {
-    borderRadius: 999,
-    backgroundColor: "rgba(16,16,24,0.88)",
+  activeBuildQueue: {
+    borderRadius: 18,
+    backgroundColor: "rgba(12,12,18,0.9)",
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.16)",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    padding: 10,
+    gap: 8,
+    marginBottom: 8,
+  },
+  activeBuildQueueHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+  },
+  activeBuildQueueTitle: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  activeBuildQueueMeta: {
+    color: "rgba(255,255,255,0.46)",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  activeBuildCard: {
+    minHeight: 52,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  activeBuildCardFocused: {
+    backgroundColor: "rgba(168,85,247,0.12)",
+    borderColor: "rgba(192,132,252,0.28)",
   },
   activeBuildStrip: {
     flexDirection: "row",
@@ -6679,6 +7781,16 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: "#34C759",
+  },
+  activeBuildTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  activeBuildTitleCompact: {
+    color: "#FFF",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
   },
   activeBuildStatusText: {
     color: "#F8E8FF",
@@ -7248,6 +8360,7 @@ const styles = StyleSheet.create({
 
   mediaRow: {
     gap: 12,
+    paddingLeft: 2,
     paddingBottom: 14,
     paddingRight: 20,
   },
@@ -7382,6 +8495,14 @@ const styles = StyleSheet.create({
     color: "#FF6B6B",
     fontSize: 13,
     fontWeight: "600",
+  },
+  errorDismissBtn: {
+    width: 44,
+    height: 44,
+    marginVertical: -12,
+    marginRight: -10,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   // === FIXED BOTTOM BAR ===

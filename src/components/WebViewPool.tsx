@@ -1,5 +1,5 @@
-import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle, useEffect } from 'react';
+import { View, StyleSheet, Dimensions, AppState } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -192,6 +192,33 @@ export const WebViewPool = forwardRef<WebViewPoolHandle, WebViewPoolProps>(({ on
   const [pool, setPool] = useState<PooledWebView[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const webViewRefs = useRef<Map<string, React.RefObject<WebView | null>>>(new Map());
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        if (activeId) {
+          const viewRef = webViewRefs.current.get(activeId);
+          viewRef?.current?.injectJavaScript(UNMUTE_WEBVIEW_SCRIPT);
+        }
+      } else if (
+        appState.current === 'active' &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        webViewRefs.current.forEach(viewRef => {
+          viewRef.current?.injectJavaScript(MUTE_WEBVIEW_SCRIPT);
+        });
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [activeId]);
 
   const getOrCreateRef = (id: string): React.RefObject<WebView | null> => {
     if (!webViewRefs.current.has(id)) {

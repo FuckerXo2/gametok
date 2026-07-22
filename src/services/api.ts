@@ -4,6 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
 const CLIENT_ID_STORAGE_KEY = 'clientId';
 
+// Default per-request timeout. Without this, a fetch that never settles hangs
+// the caller forever (the inbox spinner never clearing was exactly this).
+// Long-running endpoints (AI generation, publish) pass their own larger value;
+// pass 0 to disable the timeout entirely.
+const DEFAULT_TIMEOUT_MS = 20000;
+
 const createClientId = () => `gtk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 
 const getClientId = async () => {
@@ -43,7 +49,7 @@ const headers = async () => {
 };
 
 // Generic request handler
-const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: number) => {
+const request = async (endpoint: string, options: RequestInit = {}, timeoutMs: number = DEFAULT_TIMEOUT_MS) => {
   // Use caller's signal if provided (for cancellation), otherwise create one for timeout
   const externalSignal = options.signal as AbortSignal | undefined;
   const controller = new AbortController();
@@ -77,7 +83,10 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: 
       data = JSON.parse(text.trim());
     } catch (e) {
       console.error('[API] Invalid JSON response:', text.substring(0, 200));
-      throw new Error('Server returned invalid response');
+      const error: any = new Error(response.ok ? 'Server returned invalid response' : `Request failed with status ${response.status}`);
+      error.status = response.status;
+      error.responseText = text;
+      throw error;
     }
 
     if (!response.ok) {
@@ -100,10 +109,13 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs?: 
 };
 
 const requestJsonIfAvailable = async (endpoint: string, options: RequestInit = {}) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
       headers: await headers(),
+      signal: controller.signal,
     });
 
     const text = await response.text();
@@ -124,6 +136,8 @@ const requestJsonIfAvailable = async (endpoint: string, options: RequestInit = {
     }
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 };
 
@@ -193,6 +207,23 @@ export const users = {
 
   follow: async (userId: string) => {
     return request(`/users/${userId}/follow`, { method: 'POST' });
+  },
+
+  acceptRequest: async (userId: string) => {
+    try {
+      return await request(`/users/${userId}/accept-request`, { method: 'POST' });
+    } catch (error: any) {
+      const missingEndpoint =
+        error?.status === 404 &&
+        typeof error?.responseText === 'string' &&
+        (error.responseText.includes('Cannot POST') || error.responseText.includes('<!DOCTYPE'));
+
+      if (missingEndpoint) {
+        return request(`/users/${userId}/follow`, { method: 'POST' });
+      }
+
+      throw error;
+    }
   },
 
   followers: async (userId: string) => {
@@ -648,6 +679,55 @@ export const ai = {
     }, 30000);
   },
 
+  interpretEdit: async (payload: {
+    instructions: string;
+    gameTitle?: string;
+    currentSummary?: string;
+    conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  }) => {
+    return request('/ai/interpret-edit', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, 25000);
+  },
+
+  // Apply an edit to an existing game: POST /ai/edit returns a jobId, then poll
+  // /ai/dream/status/:jobId (the same status endpoint, which surfaces edit progress).
+  editGame: (
+    draftId: string,
+    instructions: string,
+    attachments: Array<{ type: string; role?: string; url: string; instruction: string; label?: string }> = [],
+    options?: { onStatus?: (status: any) => void },
+  ) => {
+    const controller = new AbortController();
+    const promise = new Promise<any>(async (resolve, reject) => {
+      try {
+        const res = await request('/ai/edit', {
+          method: 'POST',
+          body: JSON.stringify({ draftId, instructions, attachments }),
+          signal: controller.signal,
+        }, 60000);
+        const jobId = res.jobId;
+        if (!jobId) { reject(new Error(res.error || 'Edit did not start')); return; }
+        let errs = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) { clearInterval(interval); reject(new Error('aborted')); return; }
+          try {
+            const status = await request(`/ai/dream/status/${jobId}`);
+            options?.onStatus?.(status);
+            if (status.status === 'complete') { clearInterval(interval); resolve(status); }
+            else if (status.status === 'error') { clearInterval(interval); reject(new Error(status.error || 'Edit failed')); }
+            errs = 0;
+          } catch (e: any) {
+            if (++errs >= 10) { clearInterval(interval); reject(new Error('Lost connection to the edit job.')); }
+          }
+        }, 2500);
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (e) { reject(e); }
+    });
+    return { promise, cancel: () => controller.abort() };
+  },
+
   dreamLabs: (
     prompt: string,
     attachments: any[] = [],
@@ -935,11 +1015,16 @@ export const ai = {
   getDraft: async (draftId: string) => {
     return request(`/ai/drafts/${draftId}`);
   },
+  // Remix a public published game -> returns a fresh draft owned by the current user.
+  remixGame: async (sourceId: string) => {
+    return request(`/ai/remix/${sourceId}`, { method: 'POST' });
+  },
   deleteDraft: async (draftId: string) => {
     return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
   },
   publish: async (draftId: string, title?: string, privacy?: string, html?: string) => {
-    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) });
+    // Publishing uploads the full game HTML — allow longer than the default.
+    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) }, 60000);
   },
   reclassifyPublished: async (draftId?: string, limit = 20) => {
     return request('/ai/reclassify-published', {

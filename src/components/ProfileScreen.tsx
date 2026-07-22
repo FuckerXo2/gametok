@@ -88,6 +88,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     tab: 'followers',
   });
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  // User tapped in the follow list, held until that modal has fully closed so
+  // we never present two native modals at once (iOS drops the second one).
+  const pendingProfileUserRef = useRef<any>(null);
   const lastFetchRef = useRef<number>(0);
 
   const username = user?.username || 'guest';
@@ -279,8 +282,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         username={username}
         initialTab={followModalConfig.tab}
         onUserPress={(profileUser) => {
+          pendingProfileUserRef.current = { ...profileUser, isFriend: false };
           setFollowModalConfig({ ...followModalConfig, visible: false });
-          setSelectedProfileUser({ ...profileUser, isFriend: false });
+        }}
+        onClosed={() => {
+          if (pendingProfileUserRef.current) {
+            setSelectedProfileUser(pendingProfileUserRef.current);
+            pendingProfileUserRef.current = null;
+          }
         }}
       />
 

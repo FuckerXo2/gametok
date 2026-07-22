@@ -70,8 +70,11 @@ interface NavigationContextType {
   triggerGameRestart: () => void;
   gameSkipCounter: { direction: 'next' | 'prev', count: number };
   triggerGameSkip: (direction: 'next' | 'prev') => void;
+  pendingDraftId: string | null;
+  setPendingDraftId: (id: string | null) => void;
+  activityRequestNonce: number;
 }
-const NavigationContext = createContext<NavigationContextType>({ 
+const NavigationContext = createContext<NavigationContextType>({
   activeTab: 'home', 
   setActiveTab: () => {}, 
   pendingChatUserId: null,
@@ -85,22 +88,37 @@ const NavigationContext = createContext<NavigationContextType>({
   gameRestartTrigger: 0,
   triggerGameRestart: () => {},
   gameSkipCounter: { direction: 'next', count: 0 },
-  triggerGameSkip: () => {}
+  triggerGameSkip: () => {},
+  pendingDraftId: null,
+  setPendingDraftId: () => {},
+  activityRequestNonce: 0
 });
 export const useNavigation = () => useContext(NavigationContext);
 
 type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
 
-const MainApp = ({ openCreateNonce = 0 }: { openCreateNonce?: number }) => {
+const MainApp = ({
+  openCreateNonce = 0,
+  notifChatUserId = null,
+  onNotifChatHandled,
+  notifActivityNonce = 0,
+}: {
+  openCreateNonce?: number;
+  notifChatUserId?: string | null;
+  onNotifChatHandled?: () => void;
+  notifActivityNonce?: number;
+}) => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
   const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
+  const [activityRequestNonce, setActivityRequestNonce] = useState(0);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
-  const [isGameDeckActive, setIsGameDeckActive] = useState(true);
+  const [isGameDeckActive, setIsGameDeckActive] = useState(false);
   const [isHudHidden, setIsHudHidden] = useState(false);
   const [gameRestartTrigger, setGameRestartTrigger] = useState(0);
   const [gameSkipCounter, setGameSkipCounter] = useState<{ direction: 'next' | 'prev', count: number }>({ direction: 'next', count: 0 });
+  const [pendingDraftId, setPendingDraftId] = useState<string | null>(null);
   const { isDark, colors } = useTheme();
 
   const handleTabPress = (tab: TabName) => {
@@ -142,6 +160,21 @@ const MainApp = ({ openCreateNonce = 0 }: { openCreateNonce?: number }) => {
     setActiveTab('create');
   }, [openCreateNonce]);
 
+  // Notification tap → open the Connect tab straight into the sender's DM.
+  useEffect(() => {
+    if (!notifChatUserId) return;
+    setActiveTab('connect');
+    setPendingChatUserId(notifChatUserId);
+    onNotifChatHandled?.();
+  }, [notifChatUserId]);
+
+  // Follow / social notification tap → open the Connect tab's Activity feed.
+  useEffect(() => {
+    if (!notifActivityNonce) return;
+    setActiveTab('connect');
+    setActivityRequestNonce((n) => n + 1);
+  }, [notifActivityNonce]);
+
   // Keep all screens mounted, just hide/show them
   return (
     <NavigationContext.Provider value={{ 
@@ -158,7 +191,10 @@ const MainApp = ({ openCreateNonce = 0 }: { openCreateNonce?: number }) => {
       gameRestartTrigger,
       triggerGameRestart,
       gameSkipCounter,
-      triggerGameSkip
+      triggerGameSkip,
+      pendingDraftId,
+      setPendingDraftId,
+      activityRequestNonce
     }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
@@ -186,9 +222,11 @@ const MainApp = ({ openCreateNonce = 0 }: { openCreateNonce?: number }) => {
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
       
       {/* Sliding Create Screen Modal - Overlays everything natively */}
-      <CreateScreen 
-        isActive={activeTab === 'create'} 
-        onClose={() => setActiveTab(previousTab)} 
+      <CreateScreen
+        isActive={activeTab === 'create'}
+        onClose={() => setActiveTab(previousTab)}
+        openDraftId={pendingDraftId}
+        onDraftOpened={() => setPendingDraftId(null)}
       />
       
     </NavigationContext.Provider>
@@ -200,6 +238,9 @@ const AppContent = () => {
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
   const [creationNotificationNonce, setCreationNotificationNonce] = useState(0);
+  // Notification deep-links handed down to MainApp (which owns tab state).
+  const [pendingChatNotifUserId, setPendingChatNotifUserId] = useState<string | null>(null);
+  const [activityNotifNonce, setActivityNotifNonce] = useState(0);
   const [showAuth, setShowAuth] = useState(false);
   const [startWithLogin, setStartWithLogin] = useState(false);
   const notificationListener = useRef<any>(null);
@@ -245,6 +286,22 @@ const AppContent = () => {
     };
   }, []);
 
+  // Route a tapped notification's payload to the right screen.
+  const handleNotificationData = (data: any) => {
+    if (!data) return;
+    if (data.type === 'game') {
+      setSharedGameId(data.gameId as string);
+    } else if (data.type === 'creation') {
+      setCreationNotificationNonce((value) => value + 1);
+    } else if (data.type === 'message') {
+      // Open the Connect tab straight into the DM with the sender.
+      if (data.userId) setPendingChatNotifUserId(String(data.userId));
+    } else if (data.type === 'social') {
+      // A follow / social event — open the Connect tab's Activity feed.
+      setActivityNotifNonce((value) => value + 1);
+    }
+  };
+
   // Setup notification handlers
   const setupNotifications = () => {
     // Handle notification received while app is open
@@ -252,23 +309,19 @@ const AppContent = () => {
       console.log('[Notifications] Received:', notification);
     });
 
-    // Handle notification tap
+    // Handle notification tap (app already running / backgrounded)
     responseListener.current = addNotificationResponseListener(response => {
       console.log('[Notifications] Tapped:', response);
-      const data = response.notification.request.content.data;
-
-      // Handle different notification types
-      if (data.type === 'game') {
-        setSharedGameId(data.gameId as string);
-      } else if (data.type === 'creation') {
-        setCreationNotificationNonce((value) => value + 1);
-      } else if (data.type === 'message') {
-        // Navigate to inbox
-        // You can add a callback here to switch tabs
-      } else if (data.type === 'social') {
-        // Navigate to profile or connect tab
-      }
+      handleNotificationData(response.notification.request.content.data);
     });
+
+    // Handle the tap that cold-started the app from a killed state — the
+    // listener above only fires for taps while the JS runtime is alive.
+    Notifications.getLastNotificationResponseAsync()
+      .then(response => {
+        if (response) handleNotificationData(response.notification.request.content.data);
+      })
+      .catch(e => console.log('[Notifications] getLastResponse error:', e));
   };
 
   // Removed automatic hiding of auth screen so OnboardingFlow can manage its own lifecycle
@@ -359,7 +412,12 @@ const AppContent = () => {
     }}>
       <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame, openSharedGame }}>
         <View style={{ flex: 1 }}>
-          <MainApp openCreateNonce={creationNotificationNonce} />
+          <MainApp
+            openCreateNonce={creationNotificationNonce}
+            notifChatUserId={pendingChatNotifUserId}
+            onNotifChatHandled={() => setPendingChatNotifUserId(null)}
+            notifActivityNonce={activityNotifNonce}
+          />
         </View>
       </DeepLinkContext.Provider>
     </AuthScreenContext.Provider>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Animated, PanResponder, StyleSheet, Dimensions, View, GestureResponderEvent, PanResponderGestureState } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -9,15 +9,28 @@ interface SlideRightModalProps {
     onClose: () => void;
     children: React.ReactNode;
     instant?: boolean;
+    // Fires after the exit animation completes and the native Modal has fully
+    // unmounted. Use this to chain into presenting another modal — presenting a
+    // new native Modal while this one is still dismissing makes the new one
+    // silently fail to appear on iOS.
+    onClosed?: () => void;
 }
 
-export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClose, children, instant = false }) => {
+export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClose, children, instant = false, onClosed }) => {
     const translateX = useRef(new Animated.Value(visible && instant ? 0 : SCREEN_WIDTH)).current;
     const backdropOpacity = useRef(new Animated.Value(visible && instant ? 1 : 0)).current;
     const isClosingRef = useRef(false);
+    const [shouldRender, setShouldRender] = useState(visible);
+
+    // Hold the latest onClosed in a ref so it isn't a dependency of the
+    // animation effect — an inline callback would otherwise restart the
+    // open/close animation on every parent render.
+    const onClosedRef = useRef(onClosed);
+    onClosedRef.current = onClosed;
 
     useEffect(() => {
         if (visible) {
+            setShouldRender(true);
             isClosingRef.current = false;
             if (instant) {
                 translateX.setValue(0);
@@ -38,8 +51,8 @@ export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClo
                     useNativeDriver: true,
                 }),
             ]).start();
-        } else if (!isClosingRef.current) {
-            // Animate out (only if not already closing from swipe)
+        } else if (shouldRender && !isClosingRef.current) {
+            // Animate out before unmounting.
             Animated.parallel([
                 Animated.timing(translateX, {
                     toValue: SCREEN_WIDTH,
@@ -51,11 +64,20 @@ export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClo
                     duration: 250,
                     useNativeDriver: true,
                 }),
-            ]).start();
+            ]).start(() => {
+                setShouldRender(false);
+                // Defer to the next frame so this modal's native unmount commits
+                // (and iOS finishes dismissing) before any modal chained off
+                // onClosed tries to present — React 19 batches the unmount with
+                // the chained open, and iOS silently drops a modal presented
+                // while another is still dismissing.
+                requestAnimationFrame(() => onClosedRef.current?.());
+            });
         }
-    }, [visible]);
+    }, [visible, shouldRender, instant, translateX, backdropOpacity]);
 
     const animateClose = () => {
+        if (isClosingRef.current) return;
         isClosingRef.current = true;
         Animated.parallel([
             Animated.timing(translateX, {
@@ -69,7 +91,11 @@ export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClo
                 useNativeDriver: true,
             }),
         ]).start(() => {
+            setShouldRender(false);
             onClose();
+            // See the effect above: defer the chained-open so this modal's
+            // native unmount commits first.
+            requestAnimationFrame(() => onClosedRef.current?.());
         });
     };
 
@@ -129,7 +155,7 @@ export const SlideRightModal: React.FC<SlideRightModalProps> = ({ visible, onClo
         })
     ).current;
 
-    if (!visible) return null;
+    if (!shouldRender) return null;
 
     return (
         <Modal visible={true} transparent animationType="none" onRequestClose={animateClose}>
