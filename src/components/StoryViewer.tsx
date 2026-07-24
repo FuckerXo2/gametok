@@ -204,7 +204,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
 
         {/* Header */}
         <View style={[styles.header, { top: insets.top + 24 }]}>
-          <Avatar uri={currentUser.user.avatar} size={36} />
+          <Avatar uri={currentUser.user.avatar} userId={currentUser.user.id} size={36} />
           <View style={styles.headerInfo}>
             <Text style={styles.username}>
               {currentUser.user.displayName || currentUser.user.username}

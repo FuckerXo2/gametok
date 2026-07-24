@@ -39,13 +39,13 @@ const USER_GAMES = [
 export const ProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'games' | 'liked' | 'saved'>('games');
+  const [activeTab, setActiveTab] = useState<'created' | 'played' | 'liked'>('created');
   const [savedGames, setSavedGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Load saved games when tab is active
   useEffect(() => {
-    if (activeTab === 'saved' && user?.id) {
+    if (activeTab === 'liked' && user?.id) {
       loadSavedGames();
     }
   }, [activeTab, user?.id]);
@@ -126,42 +126,50 @@ export const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Tabs */}
-        <View style={styles.tabs}>
+        <View style={styles.tabsContainer}>
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'games' && styles.tabActive]}
-            onPress={() => setActiveTab('games')}
+            style={styles.tab}
+            onPress={() => setActiveTab('created')}
           >
             <Ionicons 
-              name="game-controller" 
+              name="grid-outline" 
               size={22} 
-              color={activeTab === 'games' ? '#fff' : '#666'} 
+              color={activeTab === 'created' ? '#fff' : '#888'} 
             />
+            <Text style={[styles.tabText, activeTab === 'created' && styles.tabTextActive]}>CREATED</Text>
+            {activeTab === 'created' && <View style={styles.activeTabUnderline} />}
           </TouchableOpacity>
+
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'liked' && styles.tabActive]}
+            style={styles.tab}
+            onPress={() => setActiveTab('played')}
+          >
+            <Ionicons 
+              name="play-circle-outline" 
+              size={22} 
+              color={activeTab === 'played' ? '#fff' : '#888'} 
+            />
+            <Text style={[styles.tabText, activeTab === 'played' && styles.tabTextActive]}>PLAYED</Text>
+            {activeTab === 'played' && <View style={styles.activeTabUnderline} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.tab}
             onPress={() => setActiveTab('liked')}
           >
             <Ionicons 
-              name="heart" 
+              name="heart-outline" 
               size={22} 
-              color={activeTab === 'liked' ? '#fff' : '#666'} 
+              color={activeTab === 'liked' ? '#fff' : '#888'} 
             />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
-            onPress={() => setActiveTab('saved')}
-          >
-            <Ionicons 
-              name="bookmark" 
-              size={22} 
-              color={activeTab === 'saved' ? '#fff' : '#666'} 
-            />
+            <Text style={[styles.tabText, activeTab === 'liked' && styles.tabTextActive]}>LIKED</Text>
+            {activeTab === 'liked' && <View style={styles.activeTabUnderline} />}
           </TouchableOpacity>
         </View>
 
         {/* Games Grid */}
         <View style={styles.gamesGrid}>
-          {activeTab === 'saved' ? (
+          {activeTab === 'liked' ? (
             loading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#fff" />
@@ -309,20 +317,40 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 4,
   },
-  tabs: {
+  tabsContainer: {
     flexDirection: 'row',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#333',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#222',
+    backgroundColor: '#0a0a0a', // very dark background like the pill
+    paddingVertical: 8,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    justifyContent: 'center',
+    position: 'relative',
+    gap: 4,
   },
-  tabActive: {
-    borderBottomColor: '#fff',
+  tabText: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
+  activeTabUnderline: {
+    position: 'absolute',
+    bottom: -8, // sits right below the text at the edge of the container padding
+    width: 24,
+    height: 3,
+    backgroundColor: '#a855f7',
+    borderRadius: 2,
   },
   gamesGrid: {
     flexDirection: 'row',

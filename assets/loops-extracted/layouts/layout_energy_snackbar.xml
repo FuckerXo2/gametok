@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:gravity="center_vertical" android:orientation="horizontal" android:background="@drawable/bg_black_alpha30_24" android:paddingTop="5.0dp" android:paddingBottom="5.0dp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="5.0dp" android:paddingEnd="12.0dp"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <ImageView android:id="@id/iv_energy_icon" android:layout_width="26.0dp" android:layout_height="26.0dp" android:src="@drawable/ic_enougn_icon" android:contentDescription="@null" />
-    <TextView android:textSize="16.0sp" android:textStyle="bold" android:textColor="@android:color/white" android:id="@id/tv_energy_message" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginBottom="2.0dp" android:layout_marginStart="8.0dp" />
-</LinearLayout>

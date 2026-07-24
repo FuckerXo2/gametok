@@ -10,6 +10,7 @@ import {
   StatusBar,
   Platform,
   NativeModules,
+  AppState,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
@@ -142,6 +143,14 @@ export const GameCard: React.FC<GameCardProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [showMultiplayer, setShowMultiplayer] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
+  const [appState, setAppState] = useState(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      setAppState(nextAppState);
+    });
+    return () => subscription?.remove();
+  }, []);
 
   const heartScale = useRef(new Animated.Value(1)).current;
   const scrollModeOpacity = useRef(new Animated.Value(0)).current;
@@ -164,7 +173,8 @@ export const GameCard: React.FC<GameCardProps> = ({
 
   // Pause/mute when not active or preloading
   useEffect(() => {
-    if (!isActive) {
+    const isAppActive = appState === 'active';
+    if (!isActive || !isAppActive) {
       // Aggressively mute everything for non-active games
       webViewRef.current?.injectJavaScript(`
         // Try standard pause functions
@@ -186,25 +196,12 @@ export const GameCard: React.FC<GameCardProps> = ({
           }
         }
         
-        // Freeze animation frames
-        if (!window._gametokPaused) {
-          window._gametokPaused = true;
-          window._originalRAF = window.requestAnimationFrame;
-          window.requestAnimationFrame = function() { return 0; };
-        }
-        
         // Set global mute flag
         window._gametokMuted = true;
         true;
       `);
-    } else if (isActive && !isPreloading) {
+    } else if (isActive && isAppActive && !isPreloading) {
       webViewRef.current?.injectJavaScript(`
-        // Restore animation frames
-        if (window._gametokPaused && window._originalRAF) {
-          window.requestAnimationFrame = window._originalRAF;
-          window._gametokPaused = false;
-        }
-        
         // Resume AudioContext
         if (window._audioContexts) {
           window._audioContexts.forEach(ctx => ctx.resume());
@@ -219,7 +216,7 @@ export const GameCard: React.FC<GameCardProps> = ({
         true;
       `);
     }
-  }, [isActive, isPreloading]);
+  }, [isActive, isPreloading, appState]);
 
   const handleMessage = useCallback((event: any) => {
     try {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,162 +8,40 @@ import {
   ActivityIndicator,
   RefreshControl,
   Pressable,
-  Modal,
   TextInput,
   FlatList,
-  Image,
-  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
-import Animated, { FadeInUp, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { CustomImage as Image } from './CustomImage';
+import Animated, { FadeInUp, FadeInRight, useSharedValue, useAnimatedStyle, withSpring, withDelay } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { WebView } from 'react-native-webview';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { useAuthScreen } from '../../App';
+import { useAuthScreen, useNavigation, useDeepLink } from '../../App';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
-import { multiplayer, users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
+import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi, ai as aiApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
-import { AnimatedButton } from './AnimatedButton';
-import { GameLoadingScreen } from './GameLoadingScreen';
 import * as ImagePicker from 'expo-image-picker';
-import { getGameUrl, R2_BASE_URL, startGameDownload, subscribeToProgress, DownloadProgress } from '../services/gameDownloader';
+import { resolveGameThumbnail } from '../utils/thumbnails';
+const BRAND_PURPLE = '#A855F7';
 
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const resolveSharedGameThumbnail = (thumbnail?: string | null, gameId?: string) => {
+  return resolveGameThumbnail(thumbnail, gameId);
+};
 
-// Script to hide Godot/OpenPigeon's built-in loading screen
-const GODOT_LOADER_HIDE_SCRIPT = `
-(function() {
-  if (window._godotLoaderHidden) return;
-  window._godotLoaderHidden = true;
-  
-  const hideLoaders = () => {
-    // Godot-specific loading elements
-    const selectors = [
-      '#status', '#status-progress', '#status-progress-inner', '#status-indeterminate',
-      '#status-notice', '.godot-loader', '.godot-splash', '[class*="godot-"]',
-      '.loading-screen', '.splash-screen', '#loading', '#splash',
-      '.progress-bar', '.loading-bar', '.loader', '.preloader',
-      '[id*="loading"]', '[id*="splash"]', '[class*="loading"]', '[class*="splash"]',
-    ];
-    
-    selectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;';
-      });
-    });
-    
-    // Also hide any element with "loading" or "progress" in its text
-    document.querySelectorAll('div, span, p').forEach(el => {
-      const text = el.textContent?.toLowerCase() || '';
-      if ((text.includes('loading') || text.includes('progress')) && el.children.length === 0) {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;';
-      }
-    });
-  };
-  
-  // Inject CSS to hide loaders
-  const style = document.createElement('style');
-  style.textContent = \`
-    #status, #status-progress, #status-progress-inner, #status-indeterminate,
-    #status-notice, .godot-loader, .godot-splash, .loading-screen, .splash-screen,
-    #loading, #splash, .progress-bar, .loading-bar, .loader, .preloader,
-    [id*="loading"], [id*="splash"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-    html, body {
-      background: #000 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      overflow: hidden !important;
-    }
-    canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-    }
-  \`;
-  document.head.appendChild(style);
-  
-  // Run immediately and repeatedly
-  hideLoaders();
-  setInterval(hideLoaders, 100);
-  setTimeout(hideLoaders, 0);
-  setTimeout(hideLoaders, 50);
-  setTimeout(hideLoaders, 200);
-  setTimeout(hideLoaders, 500);
-  setTimeout(hideLoaders, 1000);
-  setTimeout(hideLoaders, 2000);
-})();
-true;
-`;
-
-// Script to detect when game is actually ready (canvas rendering)
-const GAME_READY_SCRIPT = `
-(function() {
-  if (window._gameReadyActive) return;
-  window._gameReadyActive = true;
-  
-  let gameReady = false;
-  const startTime = Date.now();
-  
-  const notifyReady = () => {
-    if (gameReady) return;
-    // Minimum 2 seconds to let game initialize
-    if (Date.now() - startTime < 2000) {
-      setTimeout(notifyReady, 2000 - (Date.now() - startTime));
-      return;
-    }
-    gameReady = true;
-    try {
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'GAME_READY' }));
-    } catch(e) {}
-  };
-  
-  // Check for WebGL canvas activity
-  const checkCanvas = () => {
-    const canvases = document.querySelectorAll('canvas');
-    for (const canvas of canvases) {
-      if (canvas.width > 100 && canvas.height > 100) {
-        const ctx = canvas.getContext('webgl') || canvas.getContext('webgl2');
-        if (ctx) {
-          setTimeout(notifyReady, 1500);
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-  
-  // Poll for canvas
-  const interval = setInterval(() => {
-    if (checkCanvas() || gameReady) {
-      clearInterval(interval);
-    }
-  }, 200);
-  
-  // Fallback: mark ready after 8 seconds max
-  setTimeout(() => {
-    if (!gameReady) notifyReady();
-  }, 8000);
-})();
-true;
-`;
-
-type TabName = 'play' | 'messages';
+type InboxLane = 'chats' | 'requests' | 'activity';
+type InboxMode = 'messages' | 'activity';
 
 interface Conversation {
   id: string;
@@ -174,9 +52,18 @@ interface Conversation {
     avatar?: string;
   };
   lastMessage?: {
+    id: string;
     text: string;
     createdAt: string;
+    isFromMe: boolean;
     isRead: boolean;
+    isUnread: boolean;
+    gameShare?: {
+      id: string;
+      name: string;
+      thumbnail?: string;
+      color?: string;
+    } | null;
   };
   streak: number;
 }
@@ -187,6 +74,7 @@ interface UserItem {
   displayName?: string;
   avatar?: string;
   isFollowing?: boolean;
+  isMutual?: boolean;
 }
 
 interface ActivityItem {
@@ -199,82 +87,97 @@ interface ActivityItem {
   createdAt: string;
 }
 
-// Animated Tab Button Component
-const TabButton: React.FC<{
-  label: string;
-  icon: string;
-  isActive: boolean;
-  onPress: () => void;
-}> = ({ label, icon, isActive, onPress }) => {
-  const scale = useSharedValue(1);
-  const { colors } = useTheme();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.95, { damping: 12, stiffness: 200 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 10, stiffness: 250 });
-  };
-
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
-
-  return (
-    <Animated.View style={[styles.tabButton, animatedStyle]}>
-      <Pressable
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handlePress}
-        style={[
-          styles.tabButtonInner,
-          {
-            backgroundColor: isActive ? LoopsColors.color1 : colors.surface,
-          },
-        ]}
-      >
-        <Ionicons
-          name={icon as any}
-          size={20}
-          color={isActive ? LoopsColors.white : colors.textSecondary}
-        />
-        <Text
-          style={[
-            styles.tabButtonText,
-            {
-              color: isActive ? LoopsColors.white : colors.textSecondary,
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </Pressable>
-    </Animated.View>
-  );
+// Relative time label for a chat row. Module-scope + pure so it stays a
+// stable reference (keeps ChatRow's memoization intact).
+const formatChatTime = (dateStr: string) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(diff / 86400000)}d`;
 };
 
+// Memoized conversation row. The inbox re-renders on every socket presence /
+// typing event; without memo that re-reconciles the whole (non-virtualized)
+// chat list each time — which is what made the inbox hang. With a boolean
+// `isOnline` prop + a stable `onOpen`, only rows that actually changed re-render.
+type ChatRowProps = {
+  chat: Conversation;
+  isOnline: boolean;
+  animateEntry: boolean;
+  entryDelay: number;
+  colors: any;
+  onOpen: (chat: Conversation) => void;
+};
+const ChatRow = React.memo(function ChatRow({ chat, isOnline, animateEntry, entryDelay, colors, onOpen }: ChatRowProps) {
+  const isUnread = !!chat.lastMessage?.isUnread;
+  return (
+    <Animated.View entering={animateEntry ? FadeInRight.delay(entryDelay).springify().damping(18) : undefined}>
+      <TouchableOpacity style={styles.chatItem} onPress={() => onOpen(chat)}>
+        <View>
+          <Avatar uri={chat.user.avatar} userId={chat.user.id} size={52} />
+          {isOnline && <View style={[styles.onlineDot, { borderColor: colors.background }]} />}
+        </View>
+        <View style={styles.chatContent}>
+          <View style={styles.chatHeader}>
+            <Text style={[styles.chatUsername, { color: colors.text, fontWeight: isUnread ? '700' : '600' }]}>
+              {chat.user.displayName}
+            </Text>
+            {chat.streak > 0 && <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>}
+          </View>
+          <Text
+            style={[
+              styles.chatPreview,
+              { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' },
+            ]}
+            numberOfLines={1}
+          >
+            {chat.lastMessage?.text || 'Start chatting'}
+          </Text>
+        </View>
+        <View style={styles.chatMeta}>
+          {chat.lastMessage && (
+            <Text style={[styles.chatTime, { color: isUnread ? colors.text : colors.textSecondary, fontWeight: isUnread ? '600' : '400' }]}>
+              {formatChatTime(chat.lastMessage.createdAt)}
+            </Text>
+          )}
+          {isUnread && <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />}
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
+
 // Messages Tab
-const MessagesTab: React.FC = () => {
+const MessagesTab: React.FC<{
+  initialConversation?: Conversation | null;
+  mode?: InboxMode;
+  closeOnChatBack?: boolean;
+  onClose?: () => void;
+}> = ({ initialConversation = null, mode = 'messages', closeOnChatBack = false, onClose }) => {
   const { colors } = useTheme();
   const { user } = useAuth();
-  const { socket, onlineUsers } = useSocket();
+  const { chatSocket, onlineUsers, typingUsers, joinConversation, leaveConversation, sendTyping, stopTyping } = useSocket();
+  const { openSharedGame } = useDeepLink();
+  const { setActiveTab, setPendingDraftId } = useNavigation();
   const insets = useSafeAreaInsets();
+  const [remixingGameId, setRemixingGameId] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<UserItem[]>([]);
+  const [acceptingRequestIds, setAcceptingRequestIds] = useState<Set<string>>(new Set());
   const [storyUsers, setStoryUsers] = useState<any[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<UserItem[]>([]);
+  const [activeLane, setActiveLane] = useState<InboxLane>(mode === 'activity' ? 'activity' : 'chats');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Chat modal state
-  const [selectedChat, setSelectedChat] = useState<Conversation | null>(null);
+  const [selectedChat, setSelectedChat] = useState<Conversation | null>(initialConversation);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
@@ -296,20 +199,34 @@ const MessagesTab: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [convRes, activityRes, storiesRes, followingRes] = await Promise.all([
-        messagesApi.getConversations().catch(() => ({ conversations: [] })),
-        feed.activity(30).catch(() => ({ activity: [] })),
-        storiesApi.list().catch(() => ({ stories: [] })),
-        users.following(user?.id || '').catch(() => []),
+      // Guard against a request that never settles (no fetch timeout upstream) —
+      // without this the whole inbox is stuck on the spinner forever. Race the
+      // load against a timeout so `loading` always clears; whatever resolved by
+      // then is used, the rest falls back to empty.
+      const results = await Promise.race([
+        Promise.all([
+          messagesApi.getConversations().catch(() => ({ conversations: [] })),
+          feed.activity(30).catch(() => ({ activity: [] })),
+          storiesApi.list().catch(() => ({ stories: [] })),
+          users.following(user?.id || '').catch(() => []),
+          users.pendingRequests(user?.id || '').catch(() => []),
+        ]),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
       ]);
 
-      setConversations(convRes.conversations || []);
-      setActivity(activityRes.activity || []);
-      setStoryUsers(storiesRes.stories || []);
+      if (results) {
+        const [convRes, activityRes, storiesRes, followingRes, requestsRes] = results;
+        setConversations(Array.isArray(convRes.conversations) ? convRes.conversations : []);
+        setActivity(Array.isArray(activityRes.activity) ? activityRes.activity : []);
+        setStoryUsers(Array.isArray(storiesRes.stories) ? storiesRes.stories : []);
 
-      // Get suggested users from following
-      const friends = Array.isArray(followingRes) ? followingRes : [];
-      setSuggestedUsers(friends.slice(0, 6));
+        const friends = Array.isArray(followingRes) ? followingRes : [];
+        const requests = Array.isArray(requestsRes) ? requestsRes.filter((request) => !request.isMutual) : [];
+        setSuggestedUsers(friends.slice(0, 6));
+        setPendingRequests(requests);
+      } else {
+        console.warn('[Connect] inbox load timed out; showing what we have');
+      }
     } catch (error) {
       console.error('Load messages data error:', error);
     } finally {
@@ -317,32 +234,82 @@ const MessagesTab: React.FC = () => {
     }
   }, [user?.id]);
 
+  // Lightweight, debounced refresh of just the conversation previews — used on
+  // every incoming socket message instead of reloading all 5 endpoints.
+  const convRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleConversationRefresh = useCallback(() => {
+    if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
+    convRefreshTimer.current = setTimeout(async () => {
+      try {
+        const res = await messagesApi.getConversations();
+        setConversations(Array.isArray(res.conversations) ? res.conversations : []);
+      } catch (e) {
+        console.warn('[Connect] conversation refresh failed', e);
+      }
+    }, 600);
+  }, []);
+  useEffect(() => () => {
+    if (convRefreshTimer.current) clearTimeout(convRefreshTimer.current);
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Socket.io messaging listener
   useEffect(() => {
-    if (!socket) return;
+    setActiveLane(mode === 'activity' ? 'activity' : 'chats');
+  }, [mode]);
 
-    const handleReceive = (msg: any) => {
-      if (selectedChat && selectedChat.user.id === msg.senderId) {
-        setChatMessages(prev => [...prev, {
-          id: msg.id,
-          text: msg.text,
-          createdAt: msg.createdAt,
-          isMe: false,
-          gameShare: msg.gameId ? { id: msg.gameId } : null
-        }]);
+  // Socket.io messaging listener - real-time messages
+  useEffect(() => {
+    if (!chatSocket) return;
+
+    const handleNewMessage = ({ conversationId, message }: any) => {
+      // If we're in this conversation, add the message — but guard against
+      // duplicates (our own optimistic add + the server echoing it back).
+      if (selectedChat && (selectedChat.id === conversationId || selectedChat.user.id === message.senderId)) {
+        setChatMessages(prev => {
+          if (prev.some(m => m.id === message.id)) return prev;
+          return [...prev, {
+            id: message.id,
+            text: message.text,
+            createdAt: message.createdAt,
+            isMe: message.senderId === user?.id,
+            isRead: false,
+            gameShare: message.gameShare || null
+          }];
+        });
       }
-      loadData();
+      // Refresh just the conversation previews (debounced), not all 5 endpoints.
+      scheduleConversationRefresh();
     };
 
-    socket.on('chat:receive', handleReceive);
-    return () => {
-      socket.off('chat:receive', handleReceive);
+    const handleMessagesRead = ({ conversationId, messageIds }: any) => {
+      if (selectedChat && selectedChat.id === conversationId) {
+        setChatMessages(prev => prev.map(msg => 
+          messageIds.includes(msg.id) ? { ...msg, isRead: true } : msg
+        ));
+      }
     };
-  }, [socket, selectedChat, loadData]);
+
+    chatSocket.on('chat:new_message', handleNewMessage);
+    chatSocket.on('chat:messages_read', handleMessagesRead);
+
+    return () => {
+      chatSocket.off('chat:new_message', handleNewMessage);
+      chatSocket.off('chat:messages_read', handleMessagesRead);
+    };
+  }, [chatSocket, selectedChat, user?.id, scheduleConversationRefresh]);
+
+  // Join/leave conversation room when chat opens/closes
+  useEffect(() => {
+    if (selectedChat && chatSocket) {
+      joinConversation(selectedChat.id);
+      return () => {
+        leaveConversation(selectedChat.id);
+      };
+    }
+  }, [selectedChat, chatSocket, joinConversation, leaveConversation]);
 
   // Search effect
   useEffect(() => {
@@ -355,7 +322,10 @@ const MessagesTab: React.FC = () => {
       try {
         const data = await users.search(searchQuery);
         setSearchResults(data.users || []);
-      } catch (e) { }
+      } catch (e) {
+        console.warn('[Connect] user search failed', e);
+        setSearchResults([]);
+      }
       setSearching(false);
     }, 300);
     return () => clearTimeout(timeout);
@@ -373,37 +343,147 @@ const MessagesTab: React.FC = () => {
     try {
       const data = await messagesApi.getConversation(conversation.user.id);
       setChatMessages(data.messages || []);
-    } catch (e) { }
+    } catch (e) {
+      console.warn('[Connect] open chat failed', e);
+    }
     setLoadingChat(false);
   };
+
+  // Stable reference for the memoized ChatRow (openChat is recreated each render).
+  const openChatRef = useRef(openChat);
+  openChatRef.current = openChat;
+  const handleOpenChat = useCallback((c: Conversation) => openChatRef.current(c), []);
+
+  // Start (or resume) a DM with a user we may not have a conversation with yet —
+  // used by the "new chat" / search flow. The endpoint creates the conversation
+  // if needed and returns it fully-formed.
+  const openChatWithUser = async (person: UserItem) => {
+    try {
+      const data = await messagesApi.getConversation(person.id);
+      const conv = data?.conversation;
+      openChat({
+        id: conv?.id ?? person.id,
+        user: {
+          id: person.id,
+          username: person.username,
+          displayName: person.displayName || conv?.user?.display_name || conv?.user?.displayName,
+          avatar: person.avatar ?? conv?.user?.avatar,
+        },
+        streak: conv?.streak ?? 0,
+      });
+    } catch (e) {
+      console.warn('[Connect] start chat failed', e);
+    }
+  };
+
+  // Message list is rendered inverted, so reverse once here instead of
+  // rebuilding the array for every row (that was an O(n²) hang on long chats).
+  const reversedMessages = useMemo(() => [...chatMessages].reverse(), [chatMessages]);
+
+  // Play a game shared inside a DM — close the inbox, jump to the feed, and
+  // hand the game id to the player via the shared-game deep link.
+  const handlePlayShared = (gameId?: string) => {
+    if (!gameId) return;
+    onClose?.();
+    setActiveTab('home');
+    openSharedGame(gameId);
+  };
+
+  // Remix a shared game: resolve its AI source id from the game record, kick off
+  // a remix draft, then drop the user straight into the create/edit flow.
+  const handleRemixShared = async (gameId?: string) => {
+    if (!gameId || remixingGameId) return;
+    setRemixingGameId(gameId);
+    try {
+      const detail = await gamesApi.get(gameId);
+      const game = detail?.game || detail;
+      const embed: string | undefined = game?.embedUrl || game?.embed_url;
+      const sourceId = embed?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+      if (!sourceId) {
+        Alert.alert('Remix unavailable', "This game can't be remixed.");
+        return;
+      }
+      const res = await aiApi.remixGame(sourceId);
+      if (res?.draftId) {
+        onClose?.();
+        setPendingDraftId(res.draftId);
+        setActiveTab('create');
+      } else {
+        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
+      }
+    } catch (e: any) {
+      Alert.alert('Remix failed', e?.message || String(e));
+    } finally {
+      setRemixingGameId(null);
+    }
+  };
+
+  const closeChat = () => {
+    if (closeOnChatBack && selectedChat) {
+      onClose?.();
+      return;
+    }
+    setSelectedChat(null);
+  };
+
+  useEffect(() => {
+    if (!initialConversation) return;
+    openChat(initialConversation);
+  }, [initialConversation?.id]);
 
   const sendMessage = async () => {
     if (!messageText.trim() || !selectedChat) return;
     const text = messageText.trim();
     setMessageText('');
+    
+    // Stop typing indicator when sending
+    stopTyping(selectedChat.id);
+    
     try {
       const data = await messagesApi.send({ recipientId: selectedChat.user.id, text });
-
-      if (socket && data.message) {
-        socket.emit('chat:message', {
-          to: selectedChat.user.id,
-          text: data.message.text,
-          id: data.message.id,
-          createdAt: data.message.createdAt,
-          gameId: data.message.gameShare?.id || null
-        });
-      }
-
-      setChatMessages(prev => [...prev, data.message]);
-      loadData();
+      setChatMessages(prev => (prev.some(m => m.id === data.message?.id) ? prev : [...prev, data.message]));
+      scheduleConversationRefresh();
     } catch (e) {
       setMessageText(text);
+    }
+  };
+
+  // Handle typing in the input
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    if (selectedChat && text.length > 0) {
+      sendTyping(selectedChat.id);
+    } else if (selectedChat) {
+      stopTyping(selectedChat.id);
     }
   };
 
   const openUserProfile = (userItem: UserItem) => {
     setSelectedUser(userItem);
     setShowUserProfile(true);
+  };
+
+  const handleRequestAction = async (person: UserItem) => {
+    if (acceptingRequestIds.has(person.id)) return;
+    setAcceptingRequestIds((prev) => new Set([...prev, person.id]));
+    try {
+      if (!person.isMutual) {
+        await users.acceptRequest(person.id);
+      }
+      setPendingRequests((prev) => prev.filter((item) => item.id !== person.id));
+      const existingConvo = conversations.find((c) => c.user.id === person.id);
+      if (existingConvo) {
+        openChat(existingConvo);
+      }
+    } catch (e) {
+      console.log('Request action error:', e);
+    } finally {
+      setAcceptingRequestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(person.id);
+        return next;
+      });
+    }
   };
 
   const createStory = async () => {
@@ -443,13 +523,44 @@ const MessagesTab: React.FC = () => {
     return `${Math.floor(diff / 86400000)}d`;
   };
 
-  if (loading) {
+  const getActivityCopy = (item: ActivityItem) => {
+    const actor = item.user.displayName || item.user.username;
+    switch (item.type) {
+      case 'follow':
+        return `${actor} followed you`;
+      case 'like':
+        return item.game?.name ? `${actor} liked ${item.game.name}` : `${actor} liked your game`;
+      case 'comment':
+        return item.text || `${actor} left a comment`;
+      case 'score':
+        return item.score != null && item.game?.name
+          ? `${actor} scored ${item.score} on ${item.game.name}`
+          : `${actor} posted a new score`;
+      case 'playing':
+        return item.game?.name ? `${actor} is playing ${item.game.name}` : `${actor} is playing right now`;
+      default:
+        return `${actor} did something new`;
+    }
+  };
+
+  // Only block on the list load when there's no chat already open. A direct
+  // chat (opened from a conversation tap or notification) must render its own
+  // modal immediately instead of waiting behind the inbox list's 5 fetches.
+  if (loading && !selectedChat) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator color={LoopsColors.color1} size="large" />
       </View>
     );
   }
+
+  const inboxLanes = mode === 'activity'
+    ? [{ key: 'activity' as InboxLane, label: 'Activity', count: activity.length }]
+    : [
+        { key: 'chats' as InboxLane, label: 'Chats', count: conversations.length },
+        { key: 'requests' as InboxLane, label: 'Requests', count: pendingRequests.length },
+      ];
+  const showLaneSwitcher = inboxLanes.length > 1;
 
   return (
     <>
@@ -465,169 +576,216 @@ const MessagesTab: React.FC = () => {
           />
         }
       >
-        {/* Search Bar */}
-        <TouchableOpacity
-          style={[styles.searchBar, { backgroundColor: colors.surface }]}
-          onPress={() => setShowSearch(true)}
-        >
-          <Ionicons name="search" size={18} color={colors.textSecondary} />
-          <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Find people</Text>
-        </TouchableOpacity>
-
-        {/* Stories Row */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.storiesRow}
-        >
-          {/* Add Story */}
-          <TouchableOpacity style={styles.storyItem} onPress={createStory} disabled={creatingStory}>
-            <View style={[styles.addStoryCircle, { backgroundColor: colors.surface }]}>
-              {creatingStory ? (
-                <ActivityIndicator size="small" color={LoopsColors.color1} />
-              ) : (
-                <Ionicons name="add" size={28} color={LoopsColors.color1} />
-              )}
-            </View>
-            <Text style={[styles.storyUsername, { color: colors.textSecondary }]}>Add story</Text>
-          </TouchableOpacity>
-
-          {/* Real stories */}
-          {storyUsers.map((storyUser, index) => (
+        {mode === 'messages' ? (
+          <Animated.View entering={FadeInRight.delay(50).springify().damping(18)}>
             <TouchableOpacity
-              key={storyUser.user.id}
-              style={styles.storyItem}
-              onPress={() => openStory(index)}
+              style={[styles.searchBar, { backgroundColor: colors.surface }]}
+              onPress={() => setShowSearch(true)}
             >
-              <LinearGradient
-                colors={storyUser.hasUnviewed ? ['#f472b6', '#a855f7', '#6366f1'] : ['#666', '#444']}
-                style={styles.storyRing}
-              >
-                <View style={[styles.storyAvatarContainer, { backgroundColor: colors.background }]}>
-                  <Avatar uri={storyUser.user.avatar} size={56} />
-                </View>
-              </LinearGradient>
-              <Text style={[styles.storyUsername, { color: colors.text }]} numberOfLines={1}>
-                {storyUser.user.username}
-              </Text>
+              <Ionicons name="search" size={18} color={colors.textSecondary} />
+              <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search people and chats</Text>
             </TouchableOpacity>
-          ))}
+          </Animated.View>
+        ) : null}
 
-          {/* Fallback: suggested users if no stories */}
-          {storyUsers.length === 0 && suggestedUsers.map((person) => (
-            <TouchableOpacity key={person.id} style={styles.storyItem} onPress={() => openUserProfile(person)}>
-              <View style={[styles.noStoryRing, { borderColor: colors.border }]}>
-                <Avatar uri={person.avatar} size={56} />
-              </View>
-              <Text style={[styles.storyUsername, { color: colors.textSecondary }]} numberOfLines={1}>
-                {person.username}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Fixed Sections */}
-        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
-          <View style={[styles.inboxSectionIcon, { backgroundColor: '#10b981' }]}>
-            <Ionicons name="people" size={22} color="#fff" />
-          </View>
-          <View style={styles.inboxSectionContent}>
-            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>New followers</Text>
-            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-              {activity.filter(a => a.type === 'follow').length > 0
-                ? `${activity.filter(a => a.type === 'follow')[0]?.user?.username || 'Someone'} started following you`
-                : 'See your new followers here'}
-            </Text>
-          </View>
-          {activity.filter(a => a.type === 'follow').length > 0 && (
-            <View style={styles.inboxBadge}>
-              <Text style={styles.inboxBadgeText}>{activity.filter(a => a.type === 'follow').length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
-          <View style={[styles.inboxSectionIcon, { backgroundColor: '#ec4899' }]}>
-            <Ionicons name="heart" size={22} color="#fff" />
-          </View>
-          <View style={styles.inboxSectionContent}>
-            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>Activity</Text>
-            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-              {activity.filter(a => a.type === 'like' || a.type === 'comment').length > 0
-                ? `${activity.filter(a => a.type === 'like' || a.type === 'comment')[0]?.user?.username || 'Someone'} liked your content`
-                : 'See notifications here'}
-            </Text>
-          </View>
-          {activity.filter(a => a.type === 'like' || a.type === 'comment').length > 0 && (
-            <View style={styles.inboxBadge}>
-              <Text style={styles.inboxBadgeText}>{activity.filter(a => a.type === 'like' || a.type === 'comment').length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.inboxSection, { borderBottomColor: colors.border }]}>
-          <View style={[styles.inboxSectionIcon, { backgroundColor: '#6366f1' }]}>
-            <Ionicons name="notifications" size={22} color="#fff" />
-          </View>
-          <View style={styles.inboxSectionContent}>
-            <Text style={[styles.inboxSectionTitle, { color: colors.text }]}>System notifications</Text>
-            <Text style={[styles.inboxSectionSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-              Account updates and announcements
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Message Threads */}
-        {conversations.length > 0 && (
-          <View style={{ marginTop: 8 }}>
-            {conversations.map((chat) => (
-              <TouchableOpacity
-                key={chat.id}
-                style={[styles.chatItem, { borderBottomColor: colors.border }]}
-                onPress={() => openChat(chat)}
-              >
-                <View>
-                  <Avatar uri={chat.user.avatar} size={52} />
-                  {onlineUsers.includes(chat.user.id) && (
-                    <View style={[styles.onlineDot, { borderColor: colors.background }]} />
-                  )}
-                </View>
-                <View style={styles.chatContent}>
-                  <View style={styles.chatHeader}>
-                    <Text style={[styles.chatUsername, { color: colors.text }]}>
-                      {chat.user.displayName || chat.user.username}
+        {showLaneSwitcher ? (
+          <Animated.View entering={FadeInRight.delay(100).springify().damping(18)} style={styles.inboxLaneWrap}>
+            <View style={[styles.inboxLaneBar, { backgroundColor: colors.surface }]}>
+              {inboxLanes.map((lane) => {
+                const active = activeLane === lane.key;
+                return (
+                  <TouchableOpacity
+                    key={lane.key}
+                    style={[
+                      styles.inboxLanePill,
+                      active && { backgroundColor: LoopsColors.color1 },
+                    ]}
+                    onPress={() => setActiveLane(lane.key)}
+                  >
+                    <Text style={[styles.inboxLaneText, { color: active ? '#fff' : colors.textSecondary }]}>
+                      {lane.label}
                     </Text>
-                    {chat.streak > 0 && (
-                      <Text style={styles.streakBadge}>🔥 {chat.streak}</Text>
+                    {lane.count > 0 && (
+                      <View style={[styles.inboxLaneBadge, { backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'rgba(168,85,247,0.18)' }]}>
+                        <Text style={[styles.inboxLaneBadgeText, { color: active ? '#fff' : LoopsColors.color1 }]}>
+                          {lane.count}
+                        </Text>
+                      </View>
                     )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {activeLane === 'chats' && (
+          <>
+            <Animated.View entering={FadeInRight.delay(120).springify().damping(18)}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickAccessRow}
+              >
+                <TouchableOpacity style={styles.newMessageBtn} onPress={() => setShowSearch(true)}>
+                  <View style={[styles.newMessageCircle, { backgroundColor: colors.surface }]}>
+                    <Ionicons name="create-outline" size={24} color={LoopsColors.color1} />
                   </View>
-                  <Text style={[styles.chatPreview, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {chat.lastMessage?.text || 'Start chatting'}
-                  </Text>
-                </View>
-                <View style={styles.chatMeta}>
-                  {chat.lastMessage && (
-                    <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
-                      {formatTime(chat.lastMessage.createdAt)}
+                  <Text style={[styles.quickAccessLabel, { color: colors.text }]}>New</Text>
+                </TouchableOpacity>
+
+                {suggestedUsers.map((person) => (
+                  <TouchableOpacity
+                    key={person.id}
+                    style={styles.quickAccessItem}
+                    onPress={() => {
+                      const existingConvo = conversations.find((c) => c.user.id === person.id);
+                      if (existingConvo) openChat(existingConvo);
+                      else {
+                        openChat({
+                          id: `new-${person.id}`,
+                          user: person,
+                          streak: 0,
+                        });
+                      }
+                    }}
+                  >
+                    <Avatar uri={person.avatar} userId={person.id} size={56} />
+                    <Text style={[styles.quickAccessLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {person.username}
                     </Text>
-                  )}
-                  {chat.lastMessage && !chat.lastMessage.isRead && (
-                    <View style={[styles.unreadDot, { backgroundColor: LoopsColors.color1 }]} />
-                  )}
-                </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Animated.View>
+
+            <Animated.View entering={FadeInRight.delay(150).springify().damping(18)} style={styles.messagesSectionHeader}>
+              <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Recent chats</Text>
+              <TouchableOpacity onPress={() => setShowSearch(true)}>
+                <Ionicons name="create-outline" size={22} color={colors.text} />
               </TouchableOpacity>
-            ))}
-          </View>
+            </Animated.View>
+
+            {conversations.length > 0 ? (
+              conversations.map((chat, index) => (
+                <ChatRow
+                  key={chat.id}
+                  chat={chat}
+                  isOnline={onlineUsers.includes(chat.user.id)}
+                  animateEntry={index < 8}
+                  entryDelay={200 + index * 50}
+                  colors={colors}
+                  onOpen={handleOpenChat}
+                />
+              ))
+            ) : (
+              <Animated.View entering={FadeInRight.delay(200).springify().damping(18)} style={styles.emptyMessages}>
+                <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No chats yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Start a conversation with someone from your circle.
+                </Text>
+              </Animated.View>
+            )}
+          </>
         )}
 
-        {conversations.length === 0 && (
-          <View style={styles.emptyMessages}>
-            <Ionicons name="chatbubbles-outline" size={64} color={colors.textSecondary} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No messages yet</Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Start a conversation with someone!
-            </Text>
-          </View>
+        {activeLane === 'requests' && (
+          <>
+            <Animated.View entering={FadeInRight.delay(120).springify().damping(18)} style={styles.messagesSectionHeader}>
+              <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Friend requests</Text>
+              <TouchableOpacity onPress={() => setShowSearch(true)}>
+                <Ionicons name="person-add-outline" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </Animated.View>
+
+            {pendingRequests.length > 0 ? (
+              pendingRequests.map((person, index) => {
+                const accepting = acceptingRequestIds.has(person.id);
+                return (
+                  <Animated.View
+                    key={person.id}
+                    entering={index < 8 ? FadeInRight.delay(180 + index * 45).springify().damping(18) : undefined}
+                  >
+                    <View style={styles.requestRow}>
+                      <TouchableOpacity style={styles.requestIdentity} onPress={() => openUserProfile(person)}>
+                        <Avatar uri={person.avatar} userId={person.id} size={52} />
+                        <View style={styles.requestCopy}>
+                          <Text style={[styles.chatUsername, { color: colors.text }]}>
+                            {person.displayName || person.username}
+                          </Text>
+                          <Text style={[styles.requestSubtitle, { color: colors.textSecondary }]}>
+                            wants to connect and play together
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.requestAction, { backgroundColor: LoopsColors.color1, opacity: accepting ? 0.7 : 1 }]}
+                        onPress={() => handleRequestAction(person)}
+                        disabled={accepting}
+                      >
+                        {accepting ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.requestActionText}>Accept</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </Animated.View>
+                );
+              })
+            ) : (
+              <Animated.View entering={FadeInRight.delay(180).springify().damping(18)} style={styles.emptyMessages}>
+                <Ionicons name="mail-open-outline" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No requests waiting</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  New follows and friend requests will land here.
+                </Text>
+              </Animated.View>
+            )}
+          </>
+        )}
+
+        {activeLane === 'activity' && (
+          <>
+            <Animated.View entering={FadeInRight.delay(120).springify().damping(18)} style={styles.messagesSectionHeader}>
+              <Text style={[styles.messagesSectionTitle, { color: colors.text }]}>Recent activity</Text>
+              <TouchableOpacity onPress={handleRefresh}>
+                <Ionicons name="refresh" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </Animated.View>
+
+            {activity.length > 0 ? (
+              activity.map((item, index) => (
+                <Animated.View
+                  key={item.id}
+                  entering={index < 10 ? FadeInRight.delay(180 + index * 40).springify().damping(18) : undefined}
+                >
+                  <TouchableOpacity style={styles.activityRow} onPress={() => openUserProfile(item.user)}>
+                    <Avatar uri={item.user.avatar} userId={item.user.id} size={48} />
+                    <View style={styles.activityCopy}>
+                      <Text style={[styles.activityTitle, { color: colors.text }]}>
+                        {getActivityCopy(item)}
+                      </Text>
+                      <Text style={[styles.activityMeta, { color: colors.textSecondary }]}>
+                        {formatTime(item.createdAt)}
+                        {item.game?.name ? ` · ${item.game.name}` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </Animated.View>
+              ))
+            ) : (
+              <Animated.View entering={FadeInRight.delay(180).springify().damping(18)} style={styles.emptyMessages}>
+                <Ionicons name="pulse-outline" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>Nothing new yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Likes, plays, follows, and score moments will show up here.
+                </Text>
+              </Animated.View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -679,9 +837,9 @@ const MessagesTab: React.FC = () => {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.searchResult, { borderBottomColor: colors.border }]}
-                  onPress={() => { setShowSearch(false); openUserProfile(item); }}
+                  onPress={() => { setShowSearch(false); setSearchQuery(''); openChatWithUser(item); }}
                 >
-                  <Avatar uri={item.avatar} size={48} />
+                  <Avatar uri={item.avatar} userId={item.id} size={48} />
                   <View style={styles.searchResultContent}>
                     <Text style={[styles.searchResultName, { color: colors.text }]}>
                       {item.displayName || item.username}
@@ -699,21 +857,32 @@ const MessagesTab: React.FC = () => {
       </SlideRightModal>
 
       {/* Chat Modal */}
-      <SlideRightModal visible={!!selectedChat} onClose={() => setSelectedChat(null)}>
+      <SlideRightModal visible={!!selectedChat} onClose={closeChat} instant={closeOnChatBack}>
         {selectedChat && (
-          <View style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <KeyboardAvoidingView 
+            style={[styles.chatModal, { paddingTop: insets.top, backgroundColor: colors.background }]}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
             <View style={[styles.chatModalHeader, { borderBottomColor: colors.border }]}>
-              <TouchableOpacity onPress={() => setSelectedChat(null)}>
+              <TouchableOpacity onPress={closeChat}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.chatModalUser}
                 onPress={() => openUserProfile(selectedChat.user)}
               >
-                <Avatar uri={selectedChat.user.avatar} size={36} />
-                <Text style={[styles.chatModalUsername, { color: colors.text }]}>
-                  {selectedChat.user.displayName || selectedChat.user.username}
-                </Text>
+                <Avatar uri={selectedChat.user.avatar} userId={selectedChat.user.id} size={48} />
+                <View>
+                  <Text style={[styles.chatModalUsername, { color: colors.text }]}>
+                    {selectedChat.user.displayName || selectedChat.user.username}
+                  </Text>
+                  {typingUsers.get(selectedChat.id) === selectedChat.user.id && (
+                    <Text style={[styles.typingIndicator, { color: LoopsColors.color1 }]}>
+                      typing...
+                    </Text>
+                  )}
+                </View>
               </TouchableOpacity>
               <View style={{ width: 24 }} />
             </View>
@@ -722,24 +891,36 @@ const MessagesTab: React.FC = () => {
               <ActivityIndicator style={{ flex: 1 }} color={LoopsColors.color1} />
             ) : (
               <FlatList
-                data={chatMessages}
+                data={reversedMessages}
                 keyExtractor={(item) => item.id}
                 style={styles.chatMessagesList}
-                contentContainerStyle={{ padding: 16 }}
-                renderItem={({ item }) => {
+                contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+                inverted
+                renderItem={({ item, index }) => {
                   const cleanText = item.text?.replace(/\[(?:GAME|CHALLENGE):[^\]]+\]\s*/, '') || '';
                   const hasGameShare = !!item.gameShare;
-                  const thumbUri = item.gameShare?.thumbnail
-                    ? (item.gameShare.thumbnail.startsWith('http') ? item.gameShare.thumbnail : `${GAMES_HOST}${item.gameShare.thumbnail}`)
-                    : null;
+                  const thumbUri = resolveSharedGameThumbnail(item.gameShare?.thumbnail, item.gameShare?.id);
+
+                  // Message grouping - check if previous message (in reversed order) is from same person
+                  const prevMsg = reversedMessages[index + 1];
+                  const nextMsg = reversedMessages[index - 1];
+                  const isFirstInGroup = !prevMsg || prevMsg.isMe !== item.isMe;
+                  const isLastInGroup = !nextMsg || nextMsg.isMe !== item.isMe;
+                  
+                  // Format timestamp
+                  const msgTime = new Date(item.createdAt);
+                  const timeStr = msgTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                   if (hasGameShare) {
                     return (
                       <View style={[
-                        { maxWidth: '70%', marginBottom: 10 },
+                        { maxWidth: '70%', marginBottom: isLastInGroup ? 12 : 2 },
                         item.isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }
                       ]}>
-                        <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}>
+                        <Pressable
+                          onPress={() => handlePlayShared(item.gameShare.id)}
+                          style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: item.gameShare.color || '#333' }}
+                        >
                           {thumbUri ? (
                             <Image
                               source={{ uri: thumbUri }}
@@ -759,13 +940,31 @@ const MessagesTab: React.FC = () => {
                             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
                               {item.gameShare.name}
                             </Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
-                              <Ionicons name="play-circle" size={14} color="rgba(255,255,255,0.9)" />
-                              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, marginLeft: 4, fontWeight: '500' }}>
-                                Tap to play
-                              </Text>
-                            </View>
                           </View>
+                        </Pressable>
+                        {/* Play / Remix actions */}
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                          <TouchableOpacity
+                            onPress={() => handlePlayShared(item.gameShare.id)}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: LoopsColors.color1 }}
+                          >
+                            <Ionicons name="play" size={15} color="#fff" />
+                            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Play</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleRemixShared(item.gameShare.id)}
+                            disabled={remixingGameId === item.gameShare.id}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                          >
+                            {remixingGameId === item.gameShare.id ? (
+                              <ActivityIndicator size="small" color={colors.text} />
+                            ) : (
+                              <>
+                                <Ionicons name="git-branch" size={15} color={colors.text} />
+                                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Remix</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
                         </View>
                         {cleanText ? (
                           <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>
@@ -778,13 +977,31 @@ const MessagesTab: React.FC = () => {
 
                   return (
                     <View style={[
-                      styles.messageBubble,
-                      item.isMe ? styles.myMessage : styles.theirMessage,
-                      { backgroundColor: item.isMe ? LoopsColors.color1 : colors.surface }
+                      { marginBottom: isLastInGroup ? 12 : 2 },
+                      item.isMe ? { alignSelf: 'flex-end', alignItems: 'flex-end' } : { alignSelf: 'flex-start', alignItems: 'flex-start' }
                     ]}>
-                      <Text style={[styles.messageText, { color: item.isMe ? '#fff' : colors.text }]}>
-                        {cleanText}
-                      </Text>
+                      <View style={[
+                        styles.messageBubble,
+                        item.isMe ? styles.myMessage : styles.theirMessage,
+                        { backgroundColor: item.isMe ? colors.surface : colors.surface }
+                      ]}>
+                        <Text style={[styles.messageText, { color: colors.text }]}>
+                          {cleanText}
+                        </Text>
+                      </View>
+                      {/* Timestamp + read receipt on last message in group */}
+                      {isLastInGroup && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>{timeStr}</Text>
+                          {item.isMe && (
+                            <Ionicons 
+                              name={item.isRead ? "checkmark-done" : "checkmark"} 
+                              size={14} 
+                              color={item.isRead ? LoopsColors.color1 : colors.textSecondary} 
+                            />
+                          )}
+                        </View>
+                      )}
                     </View>
                   );
                 }}
@@ -805,8 +1022,9 @@ const MessagesTab: React.FC = () => {
                   placeholder="Message..."
                   placeholderTextColor={colors.textSecondary}
                   value={messageText}
-                  onChangeText={setMessageText}
+                  onChangeText={handleTextChange}
                   onSubmitEditing={sendMessage}
+                  returnKeyType="send"
                 />
               </View>
               <TouchableOpacity
@@ -817,7 +1035,7 @@ const MessagesTab: React.FC = () => {
                 <Ionicons name="send" size={20} color={messageText.trim() ? '#fff' : colors.textSecondary} />
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         )}
       </SlideRightModal>
 
@@ -847,332 +1065,199 @@ const MessagesTab: React.FC = () => {
 };
 
 // Play Together Tab
-const PlayTogetherTab: React.FC = () => {
-  const { colors } = useTheme();
-  const { user } = useAuth();
-  const insets = useSafeAreaInsets();
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+interface FollowingUser {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  verified?: boolean;
+}
 
-  // Active matches
-  const [activeMatches, setActiveMatches] = useState<any[]>([]);
 
-  // Match history
-  const [matchHistory, setMatchHistory] = useState<any[]>([]);
+// ─────────────────────────────────────────────────────────────────────────────
+// V2 Connect screen — pixel-faithful to mockups
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Games for multiplayer
-  const [games, setGames] = useState<any[]>([]);
+type ConnectFilter = 'foryou';
 
-  // Direct game playing state
-  const [playingGame, setPlayingGame] = useState<{ id: string; name: string; embedUrl?: string } | null>(null);
-  const [gameLoaded, setGameLoaded] = useState(false);
-  const gameWebViewRef = useRef<WebView>(null);
-  
-  // Download progress state
-  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
-
-  // Subscribe to download progress
-  useEffect(() => {
-    const unsubscribe = subscribeToProgress(setDownloadProgress);
-    return unsubscribe;
-  }, []);
-
-  const loadData = useCallback(async () => {
-    try {
-      const [activeRes, historyRes, gamesRes] = await Promise.all([
-        multiplayer.getActiveMatches().catch(() => ({ matches: [] })),
-        multiplayer.getMatchHistory(20).catch(() => ({ history: [] })),
-        gamesApi.multiplayer(50, 0).catch(() => ({ games: [] })),
-      ]);
-
-      setActiveMatches(activeRes.matches || []);
-      setMatchHistory(historyRes.history || []);
-
-      // Games from multiplayer endpoint are already filtered to multiplayer-only
-      setGames(gamesRes.games || []);
-    } catch (error) {
-      console.error('Load multiplayer data error:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  };
-  
-  // Get the game URL - uses local if downloaded, otherwise remote R2
-  const getGameEmbedUrl = (game: any): string => {
-    const gameId = game.id.replace('openpigeon_', '');
-    return getGameUrl(gameId);
-  };
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={LoopsColors.color1} size="large" />
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingBottom: 100 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={LoopsColors.color1}
-        />
-      }
-    >
-      {/* Download Progress Banner */}
-      {downloadProgress && downloadProgress.isDownloading && (
-        <View style={[styles.downloadBanner, { backgroundColor: colors.surface }]}>
-          <View style={styles.downloadBannerContent}>
-            <ActivityIndicator size="small" color={LoopsColors.color1} />
-            <View style={styles.downloadBannerText}>
-              <Text style={[styles.downloadBannerTitle, { color: colors.text }]}>
-                Installing games...
-              </Text>
-              <Text style={[styles.downloadBannerSubtitle, { color: colors.textSecondary }]}>
-                {downloadProgress.currentFile} • {downloadProgress.progress}%
-              </Text>
-            </View>
-          </View>
-          <View style={styles.downloadProgressBar}>
-            <View 
-              style={[
-                styles.downloadProgressFill, 
-                { width: `${downloadProgress.progress}%`, backgroundColor: LoopsColors.color1 }
-              ]} 
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Games Grid */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          🎮 Choose Your Game
-        </Text>
-        {games.length > 0 ? (
-          <View style={styles.gamesGrid}>
-            {games.map((game, index) => (
-              <Animated.View
-                key={game.id}
-                entering={FadeInUp.delay(index * 20).springify()}
-                style={styles.gameGridItem}
-              >
-                <TouchableOpacity
-                  style={[styles.gameGridCard, { backgroundColor: colors.surface }]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setPlayingGame({ id: game.id, name: game.name, embedUrl: game.embedUrl });
-                    setGameLoaded(false);
-                  }}
-                >
-                  <Image
-                    source={{ uri: game.thumbnail?.startsWith('http') 
-                      ? game.thumbnail 
-                      : (game.thumbnail ? `${GAMES_HOST}${game.thumbnail}` : `${GAMES_HOST}/thumbnails/${game.id}.png`) 
-                    }}
-                    style={styles.gameGridThumbnail}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.gameGridOverlay}>
-                    <Text style={styles.gameGridName} numberOfLines={2}>
-                      {game.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.emptyGames}>
-            <Ionicons name="game-controller-outline" size={48} color={colors.textSecondary} />
-            <Text style={[styles.emptyGamesText, { color: colors.textSecondary }]}>
-              Multiplayer games coming soon!
-            </Text>
-            <Text style={[styles.emptyGamesSubtext, { color: colors.textSecondary }]}>
-              Run the seeder to add 36 Loops games
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Games Arcade Showcase */}
-      <View style={styles.arcadeSection}>
-        <View style={styles.arcadeHeader}>
-          <Text style={[styles.arcadeTitle, { color: colors.text }]}>
-            Live Arcade
-          </Text>
-          <Text style={[styles.arcadeSubtitle, { color: colors.textSecondary }]}>
-            Jump into a lobby and challenge anyone online!
-          </Text>
-        </View>
-
-        {games.length > 0 ? (
-          <View style={styles.arcadeGamesGrid}>
-            {games.map((game, index) => (
-              <Animated.View
-                key={game.id}
-                entering={FadeInUp.delay(index * 20).springify()}
-                style={styles.arcadeGameItem}
-              >
-                <TouchableOpacity
-                  style={[styles.arcadeGameCard, { backgroundColor: colors.surface }]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setPlayingGame({ id: game.id, name: game.name, embedUrl: game.embedUrl });
-                    setGameLoaded(false);
-                  }}
-                >
-                  <Image
-                    source={{
-                      uri: game.thumbnail?.startsWith('http')
-                        ? game.thumbnail
-                        : (game.thumbnail
-                          ? `https://gametok-backend-production.up.railway.app/games/thumbnails/${game.id}.png`
-                          : `${GAMES_HOST}/thumbnails/${game.id}.png`)
-                    }}
-                    style={styles.arcadeGameThumbnail}
-                    resizeMode="cover"
-                  />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.8)', '#000']}
-                    style={styles.arcadeGameOverlay}
-                  >
-                    <View style={styles.liveLobbyBadge}>
-                      <View style={styles.pulsingDot} />
-                      <Text style={styles.liveLobbyText}>Lobby</Text>
-                    </View>
-                    <Text style={styles.arcadeGameName} numberOfLines={2}>
-                      {game.name}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.emptyGamesLobby}>
-            <ActivityIndicator color={LoopsColors.color1} size="large" />
-            <Text style={[styles.emptyGamesLobbyText, { color: colors.textSecondary }]}>
-              Loading Arcade...
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Direct Game WebView Modal */}
-      <Modal visible={!!playingGame} animationType="slide" presentationStyle="fullScreen">
-        <View style={gameStyles.gameModal}>
-          <StatusBar hidden />
-          <WebView
-            ref={gameWebViewRef}
-            source={{ uri: playingGame ? getGameEmbedUrl(playingGame) : '' }}
-            style={gameStyles.gameWebView}
-            scrollEnabled={false}
-            bounces={false}
-            injectedJavaScript={GODOT_LOADER_HIDE_SCRIPT + GAME_READY_SCRIPT}
-            onMessage={(event) => {
-              try {
-                const data = JSON.parse(event.nativeEvent.data);
-                if (data.type === 'GAME_READY') {
-                  setGameLoaded(true);
-                }
-              } catch (e) {}
-            }}
-            onLoadEnd={() => {
-              // Inject scripts again after load to ensure they run
-              gameWebViewRef.current?.injectJavaScript(GODOT_LOADER_HIDE_SCRIPT);
-            }}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            originWhitelist={['*']}
-            allowFileAccess
-            allowUniversalAccessFromFileURLs
-          />
-          {!gameLoaded && playingGame && (
-            <GameLoadingScreen
-              gameName={playingGame.name}
-              gameThumbnail={playingGame.embedUrl ? undefined : `${GAMES_HOST}/thumbnails/${playingGame.id}.png`}
-            />
-          )}
-          <TouchableOpacity 
-            style={[gameStyles.gameCloseBtn, { top: insets.top + 10 }]} 
-            onPress={() => { setPlayingGame(null); setGameLoaded(false); }}
-          >
-            <BlurView intensity={80} tint="dark" style={gameStyles.gameCloseBtnBlur}>
-              <Ionicons name="close" size={24} color="#fff" />
-            </BlurView>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-    </ScrollView>
-  );
-};
-
-const gameStyles = StyleSheet.create({
-  gameModal: { flex: 1, backgroundColor: '#000' },
-  gameWebView: { flex: 1 },
-  gameCloseBtn: { 
-    position: 'absolute', 
-    right: 16, 
-    zIndex: 100 
-  },
-  gameCloseBtnBlur: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 20, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    overflow: 'hidden' 
-  },
-});
+const CONNECT_PURPLE = '#a855f7';
+const CONNECT_BG = '#000000';
+const CONNECT_TEXT_MUTED = '#9a9aa8';
 
 export const ConnectScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { presenceMap } = useSocket();
+  const { setActiveTab, activeTab, pendingChatUserId, setPendingChatUserId, activityRequestNonce } = useNavigation();
+  const { openSharedGame } = useDeepLink();
 
-  const [activeTab, setActiveTab] = useState<TabName>('play');
+  const [filter, setFilter] = useState<ConnectFilter>('foryou');
+  const [following, setFollowing] = useState<any[]>([]);
+  const [recommended, setRecommended] = useState<any[]>([]);
+  const [trendingGames, setTrendingGames] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [storyUsers, setStoryUsers] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showFriendsPlaying, setShowFriendsPlaying] = useState(false);
+  const [inboxMode, setInboxMode] = useState<InboxMode>('messages');
+  const [inboxInitialChat, setInboxInitialChat] = useState<Conversation | null>(null);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserItem[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const loadConnectData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [followingRes, recommendedRes, trendingRes, convRes, storiesRes] = await Promise.allSettled([
+        users.following(user.id),
+        users.recommended(),
+        gamesApi.list(24, 0, { sort: 'trending' }).catch(() => ({ games: [] })),
+        messagesApi.getConversations().catch(() => ({ conversations: [] })),
+        storiesApi.list().catch(() => ({ stories: [] })),
+      ]);
+
+      if (followingRes.status === 'fulfilled') {
+        setFollowing(followingRes.value?.users || followingRes.value?.following || []);
+      }
+      if (recommendedRes.status === 'fulfilled') {
+        setRecommended(recommendedRes.value?.users || []);
+      }
+      if (trendingRes.status === 'fulfilled') {
+        setTrendingGames(trendingRes.value?.games || []);
+      }
+      if (convRes.status === 'fulfilled') {
+        setConversations(Array.isArray(convRes.value?.conversations) ? convRes.value.conversations : []);
+      }
+      if (storiesRes.status === 'fulfilled') {
+        setStoryUsers(Array.isArray(storiesRes.value?.stories) ? storiesRes.value.stories : []);
+      }
+    } catch (err) {
+      console.log('[Connect] load failed', err);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadConnectData();
+  }, [loadConnectData]);
+
+  // Refresh when the user opens the Connect tab so DMs / stories / friends
+  // aren't stale (the screen stays mounted, so it otherwise only loads once).
+  useEffect(() => {
+    if (activeTab === 'connect') loadConnectData();
+  }, [activeTab, loadConnectData]);
+
+  // Deep-link from a message notification: open the inbox straight into the
+  // sender's DM. Prefer an already-loaded conversation; otherwise resolve it
+  // by userId (the endpoint creates the conversation if it doesn't exist yet).
+  useEffect(() => {
+    if (!pendingChatUserId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const existing = conversations.find((c) => c.user.id === pendingChatUserId);
+        if (existing) {
+          setInboxMode('messages');
+          setInboxInitialChat(existing);
+          setShowInbox(true);
+          return;
+        }
+        const data = await messagesApi.getConversation(pendingChatUserId);
+        if (cancelled) return;
+        const conv = data?.conversation;
+        if (conv?.id) {
+          setInboxMode('messages');
+          setInboxInitialChat({
+            id: conv.id,
+            user: {
+              id: conv.user?.id ?? pendingChatUserId,
+              username: conv.user?.username ?? '',
+              displayName: conv.user?.display_name ?? conv.user?.displayName,
+              avatar: conv.user?.avatar,
+            },
+            streak: conv.streak ?? 0,
+          });
+          setShowInbox(true);
+        }
+      } catch (e) {
+        console.log('[Connect] deep-link chat open failed', e);
+      } finally {
+        if (!cancelled) setPendingChatUserId(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingChatUserId]);
+
+  // Deep-link from a follow / social notification: open the Activity feed.
+  useEffect(() => {
+    if (!activityRequestNonce) return;
+    setInboxMode('activity');
+    setInboxInitialChat(null);
+    setShowInbox(true);
+  }, [activityRequestNonce]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearching(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const data = await users.search(query);
+        if (!cancelled) {
+          setSearchResults(Array.isArray(data?.users) ? data.users : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setSearchResults([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSearching(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [searchQuery]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadConnectData();
+    setRefreshing(false);
+  };
 
   // Auth gate
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Connect</Text>
+      <View style={[connectV3Styles.root, { paddingTop: insets.top }]}>
+        <View style={[connectV3Styles.topBar, { paddingTop: 0 }]}>
+          <View style={connectV3Styles.topIconBtn} />
+          <Text style={connectV3Styles.topTitle}>gametok</Text>
+          <View style={connectV3Styles.topIconBtn} />
         </View>
         <View style={StyleSheet.absoluteFill}>
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
           <View style={styles.authGate}>
             <Ionicons name="people" size={64} color="rgba(255,255,255,0.3)" />
             <Text style={styles.authTitle}>Join the community</Text>
-            <Text style={styles.authSubtitle}>
-              Play together and chat with friends
-            </Text>
+            <Text style={styles.authSubtitle}>Play together and chat with friends</Text>
             <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen}>
-              <LinearGradient
-                colors={[LoopsColors.color1, '#7c3aed']}
-                style={styles.authBtnGradient}
-              >
+              <LinearGradient colors={[CONNECT_PURPLE, '#7c3aed']} style={styles.authBtnGradient}>
                 <Text style={styles.authBtnText}>Sign Up</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -1185,38 +1270,1039 @@ export const ConnectScreen: React.FC = () => {
     );
   }
 
+  // Build segments for filter tabs
+  const allOnline = following.filter((f) => {
+    const s = presenceMap.get(f.id);
+    return s === 'online' || s === 'in-game';
+  });
+  const liveFriend = following.find((f) => presenceMap.get(f.id) === 'in-game');
+  const peopleForStories = following.length > 0 ? following : recommended;
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Connect</Text>
-      </View>
+    <View style={connectV3Styles.root}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
+        }
+      >
+        {/* Top bar */}
+        <View style={[connectV3Styles.topBar, { paddingTop: insets.top + 8 }]}>
+          <Pressable
+            style={connectV3Styles.topAvatarWrap}
+            onPress={() => setActiveTab('profile')}
+            hitSlop={6}
+          >
+            <Avatar uri={user?.avatar} userId={user?.id} size={32} />
+          </Pressable>
+          <Text style={connectV3Styles.topTitle}>gametok</Text>
+          <Pressable
+            style={connectV3Styles.topIconBtn}
+            onPress={() => {
+              setInboxMode('activity');
+              setInboxInitialChat(null);
+              setShowInbox(true);
+            }}
+            hitSlop={6}
+          >
+            <Ionicons name="notifications-outline" size={20} color="#fff" />
+            {conversations.some((c) => c.lastMessage?.isUnread) ? (
+              <View style={connectV3Styles.bellDot} />
+            ) : null}
+          </Pressable>
+        </View>
 
-      {/* Tab Switcher */}
-      <View style={[styles.tabSwitcher, { backgroundColor: colors.surface }]}>
-        <TabButton
-          label="Play Together"
-          icon="game-controller"
-          isActive={activeTab === 'play'}
-          onPress={() => setActiveTab('play')}
-        />
-        <TabButton
-          label="Messages"
-          icon="chatbubbles"
-          isActive={activeTab === 'messages'}
-          onPress={() => setActiveTab('messages')}
-        />
-      </View>
+        <Animated.View entering={FadeInRight.delay(50).springify().damping(18)}>
+          <TouchableOpacity
+            style={[styles.searchBar, { backgroundColor: colors.surface }]}
+            onPress={() => setShowSearch(true)}
+          >
+            <Ionicons name="search" size={18} color={colors.textSecondary} />
+            <Text style={[styles.searchPlaceholder, { color: colors.textSecondary }]}>Search people and chats</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
-      {/* Tab Content */}
-      {activeTab === 'play' ? (
-        <PlayTogetherTab />
-      ) : (
-        <MessagesTab />
-      )}
+        {/* Stories row */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={connectV3Styles.storiesScroll}
+        >
+          {peopleForStories.slice(0, 12).map((u) => {
+            const status = presenceMap.get(u.id);
+            const statusLabel =
+              status === 'in-game' ? 'In a game' : status === 'online' ? 'Online' : null;
+            return (
+              <Pressable
+                key={u.id}
+                style={connectV3Styles.storyCol}
+                onPress={() => setSelectedProfileUser(u)}
+              >
+                <View style={connectV3Styles.storyRing}>
+                  <View style={connectV3Styles.storyAvatarFrame}>
+                    <Avatar uri={u.avatar} userId={u.id} size={56} />
+                  </View>
+                  {(status === 'online' || status === 'in-game') ? (
+                    <View
+                      style={[
+                        connectV3Styles.storyDot,
+                        status === 'in-game' && { backgroundColor: CONNECT_PURPLE },
+                      ]}
+                    />
+                  ) : null}
+                </View>
+                <Text style={connectV3Styles.storyName} numberOfLines={1}>
+                  {u.displayName || u.username}
+                </Text>
+                <Text style={connectV3Styles.storyStatus} numberOfLines={1}>
+                  {statusLabel || ''}
+                </Text>
+              </Pressable>
+            );
+          })}
+
+          {allOnline.length > 12 ? (
+            <View style={connectV3Styles.storyCol}>
+              <View style={[connectV3Styles.storyAddRing, { backgroundColor: 'rgba(255,255,255,0.06)', borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.15)' }]}>
+                <Text style={connectV3Styles.storyMoreText}>+{allOnline.length - 12}</Text>
+              </View>
+              <Text style={connectV3Styles.storyName} numberOfLines={1}>+{allOnline.length - 12}</Text>
+              <Text style={connectV3Styles.storyStatus}>Online</Text>
+            </View>
+          ) : null}
+        </ScrollView>
+
+        {/* LIVE NOW big card */}
+        {liveFriend && trendingGames[0] ? (
+          <Pressable
+            style={connectV3Styles.liveCard}
+            onPress={() => {
+              if (trendingGames[0]) {
+                openSharedGame(trendingGames[0].id);
+                setActiveTab('home');
+              }
+            }}
+          >
+            <Image
+              source={{
+                uri: resolveSharedGameThumbnail(trendingGames[0]?.thumbnail, trendingGames[0]?.id) || '',
+              }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
+              locations={[0, 0.5, 1]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={connectV3Styles.liveBadgeWrap}>
+              <View style={connectV3Styles.liveBadge}>
+                <View style={connectV3Styles.liveBadgeDot} />
+                <Text style={connectV3Styles.liveBadgeText}>LIVE NOW</Text>
+              </View>
+            </View>
+            <View style={connectV3Styles.liveBody}>
+              <Text style={connectV3Styles.liveTitle} numberOfLines={1}>
+                {trendingGames[0]?.name || liveFriend.displayName || liveFriend.username}
+              </Text>
+              <Text style={connectV3Styles.liveSubtitle}>Custom Room</Text>
+              <View style={connectV3Styles.liveBottomRow}>
+                <View style={connectV3Styles.liveAvatarStack}>
+                  {[liveFriend, ...allOnline.filter((o) => o.id !== liveFriend.id)].slice(0, 3).map((u, i) => (
+                    <View
+                      key={u.id}
+                      style={[connectV3Styles.liveStackAvatar, { marginLeft: i === 0 ? 0 : -10 }]}
+                    >
+                      <Avatar uri={u.avatar} userId={u.id} size={24} />
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flex: 1 }} />
+                <Pressable
+                  style={connectV3Styles.joinBtn}
+                  onPress={() => {
+                    if (trendingGames[0]) {
+                      openSharedGame(trendingGames[0].id);
+                      setActiveTab('home');
+                    }
+                  }}
+                >
+                  <Text style={connectV3Styles.joinBtnText}>Join</Text>
+                </Pressable>
+                <View style={connectV3Styles.liveCapacity}>
+                  <Ionicons name="people" size={11} color="#fff" />
+                  <Text style={connectV3Styles.liveCapacityText}>
+                    {Math.min(allOnline.length + 1, 8)}/8
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Pressable>
+        ) : (
+          <View style={connectV3Styles.liveCardEmpty}>
+            <View style={connectV3Styles.liveCardEmptyDot} />
+            <Text style={connectV3Styles.liveCardEmptyTitle}>
+              {allOnline.length > 0
+                ? `${allOnline.length} ${allOnline.length === 1 ? 'friend is' : 'friends are'} online`
+                : 'No friends online yet'}
+            </Text>
+            <Text style={connectV3Styles.liveCardEmptyBody}>
+              We'll show a LIVE banner here when someone you follow is in-game.
+            </Text>
+          </View>
+        )}
+
+        {/* Friends are playing — 3-col grid */}
+        <View style={connectV3Styles.section}>
+          <View style={connectV3Styles.sectionHeader}>
+            <Text style={connectV3Styles.sectionTitle}>Friends are playing</Text>
+            <Pressable hitSlop={8} onPress={() => setShowFriendsPlaying(true)}>
+              <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
+            </Pressable>
+          </View>
+          {trendingGames.length === 0 ? (
+            <Text style={connectV3Styles.sectionEmpty}>No games trending right now.</Text>
+          ) : (
+            <View style={connectV3Styles.friendsGrid}>
+              {trendingGames.slice(0, 3).map((g) => (
+                <Pressable
+                  key={g.id}
+                  style={connectV3Styles.friendsCard}
+                  onPress={() => {
+                    openSharedGame(g.id);
+                    setActiveTab('home');
+                  }}
+                >
+                  {g.thumbnail ? (
+                    <Image
+                      source={{ uri: resolveSharedGameThumbnail(g.thumbnail, g.id) || '' }}
+                      style={StyleSheet.absoluteFillObject}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a22' }]} />
+                  )}
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
+                    locations={[0, 0.45, 1]}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <View style={connectV3Styles.friendsCardBody}>
+                    <Text style={connectV3Styles.friendsCardTitle} numberOfLines={1}>
+                      {g.name}
+                    </Text>
+                    <View style={connectV3Styles.friendsCardMeta}>
+                      <View style={connectV3Styles.friendsAvatarStack}>
+                        {following.slice(0, 2).map((u, i) => (
+                          <View
+                            key={u.id}
+                            style={[connectV3Styles.friendsStackAvatar, { marginLeft: i === 0 ? 0 : -6 }]}
+                          >
+                            <Avatar uri={u.avatar} userId={u.id} size={13} />
+                          </View>
+                        ))}
+                      </View>
+                      <Text style={connectV3Styles.friendsCount}>
+                        {following.length > 0 ? `${Math.min(following.length, 9)} friends` : 'Trending'}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Active Conversations preview */}
+        <View style={connectV3Styles.section}>
+          <View style={connectV3Styles.sectionHeader}>
+            <Text style={connectV3Styles.sectionTitle}>Active Conversations</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => {
+                setInboxMode('messages');
+                setInboxInitialChat(null);
+                setShowInbox(true);
+              }}
+            >
+              <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
+            </Pressable>
+          </View>
+          {conversations.length === 0 ? (
+            <Pressable
+              style={connectV3Styles.convoEmpty}
+              onPress={() => {
+                setInboxMode('messages');
+                setInboxInitialChat(null);
+                setShowInbox(true);
+              }}
+            >
+              <Ionicons name="chatbubble-outline" size={18} color={CONNECT_TEXT_MUTED} />
+              <Text style={connectV3Styles.convoEmptyText}>
+                No active chats yet — tap to start one.
+              </Text>
+            </Pressable>
+          ) : (
+            conversations.slice(0, 4).map((c) => {
+              const last = c.lastMessage;
+              const time = last ? formatRelativeTime(last.createdAt) : '';
+              const unreadCount = last?.isUnread && !last?.isFromMe ? 1 : 0;
+              const status = presenceMap.get(c.user.id);
+              return (
+                <Pressable
+                  key={c.id}
+                  style={connectV3Styles.convoRow}
+                  onPress={() => {
+                    setInboxMode('messages');
+                    setInboxInitialChat(c);
+                    setShowInbox(true);
+                  }}
+                >
+                  <View style={connectV3Styles.convoAvatarWrap}>
+                    <Avatar uri={c.user.avatar} userId={c.user.id} size={46} />
+                    {(status === 'online' || status === 'in-game') ? (
+                      <View
+                        style={[
+                          connectV3Styles.convoStatus,
+                          status === 'in-game' && { backgroundColor: CONNECT_PURPLE },
+                        ]}
+                      />
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={connectV3Styles.convoName} numberOfLines={1}>
+                      {c.user.displayName || c.user.username}
+                    </Text>
+                    <Text style={connectV3Styles.convoLast} numberOfLines={1}>
+                      {last?.text || 'Tap to message'}
+                    </Text>
+                  </View>
+                  <View style={connectV3Styles.convoMeta}>
+                    <Text style={connectV3Styles.convoTime}>{time}</Text>
+                    {unreadCount > 0 ? (
+                      <View style={connectV3Styles.convoBadge}>
+                        <Text style={connectV3Styles.convoBadgeText}>{unreadCount}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+
+      {/* User profile modal */}
+      <UserProfileModal
+        visible={!!selectedProfileUser}
+        onClose={() => setSelectedProfileUser(null)}
+        user={selectedProfileUser}
+      />
+
+      <SlideRightModal visible={showFriendsPlaying} onClose={() => setShowFriendsPlaying(false)}>
+        <View style={[connectV3Styles.fullListModal, { paddingTop: insets.top }]}>
+          <View style={connectV3Styles.fullListHeader}>
+            <TouchableOpacity onPress={() => setShowFriendsPlaying(false)} style={connectV3Styles.fullListBackBtn}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={connectV3Styles.fullListTitle}>Friends are playing</Text>
+            <View style={connectV3Styles.fullListBackBtn} />
+          </View>
+
+          {trendingGames.length === 0 ? (
+            <View style={connectV3Styles.fullListEmpty}>
+              <Ionicons name="game-controller-outline" size={48} color={CONNECT_TEXT_MUTED} />
+              <Text style={connectV3Styles.fullListEmptyText}>No games trending right now.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={trendingGames}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={connectV3Styles.fullListContent}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={connectV3Styles.fullListRow}
+                  onPress={() => {
+                    setShowFriendsPlaying(false);
+                    openSharedGame(item.id);
+                    setActiveTab('home');
+                  }}
+                >
+                  <View style={connectV3Styles.fullListThumb}>
+                    {item.thumbnail ? (
+                      <Image
+                        source={{ uri: resolveSharedGameThumbnail(item.thumbnail, item.id) || '' }}
+                        style={StyleSheet.absoluteFillObject}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a22' }]} />
+                    )}
+                  </View>
+                  <View style={connectV3Styles.fullListCopy}>
+                    <Text style={connectV3Styles.fullListGameTitle} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={connectV3Styles.fullListGameMeta} numberOfLines={1}>
+                      {following.length > 0 ? `${Math.min(following.length, 9)} friends` : 'Trending'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={CONNECT_TEXT_MUTED} />
+                </Pressable>
+              )}
+            />
+          )}
+        </View>
+      </SlideRightModal>
+
+      <SlideRightModal visible={showSearch} onClose={() => { setShowSearch(false); setSearchQuery(''); }}>
+        <View style={[styles.searchModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <View style={styles.searchModalHeader}>
+            <TouchableOpacity onPress={() => { setShowSearch(false); setSearchQuery(''); }}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <View style={[styles.searchModalInput, { backgroundColor: colors.surface }]}>
+              <Ionicons name="search" size={18} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search people..."
+                placeholderTextColor={colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {searching ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={LoopsColors.color1} />
+          ) : searchQuery.length < 2 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="search-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.searchHintText, { color: colors.textSecondary }]}>
+                Search for people by username
+              </Text>
+            </View>
+          ) : searchResults.length === 0 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="person-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.searchHintText, { color: colors.textSecondary }]}>
+                No users found for "{searchQuery}"
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.searchResult, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    setShowSearch(false);
+                    setSearchQuery('');
+                    setSelectedProfileUser(item);
+                  }}
+                >
+                  <Avatar uri={item.avatar} userId={item.id} size={48} />
+                  <View style={styles.searchResultContent}>
+                    <Text style={[styles.searchResultName, { color: colors.text }]}>
+                      {item.displayName || item.username}
+                    </Text>
+                    <Text style={[styles.searchResultUsername, { color: colors.textSecondary }]}>
+                      @{item.username}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </SlideRightModal>
+
+      {/* Inbox modal — shows the existing MessagesTab */}
+      {showInbox ? (
+        <View style={connectV3Styles.inboxOverlay}>
+          <View style={[connectV3Styles.inboxCard, { paddingTop: insets.top + 8 }]}>
+            <View style={connectV3Styles.inboxHeader}>
+              <Pressable
+                onPress={() => {
+                  setShowInbox(false);
+                  setInboxInitialChat(null);
+                }}
+                hitSlop={8}
+                style={connectV3Styles.topIconBtn}
+              >
+                <Ionicons name="chevron-back" size={20} color="#fff" />
+              </Pressable>
+              <Text style={connectV3Styles.topTitle}>
+                {inboxMode === 'activity' ? 'Activity' : 'Inbox'}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setShowInbox(false);
+                  setInboxInitialChat(null);
+                  setActiveTab('profile');
+                }}
+                hitSlop={8}
+                style={connectV3Styles.topAvatarWrap}
+              >
+                <Avatar uri={user?.avatar} userId={user?.id} size={36} />
+              </Pressable>
+            </View>
+            <MessagesTab
+              initialConversation={inboxInitialChat}
+              mode={inboxMode}
+              closeOnChatBack={!!inboxInitialChat}
+              onClose={() => {
+                setShowInbox(false);
+                setInboxInitialChat(null);
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 };
+
+const formatRelativeTime = (dateStr: string): string => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(diff / 86400000)}d`;
+};
+
+const connectV3Styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: CONNECT_BG,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  topAvatarWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: '#000',
+  },
+  topTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
+  filterPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  filterPillActive: {
+    backgroundColor: CONNECT_PURPLE,
+  },
+  filterText: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  filterTextActive: {
+    color: '#fff',
+  },
+  storiesScroll: {
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  storyCol: {
+    width: 72,
+    alignItems: 'center',
+  },
+  storyAddRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(168,85,247,0.10)',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(168,85,247,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  storyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    padding: 2,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.18)',
+    marginBottom: 6,
+    position: 'relative',
+  },
+  storyAvatarFrame: {
+    flex: 1,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  storyAvatarImg: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  storyAvatarFallback: {
+    backgroundColor: 'rgba(168,85,247,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatarInitial: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 17,
+  },
+  storyDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: CONNECT_BG,
+  },
+  storyMoreText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  storyName: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  storyStatus: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 9,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 2,
+    height: 12,
+  },
+  liveCard: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    height: 200,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#0e0e14',
+  },
+  liveBadgeWrap: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#ec4899',
+  },
+  liveBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+  },
+  liveBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  liveBody: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
+  },
+  liveTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 4,
+  },
+  liveSubtitle: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  liveBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 10,
+  },
+  liveAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  liveStackAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  joinBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: CONNECT_PURPLE,
+  },
+  joinBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  liveCapacity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  liveCapacityText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  liveCardEmpty: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  liveCardEmptyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+    marginBottom: 8,
+  },
+  liveCardEmptyTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  liveCardEmptyBody: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  section: {
+    marginTop: 22,
+    paddingHorizontal: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    marginBottom: 12,
+  },
+  sectionSeeAll: {
+    color: CONNECT_PURPLE,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionEmpty: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 13,
+    paddingVertical: 18,
+  },
+  friendsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  friendsCard: {
+    flex: 1,
+    aspectRatio: 0.78,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  friendsCardBody: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+  },
+  friendsCardTitle: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  friendsCardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  friendsAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  friendsStackAvatar: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#000',
+  },
+  friendsCount: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  fullListModal: {
+    flex: 1,
+    backgroundColor: CONNECT_BG,
+  },
+  fullListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  fullListBackBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullListTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  fullListContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 36,
+  },
+  fullListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+  },
+  fullListThumb: {
+    width: 72,
+    height: 56,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  fullListCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  fullListGameTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  fullListGameMeta: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  fullListEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  fullListEmptyText: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  convoEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  convoEmptyText: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  convoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  convoAvatarWrap: {
+    position: 'relative',
+  },
+  convoAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    overflow: 'hidden',
+  },
+  convoStatus: {
+    position: 'absolute',
+    right: 0,
+    bottom: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: CONNECT_BG,
+  },
+  convoName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  convoLast: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  convoMeta: {
+    alignItems: 'flex-end',
+    gap: 5,
+  },
+  convoTime: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  convoBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 6,
+    borderRadius: 9,
+    backgroundColor: CONNECT_PURPLE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  convoBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  inboxOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: CONNECT_BG,
+    zIndex: 100,
+  },
+  inboxCard: {
+    flex: 1,
+    backgroundColor: CONNECT_BG,
+  },
+  inboxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -1333,20 +2419,83 @@ const styles = StyleSheet.create({
     ...FontStyles.caption,
   },
   comingSoonContainer: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 60,
+    justifyContent: 'center',
     paddingHorizontal: 32,
+    paddingBottom: 100,
+  },
+  illustrationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+    height: 120,
+  },
+  avatarCircle: {
+    width: 80,
+    height: 80,
+  },
+  avatarLeft: {
+    marginRight: -15,
+    zIndex: 1,
+  },
+  avatarRight: {
+    marginLeft: -15,
+    zIndex: 1,
+  },
+  avatarInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trophyContainer: {
+    zIndex: 2,
+    marginTop: -40,
+  },
+  trophyEmoji: {
+    fontSize: 40,
+  },
+  comingSoonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    marginBottom: 20,
+    gap: 6,
+  },
+  comingSoonBadgeText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  notifyPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 24,
+    marginTop: 24,
+    gap: 10,
+  },
+  notifyPromptText: {
+    fontSize: 14,
   },
   comingSoonTitle: {
     fontWeight: '700',
     marginTop: 20,
     textAlign: 'center',
-    ...FontStyles.h3,
+    ...FontStyles.h2,
   },
   comingSoonText: {
     marginTop: 8,
     textAlign: 'center',
     ...FontStyles.body,
+    lineHeight: 22,
   },
   featureList: {
     marginTop: 32,
@@ -1665,6 +2814,82 @@ const styles = StyleSheet.create({
   searchPlaceholder: {
     ...FontStyles.body,
   },
+  inboxLaneWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  inboxLaneBar: {
+    flexDirection: 'row',
+    borderRadius: 18,
+    padding: 4,
+    gap: 8,
+  },
+  inboxLanePill: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+  },
+  inboxLaneText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  inboxLaneBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  inboxLaneBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  // Quick Access Row (New button + recent contacts)
+  quickAccessRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 16,
+  },
+  newMessageBtn: {
+    alignItems: 'center',
+    width: 64,
+  },
+  newMessageCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickAccessItem: {
+    alignItems: 'center',
+    width: 64,
+  },
+  quickAccessLabel: {
+    marginTop: 6,
+    textAlign: 'center',
+    ...FontStyles.caption,
+    fontSize: 11,
+  },
+  // Messages Section Header
+  messagesSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  messagesSectionTitle: {
+    fontWeight: '600',
+    fontSize: 16,
+  },
   storiesRow: {
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -1759,7 +2984,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
     gap: 12,
   },
   chatContent: {
@@ -1793,9 +3017,137 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  requestIdentity: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  requestCopy: {
+    flex: 1,
+  },
+  requestSubtitle: {
+    marginTop: 2,
+    ...FontStyles.bodySmall,
+  },
+  requestAction: {
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  requestActionText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  playLockWrap: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  playLockCard: {
+    borderRadius: 28,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.2)',
+  },
+  playLockBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  playLockBadgeText: {
+    color: '#F6D58C',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  playLockTitle: {
+    marginTop: 18,
+    color: '#FFF',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
+  },
+  playLockBody: {
+    marginTop: 12,
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  playLockFeatures: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 20,
+  },
+  playLockFeaturePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  playLockFeatureText: {
+    color: '#F5F3FF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  playLockFooter: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  playLockFooterDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#A855F7',
+  },
+  playLockFooterText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  activityCopy: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontWeight: '600',
+    ...FontStyles.body,
+  },
+  activityMeta: {
+    marginTop: 3,
+    ...FontStyles.caption,
+  },
   emptyMessages: {
     alignItems: 'center',
     paddingVertical: 60,
+    paddingHorizontal: 28,
   },
   searchModal: {
     flex: 1,
@@ -1867,6 +3219,11 @@ const styles = StyleSheet.create({
   chatModalUsername: {
     fontWeight: '600',
     ...FontStyles.body,
+  },
+  typingIndicator: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   chatMessagesList: {
     flex: 1,

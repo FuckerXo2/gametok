@@ -8,15 +8,17 @@ import {
   Text,
   ActivityIndicator,
   PanResponder,
+  Animated,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './GameCard';
 import { WebViewPool, WebViewPoolHandle } from './WebViewPool';
 import { games as gamesApi } from '../services/api';
-import { initializeAds, getAdFrequency } from '../services/ads';
 
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 const SCROLL_ZONE_HEIGHT = 0.25; // Bottom 25% of screen
 const SWIPE_THRESHOLD = 50;
 
@@ -51,7 +53,6 @@ export const GameFeed: React.FC = () => {
   const [feedData, setFeedData] = useState<FeedItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [adsInitialized, setAdsInitialized] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
   const feedIndexRef = useRef(0);
@@ -78,18 +79,34 @@ export const GameFeed: React.FC = () => {
     }
   }, []);
 
-  // Bottom scroll zone pan responder
-  const scrollPanResponder = useRef(
+  const touchStartY = useRef(0);
+
+  // Edge pan responder - intercepts touches BEFORE they reach the FlatList/WebView
+  // but ONLY if the touch starts in the top/bottom 13% and is a swipe.
+  const edgePanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy < -SWIPE_THRESHOLD) {
+      onStartShouldSetPanResponderCapture: (e) => {
+        touchStartY.current = e.nativeEvent.pageY;
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        const isEdge = touchStartY.current > screenHeight * 0.75;
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
+      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        const isEdge = touchStartY.current > screenHeight * 0.75;
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy < -SWIPE_THRESHOLD || gesture.vy < -0.5) {
           goToNext();
-        } else if (gestureState.dy > SWIPE_THRESHOLD) {
+        } else if (gesture.dy > SWIPE_THRESHOLD || gesture.vy > 0.5) {
           goToPrev();
         }
-      },
+      }
     })
   ).current;
 
@@ -112,12 +129,6 @@ export const GameFeed: React.FC = () => {
       }
     }
   }, [activeIndex, feedData]);
-
-  useEffect(() => {
-    initializeAds().then((success) => {
-      setAdsInitialized(success);
-    });
-  }, []);
 
   useEffect(() => {
     const fetchGames = async () => {
@@ -200,7 +211,7 @@ export const GameFeed: React.FC = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <Animated.View {...edgePanResponder.panHandlers} style={styles.container} pointerEvents="box-none" collapsable={false}>
       {/* WebView Pool - games render here */}
       <WebViewPool ref={webViewPoolRef} isScrollMode={false} />
 
@@ -209,7 +220,7 @@ export const GameFeed: React.FC = () => {
         <Text style={styles.headerTitle}>For You</Text>
       </View>
 
-      {/* FlatList just for positioning/tracking, scroll disabled */}
+      {/* Scroll disabled FlatList tracks items */}
       <FlatList
         ref={flatListRef}
         data={feedData}
@@ -232,12 +243,9 @@ export const GameFeed: React.FC = () => {
         initialNumToRender={3}
       />
 
-      {/* Bottom 25% scroll zone - swipe here to navigate */}
-      <View
-        style={[styles.scrollZone, { height: scrollZoneHeight }]}
-        {...scrollPanResponder.panHandlers}
-      />
-    </View>
+      {/* Native gesture zones handle edge swipes via container pointerEvents="box-none" */}
+
+    </Animated.View>
   );
 };
 
@@ -253,11 +261,4 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   loadingText: { color: '#fff', marginTop: 12, fontSize: 16 },
-  scrollZone: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
 });

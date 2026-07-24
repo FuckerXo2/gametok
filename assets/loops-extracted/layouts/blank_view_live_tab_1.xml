@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView android:background="@color/White" android:visibility="visible" android:layout_width="match_parent" android:layout_height="match_parent"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <LinearLayout android:gravity="center_horizontal" android:layout_gravity="center" android:orientation="vertical" android:id="@id/blank_view_root" android:paddingBottom="?android:actionBarSize" android:layout_width="match_parent" android:layout_height="wrap_content">
-        <ImageView android:id="@id/blank_view_image" android:layout_width="wrap_content" android:layout_height="wrap_content" android:src="@drawable/bg_blank_following" android:contentDescription="@null" />
-        <TextView android:gravity="center" android:id="@id/blank_view_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="30.0dp" android:text="@string/no_live_hint" android:paddingStart="20.0dp" android:paddingEnd="20.0dp" style="@style/h4_unselected_bold" />
-        <TextView android:id="@id/retry_view_button" android:layout_marginTop="35.0dp" android:text="@string/retry" style="@style/bt3" />
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>

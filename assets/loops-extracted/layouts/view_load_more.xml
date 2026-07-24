@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <LinearLayout android:orientation="vertical" android:id="@id/loading_layout" android:layout_width="match_parent" android:layout_height="wrap_content">
-        <mozat.mchatcore.ui.view.BallPulseLoadingView android:layout_gravity="center_horizontal" android:id="@id/progress_bar_view" android:paddingTop="6.0dp" android:paddingBottom="6.0dp" android:layout_width="40.0dp" android:layout_height="40.0dp" android:paddingStart="6.0dp" android:paddingEnd="6.0dp" />
-    </LinearLayout>
-</LinearLayout>

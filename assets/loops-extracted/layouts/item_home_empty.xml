@@ -1,3 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:gravity="center" android:orientation="vertical" android:id="@id/ll_empty" android:background="@drawable/bg_home_load_back" android:visibility="gone" android:layout_width="match_parent" android:layout_height="120.0dp" android:layout_marginTop="15.0dp" android:layout_marginStart="16.0dp" android:layout_marginEnd="16.0dp"
-  xmlns:android="http://schemas.android.com/apk/res/android" />

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:gravity="center_horizontal" android:orientation="vertical" android:background="@drawable/bg_shape_white_r20" android:padding="10.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_margin="20.0dp"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <ImageView android:layout_gravity="end" android:id="@id/close_button" android:layout_width="24.0dp" android:layout_height="24.0dp" android:src="@drawable/s_delete" />
-    <TextView android:textSize="26.0sp" android:textStyle="bold" android:textColor="@android:color/black" android:gravity="center" android:id="@id/title_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/congratulations" android:paddingStart="10.0dp" android:paddingEnd="10.0dp" />
-    <TextView android:textSize="16.0sp" android:textColor="@color/Black" android:ellipsize="end" android:gravity="center" android:id="@id/tv_tip" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2.0dp" android:text="@string/you_got_a_boost_reward" android:maxLines="1" />
-    <ImageView android:id="@id/iv_game_icon" android:layout_width="308.0dp" android:layout_height="188.0dp" android:src="@drawable/ic_spin_new_user_reward" android:scaleType="fitCenter" />
-    <TextView android:textSize="20.0sp" android:textStyle="bold" android:textColor="@color/Black" android:gravity="center" android:id="@id/tv_play" android:background="@drawable/bg_guide_sign_in" android:layout_width="280.0dp" android:layout_height="52.0dp" android:layout_marginBottom="10.0dp" android:text="@string/get_it" />
-</LinearLayout>

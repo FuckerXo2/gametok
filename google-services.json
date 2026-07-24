@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "516560435127",
+    "project_id": "gametok-3a4c2",
+    "storage_bucket": "gametok-3a4c2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:516560435127:android:7a06cccda1b0c2a0151a32",
+        "android_client_info": {
+          "package_name": "com.vogeza"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "516560435127-86cbhsk1vhlderq37kd922j8q675pmcf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vogeza",
+            "certificate_hash": "03e348d829c28b681dc3a414cbc1b3b481004d11"
+          }
+        },
+        {
+          "client_id": "516560435127-frgcsr1jhbib6ov7qcqmv4k1tm38l6g8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vogeza",
+            "certificate_hash": "0105e56ef4bc70fb95a55f4f8cb7959777a97719"
+          }
+        },
+        {
+          "client_id": "516560435127-l6db4akjqei5q57j764kgu3aoaedu45l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDA2nLIvzJFz2c1b8vL7WNeab8sIEfUHPM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "516560435127-l6db4akjqei5q57j764kgu3aoaedu45l.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

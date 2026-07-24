@@ -1,93 +1,113 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   Modal,
   Switch,
   Alert,
   Linking,
   Image,
   Dimensions,
-  FlatList,
   RefreshControl,
   StyleSheet,
+  Share,
+  Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { useAuthScreen } from '../../App';
-import { auth, savedGames as savedGamesApi, gamification } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
+import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
+import { auth, likes as likesApi, users as usersApi } from '../services/api';
+import { resolveGameThumbnail } from '../utils/thumbnails';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { EditProfileModal } from './EditProfileModal';
-import { RewardsScreen } from './RewardsScreen';
 import { Avatar } from './Avatar';
-import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FollowListModal } from './FollowListModal';
 import { UserProfileModal } from './UserProfileModal';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GRID_GAP = 2;
-const NUM_COLUMNS = 3;
-const TILE_SIZE = (SCREEN_WIDTH - GRID_GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+// V2 design tokens — kept inline so this screen is self-contained.
+const PURPLE = '#a855f7';
+const PURPLE_DEEP = '#7c3aed';
+const CYAN = '#22d3ee';
+const GOLD = '#f59e0b';
+const TEXT = '#ffffff';
+const TEXT_MUTED = '#9a9aa8';
+const TEXT_DIM = '#6b6b78';
+const BG = '#000000';
+const SURFACE = '#0e0e14';
 
-interface Game { id: string; name: string; thumbnail?: string; }
-interface GamificationStats {
-  points: { balance: number; lifetimeEarned: number; usdValue?: number };
-  streak: { current: number; longest: number; lastClaimDate: string | null; multiplier: number };
-  level?: { current: number; xp: number; currentXp: number; xpForNextLevel: number; progress: number };
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const GRID_PADDING = 12;
+const GRID_GAP = 4;
+const TILE_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * 2) / 3;
+const TILE_HEIGHT = TILE_WIDTH * 1.34;
+
+interface Game {
+  id: string;
+  name: string;
+  thumbnail?: string;
+  plays?: number;
 }
 
-const getThumbnailUrl = (game: Game) => game.thumbnail || `${GAMES_HOST}/thumbnails/${game.id}.png`;
-const formatNumber = (num: number): string => {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
+const getThumbnailUrl = (game: Game) => {
+  return resolveGameThumbnail(game.thumbnail, game.id, game);
 };
 
+const formatCount = (n: number): string => {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+};
+
+type ProfileContentTab = 'created' | 'played' | 'liked';
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
-  const { colors, isDark, toggleTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
+  const { openSharedGame } = useDeepLink();
+  const { setActiveTab } = useNavigation();
+
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showRewards, setShowRewards] = useState(false);
-  const [stats, setStats] = useState<GamificationStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [savedGamesList, setSavedGamesList] = useState<Game[]>([]);
-  const [socialStats, setSocialStats] = useState({ followers: 0, following: 0 });
-  const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean, tab: 'followers' | 'following' }>({ visible: false, tab: 'followers' });
+  const [createdGamesList, setCreatedGamesList] = useState<Game[]>([]);
+  const [playedGamesList, setPlayedGamesList] = useState<Game[]>([]);
+  const [likedGamesList, setLikedGamesList] = useState<Game[]>([]);
+  const [profileTab, setProfileTab] = useState<ProfileContentTab>('created');
+  const [socialStats, setSocialStats] = useState({ followers: 0, following: 0, likes: 0 });
+  const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean; tab: 'followers' | 'following' }>({
+    visible: false,
+    tab: 'followers',
+  });
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  // User tapped in the follow list, held until that modal has fully closed so
+  // we never present two native modals at once (iOS drops the second one).
+  const pendingProfileUserRef = useRef<any>(null);
   const lastFetchRef = useRef<number>(0);
 
-
-
   const username = user?.username || 'guest';
-  const displayName = user?.displayName || '';
+  const displayName = user?.displayName || username;
   const avatar = user?.avatar || null;
   const bio = user?.bio || '';
+  const isVerified = Boolean(user?.verified);
 
   useEffect(() => {
     if (isAuthenticated) fetchData();
   }, [isAuthenticated]);
 
-  // Refresh when tab becomes active
   useEffect(() => {
     if (isActive && isAuthenticated && !refreshing) {
       const now = Date.now();
       if (now - lastFetchRef.current > 5000) {
-        // Small delay to allow HomeScreen's sync to complete first
-        setTimeout(() => {
-          fetchData(true);
-        }, 500);
+        setTimeout(() => fetchData(true), 500);
       }
     }
   }, [isActive]);
@@ -95,234 +115,163 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [statsRes, savedRes, userRes] = await Promise.all([
-        gamification.getStats(),
-        user?.id ? savedGamesApi.userSaved(user.id) : Promise.resolve({ games: [] }),
-        user?.id ? import('../services/api').then(({ users }) => users.get(user.id)) : Promise.resolve({ stats: { followers: 0, following: 0 } }),
+      const [createdRes, playedRes, likedRes, userRes] = await Promise.allSettled([
+        user?.id ? usersApi.created(user.id) : Promise.resolve({ games: [] }),
+        user?.id ? usersApi.played(user.id) : Promise.resolve({ games: [] }),
+        user?.id ? likesApi.userLikes(user.id) : Promise.resolve({ games: [] }),
+        user?.id ? usersApi.get(user.id) : Promise.resolve({ stats: { followers: 0, following: 0, likes: 0 } }),
       ]);
-      setStats(statsRes);
-      setSavedGamesList(savedRes.games || []);
-      if (userRes?.stats) {
+
+      if (createdRes.status === 'fulfilled') setCreatedGamesList(createdRes.value?.games || []);
+      if (playedRes.status === 'fulfilled') setPlayedGamesList(playedRes.value?.games || []);
+      if (likedRes.status === 'fulfilled') setLikedGamesList(likedRes.value?.games || []);
+      if (userRes.status === 'fulfilled' && userRes.value?.stats) {
         setSocialStats({
-          followers: userRes.stats.followers || 0,
-          following: userRes.stats.following || 0,
+          followers: userRes.value.stats.followers || 0,
+          following: userRes.value.stats.following || 0,
+          likes: userRes.value.stats.likes || userRes.value.stats.totalLikes || 0,
         });
       }
       lastFetchRef.current = Date.now();
     } catch (e) {
-      console.log('Failed to fetch data:', e);
+      console.log('[Profile] fetch failed:', e);
     } finally {
       setRefreshing(false);
     }
   };
 
-  const renderGameTile = ({ item }: { item: Game }) => (
-    <TouchableOpacity style={{ width: TILE_SIZE, height: TILE_SIZE, margin: GRID_GAP / 2 }} activeOpacity={0.9}>
-      <Image source={{ uri: getThumbnailUrl(item) }} style={{ width: '100%', height: '100%', backgroundColor: colors.surface }} resizeMode="cover" />
-    </TouchableOpacity>
-  );
+  const openProfileGame = (game: Game) => {
+    openSharedGame(game.id);
+    setActiveTab('home');
+  };
+
+  const handleShareProfile = async () => {
+    try {
+      await Share.share({
+        message: `Check out @${username} on GameTok: https://games.gametok.co/u/${username}`,
+      });
+    } catch (e) {
+      console.log('Failed to share profile:', e);
+    }
+  };
+
+  const activeList = useMemo(() => {
+    if (profileTab === 'created') return createdGamesList;
+    if (profileTab === 'played') return playedGamesList;
+    return likedGamesList;
+  }, [profileTab, createdGamesList, playedGamesList, likedGamesList]);
 
   if (!isAuthenticated) {
-    // Show a preview profile with auth overlay
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {/* Preview Profile Content */}
-        <ScrollView contentContainerStyle={{ paddingBottom: 100 }} scrollEnabled={false}>
-          <View style={{ paddingHorizontal: 16, paddingTop: insets.top + 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <View style={{ width: 40 }} />
-              <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@username</Text>
-              <View style={{ width: 40 }} />
-            </View>
-
-            {/* Preview Profile Info */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <View style={{ width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(168,85,247,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 20 }}>
-                <Ionicons name="person" size={40} color="#a855f7" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', marginBottom: 4 }}>Your Name</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 14 }}>Your bio goes here...</Text>
-              </View>
-            </View>
-
-            {/* Preview Stats */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>0</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Following</Text>
-              </View>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>0</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Followers</Text>
-              </View>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>0</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Likes</Text>
-              </View>
-            </View>
-
-            {/* Preview Saved Games Grid */}
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Saved Games</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <View key={i} style={{ width: TILE_SIZE, height: TILE_SIZE, backgroundColor: colors.surface, borderRadius: 4 }} />
-              ))}
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* Auth Overlay */}
-        <View style={StyleSheet.absoluteFill}>
-          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 20 }}>Sign up to continue</Text>
-            <TouchableOpacity style={{ width: 200, borderRadius: 25, overflow: 'hidden' }} onPress={showAuthScreen} activeOpacity={0.8}>
-              <LinearGradient colors={['#a855f7', '#7c3aed']} style={{ paddingVertical: 14, alignItems: 'center' }}>
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Sign Up</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={showLoginScreen}>
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 16 }}>or log in</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
+    return <UnauthenticatedPreview onSignUp={showAuthScreen} onLogIn={showLoginScreen} insets={insets} />;
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={styles.root}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 96 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#a855f7" />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor={TEXT} />
+        }
       >
-        {/* Header */}
-        <View style={{ paddingHorizontal: 16, paddingTop: insets.top + 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={() => setShowAddFriends(true)}>
-              <Ionicons name="person-add-outline" size={22} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>@{username}</Text>
-            <TouchableOpacity style={{ width: 40, height: 40, justifyContent: 'center', alignItems: 'center' }} onPress={() => setShowSettings(true)}>
-              <Ionicons name="menu-outline" size={24} color={colors.text} />
-            </TouchableOpacity>
+        {/* Top bar */}
+        <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+          <Pressable style={styles.topIconBtn} onPress={() => setShowAddFriends(true)} hitSlop={6}>
+            <Ionicons name="person-add-outline" size={19} color={TEXT} />
+          </Pressable>
+          <View style={styles.topUsernameWrap}>
+            <Text style={styles.topUsername}>@{username}</Text>
+            {isVerified ? <VerifiedDot size={16} /> : null}
           </View>
-
-          {/* Profile Info Row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-            <TouchableOpacity onPress={() => setShowEditProfile(true)} activeOpacity={0.9}>
-              <Avatar uri={avatar} size={86} />
-            </TouchableOpacity>
-
-            <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 20 }}>
-              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(socialStats.followers)}</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Followers</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(socialStats.following)}</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Following</Text>
-              </TouchableOpacity>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800' }}>{formatNumber(savedGamesList.length)}</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>Saved</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Name & Bio */}
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{displayName || username}</Text>
-            {bio ? <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 4, lineHeight: 20 }}>{bio}</Text> : null}
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.coinGold + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                <Image source={require('../../assets/ui/coins/coins_small.png')} style={{ width: 16, height: 16 }} />
-                <Text style={{ color: LoopsColors.coinGold, fontSize: 13, fontWeight: '700' }}>{formatNumber(stats?.points.balance || 0)}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: LoopsColors.color6 + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                <Ionicons name="trophy" size={12} color={LoopsColors.color6} />
-                <Text style={{ color: LoopsColors.color6, fontSize: 13, fontWeight: '700' }}>Level {stats?.level?.current || 1}</Text>
-              </View>
-              {(stats?.streak.current || 0) > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: LoopsColors.color2 + '26', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
-                  <Ionicons name="flame" size={14} color={LoopsColors.color2} />
-                  <Text style={{ color: LoopsColors.color2, fontSize: 13, fontWeight: '600' }}>{stats?.streak.current} day streak</Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          {/* Edit Profile Button */}
-          <TouchableOpacity
-            style={{ backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: colors.border }}
-            onPress={() => setShowEditProfile(true)}
-          >
-            <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>Edit Profile</Text>
-          </TouchableOpacity>
-
-          {/* Rewards Vault Entry Button */}
-          <TouchableOpacity
-            style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}
-            onPress={() => setShowRewards(true)}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={['#1a1a2e', '#16213e', '#0f3460']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: LoopsColors.coinGold + '26', justifyContent: 'center', alignItems: 'center' }}>
-                  <FontAwesome5 name="gift" size={20} color={LoopsColors.coinGold} />
-                </View>
-                <View>
-                  <Text style={{ color: LoopsColors.white, fontSize: 15, fontWeight: '800' }}>Rewards Vault</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                    <Text style={{ color: LoopsColors.coinGold, fontSize: 13, fontWeight: '700' }}>
-                      {(stats?.points.balance || 0).toLocaleString()} Coins
-                    </Text>
-                    <Text style={{ color: LoopsColors.white50, fontSize: 12, fontWeight: '600' }}>
-                      ≈ ${((stats?.points.usdValue !== undefined && stats.points.usdValue > 0) ? stats.points.usdValue : (stats?.points.balance || 0) / 5667).toFixed(2)} USD
-                    </Text>
-                  </View>
-                </View>
-              </View>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: LoopsColors.white10, justifyContent: 'center', alignItems: 'center' }}>
-                <Ionicons name="chevron-forward" size={16} color={LoopsColors.white} />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+          <Pressable style={styles.topIconBtn} onPress={() => setShowSettings(true)} hitSlop={6}>
+            <Ionicons name="menu-outline" size={22} color={TEXT} />
+          </Pressable>
         </View>
 
-        {/* Saved Games */}
-        <View style={{ marginTop: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border }}>
-            <Ionicons name="bookmark" size={18} color={colors.text} />
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Saved Games</Text>
+        {/* Avatar */}
+        <View style={styles.avatarWrap}>
+          <View style={styles.avatarBorder}>
+            <Avatar uri={avatar} userId={user?.id} size={140} />
           </View>
-
-          {savedGamesList.length === 0 ? (
-            <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-              <Ionicons name="bookmark-outline" size={48} color={colors.textSecondary} />
-              <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 12 }}>No saved games yet</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={savedGamesList}
-              renderItem={renderGameTile}
-              keyExtractor={item => item.id}
-              numColumns={NUM_COLUMNS}
-              scrollEnabled={false}
-              contentContainerStyle={{ paddingHorizontal: 1 }}
-            />
-          )}
         </View>
+
+        {/* Display name */}
+        <Text style={styles.displayName}>{displayName}</Text>
+        <Text style={styles.handle}>@{username}</Text>
+
+        {/* Bio */}
+        {bio ? <Text style={styles.bio}>{bio}</Text> : null}
+
+        {/* Badge row */}
+        <View style={styles.badgeRow}>
+          <BadgePill icon="sparkles" label="Creator" tint={PURPLE} />
+          <BadgePill icon="game-controller" label="Game Builder" tint={CYAN} />
+          <BadgePill icon="ribbon" label="Early Access" tint={GOLD} />
+        </View>
+
+        {/* Stat row (4 columns, no card) */}
+        <View style={styles.statsRow}>
+          <StatCol
+            value={socialStats.following}
+            label="Following"
+            onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}
+          />
+          <StatCol
+            value={socialStats.followers}
+            label="Followers"
+            onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}
+          />
+          <StatCol value={createdGamesList.length} label="Created" />
+          <StatCol value={socialStats.likes} label="Likes" />
+        </View>
+
+        {/* Action buttons */}
+        <View style={styles.actionRow}>
+          <Pressable style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
+            <Text style={styles.editBtnText}>Edit profile</Text>
+          </Pressable>
+          <Pressable style={styles.shareBtn} onPress={handleShareProfile}>
+            <Ionicons name="arrow-up-outline" size={15} color={PURPLE} style={{ marginRight: 6 }} />
+            <Text style={styles.shareBtnText}>Share profile</Text>
+          </Pressable>
+        </View>
+
+        {/* Tabs */}
+        <View style={styles.tabRow}>
+          <ProfileTab
+            label="CREATED"
+            icon="grid-outline"
+            isActive={profileTab === 'created'}
+            onPress={() => setProfileTab('created')}
+          />
+          <ProfileTab
+            label="PLAYED"
+            icon="play-circle-outline"
+            isActive={profileTab === 'played'}
+            onPress={() => setProfileTab('played')}
+          />
+          <ProfileTab
+            label="LIKED"
+            icon="heart-outline"
+            isActive={profileTab === 'liked'}
+            onPress={() => setProfileTab('liked')}
+          />
+        </View>
+        <View style={styles.tabUnderlineTrack} />
+
+        {/* Grid */}
+        {activeList.length === 0 ? (
+          <EmptyState tab={profileTab} />
+        ) : (
+          <View style={styles.grid}>
+            {activeList.map((g) => (
+              <GameTile key={g.id} game={g} onPress={() => openProfileGame(g)} />
+            ))}
+          </View>
+        )}
       </ScrollView>
 
+      {/* Modals */}
       <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
       <EditProfileModal visible={showEditProfile} onClose={() => setShowEditProfile(false)} />
 
@@ -333,11 +282,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         username={username}
         initialTab={followModalConfig.tab}
         onUserPress={(profileUser) => {
+          pendingProfileUserRef.current = { ...profileUser, isFriend: false };
           setFollowModalConfig({ ...followModalConfig, visible: false });
-          // Open their profile modal with isFriend passed neutrally (it will be refetched there)
-          setTimeout(() => {
-            setSelectedProfileUser({ ...profileUser, isFriend: false });
-          }, 300);
+        }}
+        onClosed={() => {
+          if (pendingProfileUserRef.current) {
+            setSelectedProfileUser(pendingProfileUserRef.current);
+            pendingProfileUserRef.current = null;
+          }
         }}
       />
 
@@ -345,81 +297,101 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         visible={!!selectedProfileUser}
         onClose={() => {
           setSelectedProfileUser(null);
-          fetchData(true); // Optional: refresh following counts in case they followed/unfollowed
+          fetchData(true);
         }}
         user={selectedProfileUser}
       />
 
-      {/* Rewards Full Screen Modal */}
-      <Modal visible={showRewards} animationType="slide" onRequestClose={() => setShowRewards(false)}>
-        <RewardsScreen isActive={showRewards} onClose={() => setShowRewards(false)} />
-      </Modal>
-
-      {/* Settings Modal */}
-      <Modal visible={showSettings} animationType="slide" transparent onRequestClose={() => setShowSettings(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowSettings(false)} activeOpacity={1} />
-          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingBottom: 20, maxHeight: '70%' }}>
-            <View style={{ width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginVertical: 12 }} />
+      {/* Settings sheet */}
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <View style={styles.sheetBackdrop}>
+          <Pressable style={{ flex: 1 }} onPress={() => setShowSettings(false)} />
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetGrabber} />
             <ScrollView showsVerticalScrollIndicator={false}>
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => { setShowSettings(false); setShowEditProfile(true); }}>
-                <Ionicons name="person-outline" size={22} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 16 }}>Edit Profile</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => { setShowSettings(false); setShowAddFriends(true); }}>
-                <Ionicons name="person-add-outline" size={22} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 16 }}>Find Friends</Text>
-              </TouchableOpacity>
-
-              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }}>
-                <Ionicons name={isDark ? "moon" : "sunny-outline"} size={22} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 16 }}>Dark Mode</Text>
-                <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#ccc', true: '#a855f7' }} thumbColor="#fff" style={{ marginLeft: 'auto' }} />
+              <SheetItem
+                icon="person-outline"
+                label="Edit Profile"
+                onPress={() => {
+                  setShowSettings(false);
+                  setShowEditProfile(true);
+                }}
+              />
+              <SheetItem
+                icon="person-add-outline"
+                label="Find Friends"
+                onPress={() => {
+                  setShowSettings(false);
+                  setShowAddFriends(true);
+                }}
+              />
+              <View style={styles.sheetDivider} />
+              <View style={styles.sheetSwitchRow}>
+                <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={20} color={TEXT} />
+                <Text style={styles.sheetItemLabel}>Dark Mode</Text>
+                <Switch
+                  value={isDark}
+                  onValueChange={toggleTheme}
+                  trackColor={{ false: '#ccc', true: PURPLE_DEEP }}
+                  thumbColor="#fff"
+                  style={{ marginLeft: 'auto' }}
+                />
               </View>
-
-              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('mailto:gametokapp@gmail.com')}>
-                <Ionicons name="mail-outline" size={22} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 16 }}>Contact Us</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/privacy.html')}>
-                <Ionicons name="shield-outline" size={22} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 16 }}>Privacy Policy</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => Linking.openURL('https://gametok-landing.pages.dev/terms.html')}>
-                <Ionicons name="document-text-outline" size={22} color={colors.text} />
-                <Text style={{ color: colors.text, fontSize: 16 }}>Terms of Service</Text>
-              </TouchableOpacity>
-
-              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => { setShowSettings(false); logout(); }}>
-                <Ionicons name="log-out-outline" size={22} color="#ef4444" />
-                <Text style={{ color: '#ef4444', fontSize: 16 }}>Log Out</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 16 }} onPress={() => {
-                Alert.alert('Delete Account', 'Are you sure? This cannot be undone.', [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete', style: 'destructive', onPress: async () => {
-                      try { await auth.deleteAccount(); setShowSettings(false); logout(); }
-                      catch { Alert.alert('Error', 'Failed to delete account.'); }
-                    }
-                  }
-                ]);
-              }}>
-                <Ionicons name="trash-outline" size={22} color="#ef4444" />
-                <Text style={{ color: '#ef4444', fontSize: 16 }}>Delete Account</Text>
-              </TouchableOpacity>
-
-              <View style={{ height: 40 }} />
+              <View style={styles.sheetDivider} />
+              <SheetItem
+                icon="mail-outline"
+                label="Contact Us"
+                onPress={() => Linking.openURL('mailto:info@gametok.com')}
+              />
+              <SheetItem
+                icon="shield-outline"
+                label="Privacy Policy"
+                onPress={() => Linking.openURL('https://gametok.co/privacy.html')}
+              />
+              <SheetItem
+                icon="document-text-outline"
+                label="Terms of Service"
+                onPress={() => Linking.openURL('https://gametok.co/terms.html')}
+              />
+              <View style={styles.sheetDivider} />
+              <SheetItem
+                icon="log-out-outline"
+                label="Log Out"
+                tone="danger"
+                onPress={() => {
+                  setShowSettings(false);
+                  logout();
+                }}
+              />
+              <SheetItem
+                icon="trash-outline"
+                label="Delete Account"
+                tone="danger"
+                onPress={() => {
+                  Alert.alert('Delete Account', 'Are you sure? This cannot be undone.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await auth.deleteAccount();
+                          setShowSettings(false);
+                          logout();
+                        } catch {
+                          Alert.alert('Error', 'Failed to delete account.');
+                        }
+                      },
+                    },
+                  ]);
+                }}
+              />
+              <View style={{ height: 32 }} />
             </ScrollView>
           </View>
         </View>
@@ -427,3 +399,517 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     </View>
   );
 };
+
+// --- Sub-components ---------------------------------------------------------
+
+const VerifiedDot: React.FC<{ size?: number }> = ({ size = 16 }) => (
+  <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+    <MaterialIcons name="verified" size={size} color={PURPLE} />
+  </View>
+);
+
+const BadgePill: React.FC<{ icon: keyof typeof Ionicons.glyphMap; label: string; tint: string }> = ({
+  icon,
+  label,
+  tint,
+}) => (
+  <View style={[badgeStyles.pill, { borderColor: `${tint}55` }]}>
+    <Ionicons name={icon} size={13} color={tint} />
+    <Text style={[badgeStyles.label, { color: TEXT }]}>{label}</Text>
+  </View>
+);
+
+const badgeStyles = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+});
+
+const StatCol: React.FC<{ value: number; label: string; onPress?: () => void }> = ({ value, label, onPress }) => {
+  const Wrapper: any = onPress ? Pressable : View;
+  return (
+    <Wrapper onPress={onPress} style={statColStyles.col}>
+      <Text style={statColStyles.value}>{formatCount(value)}</Text>
+      <Text style={statColStyles.label}>{label}</Text>
+    </Wrapper>
+  );
+};
+
+const statColStyles = StyleSheet.create({
+  col: {
+    flex: 1,
+    alignItems: 'center',
+    minWidth: 0, // Prevent flex overflow
+  },
+  value: {
+    color: TEXT,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    minHeight: 28, // Fixed height to prevent layout shift
+  },
+  label: {
+    color: TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 4,
+    letterSpacing: 0.1,
+    minHeight: 16, // Fixed height to prevent layout shift
+  },
+});
+
+const ProfileTab: React.FC<{
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  isActive: boolean;
+  onPress: () => void;
+}> = ({ label, icon, isActive, onPress }) => (
+  <Pressable 
+    style={[tabStyles.tab, isActive && tabStyles.tabActive]} 
+    onPress={onPress}
+  >
+    <Ionicons name={icon} size={16} color={isActive ? TEXT : TEXT_DIM} />
+    <Text style={[tabStyles.label, { color: isActive ? TEXT : TEXT_DIM }]}>{label}</Text>
+  </Pressable>
+);
+
+const tabStyles = StyleSheet.create({
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  tabActive: {
+    backgroundColor: '#333333',
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.0,
+  },
+});
+
+const GameTile: React.FC<{ game: Game; onPress: () => void }> = ({ game, onPress }) => (
+  <Pressable style={[tileStyles.tile, { width: TILE_WIDTH, height: TILE_HEIGHT }]} onPress={onPress}>
+    <Image source={{ uri: getThumbnailUrl(game) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+    <LinearGradient
+      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
+      locations={[0, 0.5, 1]}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={tileStyles.body}>
+      <Text style={tileStyles.title} numberOfLines={1}>
+        {game.name}
+      </Text>
+      {typeof game.plays === 'number' ? (
+        <View style={tileStyles.playsRow}>
+          <Ionicons name="play" size={9} color="rgba(255,255,255,0.85)" />
+          <Text style={tileStyles.playsText}>{formatCount(game.plays || 0)}</Text>
+        </View>
+      ) : null}
+    </View>
+  </Pressable>
+);
+
+const tileStyles = StyleSheet.create({
+  tile: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  body: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+  },
+  title: {
+    color: TEXT,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowRadius: 4,
+  },
+  playsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 3,
+  },
+  playsText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 10,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowRadius: 4,
+  },
+});
+
+const EmptyState: React.FC<{ tab: ProfileContentTab }> = ({ tab }) => {
+  const config = {
+    created: {
+      title: 'No published games yet',
+      subtitle: 'Tap the create tab to dream a new game into existence.',
+      icon: 'sparkles-outline' as const,
+    },
+    played: {
+      title: 'No played games yet',
+      subtitle: 'Games you spend time in show up here automatically.',
+      icon: 'play-circle-outline' as const,
+    },
+    liked: {
+      title: 'No liked games yet',
+      subtitle: 'Tap the heart on any game to save it here.',
+      icon: 'heart-outline' as const,
+    },
+  };
+  const c = config[tab];
+  return (
+    <View style={emptyStyles.root}>
+      <View style={emptyStyles.iconBubble}>
+        <Ionicons name={c.icon} size={28} color={TEXT_DIM} />
+      </View>
+      <Text style={emptyStyles.title}>{c.title}</Text>
+      <Text style={emptyStyles.subtitle}>{c.subtitle}</Text>
+    </View>
+  );
+};
+
+const emptyStyles = StyleSheet.create({
+  root: {
+    alignItems: 'center',
+    paddingHorizontal: 30,
+    paddingTop: 56,
+    paddingBottom: 56,
+  },
+  iconBubble: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  title: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+});
+
+const SheetItem: React.FC<{
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  tone?: 'default' | 'danger';
+}> = ({ icon, label, onPress, tone = 'default' }) => {
+  const isDanger = tone === 'danger';
+  return (
+    <Pressable style={styles.sheetItem} onPress={onPress}>
+      <Ionicons name={icon} size={20} color={isDanger ? '#ef4444' : TEXT} />
+      <Text style={[styles.sheetItemLabel, { color: isDanger ? '#ef4444' : TEXT }]}>{label}</Text>
+    </Pressable>
+  );
+};
+
+const UnauthenticatedPreview: React.FC<{
+  onSignUp: () => void;
+  onLogIn: () => void;
+  insets: { top: number };
+}> = ({ onSignUp, onLogIn, insets }) => (
+  <View style={styles.root}>
+    <ScrollView contentContainerStyle={{ paddingBottom: 100 }} scrollEnabled={false}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.topIconBtn} />
+        <Text style={styles.topUsername}>@username</Text>
+        <View style={styles.topIconBtn} />
+      </View>
+      <View style={styles.avatarWrap}>
+        <View style={styles.avatarBorder}>
+          <View
+            style={{
+              width: 140,
+              height: 140,
+              borderRadius: 70,
+              backgroundColor: SURFACE,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="person" size={64} color={TEXT_DIM} />
+          </View>
+        </View>
+      </View>
+      <Text style={styles.displayName}>Your profile</Text>
+      <Text style={styles.handle}>@username</Text>
+      <Text style={styles.bio}>Sign up to start dreaming and playing games.</Text>
+    </ScrollView>
+    <View style={StyleSheet.absoluteFill}>
+      <BlurView intensity={70} tint="dark" style={StyleSheet.absoluteFill} />
+      <View style={styles.authOverlay}>
+        <Text style={styles.authTitle}>Sign up to continue</Text>
+        <Pressable style={styles.authPrimary} onPress={onSignUp}>
+          <Text style={styles.authPrimaryText}>Sign Up</Text>
+        </Pressable>
+        <Pressable onPress={onLogIn}>
+          <Text style={styles.authSecondary}>or log in</Text>
+        </Pressable>
+      </View>
+    </View>
+  </View>
+);
+
+// --- Styles -----------------------------------------------------------------
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  topIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topUsernameWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  topUsername: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  avatarWrap: {
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  avatarBorder: {
+    width: 144,
+    height: 144,
+    borderRadius: 72,
+    padding: 3,
+    borderWidth: 2,
+    borderColor: 'rgba(168,85,247,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: PURPLE,
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  displayName: {
+    color: TEXT,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    textAlign: 'center',
+  },
+  handle: {
+    color: TEXT_MUTED,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  bio: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: '400',
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 32,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    minHeight: 36, // Fixed height to prevent layout shift
+  },
+  statsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    marginTop: 10,
+    minHeight: 70, // Fixed height to prevent layout shift
+  },
+  actionRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 16,
+  },
+  editBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBtnText: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  shareBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(168,85,247,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  shareBtnText: {
+    color: PURPLE,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 16,
+    borderRadius: 16,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  tabUnderlineTrack: {
+    display: 'none',
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 6,
+    gap: GRID_GAP,
+  },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    backgroundColor: SURFACE,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+    maxHeight: '70%',
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  sheetGrabber: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignSelf: 'center',
+    marginVertical: 12,
+  },
+  sheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+  },
+  sheetItemLabel: {
+    color: TEXT,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sheetSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+  },
+  sheetDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginVertical: 4,
+  },
+  authOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  authTitle: {
+    color: TEXT,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 18,
+  },
+  authPrimary: {
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    backgroundColor: PURPLE,
+    borderRadius: 999,
+  },
+  authPrimaryText: {
+    color: TEXT,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  authSecondary: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    marginTop: 16,
+  },
+});

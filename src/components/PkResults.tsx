@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { LoopsColors } from '../constants/LoopsColors';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 
 interface Props {
-  matchId: number;
   myScore: number;
   opponentScore: number;
   winner: number | null;
@@ -25,17 +25,13 @@ export const PkResults: React.FC<Props> = ({
   onClose
 }) => {
   const { user } = useAuth();
-  const isWinner = winner === user?.id;
+  const numericUserId = user ? Number(user.id) : null;
+  const isWinner = numericUserId !== null && !Number.isNaN(numericUserId) && winner === numericUserId;
   const isDraw = myScore === opponentScore;
 
   const getResultText = () => {
     if (isDraw) return 'Draw!';
     return isWinner ? 'Victory!' : 'Defeat';
-  };
-
-  const getCoins = () => {
-    if (isDraw) return 50;
-    return isWinner ? 100 : 25;
   };
 
   return (
@@ -55,10 +51,7 @@ export const PkResults: React.FC<Props> = ({
         <View style={styles.scoresContainer}>
           {/* My Score */}
           <View style={styles.playerCard}>
-            <Image 
-              source={{ uri: user?.avatar || 'https://via.placeholder.com/80' }} 
-              style={styles.playerAvatar} 
-            />
+            <Avatar uri={user?.avatar || null} userId={user?.id} size={80} style={styles.playerAvatar} />
             <Text style={styles.playerName} numberOfLines={1}>You</Text>
             <Text style={styles.playerScore}>{myScore}</Text>
           </View>
@@ -70,19 +63,10 @@ export const PkResults: React.FC<Props> = ({
 
           {/* Opponent Score */}
           <View style={styles.playerCard}>
-            <Image 
-              source={{ uri: opponent.avatar }} 
-              style={styles.playerAvatar} 
-            />
+            <Avatar uri={opponent.avatar} userId={String(opponent.id)} size={80} style={styles.playerAvatar} />
             <Text style={styles.playerName} numberOfLines={1}>{opponent.username}</Text>
             <Text style={styles.playerScore}>{opponentScore}</Text>
           </View>
-        </View>
-
-        {/* Rewards */}
-        <View style={styles.rewardsContainer}>
-          <Text style={styles.rewardsLabel}>Coins Earned</Text>
-          <Text style={styles.rewardsValue}>+{getCoins()} 🪙</Text>
         </View>
 
         {/* Actions */}
@@ -112,7 +96,7 @@ const styles = StyleSheet.create({
   content: {
     width: '90%',
     maxWidth: 400,
-    backgroundColor: LoopsColors.surface,
+    backgroundColor: LoopsColors.darkerBlack,
     borderRadius: 24,
     padding: 32,
     alignItems: 'center'
@@ -139,19 +123,19 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: LoopsColors.primary
+    borderColor: LoopsColors.mainPink
   },
   playerName: {
     ...FontStyles.body,
-    color: LoopsColors.textSecondary,
+    color: SemanticColors.textSecondary,
     marginBottom: 8
   },
   playerScore: {
     ...FontStyles.h2,
-    color: LoopsColors.textPrimary
+    color: SemanticColors.textInverse
   },
   vsContainer: {
-    backgroundColor: LoopsColors.background,
+    backgroundColor: LoopsColors.black,
     borderRadius: 24,
     width: 48,
     height: 48,
@@ -161,24 +145,7 @@ const styles = StyleSheet.create({
   },
   vsText: {
     ...FontStyles.button,
-    color: LoopsColors.primary
-  },
-  rewardsContainer: {
-    backgroundColor: LoopsColors.background,
-    borderRadius: 16,
-    padding: 20,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 24
-  },
-  rewardsLabel: {
-    ...FontStyles.label,
-    color: LoopsColors.textSecondary,
-    marginBottom: 8
-  },
-  rewardsValue: {
-    ...FontStyles.h2,
-    color: LoopsColors.primary
+    color: LoopsColors.mainPink
   },
   actions: {
     width: '100%'
@@ -190,7 +157,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   primaryButton: {
-    backgroundColor: LoopsColors.primary
+    backgroundColor: LoopsColors.mainPink
   },
   buttonText: {
     ...FontStyles.button,

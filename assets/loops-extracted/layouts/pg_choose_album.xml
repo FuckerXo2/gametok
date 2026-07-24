@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <mozat.mchatcore.ui.widget.MoListView android:id="@id/pg_pull_refresh_list" android:background="@color/White" android:fadingEdge="none" android:layout_width="match_parent" android:layout_height="match_parent" android:cacheColorHint="#00000000" android:fastScrollEnabled="false" android:headerDividersEnabled="false" android:footerDividersEnabled="false" android:smoothScrollbar="true" />
-    <include android:id="@id/list_empty_view" android:layout_width="match_parent" android:layout_height="match_parent" layout="@layout/blank_view" />
-    <include android:id="@id/send_operation_layout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_alignParentBottom="true" layout="@layout/multi_choose_bottom" />
-</RelativeLayout>

@@ -16,8 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { RewardedAd, RewardedAdEventType, TestIds, AdEventType } from 'react-native-google-mobile-ads';
-import { isExpoGo } from '../services/ads';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../context/AuthContext';
 import { gamification } from '../services/api';
@@ -503,115 +501,7 @@ export const RewardsScreen: React.FC<{ isActive?: boolean; onClose?: () => void 
   const [rewardPopupSubtitle, setRewardPopupSubtitle] = useState<string | undefined>(undefined);
   const [achievementsModalVisible, setAchievementsModalVisible] = useState(false);
 
-  // Rewarded Ad state
-  const [rewardedAd, setRewardedAd] = useState<RewardedAd | null>(null);
-  const [isAdLoaded, setIsAdLoaded] = useState(false);
-  // Store today's ad watches (can be 0 to 3)
-  const [adWatchCount, setAdWatchCount] = useState(0);
 
-  // Define reward logic explicitly for rewarded ads
-  useEffect(() => {
-    if (isExpoGo) return;
-
-    // Use test ID in dev, real ID in prod
-    const adUnitId = __DEV__ ? TestIds.REWARDED : 'ca-app-pub-1961802731817431/8717446152';
-
-    const rewarded = RewardedAd.createForAdRequest(adUnitId, {
-      requestNonPersonalizedAdsOnly: true,
-    });
-
-    const unsubscribeLoaded = rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => {
-      setIsAdLoaded(true);
-    });
-
-    const unsubscribeEarned = rewarded.addAdEventListener(
-      RewardedAdEventType.EARNED_REWARD,
-      reward => {
-        // Assume they get 1000 coins for completing the ad
-        setAdWatchCount(prev => prev + 1);
-        handleAdRewardEarned();
-      },
-    );
-
-    const unsubscribeClosed = rewarded.addAdEventListener(AdEventType.CLOSED, () => {
-      setIsAdLoaded(false);
-      // Reload next ad if under limit
-      if (adWatchCount < 3) {
-        rewarded.load();
-      }
-    });
-
-    // Start loading the ad 
-    rewarded.load();
-    setRewardedAd(rewarded);
-
-    return () => {
-      unsubscribeLoaded();
-      unsubscribeEarned();
-      unsubscribeClosed();
-    };
-  }, [adWatchCount]);
-
-  const handleWatchAdPress = () => {
-    if (adWatchCount >= 3) {
-      Alert.alert("Daily Limit Reached", "You've already watched 3 ads today! Come back tomorrow for more.");
-      return;
-    }
-
-    if (isExpoGo) {
-      // Fake watch in Expo Go
-      Alert.alert(
-        "Mock Ad",
-        "Watching a fake ad in Expo Go...",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Finish Ad",
-            onPress: () => {
-              setAdWatchCount(prev => prev + 1);
-              handleAdRewardEarned();
-            }
-          }
-        ]
-      );
-    } else if (isAdLoaded && rewardedAd) {
-      try {
-        rewardedAd.show();
-      } catch (e) {
-        Alert.alert("Ad Error", "Failed to show ad. Please try again later.");
-      }
-    } else {
-      Alert.alert("Ad Loading", "The ad is still loading, please wait a moment and try again.");
-    }
-  };
-
-  const handleAdRewardEarned = async () => {
-    try {
-      // Call backend to claim reward
-      const res = await gamification.claimAdReward();
-
-      if (res.success) {
-        // Add coins locally
-        setStats(prev => prev ? {
-          ...prev,
-          points: {
-            ...prev.points,
-            balance: prev.points.balance + res.pointsEarned,
-            lifetimeEarned: prev.points.lifetimeEarned + res.pointsEarned
-          }
-        } : null);
-
-        // Show success popup
-        setRewardPopupCoins(res.pointsEarned);
-        setRewardPopupTitle('Reward Earned!');
-        setRewardPopupSubtitle(`Thanks for watching. ${res.pointsEarned} coins have been added to your balance!`);
-        setRewardPopupVisible(true);
-      }
-    } catch (error) {
-      console.error('Failed to claim ad reward:', error);
-      Alert.alert("Claim Failed", "Could not verify your ad reward. Please try again later.");
-    }
-  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -769,35 +659,7 @@ export const RewardsScreen: React.FC<{ isActive?: boolean; onClose?: () => void 
           />
         </View>
 
-        {/* Watch Ad for Coins */}
-        {isAuthenticated && (
-          <View style={{ marginHorizontal: 16, marginTop: 16, marginBottom: 8 }}>
-            <TouchableOpacity
-              style={[
-                styles.adWatchRow,
-                adWatchCount >= 3 && styles.adWatchRowDisabled
-              ]}
-              onPress={handleWatchAdPress}
-              disabled={adWatchCount >= 3}
-              activeOpacity={0.8}
-            >
-              <LinearGradient colors={[LoopsColors.color6, LoopsColors.color8]} style={styles.adWatchGradient}>
-                <View style={styles.adWatchContent}>
-                  <View style={styles.adWatchIconContainer}>
-                    <Ionicons name="play-circle" size={28} color={LoopsColors.white} />
-                  </View>
-                  <View style={styles.adWatchTextContainer}>
-                    <Text style={styles.adWatchTitle}>Watch Ad for Coins</Text>
-                    <Text style={styles.adWatchSubtitle}>
-                      {3 - adWatchCount} left today • +1,000 coins each
-                    </Text>
-                  </View>
-                  <Image source={require('../../assets/ui/coins/coins_small_1.png')} style={{ width: 24, height: 24 }} />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        )}
+
 
         <DailyMissions
           challenges={isAuthenticated ? challenges : previewChallenges}

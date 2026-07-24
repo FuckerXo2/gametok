@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout android:orientation="vertical" android:id="@id/root" android:layout_width="match_parent" android:layout_height="match_parent" android:isScrollContainer="true"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <include android:id="@id/empty_view" android:layout_width="match_parent" android:layout_height="match_parent" layout="@layout/blank_view" />
-    <FrameLayout android:id="@id/web_view_container" android:layout_width="match_parent" android:layout_height="match_parent" android:layerType="hardware" />
-    <FrameLayout android:id="@id/video_view" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent" />
-    <ProgressBar android:id="@id/webview_progressBar_normal" android:visibility="visible" android:layout_width="match_parent" android:layout_height="3.0dp" android:progressDrawable="@drawable/web_view_progress_bar_bg" android:layout_alignParentTop="true" app:layout_constraintTop_toTopOf="parent" style="?android:progressBarStyleHorizontal" />
-    <ImageView android:id="@id/webview_curtain" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:layout_centerInParent="true" android:elevation="10.0dp" />
-</androidx.constraintlayout.widget.ConstraintLayout>

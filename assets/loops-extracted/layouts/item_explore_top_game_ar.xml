@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="15.0dp"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <com.facebook.drawee.view.SimpleDraweeView android:id="@id/img_game" android:layout_width="110.0dp" android:layout_height="110.0dp" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent" app:roundedCornerRadius="12.0dp" />
-    <ImageView android:id="@id/img_rank" android:layout_width="32.0dp" android:layout_height="110.0dp" android:src="@drawable/ic_top_game_1" app:layout_constraintStart_toEndOf="@id/img_game" app:layout_constraintTop_toTopOf="parent" />
-    <TextView android:textSize="13.0sp" android:ellipsize="end" android:gravity="center" android:id="@id/tv_game_name" android:layout_width="110.0dp" android:layout_height="wrap_content" android:layout_marginTop="8.0dp" android:maxWidth="110.0dp" android:fontFamily="@font/font_normal" app:layout_constraintEnd_toEndOf="@id/img_game" app:layout_constraintStart_toStartOf="@id/img_game" app:layout_constraintTop_toBottomOf="@id/img_game" />
-</androidx.constraintlayout.widget.ConstraintLayout>

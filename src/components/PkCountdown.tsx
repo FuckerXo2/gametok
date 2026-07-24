@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { LoopsColors } from '../constants/LoopsColors';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
 
 interface Props {
@@ -54,10 +54,10 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: LoopsColors.primary,
+    backgroundColor: LoopsColors.mainPink,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: LoopsColors.primary,
+    shadowColor: LoopsColors.mainPink,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 20,
@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
   },
   readyText: {
     ...FontStyles.h3,
-    color: LoopsColors.textPrimary,
+    color: SemanticColors.textInverse,
     marginTop: 24
   }
 });

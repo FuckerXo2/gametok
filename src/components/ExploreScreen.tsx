@@ -1,1226 +1,1740 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-  Keyboard,
-  RefreshControl,
+  Pressable,
+  ImageBackground,
   Dimensions,
-  Image,
+  RefreshControl,
+  TextInput,
   Modal,
   StatusBar,
-  FlatList,
-  useColorScheme,
-  Pressable,
 } from 'react-native';
-import Animated, { FadeInRight, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import { CustomImage as Image } from './CustomImage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { WebView } from 'react-native-webview';
-import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
-import { games, users } from '../services/api';
-import { FindFriendsModal } from './FindFriendsModal';
-import { UserProfileModal } from './UserProfileModal';
-import { Avatar } from './Avatar';
-import { CategoryModal } from './CategoryModal';
 import { useAuth } from '../context/AuthContext';
-import { useSocket } from '../context/SocketContext';
-import { useAuthScreen } from '../../App';
-import { isExpoGo } from '../services/ads';
+import { useAuthScreen, useNavigation } from '../../App';
+import { API_URL, games as gamesApi, users as usersApi } from '../services/api';
+import { Avatar } from './Avatar';
+import { UserProfileModal } from './UserProfileModal';
 import { GameLoadingScreen } from './GameLoadingScreen';
-import { LoopsBadges, LoopsIcons, BadgeSizes } from '../constants/LoopsBadges';
+import { resolveGameThumbnail } from '../utils/thumbnails';
+
+const PURPLE = '#a855f7';
+const PURPLE_DEEP = '#7c3aed';
+const BG = '#000000';
+const TEXT = '#ffffff';
+const TEXT_MUTED = '#9a9aa8';
+const TEXT_DIM = '#6b6b78';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const HORIZ_PAD = 16;
+const HERO_WIDTH = SCREEN_WIDTH - HORIZ_PAD * 2;
+const GAMES_HOST = 'https://games.gametok.co';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
-// Theme colors matching the new design (clean, modern)
-const themes = {
-  light: {
-    bg: '#ffffff',
-    text: '#000000',
-    textSecondary: '#666666',
-    searchBg: '#f2f2f2',
-    cardBg: '#f2f2f2',
-    border: '#eeeeee',
-    primary: '#a855f7', // Brand purple
+const GAMETOK_BG = require('../../assets/gametok_bg.png');
+const DREAM_FORGE_HERO = require('../../assets/dream-forge-hero.png');
+
+const TABS = ['For You', 'Games', 'Horror', 'Quiz', 'Roleplay'] as const;
+type ExploreTab = (typeof TABS)[number];
+type NonForYouTab = Exclude<ExploreTab, 'For You'>;
+
+const TAB_CATEGORY_CHIPS: Record<NonForYouTab, Array<{ label: string; keywords: string[] }>> = {
+  Games: [
+    { label: 'Recommend', keywords: [] },
+    { label: 'Action', keywords: ['action', 'battle', 'fight', 'combat', 'adventure'] },
+    { label: 'Arcade', keywords: ['arcade', 'runner', 'classic', 'neon'] },
+    { label: 'Racing', keywords: ['race', 'racing', 'drive', 'drift', 'car'] },
+    { label: 'Puzzle', keywords: ['puzzle', 'brain', 'logic'] },
+    { label: 'Casual', keywords: ['casual', 'cozy', 'simple'] },
+    { label: 'Sports', keywords: ['sport', 'football', 'soccer', 'basketball'] },
+  ],
+  Horror: [
+    { label: 'Recommend', keywords: [] },
+    { label: 'Psychological', keywords: ['psychological', 'watched', 'mind'] },
+    { label: 'Survival', keywords: ['survival', 'escape', 'run'] },
+    { label: 'Mystery', keywords: ['mystery', 'detective', 'secret'] },
+    { label: 'Dark', keywords: ['dark', 'night', 'shadow'] },
+    { label: 'Short Scares', keywords: ['short', 'scare', 'ghost', 'haunted'] },
+  ],
+  Quiz: [
+    { label: 'Recommend', keywords: [] },
+    { label: 'Brain Teasers', keywords: ['brain', 'puzzle', 'logic'] },
+    { label: 'Trivia', keywords: ['trivia', 'quiz', 'question'] },
+    { label: 'Party', keywords: ['party', 'friends', 'group'] },
+    { label: 'Guess', keywords: ['guess', 'who', 'what'] },
+    { label: 'Challenge', keywords: ['challenge', 'test', 'score'] },
+  ],
+  Roleplay: [
+    { label: 'Recommend', keywords: [] },
+    { label: 'Immersive Worlds', keywords: ['world', 'immersive', 'open'] },
+    { label: 'Fantasy', keywords: ['fantasy', 'magic', 'kingdom'] },
+    { label: 'Anime', keywords: ['anime', 'naruto', 'school'] },
+    { label: 'Social Rooms', keywords: ['social', 'room', 'friends'] },
+  ],
+};
+
+const TAB_COPY: Record<ExploreTab, {
+  pill: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  line1: string;
+  line2: string;
+  subtitle: string;
+  cta: string;
+  sectionTitles: string[];
+  keywords: string[];
+}> = {
+  'For You': {
+    pill: 'Dream Forge',
+    icon: 'sparkles',
+    line1: 'Make a playable',
+    line2: 'world.',
+    subtitle: 'You imagine it. We build it.',
+    cta: 'Create Now',
+    sectionTitles: ['Trending Now 🔥', 'Made For You'],
+    keywords: [],
   },
-  dark: {
-    bg: '#000000',
-    text: '#ffffff',
-    textSecondary: '#a1a1aa',
-    searchBg: '#1f2937',
-    cardBg: '#1f2937',
-    border: '#333333',
-    primary: '#a855f7',
+  Games: {
+    pill: 'Instant Play',
+    icon: 'game-controller',
+    line1: 'Jump into',
+    line2: 'games.',
+    subtitle: 'Fast rounds. Big worlds.',
+    cta: 'Play Now',
+    sectionTitles: ['Trending Games', 'New Games', 'Arcade Picks'],
+    keywords: ['game', 'arcade', 'race', 'runner', 'survival', 'battle', 'parkour'],
+  },
+  Horror: {
+    pill: 'Horror Picks',
+    icon: 'moon',
+    line1: 'Play something',
+    line2: 'haunted.',
+    subtitle: 'Short scares. Dark stories.',
+    cta: 'Enter',
+    sectionTitles: ['Psychological Horror', 'Short Scares', 'Mystery Worlds'],
+    keywords: ['horror', 'scary', 'haunted', 'ghost', 'nightmare', 'dark', 'mystery', 'watched'],
+  },
+  Roleplay: {
+    pill: 'Live Worlds',
+    icon: 'people',
+    line1: 'Start a',
+    line2: 'story.',
+    subtitle: 'Join rooms. Build lore.',
+    cta: 'Join World',
+    sectionTitles: ['Active Roleplays', 'Fantasy Worlds', 'Social Rooms'],
+    keywords: ['roleplay', 'rp', 'story', 'world', 'city', 'school', 'fantasy', 'anime'],
+  },
+  Quiz: {
+    pill: 'Quiz Rush',
+    icon: 'help-circle',
+    line1: 'Test your',
+    line2: 'friends.',
+    subtitle: 'Quick questions. Big bragging rights.',
+    cta: 'Start Quiz',
+    sectionTitles: ['Trending Quizzes', 'Party Quiz', 'Guess The Game'],
+    keywords: ['quiz', 'trivia', 'question', 'guess', 'test', 'challenge'],
   },
 };
 
-interface GameItem {
+const TRENDING_SEARCHES = [
+  'dream forge',
+  'horror',
+  'racing',
+  'parkour',
+  'quiz',
+  'roleplay',
+  'neon',
+];
+
+interface ExploreGame {
   id: string;
   name: string;
+  description?: string;
+  embedUrl?: string;
   thumbnail?: string;
+  plays?: number;
+  likes?: number;
   color?: string;
   category?: string;
-  plays?: number;
-  embedUrl?: string;
-  _fakePlays?: number;
+  creatorDisplayName?: string | null;
+  creatorUsername?: string | null;
 }
 
-// No more MOCK_FRIENDS
+interface ExploreCreator {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  verified?: boolean;
+}
 
-const isExternalGame = (game: GameItem) => !!game.embedUrl;
+interface HeroSlide {
+  id: string;
+  title: { line1: string; line2: string; accent: 'first' | 'second' };
+  subtitle: string;
+  ctaLabel: string;
+  ctaIcon: keyof typeof Ionicons.glyphMap;
+  ctaTarget: 'create' | 'game';
+  pillIcon: keyof typeof Ionicons.glyphMap;
+  pillLabel: string;
+  imageSource?: any;
+  imageUri?: string;
+  game?: ExploreGame;
+}
 
-const getGameUrl = (game: GameItem) => {
-  if (game.embedUrl) {
-    const sep = game.embedUrl.includes('?') ? '&' : '?';
-    return `${game.embedUrl}${sep}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
-  }
-  // Make sure we correctly construct local Game URLs
-  return `${GAMES_HOST}/${game.id}/`;
+const resolveThumbnail = (thumbnail?: string | null, gameId?: string, game?: ExploreGame) => {
+  return resolveGameThumbnail(thumbnail, gameId, game);
 };
 
-// Generate a consistent fake number for a game based on its ID
-const getFakePlayCount = (gameId: string) => {
-  let hash = 0;
-  for (let i = 0; i < gameId.length; i++) {
-    hash = ((hash << 5) - hash) + gameId.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) % 1500000 + 10000;
+const getGameUrl = (game: ExploreGame) => {
+  const rawUrl = game.embedUrl
+    ? (game.embedUrl.startsWith('/') ? `${API_ORIGIN}${game.embedUrl}` : game.embedUrl)
+    : `${GAMES_HOST}/${game.id}/`;
+  const separator = rawUrl.includes('?') ? '&' : '?';
+  return `${rawUrl}${separator}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
 };
 
-// Ad blocker script from previous codebase
-const AD_BLOCKER_SCRIPT = `
-(function() {
-  window.alert = function() {};
-  window.confirm = function() { return true; };
-  window.prompt = function() { return ''; };
-  
-  // Fake ad SDKs
-  const fireCallbacks = (callbacks) => {
-    if (!callbacks) return;
-    callbacks.adStarted && callbacks.adStarted();
-    callbacks.adFinished && callbacks.adFinished();
-    callbacks.adReward && callbacks.adReward();
-    callbacks.onComplete && callbacks.onComplete();
-    callbacks.onReward && callbacks.onReward();
-    callbacks.success && callbacks.success();
-    callbacks.complete && callbacks.complete();
-    callbacks.done && callbacks.done();
-    callbacks.onClose && callbacks.onClose();
-  };
-  
-  window.google = window.google || {};
-  window.google.ima = {
-    AdDisplayContainer: function() { this.initialize = function(){}; },
-    AdsLoader: function() { this.addEventListener = function(){}; this.requestAds = function(){}; },
-    AdsManager: function() { this.addEventListener = function(){}; this.init = function(){}; this.start = function(){}; },
-    AdsManagerLoadedEvent: { Type: { ADS_MANAGER_LOADED: 'adsManagerLoaded' } },
-    AdErrorEvent: { Type: { AD_ERROR: 'adError' } },
-    AdEvent: { Type: { CONTENT_PAUSE_REQUESTED: 'pause', CONTENT_RESUME_REQUESTED: 'resume', ALL_ADS_COMPLETED: 'complete' }},
-    AdsRenderingSettings: function(){},
-    AdsRequest: function(){},
-  };
-  
-  window.sdk = {
-    showBanner: () => Promise.resolve(),
-    hideBanner: () => Promise.resolve(),
-    showAd: (type, cb) => { fireCallbacks(cb); return Promise.resolve(); },
-    showRewardedAd: (cb) => { fireCallbacks(cb); return Promise.resolve(); },
-    preloadAd: (cb) => { cb && cb(); return Promise.resolve(); },
-  };
-  window.gdsdk = window.sdk;
-  
-  const removeAds = () => {
-    const selectors = [
-      'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', '[class*="ad-"]', '[id*="ad-"]',
-      '.gdsdk-container', '.advertisement', '.ad-overlay', '[class*="preroll"]',
-      '.gm-loader', '.gm-splash', '[class*="gm-"]', '.loading-overlay', '.splash',
-      '#unity-loading-bar', '.unity-loader', '[class*="unity-load"]',
-    ];
-    selectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.cssText = 'display:none!important;visibility:hidden!important;opacity:0!important;';
-        try { el.remove(); } catch(e) {}
-      });
-    });
-  };
-  
-  setInterval(removeAds, 200);
-  setTimeout(removeAds, 0);
-  setTimeout(removeAds, 100);
-  setTimeout(removeAds, 500);
-  setTimeout(removeAds, 1000);
-  
-  const style = document.createElement('style');
-  style.textContent = \`
-    html, body { margin:0!important; padding:0!important; width:100%!important; height:100%!important; overflow:hidden!important; }
-    canvas, #game-container, .game-container, #unity-container { 
-      width:100vw!important; height:100vh!important; position:fixed!important; top:0!important; left:0!important; 
-    }
-    .gm-loader, .gm-splash, [class*="gm-"], .loading-overlay, .splash, #unity-loading-bar, .unity-loader,
-    [class*="loading-screen"], [class*="splash-screen"], .preloader, #preloader {
-      display:none!important; visibility:hidden!important; opacity:0!important;
-    }
-  \`;
-  document.head.appendChild(style);
-})();
-true;
-`;
-
-// Inject blurred game thumbnail as CSS background inside WebView
-const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
-(function() {
-  if (window._blurBgActive) return;
-  window._blurBgActive = true;
-  var thumbUrl = '${thumbnailUrl}';
-  var fallback = '${fallbackColor}';
-  var applyBg = function() {
-    var s = document.getElementById('_gt_blur_bg');
-    if (s) s.remove();
-    s = document.createElement('style');
-    s.id = '_gt_blur_bg';
-    s.textContent = [
-      'html, body { background: ' + fallback + ' !important; background-color: ' + fallback + ' !important; margin:0; padding:0; }',
-      'body::before {',
-      '  content: "";',
-      '  position: fixed;',
-      '  top: -20px; left: -20px; right: -20px; bottom: -20px;',
-      '  background: url(' + thumbUrl + ') center/cover no-repeat;',
-      '  filter: blur(30px);',
-      '  -webkit-filter: blur(30px);',
-      '  opacity: 0.5;',
-      '  z-index: -1;',
-      '  pointer-events: none;',
-      '}',
-    ].join('\\n');
-    if (document.head) document.head.appendChild(s);
-    if (document.documentElement) document.documentElement.style.setProperty('background', fallback, 'important');
-    if (document.body) document.body.style.setProperty('background', 'transparent', 'important');
-  };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', applyBg);
-  } else {
-    applyBg();
-  }
-  setInterval(applyBg, 1500);
-})();
-true;
-`;
-
-
-// Intelligent game ready detection script
-const GAME_READY_SCRIPT = `
-  (function () {
-    if (window._gameReadyDetectorActive) return;
-    window._gameReadyDetectorActive = true;
-
-    let gameReady = false;
-    let rafCount = 0;
-    let canvasFound = false;
-    const startTime = Date.now();
-
-    let notifyAttempts = 0;
-    const notifyReady = () => {
-      if (gameReady) return;
-      notifyAttempts++;
-      
-      // Minimum 2.5 seconds before we can mark as ready to let their loaders finish
-      if (Date.now() - startTime < 2500) {
-        setTimeout(notifyReady, 2500 - (Date.now() - startTime));
-        return;
-      }
-      
-      try {
-        if (typeof window.ReactNativeWebView !== 'undefined' && typeof window.ReactNativeWebView.postMessage === 'function') {
-          gameReady = true;
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'GAME_READY' }));
-        } else {
-          // React Native bridge isn't here yet, retry shortly. 
-          // Stop retrying if we've tried for roughly 15 seconds.
-          if (notifyAttempts < 60) {
-              setTimeout(notifyReady, 250);
-          } else {
-              gameReady = true; // Give up and force unblock UI
-          }
-        }
-      } catch (e) {
-        // Fallback if accessing window.ReactNativeWebView throws cross-origin or sandbox errors
-        if (notifyAttempts < 60) {
-            setTimeout(notifyReady, 250);
-        } else {
-            gameReady = true;
-        }
-      }
-    };
-
-    const origRAF = window.requestAnimationFrame;
-    window.requestAnimationFrame = function (cb) {
-      rafCount++;
-      if (rafCount >= 20 && !gameReady) notifyReady();
-      return origRAF.call(window, cb);
-    };
-
-    const checkCanvas = () => {
-    if (canvasFound) return;
-    const canvases = document.querySelectorAll('canvas');
-    for (const canvas of canvases) {
-      if (canvas.width > 50 && canvas.height > 50) {
-        const style = window.getComputedStyle(canvas);
-        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-          canvasFound = true;
-          // Canvas exists. Wait 1.5 seconds for it to render fully.
-          setTimeout(() => { if (!gameReady) notifyReady(); }, 1500);
-          break;
-        }
-      }
-    }
-  };
-
-    const checkEngines = () => {
-      if (window.unityInstance || window.Phaser?.GAMES?.[0]?.isRunning || window.PIXI?.Application || window.cr_getC2Runtime || window.C3 || window.gdjs?.runtimeGame) {
-        notifyReady(); return true;
-      }
-      return false;
-    };
-
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function(type) {
-    if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
-      canvasFound = true;
-      setTimeout(() => { if (!gameReady) notifyReady(); }, 2000);
-    }
-    return origGetContext.apply(this, arguments);
-  };
-
-    window._gameReadyInterval = setInterval(() => {
-    if (gameReady) {
-      clearInterval(window._gameReadyInterval);
-      window._gameReadyInterval = null;
-      return;
-    }
-    checkCanvas();
-    checkEngines();
-    if (Date.now() - startTime > 3000 && rafCount > 60) notifyReady();
-  }, 200);
-
-    setTimeout(() => {
-      if (!gameReady) notifyReady();
-      if (window._gameReadyInterval) clearInterval(window._gameReadyInterval);
-    }, 15000);
-  })();
-true;
-`;
-
-// Shared UI Components
-const SectionHeader: React.FC<{ title: string; onChevronPress?: () => void; theme: any }> = ({ title, onChevronPress, theme }) => {
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  return (
-    <Animated.View style={animatedStyle}>
-      <Pressable
-        style={styles.sectionHeader}
-        onPress={onChevronPress}
-        onPressIn={() => { if (onChevronPress) scale.value = withSpring(0.96, { damping: 12 }) }}
-        onPressOut={() => { if (onChevronPress) scale.value = withSpring(1, { damping: 10 }) }}
-        disabled={!onChevronPress}
-      >
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
-        {onChevronPress && (
-          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} style={{ marginTop: 2 }} />
-        )}
-      </Pressable>
-    </Animated.View>
-  );
+const formatCount = (n?: number) => {
+  if (!n && n !== 0) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 };
 
-const FriendCard: React.FC<{ friend?: any; isAdd?: boolean; theme: any; onPress?: () => void; onlineUsers?: string[]; index?: number }> = React.memo(({ friend, isAdd, theme, onPress, onlineUsers, index = 0 }) => {
-  if (isAdd) {
-    return (
-      <AnimatedCard onPress={onPress || (() => { })} index={index} style={styles.friendCard}>
-        <View style={[styles.friendAvatarContainer, { backgroundColor: theme.searchBg }]}>
-          <Ionicons name="person-add-outline" size={24} color={theme.text} />
-        </View>
-        <Text style={[styles.friendName, { color: theme.text }]}>Add</Text>
-      </AnimatedCard>
-    );
+const gameMatchesKeywords = (game: ExploreGame, keywords: string[]) => {
+  if (keywords.length === 0) return true;
+  const haystack = `${game.name || ''} ${game.category || ''}`.toLowerCase();
+  return keywords.some((keyword) => haystack.includes(keyword));
+};
+
+const rotateGames = (games: ExploreGame[], offset: number) => {
+  if (games.length === 0) return games;
+  const normalized = offset % games.length;
+  return [...games.slice(normalized), ...games.slice(0, normalized)];
+};
+
+const cardMetaForTab = (tab: ExploreTab, game: ExploreGame, index: number) => {
+  if (tab === 'Horror') {
+    return index % 2 === 0 ? '2-5 min' : 'Lights off';
   }
-
-  return (
-    <AnimatedCard onPress={onPress || (() => { })} index={index} style={styles.friendCard}>
-      <View>
-        <Avatar uri={friend.avatar} size={64} style={styles.friendAvatar} />
-        {onlineUsers?.includes(friend.id) && <View style={[styles.onlineIndicator, { borderColor: theme.bg }]} />}
-      </View>
-      <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>{friend.displayName || friend.username}</Text>
-      {friend.tag && <Text style={[styles.friendTag, { color: theme.textSecondary }]} numberOfLines={1}>{friend.tag}</Text>}
-    </AnimatedCard>
-  );
-});
-
-// Animated wrapper for press physics + staggered entrance
-const AnimatedCard: React.FC<{ onPress: () => void; index?: number; children: React.ReactNode; style?: any }> = React.memo(({ onPress, index = 0, children, style }) => {
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  const handlePressIn = () => { scale.value = withSpring(0.96, { damping: 12, stiffness: 200 }); };
-  const handlePressOut = () => { scale.value = withSpring(1, { damping: 10, stiffness: 250 }); };
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
+  if (tab === 'Roleplay') {
+    return index % 2 === 0 ? `${Math.max(3, ((game.plays || 0) % 9) + 2)} online` : 'Open room';
   }
-
-  // Optimize: Only animate the first few visible items
-  const enteringAnim = index < 4 ? FadeInRight.delay(index * 60).springify().damping(18) : undefined;
-
-  return (
-    <Animated.View
-      entering={enteringAnim}
-      style={[style, animatedStyle]}
-    >
-      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handlePress}>
-        {children}
-      </Pressable>
-    </Animated.View>
-  );
-});
-
-// 1:1 Square Card for "Continue"
-const SquareGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = React.memo(({ game, onPress, theme, badge, index }) => (
-  <AnimatedCard onPress={onPress} index={index} style={styles.squareGameCard}>
-    <View style={[styles.squareGameImgContainer, { backgroundColor: theme.cardBg }]}>
-      {game.thumbnail ? (
-        <Image source={{ uri: game.thumbnail }} style={styles.squareGameImg} />
-      ) : (
-        <Ionicons name="game-controller" size={32} color={theme.textSecondary} />
-      )}
-      {badge && (
-        <Image
-          source={LoopsBadges[badge]}
-          style={{
-            position: 'absolute',
-            top: badge === 'top1' ? 6 : 8,
-            right: badge === 'top1' ? 6 : 8,
-            width: badge === 'top1' ? BadgeSizes.top1.width : BadgeSizes.hot.width,
-            height: badge === 'top1' ? BadgeSizes.top1.height : BadgeSizes.hot.height,
-          }}
-          resizeMode="contain"
-        />
-      )}
-    </View>
-    <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
-  </AnimatedCard>
-));
-
-// 16:9 Rectangular Card for "Recommended"
-const RectGameCard: React.FC<{ game: GameItem; onPress: () => void; theme: any; badge?: 'hot' | 'new' | 'like' | 'top1'; index?: number }> = React.memo(({ game, onPress, theme, badge, index }) => (
-  <AnimatedCard onPress={onPress} index={index} style={styles.rectGameCard}>
-    <View style={[styles.rectGameImgContainer, { backgroundColor: theme.cardBg }]}>
-      {game.thumbnail ? (
-        <Image source={{ uri: game.thumbnail }} style={styles.rectGameImg} />
-      ) : (
-        <Ionicons name="game-controller" size={32} color={theme.textSecondary} />
-      )}
-      {badge && (
-        <Image
-          source={LoopsBadges[badge]}
-          style={{
-            position: 'absolute',
-            top: badge === 'top1' ? 6 : 8,
-            right: badge === 'top1' ? 6 : 8,
-            width: badge === 'top1' ? BadgeSizes.top1.width : BadgeSizes.hot.width,
-            height: badge === 'top1' ? BadgeSizes.top1.height : BadgeSizes.hot.height,
-          }}
-          resizeMode="contain"
-        />
-      )}
-    </View>
-    <Text style={[styles.gameCardName, { color: theme.text }]} numberOfLines={1}>{game.name}</Text>
-  </AnimatedCard>
-));
+  if (tab === 'Quiz') {
+    return `${8 + (index % 5) * 2} questions`;
+  }
+  if (tab === 'Games') {
+    return formatCount(game.plays || 0);
+  }
+  return formatCount(game.plays || 0);
+};
 
 export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
   const { isAuthenticated, user } = useAuth();
-  const { showAuthScreen, showLoginScreen } = useAuthScreen();
-  const { onlineUsers } = useSocket();
+  const { showAuthScreen } = useAuthScreen();
+  const { setActiveTab, searchModalVisible, setSearchModalVisible } = useNavigation();
 
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const [isSearching, setIsSearching] = useState(false);
-  const searchInputRef = useRef<TextInput>(null);
-
-  const [allGames, setAllGames] = useState<GameItem[]>([]);
-  const [featuredGames, setFeaturedGames] = useState<Record<string, GameItem[]>>({});
-
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTabState] = useState<ExploreTab>('For You');
+  const [allGames, setAllGames] = useState<ExploreGame[]>([]);
+  const [creators, setCreators] = useState<ExploreCreator[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-
-  const [playingGame, setPlayingGame] = useState<GameItem | null>(null);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ExploreGame[]>([]);
+  const [searchCreators, setSearchCreators] = useState<ExploreCreator[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedCreator, setSelectedCreator] = useState<any>(null);
+  const [playingGame, setPlayingGame] = useState<ExploreGame | null>(null);
   const [gameLoaded, setGameLoaded] = useState(false);
+  const [loadProgress, setLoadProgress] = useState(0); // real WebView progress, 0-100
+  const [activeCategoryByTab, setActiveCategoryByTab] = useState<Record<NonForYouTab, string>>({
+    Games: 'Recommend',
+    Horror: 'Recommend',
+    Quiz: 'Recommend',
+    Roleplay: 'Recommend',
+  });
+  const heroScrollRef = useRef<ScrollView>(null);
+  const playerWebViewRef = useRef<WebView>(null);
 
-  const [showFindFriends, setShowFindFriends] = useState(false);
-  const [showUserProfile, setShowUserProfile] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [categoryModal, setCategoryModal] = useState<{ title: string; category: string } | null>(null);
+  // Filter games by tab
+  const filteredGames = useMemo(() => {
+    if (activeTab === 'For You') return allGames;
+    const lc = activeTab.toLowerCase();
+    const keywords = TAB_COPY[activeTab].keywords;
+    return allGames.filter((g) => {
+      const cat = (g.category || '').toLowerCase();
+      const name = (g.name || '').toLowerCase();
+      if (activeTab === 'Games') return true;
+      return cat.includes(lc) || name.includes(lc) || gameMatchesKeywords(g, keywords);
+    });
+  }, [allGames, activeTab]);
 
-  const [friends, setFriends] = useState<any[]>([]);
-
-  const [searchGames, setSearchGames] = useState<GameItem[]>([]);
-  const [searchUsers, setSearchUsers] = useState<any[]>([]);
-
-  const loadFriends = useCallback(async () => {
-    if (isAuthenticated && user?.id) {
-      try {
-        const res = await users.following(user.id);
-        const list = Array.isArray(res) ? res : [];
-        setFriends(list);
-      } catch (e) {
-        console.log('Friends error', e);
-      }
-    } else {
-      setFriends([]);
-    }
-  }, [isAuthenticated, user?.id]);
-
-  useEffect(() => { loadFriends(); }, [loadFriends]);
-
-  // Interstitial Ad
-  const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
-  const [isAdLoaded, setIsAdLoaded] = useState(false);
-  const pendingCloseRef = useRef(false);
+  const tabGames = filteredGames.length > 0 ? filteredGames : allGames;
+  const tabCopy = TAB_COPY[activeTab];
+  const activeCategory =
+    activeTab === 'For You' ? null : activeCategoryByTab[activeTab as NonForYouTab];
+  const categoryChips = activeTab === 'For You' ? [] : TAB_CATEGORY_CHIPS[activeTab as NonForYouTab];
+  const activeCategoryConfig = activeCategory
+    ? categoryChips.find((chip) => chip.label === activeCategory)
+    : undefined;
+  const categoryGames = useMemo(() => {
+    if (!activeCategoryConfig || activeCategoryConfig.keywords.length === 0) return tabGames;
+    const matched = tabGames.filter((game) => gameMatchesKeywords(game, activeCategoryConfig.keywords));
+    return matched.length > 0 ? matched : tabGames;
+  }, [activeCategoryConfig, tabGames]);
 
   useEffect(() => {
-    if (isExpoGo) return;
+    setHeroIndex(0);
+    heroScrollRef.current?.scrollTo({ x: 0, animated: false });
+  }, [activeTab]);
 
-    const adUnitId = __DEV__ ? TestIds.INTERSTITIAL : 'ca-app-pub-1961802731817431/7682402362';
-    const interstitial = InterstitialAd.createForAdRequest(adUnitId, {
-      requestNonPersonalizedAdsOnly: true,
-    });
-
-    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => setIsAdLoaded(true));
-    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
-      setIsAdLoaded(false);
-      if (pendingCloseRef.current) {
-        pendingCloseRef.current = false;
-        setPlayingGame(null);
-      }
-      interstitial.load();
-    });
-    const unsubscribeError = interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
-      setIsAdLoaded(false);
-      if (pendingCloseRef.current) {
-        pendingCloseRef.current = false;
-        setPlayingGame(null);
-      }
-    });
-
-    interstitial.load();
-    setInterstitialAd(interstitial);
-
-    return () => {
-      unsubscribeLoaded();
-      unsubscribeClosed();
-      unsubscribeError();
-    };
-  }, []);
-
-  const loadData = useCallback(async (refresh = false) => {
-    if (refresh) setRefreshing(true);
-    else setLoading(true);
-
+  const loadData = async () => {
     try {
-      const data = await games.list(100, 0);
-      const list: GameItem[] = (data.games || []).map((g: GameItem) => ({
-        ...g,
-        thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
-        _fakePlays: getFakePlayCount(g.id)
-      }));
-      setAllGames(list);
-
-      // We'll organize them into various categories based on genre or mock metrics
-      const getCategoryList = (catName: string) => {
-        return list.filter(g => g.category?.toLowerCase().includes(catName.toLowerCase()));
-      };
-
-      const shuffled = [...list].sort(() => Math.random() - 0.5);
-
-      setFeaturedGames({
-        continue: shuffled.slice(0, 10),
-        recommended: [...list].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 15),
-        hot: shuffled.slice(10, 25),
-        action: getCategoryList('action').slice(0, 15),
-        puzzle: getCategoryList('puzzle').slice(0, 15),
-        racing: getCategoryList('racing').slice(0, 15),
-        arcade: getCategoryList('arcade').slice(0, 15),
-        new: shuffled.slice(25, 40),
-      });
-    } catch (e) {
-      console.log('Load error:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      const [gamesRes, recRes] = await Promise.allSettled([
+        gamesApi.list(200, 0, { sort: 'trending' }),
+        usersApi.recommended(),
+      ]);
+      if (gamesRes.status === 'fulfilled') {
+        setAllGames(gamesRes.value?.games || []);
+      }
+      if (recRes.status === 'fulfilled') {
+        setCreators(recRes.value?.users || []);
+      }
+    } catch (err) {
+      console.log('[Explore] load failed', err);
     }
-
-    if (refresh) loadFriends();
-  }, [loadFriends]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Search logic
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    if (searchQuery.length > 2) {
-      setIsSearching(true);
-      timeout = setTimeout(async () => {
-        try {
-          const [resGames, resUsers] = await Promise.all([
-            games.search(searchQuery).catch((e) => { console.log('Games search error', e); return { games: [] }; }),
-            users.search(searchQuery).catch((e) => { console.log('Users search error', e); return { users: [] }; })
-          ]);
-
-          let gameResults = (resGames.games || []).map((g: GameItem) => ({
-            ...g,
-            thumbnail: g.thumbnail || `${GAMES_HOST}/thumbnails/${g.id}.png`,
-          }));
-          setSearchGames(gameResults);
-          const userResults = resUsers?.users || resUsers;
-          setSearchUsers(Array.isArray(userResults) ? userResults : []);
-        } catch (e) {
-          // Fallback
-          const q = searchQuery.toLowerCase();
-          setSearchGames(allGames.filter(g => g.name.toLowerCase().includes(q)));
-          setSearchUsers([]);
-        }
-        setIsSearching(false);
-      }, 300);
-    } else {
-      setSearchGames([]);
-      setSearchUsers([]);
-      setIsSearching(false);
-    }
-    return () => clearTimeout(timeout);
-  }, [searchQuery, allGames]);
-
-  // Hard safety net: if onLoadEnd never fires (network issues, etc), force-dismiss after 15s
-  useEffect(() => {
-    let safetyTimeout: NodeJS.Timeout;
-    if (playingGame && !gameLoaded) {
-      safetyTimeout = setTimeout(() => {
-        setGameLoaded(true);
-      }, 15000);
-    }
-    return () => clearTimeout(safetyTimeout);
-  }, [playingGame, gameLoaded]);
-
-  const webViewRef = useRef<WebView>(null);
-
-  const playGame = (game: GameItem) => {
-    setPlayingGame(game);
-    setGameLoaded(false);
   };
 
-  const isSearchActive = searchQuery.length >= 2;
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  // Auth gate
-  if (!isAuthenticated) {
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  // Build hero carousel: Dream Forge promo + top 4 trending games
+  const heroSlides = useMemo<HeroSlide[]>(() => {
+    const featured = tabGames[0];
+    const slides: HeroSlide[] = [
+      {
+        id: activeTab === 'For You' ? 'dream-forge' : `tab-${activeTab}`,
+        title: { line1: tabCopy.line1, line2: tabCopy.line2, accent: 'second' },
+        subtitle: tabCopy.subtitle,
+        ctaLabel: tabCopy.cta,
+        ctaIcon: tabCopy.icon,
+        ctaTarget: activeTab === 'For You' || !featured ? 'create' : 'game',
+        pillIcon: tabCopy.icon,
+        pillLabel: tabCopy.pill,
+        imageSource: activeTab === 'For You' ? DREAM_FORGE_HERO : undefined,
+        imageUri: activeTab === 'For You' || !featured ? undefined : resolveThumbnail(featured.thumbnail, featured.id, featured),
+        game: activeTab === 'For You' ? undefined : featured,
+      },
+    ];
+    tabGames.slice(activeTab === 'For You' ? 0 : 1, activeTab === 'For You' ? 4 : 5).forEach((g) => {
+      slides.push({
+        id: `game-${g.id}`,
+        title: { line1: g.name.split(' ').slice(0, 2).join(' '), line2: g.name.split(' ').slice(2).join(' ') || 'Play now.', accent: 'second' },
+        subtitle: g.creatorDisplayName ? `by @${g.creatorDisplayName}` : 'Trending now',
+        ctaLabel: 'Play Now',
+        ctaIcon: 'play',
+        ctaTarget: 'game',
+        pillIcon: 'flame',
+        pillLabel: 'Trending',
+        imageUri: resolveThumbnail(g.thumbnail, g.id, g),
+        game: g,
+      });
+    });
+    return slides;
+  }, [activeTab, tabCopy, tabGames]);
+
+  const tabSections = useMemo(() => {
+    return tabCopy.sectionTitles.map((title, index) => ({
+      title,
+      games: rotateGames(tabGames, index * 3).slice(0, 8),
+    }));
+  }, [tabCopy.sectionTitles, tabGames]);
+
+  const topGames = useMemo(() => {
+    return [...allGames]
+      .sort((a, b) => (b.plays || 0) - (a.plays || 0))
+      .slice(0, 6);
+  }, [allGames]);
+
+  // Search effect
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setSearchCreators([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const [gameRes, userRes] = await Promise.allSettled([
+          gamesApi.search(searchQuery.trim()),
+          usersApi.search(searchQuery.trim()),
+        ]);
+        if (gameRes.status === 'fulfilled') {
+          setSearchResults(gameRes.value?.games || []);
+        }
+        if (userRes.status === 'fulfilled') {
+          setSearchCreators(userRes.value?.users || []);
+        }
+      } catch {}
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const openGame = async (gameOrId: string | ExploreGame) => {
+    const existingGame = typeof gameOrId === 'string'
+      ? allGames.find((game) => game.id === gameOrId)
+      : gameOrId;
+
+    if (existingGame) {
+      setPlayingGame(existingGame);
+      setGameLoaded(false);
+      setLoadProgress(0);
+      gamesApi.recordPlay(existingGame.id).catch(() => {});
+      return;
+    }
+
+    try {
+      const data = await gamesApi.get(String(gameOrId));
+      const fetchedGame = data?.game || data;
+      if (fetchedGame?.id) {
+        setPlayingGame(fetchedGame);
+        setGameLoaded(false);
+        setLoadProgress(0);
+        gamesApi.recordPlay(fetchedGame.id).catch(() => {});
+      }
+    } catch (err) {
+      console.log('[Explore] open game failed', err);
+    }
+  };
+
+  const trendingGames = useMemo(() => {
+    return [...allGames].sort((a, b) => (b.plays || 0) - (a.plays || 0));
+  }, [allGames]);
+
+  const freshGames = allGames;
+
+  const CARD_WIDTH = (Dimensions.get('window').width - 52) / 3;
+
+  const renderGameRow = (title: string, gamesList: ExploreGame[]) => {
+    if (gamesList.length === 0) return null;
+
+    const chunks: ExploreGame[][] = [];
+    const CHUNK_SIZE = 30;
+    for (let i = 0; i < gamesList.length; i += CHUNK_SIZE) {
+      chunks.push(gamesList.slice(i, i + CHUNK_SIZE));
+    }
+
     return (
-      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Explore</Text>
-        </View>
-        <View style={StyleSheet.absoluteFill}>
-          <BlurView intensity={80} tint={colorScheme === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          <View style={styles.authGate}>
-            <Ionicons name="game-controller" size={64} color={theme.textSecondary} />
-            <Text style={[styles.authTitle, { color: theme.text }]}>Discover Games</Text>
-            <Text style={[styles.authSubtitle, { color: theme.textSecondary }]}>Sign up to explore thousands of games and find your favorites</Text>
-            <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen}>
-              <LinearGradient colors={['#a855f7', '#7c3aed']} style={styles.authBtnGradient}>
-                <Text style={styles.authBtnText}>Sign Up</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={showLoginScreen}>
-              <Text style={styles.authLogin}>Already have an account? Log in</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.bg }]}>
-      {/* App Header (Like the Screenshot) */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Explore</Text>
-        <View style={styles.headerIcons}>
-          {/* Wheel/Roulette icon */}
-          <TouchableOpacity style={styles.iconBtn}>
-            <Ionicons name="aperture" size={26} color={theme.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}>
-            <Ionicons name="notifications-outline" size={26} color={theme.text} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchWrap}>
-        <View style={[styles.searchBar, { backgroundColor: theme.searchBg }]}>
-          <Image source={LoopsIcons.search} style={{ width: 20, height: 20, tintColor: theme.textSecondary }} />
-          <TextInput
-            ref={searchInputRef}
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search games or friends"
-            placeholderTextColor={theme.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }}>
-              <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color={theme.primary} size="large" />
-      ) : isSearchActive ? (
-        // Search Results State
-        <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-          {isSearching ? (
-            <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
-          ) : searchGames.length === 0 && searchUsers.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="search-outline" size={48} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No results found</Text>
-            </View>
-          ) : (
-            <>
-              {searchUsers.length > 0 && (
-                <View style={{ marginBottom: 20 }}>
-                  <SectionHeader title="People" theme={theme} />
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-                    {searchUsers.map(u => (
-                      <FriendCard key={u.id} friend={u} theme={theme} onPress={() => { setSelectedUser(u); setShowUserProfile(true); }} onlineUsers={onlineUsers} />
-                    ))}
-                  </ScrollView>
+      <View style={styles.gameRowSection}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {chunks.map((chunk, chunkIndex) => (
+          <ScrollView
+            key={`${title}-row-${chunkIndex}`}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.gameRowScroll}
+            style={{ marginBottom: chunkIndex < chunks.length - 1 ? 14 : 0 }}
+          >
+            {chunk.map((g) => (
+              <Pressable key={g.id} style={[styles.gameCard, { width: CARD_WIDTH }]} onPress={() => openGame(g.id)}>
+                <View style={[styles.gameCardThumb, { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 }]}>
+                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
                 </View>
-              )}
-              {searchGames.length > 0 && (
-                <View style={{ marginBottom: 20 }}>
-                  <SectionHeader title="Games" theme={theme} />
-                  <View style={styles.searchResultsGrid}>
-                    {searchGames.map(g => (
-                      <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} />
-                    ))}
+                <View style={styles.gameCardMeta}>
+                  <Text style={styles.gameCardName} numberOfLines={1}>{g.name}</Text>
+                  <View style={styles.gameCardPlays}>
+                    <Ionicons name="play" size={10} color="#a1a1aa" style={{ marginRight: 3 }} />
+                    <Text style={styles.gameCardPlaysText}>{formatCount(g.plays || 0)}</Text>
                   </View>
                 </View>
-              )}
-            </>
-          )}
-        </ScrollView>
-      ) : (
-        // Main Explore Stream
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} tintColor={theme.primary} />}
-        >
-          {/* Friends Section */}
-          <SectionHeader title="Friends" onChevronPress={() => { }} theme={theme} />
-          {friends.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-              <FriendCard isAdd theme={theme} onPress={() => setShowFindFriends(true)} index={0} />
-              {[...friends].sort((a, b) => {
-                const aOnline = onlineUsers.includes(a.id) ? 1 : 0;
-                const bOnline = onlineUsers.includes(b.id) ? 1 : 0;
-                return bOnline - aOnline; // online first
-              }).map((f, idx) => (
-                <FriendCard key={f.id} friend={f} theme={theme} onPress={() => { setSelectedUser(f); setShowUserProfile(true); }} onlineUsers={onlineUsers} index={idx + 1} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        ))}
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.root}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
+        }
+      >
+        {/* Header matching mobile website */}
+        <View style={[styles.exploreHeader, { paddingTop: insets.top + 12 }]}>
+          <View>
+            <Text style={styles.headerSub}>GAMETOK</Text>
+            <Text style={styles.headerTitle}>Explore</Text>
+          </View>
+          <Pressable style={styles.createBtn} onPress={() => setActiveTab('create')}>
+            <Ionicons name="sparkles" size={14} color="#fff" style={{ marginRight: 6 }} />
+            <Text style={styles.createBtnText}>Create</Text>
+          </Pressable>
+        </View>
+
+        {/* Search bar matching mobile website */}
+        <Pressable style={styles.searchBarBox} onPress={() => setSearchModalVisible(true)}>
+          <Ionicons name="search" size={18} color="#686868" style={{ marginRight: 8 }} />
+          <Text style={styles.searchBarPlaceholder}>Search games, creators, worlds</Text>
+        </Pressable>
+
+        {/* Creators strip */}
+        {creators.length > 0 && (
+          <View style={styles.creatorSection}>
+            <Text style={styles.sectionTitle}>People to follow</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.creatorScrollContent}>
+              {creators.slice(0, 20).map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={styles.creatorCol}
+                  onPress={() =>
+                    setSelectedCreator({
+                      id: c.id,
+                      username: c.username,
+                      displayName: c.displayName,
+                      avatar: c.avatar,
+                      verified: c.verified,
+                      isFriend: false,
+                    })
+                  }
+                >
+                  <View style={styles.creatorAvatarWrap}>
+                    <Avatar uri={c.avatar} userId={c.id} size={62} />
+                  </View>
+                  <Text style={styles.creatorHandle} numberOfLines={1}>
+                    @{c.username}
+                  </Text>
+                </Pressable>
               ))}
             </ScrollView>
-          ) : (
-            <View style={[styles.emptyFriendsCard, { backgroundColor: theme.cardBg }]}>
-              <View style={[styles.emptyFriendsIconBg, { backgroundColor: theme.bg }]}>
-                <Ionicons name="game-controller-outline" size={28} color={theme.textSecondary} />
+          </View>
+        )}
+
+        {/* Game Rows */}
+        {renderGameRow('Trending', trendingGames)}
+        {renderGameRow('New', freshGames)}
+
+        {trendingGames.length === 0 && freshGames.length === 0 && (
+          <View style={styles.exploreEmpty}>
+            <Text style={styles.exploreEmptyText}>No games found.</Text>
+          </View>
+        )}
+
+      </ScrollView>
+
+      {/* Search modal */}
+      <Modal visible={searchModalVisible} animationType="slide" onRequestClose={() => setSearchModalVisible(false)}>
+        <View style={[styles.searchModal, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.searchHeader}>
+            <Pressable onPress={() => { setSearchModalVisible(false); setSearchQuery(''); }} hitSlop={8}>
+              <Ionicons name="chevron-back" size={22} color={TEXT} />
+            </Pressable>
+            <View style={styles.searchInputWrap}>
+              <Ionicons name="search" size={16} color={TEXT_DIM} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search games and creators"
+                placeholderTextColor={TEXT_DIM}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              {searchQuery.length > 0 ? (
+                <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
+                  <Ionicons name="close-circle" size={16} color={TEXT_DIM} />
+                </Pressable>
+                ) : null}
+                  </View>
               </View>
-              <View style={styles.emptyFriendsTextContainer}>
-                <Text style={[styles.emptyFriendsTitle, { color: theme.text }]}>It's quiet here...</Text>
-                <Text style={[styles.emptyFriendsSub, { color: theme.textSecondary }]}>Add friends to see what they're playing!</Text>
+
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 80 }}>
+            {searchQuery.trim().length === 0 ? (
+              <>
+                <Text style={styles.searchBigTitle}>Charts</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chartsRow}
+                >
+                  <View style={styles.topSearchesCard}>
+                    <View style={styles.chartCardHeader}>
+                      <Text style={styles.chartCardTitle}>Top Searches</Text>
+                      <Ionicons name="flash" size={42} color="rgba(255,255,255,0.16)" />
+                    </View>
+                    {TRENDING_SEARCHES.map((term, index) => (
+                      <Pressable
+                        key={term}
+                        style={styles.topSearchRow}
+                        onPress={() => setSearchQuery(term)}
+                      >
+                        <View style={styles.topSearchIcon}>
+                          <Ionicons name="search" size={18} color="rgba(255,255,255,0.78)" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.topSearchTerm}>
+                            {term} {index < 3 ? '🔥' : ''}
+                          </Text>
+                          <Text style={styles.topSearchCount}>
+                            {formatCount(49400 - index * 1700)} searches
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.72)" />
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {creators.length > 0 ? (
+                    <View style={styles.topCreatorsCard}>
+                      <Text style={styles.chartCardTitle}>Top Creators</Text>
+                      {creators.slice(0, 6).map((c, index) => (
+                        <Pressable
+                          key={`top-${c.id}`}
+                          style={styles.topCreatorRow}
+                          onPress={() => {
+                            setSearchModalVisible(false);
+                            setSelectedCreator({
+                              id: c.id,
+                              username: c.username,
+                              displayName: c.displayName,
+                              avatar: c.avatar,
+                              verified: c.verified,
+                              isFriend: false,
+                            });
+                          }}
+                        >
+                          <Avatar uri={c.avatar} userId={c.id} size={38} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.topCreatorName} numberOfLines={1}>
+                              {c.displayName || c.username}
+                            </Text>
+                            <Text style={styles.topCreatorSub} numberOfLines={1}>
+                              #{index + 1} creator
+                            </Text>
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                {topGames.length > 0 ? (
+                  <>
+                    <Text style={[styles.searchBigTitle, { marginTop: 24 }]}>Top Games</Text>
+                    <View style={styles.searchGamesGrid}>
+                      {topGames.map((g, index) => (
+                        <Pressable
+                          key={`top-game-${g.id}`}
+                          style={styles.searchGameCard}
+                          onPress={() => {
+                            setSearchModalVisible(false);
+                            openGame(g.id);
+                          }}
+                        >
+                          <Image
+                            source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }}
+                            style={StyleSheet.absoluteFillObject}
+                            resizeMode="cover"
+                          />
+                          <LinearGradient
+                            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
+                            locations={[0, 0.45, 1]}
+                            style={StyleSheet.absoluteFillObject}
+                          />
+                          <View style={styles.topGameRank}>
+                            <Text style={styles.topGameRankText}>#{index + 1}</Text>
+                          </View>
+                          <View style={styles.searchGameBody}>
+                            <Text style={styles.searchGameTitle} numberOfLines={1}>
+                              {g.name}
+                            </Text>
+                            <View style={styles.trendMetaRow}>
+                              <Ionicons name="people" size={10} color="rgba(255,255,255,0.85)" />
+                              <Text style={styles.trendMeta}>{formatCount(g.plays || 0)}</Text>
+                            </View>
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                ) : null}
+              </>
+            ) : searching ? (
+              <Text style={styles.searchHint}>Searching…</Text>
+            ) : (
+            <>
+                {searchCreators.length > 0 ? (
+                  <>
+                    <Text style={styles.searchSectionTitle}>Creators</Text>
+                    {searchCreators.slice(0, 5).map((c) => (
+                      <Pressable
+                        key={c.id}
+                        style={styles.searchCreatorRow}
+                        onPress={() => {
+                          setSearchModalVisible(false);
+                          setSelectedCreator({
+                            id: c.id,
+                            username: c.username,
+                            displayName: c.displayName,
+                            avatar: c.avatar,
+                            verified: c.verified,
+                            isFriend: false,
+                          });
+                        }}
+                      >
+                        <Avatar uri={c.avatar} userId={c.id} size={42} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.searchCreatorName}>{c.displayName || c.username}</Text>
+                          <Text style={styles.searchCreatorHandle}>@{c.username}</Text>
+                      </View>
+                      </Pressable>
+                    ))}
+                  </>
+                ) : null}
+
+                {searchResults.length > 0 ? (
+                  <>
+                    <Text style={[styles.searchSectionTitle, { marginTop: 18 }]}>Games</Text>
+                    <View style={styles.searchGamesGrid}>
+                      {searchResults.map((g) => (
+                        <Pressable
+                          key={g.id}
+                          style={styles.searchGameCard}
+                          onPress={() => {
+                            setSearchModalVisible(false);
+                            openGame(g.id);
+                          }}
+                        >
+                          <Image
+                            source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }}
+                            style={StyleSheet.absoluteFillObject}
+                            resizeMode="cover"
+                          />
+                          <LinearGradient
+                            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
+                            locations={[0, 0.45, 1]}
+                            style={StyleSheet.absoluteFillObject}
+                          />
+                          <View style={styles.searchGameBody}>
+                            <Text style={styles.searchGameTitle} numberOfLines={1}>
+                              {g.name}
+                            </Text>
+                          </View>
+                        </Pressable>
+                  ))}
+                </View>
+                  </>
+            ) : null}
+
+                {searchResults.length === 0 && searchCreators.length === 0 && !searching ? (
+                  <Text style={styles.searchHint}>No results found.</Text>
+              ) : null}
+              </>
+            )}
+                </ScrollView>
               </View>
-              <TouchableOpacity
-                style={[styles.emptyFriendsBtn, { backgroundColor: theme.primary }]}
-                onPress={() => setShowFindFriends(true)}
-              >
-                <Text style={styles.emptyFriendsBtnText}>Find</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+      </Modal>
 
-          {/* Continue Playing */}
-          <SectionHeader title="Continue" onChevronPress={() => { }} theme={theme} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {(featuredGames.continue || []).map((g, idx) => (
-              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} index={idx} />
-            ))}
-          </ScrollView>
-
-          {/* Recommended For You */}
-          <SectionHeader title="Recommended For You" onChevronPress={() => setCategoryModal({ title: "Recommended For You", category: "recommended" })} theme={theme} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {(featuredGames.recommended || []).map((g, idx) => (
-              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'like'} index={idx} />
-            ))}
-          </ScrollView>
-
-          {/* Hot Games */}
-          <SectionHeader title="Hot Games" onChevronPress={() => setCategoryModal({ title: "Hot Games", category: "hot" })} theme={theme} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {(featuredGames.hot || []).map((g, idx) => (
-              <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'hot'} index={idx} />
-            ))}
-          </ScrollView>
-
-          {/* Action & Adventure */}
-          {featuredGames.action?.length > 0 && (
-            <>
-              <SectionHeader title="Action & Adventure" onChevronPress={() => setCategoryModal({ title: "Action & Adventure", category: "action" })} theme={theme} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-                {(featuredGames.action || []).map((g, idx) => (
-                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* Brain Teasers */}
-          {featuredGames.puzzle?.length > 0 && (
-            <>
-              <SectionHeader title="Brain Teasers" onChevronPress={() => setCategoryModal({ title: "Brain Teasers", category: "puzzle" })} theme={theme} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-                {(featuredGames.puzzle || []).map((g, idx) => (
-                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* Racing & Driving */}
-          {featuredGames.racing?.length > 0 && (
-            <>
-              <SectionHeader title="Racing & Driving" onChevronPress={() => setCategoryModal({ title: "Racing & Driving", category: "racing" })} theme={theme} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-                {(featuredGames.racing || []).map((g, idx) => (
-                  <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* Arcade Classics */}
-          {featuredGames.arcade?.length > 0 && (
-            <>
-              <SectionHeader title="Arcade Classics" onChevronPress={() => setCategoryModal({ title: "Arcade Classics", category: "arcade" })} theme={theme} />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-                {(featuredGames.arcade || []).map((g, idx) => (
-                  <SquareGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : undefined} index={idx} />
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* New Releases */}
-          <SectionHeader title="New Releases" onChevronPress={() => setCategoryModal({ title: "New Releases", category: "new" })} theme={theme} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {(featuredGames.new || []).map((g, idx) => (
-              <RectGameCard key={g.id} game={g} onPress={() => playGame(g)} theme={theme} badge={idx === 0 ? 'top1' : 'new'} index={idx} />
-            ))}
-          </ScrollView>
-
-        </ScrollView>
-      )}
-
-      {/* Game Modal */}
-      <Modal visible={!!playingGame} animationType="slide" presentationStyle="fullScreen">
-        <View style={{ flex: 1, backgroundColor: playingGame?.color || '#1a1a2e' }}>
+      {/* Direct game player */}
+      <Modal
+        visible={!!playingGame}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setPlayingGame(null);
+          setGameLoaded(false);
+        }}
+      >
+        <View style={[styles.playerRoot, { backgroundColor: playingGame?.color || '#000' }]}>
           <StatusBar hidden />
-
-          {playingGame && (
+          {playingGame ? (
             <WebView
+              ref={playerWebViewRef}
               source={{ uri: getGameUrl(playingGame) }}
-              style={{ flex: 1, backgroundColor: 'transparent' }}
-              // @ts-ignore
-              opaque={false}
-              backgroundColor="transparent"
+              style={styles.playerWebView}
               scrollEnabled={false}
               bounces={false}
-              onLoadEnd={() => {
-                // Inject blurred thumbnail bg after page fully loads (backup)
-                const thumbUrl = playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`;
-                const fallback = playingGame?.color || '#1a1a2e';
-                webViewRef.current?.injectJavaScript(`
-                  document.documentElement.style.setProperty('background', '${fallback}', 'important');
-                  document.body.style.setProperty('background', 'transparent', 'important');
-                  if(!document.getElementById('_gt_blur_bg')){
-                    var s=document.createElement('style');s.id='_gt_blur_bg';
-                    s.textContent='body::before{content:"";position:fixed;top:-20px;left:-20px;right:-20px;bottom:-20px;background:url(${thumbUrl}) center/cover no-repeat;filter:blur(30px);-webkit-filter:blur(30px);opacity:0.5;z-index:-1;pointer-events:none;}';
-                    document.head.appendChild(s);
-                  }
-                  true;
-                `);
-
-                // Page has fully loaded. Wait 3s for the game to render,
-                // then dismiss the loading screen. Simple & reliable.
-                setTimeout(() => setGameLoaded(true), 3000);
-              }}
+              overScrollMode="never"
               javaScriptEnabled
               domStorageEnabled
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
               allowsAirPlayForMediaPlayback={false}
-              injectedJavaScriptBeforeContentLoaded={isExternalGame(playingGame) ? AD_BLOCKER_SCRIPT : undefined}
-              injectedJavaScript={createBlurBgScript(playingGame?.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame?.id}.png`, playingGame?.color || '#1a1a2e')}
-              ref={webViewRef}
+              onLoadProgress={({ nativeEvent }) => {
+                setLoadProgress(Math.round((nativeEvent.progress || 0) * 100));
+              }}
+              onLoadEnd={() => {
+                setLoadProgress(100);
+                setTimeout(() => setGameLoaded(true), 1200);
+              }}
             />
-          )}
+          ) : null}
 
-          {!gameLoaded && playingGame && (
-            <View style={[StyleSheet.absoluteFill, { zIndex: 10 }]}>
+          {!gameLoaded && playingGame ? (
+            <View style={StyleSheet.absoluteFill}>
               <GameLoadingScreen
                 gameName={playingGame.name}
-                gameThumbnail={playingGame.thumbnail || `${GAMES_HOST}/thumbnails/${playingGame.id}.png`}
-                progress={75}
+                gameThumbnail={resolveThumbnail(playingGame.thumbnail, playingGame.id, playingGame)}
+                creatorName={playingGame.creatorDisplayName || playingGame.creatorUsername}
+                progress={loadProgress}
               />
             </View>
-          )}
+          ) : null}
 
-          <TouchableOpacity
-            style={[styles.gameCloseBtn, { top: insets.top + 10, zIndex: 20 }]}
+          <Pressable
+            style={[styles.playerCloseBtn, { top: insets.top + 10 }]}
             onPress={() => {
-              if (isExpoGo) {
-                setPlayingGame(null);
-                alert('Mock Interstitial Ad: Sponsored Content');
-              } else if (isAdLoaded && interstitialAd) {
-                pendingCloseRef.current = true;
-                interstitialAd.show();
-              } else {
-                setPlayingGame(null);
-              }
+              setPlayingGame(null);
+              setGameLoaded(false);
             }}
+            hitSlop={8}
           >
             <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Modal>
-      <FindFriendsModal
-        visible={showFindFriends}
-        onClose={() => {
-          setShowFindFriends(false);
-          loadFriends();
-        }}
-        onOpenProfile={(user) => {
-          setShowFindFriends(false);
-          setTimeout(() => {
-            setSelectedUser(user);
-            setShowUserProfile(true);
-          }, 300);
-        }}
-      />
 
-      {/* User Profile Modal */}
+
+
       <UserProfileModal
-        visible={showUserProfile}
-        onClose={() => setShowUserProfile(false)}
-        user={selectedUser ? {
-          id: selectedUser.id,
-          username: selectedUser.username,
-          avatar: selectedUser.avatar || null,
-          status: 'GAMETOK USER',
-          isOnline: false,
-          isFriend: false,
-        } : null}
-      />
-
-      <CategoryModal
-        visible={!!categoryModal}
-        onClose={() => setCategoryModal(null)}
-        title={categoryModal?.title || ''}
-        games={categoryModal ? featuredGames[categoryModal.category] || [] : []}
-        onPlayGame={playGame}
+        visible={!!selectedCreator}
+        onClose={() => setSelectedCreator(null)}
+        user={selectedCreator}
       />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+  playerRoot: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  playerWebView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  playerCloseBtn: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.58)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  topBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingHorizontal: HORIZ_PAD,
+    paddingBottom: 14,
   },
-  headerTitle: {
-    fontSize: 28,
+  topLogo: {
+    color: TEXT,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+  },
+  topIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabsScroll: {
+    paddingHorizontal: HORIZ_PAD,
+    gap: 14,
+    paddingBottom: 14,
+  },
+  tabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 0,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  tabBtnActive: {
+    paddingHorizontal: 11,
+    backgroundColor: 'rgba(34,25,52,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.22)',
+  },
+  tabActiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ff3fab',
+  },
+  tabLabel: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  tabLabelActive: {
+    color: PURPLE,
     fontWeight: '800',
-    letterSpacing: 0.5,
   },
-  headerIcons: {
+  heroWrap: {
+    paddingHorizontal: HORIZ_PAD,
+    marginTop: 6,
+  },
+  heroSlide: {
+    width: HERO_WIDTH,
+  },
+  heroCard: {
+    width: '100%',
+    height: Math.min(338, Math.round(HERO_WIDTH * 0.75)),
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.42)',
+  },
+  heroCardImage: {
+    borderRadius: 22,
+  },
+  heroPillWrap: {
+    position: 'absolute',
+    top: 18,
+    left: 18,
+  },
+  heroPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.42)',
+    backgroundColor: 'rgba(8,10,22,0.7)',
   },
-  iconBtn: {
-    padding: 4,
+  heroPillText: {
+    color: PURPLE,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: -0.15,
   },
-  searchWrap: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  heroBody: {
+    position: 'absolute',
+    left: 18,
+    right: 22,
+    bottom: 28,
   },
-  searchBar: {
+  heroDreamTitleBlock: {
+    marginBottom: 12,
+  },
+  heroDreamTitle: {
+    color: TEXT,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 34,
+    lineHeight: 36,
+    fontWeight: '900',
+    letterSpacing: -1.35,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowRadius: 3,
+  },
+  heroTitleLine1: {
+    color: TEXT,
+    fontFamily: 'Graphik-Bold',
+    fontSize: 30,
+    lineHeight: 33,
+    fontWeight: '900',
+    letterSpacing: -0.85,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 4,
+  },
+  heroTitleLine2: {
+    color: TEXT,
+    fontFamily: 'Graphik-Bold',
+    fontSize: 30,
+    lineHeight: 33,
+    fontWeight: '900',
+    letterSpacing: -0.85,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 4,
+    marginBottom: 7,
+  },
+  heroTitleAccent: {
+    color: PURPLE,
+  },
+  heroSubtitle: {
+    color: 'rgba(255,255,255,0.82)',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    lineHeight: 18,
+  },
+  heroSubtitleStack: {
+    marginBottom: 13,
+  },
+  heroCta: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
-    gap: 10,
+    gap: 7,
+    minHeight: 42,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 15,
+    backgroundColor: PURPLE,
+    alignSelf: 'flex-start',
+    shadowColor: PURPLE,
+    shadowOpacity: 0.42,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
+  heroCtaText: {
+    color: TEXT,
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  heroDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 16,
+  },
+  heroDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  heroDotActive: {
+    width: 18,
+    backgroundColor: PURPLE,
+  },
+  section: {
+    marginTop: 28,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginTop: 24,
+    justifyContent: 'space-between',
+    paddingHorizontal: HORIZ_PAD,
     marginBottom: 12,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginRight: 4,
+  sectionTitleInset: {
+    paddingHorizontal: HORIZ_PAD,
   },
-  horizontalScroll: {
-    paddingHorizontal: 20,
-    gap: 16,
+  sectionEmoji: {
+    fontSize: 16,
   },
-
-  // Friends List Styles
-  friendCard: {
-    alignItems: 'center',
-    width: 72,
-    marginRight: 4,
-  },
-  friendAvatarContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  friendAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    marginBottom: 8,
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 8,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#22c55e',
-    borderWidth: 2,
-  },
-  friendName: {
+  sectionSeeAll: {
+    color: PURPLE,
     fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '700',
   },
-
-  // Empty Friends State
-  emptyFriendsCard: {
+  sectionEmpty: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    paddingHorizontal: HORIZ_PAD,
+    paddingVertical: 18,
+  },
+  trendingRow: {
+    paddingHorizontal: HORIZ_PAD,
+    gap: 10,
+  },
+  trendCard: {
+    width: 130,
+    height: 168,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  trendCardFeatured: {
+    width: 148,
+    height: 178,
+  },
+  trendCardQuiz: {
+    height: 150,
+  },
+  trendBody: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+  },
+  trendTitle: {
+    color: TEXT,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  trendMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    marginHorizontal: 20,
-    borderRadius: 16,
-    gap: 16,
+    gap: 4,
+    marginTop: 3,
   },
-  emptyFriendsIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyFriendsTextContainer: {
-    flex: 1,
-  },
-  emptyFriendsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  emptyFriendsSub: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  emptyFriendsBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyFriendsBtnText: {
-    color: '#fff',
-    fontSize: 14,
+  trendMeta: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
     fontWeight: '700',
   },
-  friendTag: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-
-  // Game Card Styles
-  squareGameCard: {
-    width: 120,
-  },
-  squareGameImgContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  squareGameImg: {
-    width: '100%',
-    height: '100%',
-  },
-  rectGameCard: {
-    width: 200,
-  },
-  rectGameImgContainer: {
-    width: 200,
-    height: 112, // 16:9 ratio
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rectGameImg: {
-    width: '100%',
-    height: '100%',
-  },
-  gameCardName: {
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-
-  searchResultsGrid: {
+  catalogGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 16,
-    gap: 16,
-    justifyContent: 'flex-start',
+    gap: 12,
+    paddingHorizontal: HORIZ_PAD,
+    alignItems: 'flex-start',
   },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    paddingTop: 80,
-    width: SCREEN_WIDTH,
+  feedTile: {
+    width: (SCREEN_WIDTH - HORIZ_PAD * 2 - 12) / 2,
+    height: 246,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#15151c',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
-  emptyText: {
-    fontSize: 14,
-    marginTop: 12,
+  feedTileTall: {
+    height: 278,
   },
-  gameLoading: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  horrorTile: {
+    backgroundColor: '#07070a',
+    borderColor: 'rgba(255,74,162,0.12)',
   },
-  gameLoadingText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 16,
+  quizFeedTile: {
+    height: 238,
   },
-  gameCloseBtn: {
+  feedCountPill: {
     position: 'absolute',
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
+    left: 10,
+    bottom: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.44)',
+  },
+  feedCountText: {
+    color: TEXT,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  feedTileBody: {
+    position: 'absolute',
+    left: 12,
+    right: 10,
+    bottom: 44,
+  },
+  feedTileTitle: {
+    color: TEXT,
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: '900',
+    letterSpacing: -0.45,
+    marginBottom: 6,
+  },
+  feedTileMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  feedTileMeta: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cinemaList: {
+    paddingHorizontal: HORIZ_PAD,
+    gap: 12,
+  },
+  cinemaCard: {
+    height: 164,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#171720',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.22)',
+  },
+  cinemaBody: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
+  },
+  cinemaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,74,162,0.28)',
+    marginBottom: 8,
+  },
+  cinemaBadgeText: {
+    color: 'rgba(255,255,255,0.86)',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  cinemaTitle: {
+    color: TEXT,
+    fontSize: 21,
+    lineHeight: 24,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+  },
+  roomList: {
+    paddingHorizontal: HORIZ_PAD,
+    gap: 10,
+  },
+  roomCard: {
+    minHeight: 86,
+    borderRadius: 16,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  roomThumb: {
+    width: 66,
+    height: 66,
+    borderRadius: 12,
+    backgroundColor: '#1a1a22',
+  },
+  roomInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  roomTitle: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: -0.25,
+  },
+  roomMeta: {
+    color: TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  roomAvatars: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  roomAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    overflow: 'hidden',
+    marginRight: -6,
+    borderWidth: 1,
+    borderColor: BG,
+  },
+  roomJoin: {
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: PURPLE,
+  },
+  roomJoinText: {
+    color: TEXT,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  roleplayChipRow: {
+    paddingHorizontal: HORIZ_PAD,
+    gap: 10,
+    paddingBottom: 16,
+  },
+  roleplayChip: {
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  roleplayChipActive: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  roleplayChipText: {
+    color: 'rgba(255,255,255,0.46)',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  roleplayChipTextActive: {
+    color: TEXT,
+  },
+  roleplayGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: HORIZ_PAD,
+    alignItems: 'flex-start',
+  },
+  roleplayCard: {
+    width: (SCREEN_WIDTH - HORIZ_PAD * 2 - 12) / 2,
+    minHeight: 330,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#202020',
+  },
+  roleplayCardTall: {
+    minHeight: 360,
+  },
+  roleplayImageWrap: {
+    height: 190,
+    backgroundColor: '#15151c',
+  },
+  roleplayViews: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  roleplayViewsText: {
+    color: TEXT,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  roleplayBody: {
+    padding: 11,
+  },
+  roleplayTitle: {
+    color: TEXT,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+    letterSpacing: -0.25,
+  },
+  roleplayDesc: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  roleplayTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  roleplayTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.11)',
+  },
+  roleplayTagText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  quizGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingHorizontal: HORIZ_PAD,
+  },
+  quizCard: {
+    width: (SCREEN_WIDTH - HORIZ_PAD * 2 - 10) / 2,
+    minHeight: 142,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.18)',
+  },
+  quizIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(168,85,247,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  quizTitle: {
+    color: TEXT,
+    fontSize: 14,
+    lineHeight: 17,
+    fontWeight: '900',
+    letterSpacing: -0.35,
+    minHeight: 34,
+  },
+  quizMeta: {
+    color: TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  quizStart: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: PURPLE,
+  },
+  quizStartText: {
+    color: TEXT,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  creatorRow: {
+    paddingHorizontal: HORIZ_PAD,
+    gap: 14,
+  },
+  creatorCol: {
+    width: 70,
+    alignItems: 'center',
+  },
+  creatorAvatarWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    overflow: 'hidden',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  creatorHandle: {
+    color: TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 
-  // Auth Gate
-  authGate: {
+  searchModal: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: BG,
+  },
+  searchHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 32,
-    paddingTop: 100,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  authTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginTop: 20,
-    textAlign: 'center',
+  searchInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 40,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  authSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 22,
+  searchInput: {
+    flex: 1,
+    color: TEXT,
+    fontSize: 14,
   },
-  authBtn: {
-    marginTop: 32,
-    borderRadius: 25,
+  searchBigTitle: {
+    color: TEXT,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.55,
+    marginBottom: 12,
+  },
+  chartsRow: {
+    gap: 14,
+    paddingRight: 16,
+  },
+  topSearchesCard: {
+    width: Math.min(320, SCREEN_WIDTH - 46),
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#202735',
     overflow: 'hidden',
   },
-  authBtnGradient: {
-    paddingHorizontal: 48,
-    paddingVertical: 14,
+  topCreatorsCard: {
+    width: 248,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#332a7c',
   },
-  authBtnText: {
-    color: '#fff',
-    fontSize: 16,
+  chartCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  chartCardTitle: {
+    color: TEXT,
+    fontSize: 19,
+    fontWeight: '900',
+    letterSpacing: -0.45,
+  },
+  topSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 9,
+  },
+  topSearchIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topSearchTerm: {
+    color: TEXT,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  topSearchCount: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  topCreatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  topCreatorName: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  topCreatorSub: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  searchHint: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    paddingTop: 24,
+  },
+  searchSectionTitle: {
+    color: TEXT,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  searchCreatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  searchCreatorName: {
+    color: TEXT,
+    fontSize: 14,
     fontWeight: '700',
   },
-  authLogin: {
+  searchCreatorHandle: {
+    color: TEXT_MUTED,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  searchGamesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  searchGameCard: {
+    width: (SCREEN_WIDTH - 32 - 8) / 2,
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a22',
+  },
+  topGameRank: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+  },
+  topGameRankText: {
+    color: TEXT,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  searchGameBody: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+  },
+  searchGameTitle: {
+    color: TEXT,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  exploreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  headerSub: {
+    color: '#a1a1aa',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  createBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#a855f7',
+    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+  },
+  createBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  searchBarBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginHorizontal: 16,
+    marginBottom: 20,
+  },
+  searchBarPlaceholder: {
+    color: '#686868',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  creatorSection: {
+    marginBottom: 24,
+  },
+  creatorScrollContent: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  gameRowSection: {
+    marginBottom: 28,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+    marginHorizontal: 16,
+    marginBottom: 10,
+  },
+  gameRowScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  gameCard: {
+    flexDirection: 'column',
+    gap: 6,
+  },
+  gameCardThumb: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    position: 'relative',
+  },
+  gameCardMeta: {
+    paddingHorizontal: 2,
+  },
+  gameCardName: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  gameCardPlays: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  gameCardPlaysText: {
+    color: '#a1a1aa',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  exploreEmpty: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  exploreEmptyText: {
     color: '#a1a1aa',
     fontSize: 14,
-    marginTop: 16,
   },
 });
 

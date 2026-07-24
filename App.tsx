@@ -1,12 +1,20 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, Linking, ActivityIndicator, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useFonts } from 'expo-font';
+import { Audio } from 'expo-av';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { ConnectScreen } from './src/components/ConnectScreen';
@@ -14,11 +22,12 @@ import { ProfileScreen } from './src/components/ProfileScreen';
 import { ExploreScreen } from './src/components/ExploreScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
+import { CreateScreen } from './src/screens/CreateScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
-import { requestTrackingPermission } from './src/services/ads';
+
 import { addNotificationResponseListener, addNotificationReceivedListener, registerForPushNotifications, savePushToken } from './src/services/notifications';
 import { getToken } from './src/services/api';
 import { startGameDownload } from './src/services/gameDownloader';
@@ -26,12 +35,14 @@ import { startGameDownload } from './src/services/gameDownloader';
 // Prevent native splash from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
+
 // Deep link context - to pass shared game ID to HomeScreen
 interface DeepLinkContextType {
   sharedGameId: string | null;
   clearSharedGame: () => void;
+  openSharedGame: (gameId: string) => void;
 }
-const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => { } });
+const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => { }, openSharedGame: () => { } });
 export const useDeepLink = () => useContext(DeepLinkContext);
 
 // Auth screen context - to show login/signup from anywhere
@@ -43,11 +54,71 @@ interface AuthScreenContextType {
 const AuthScreenContext = createContext<AuthScreenContextType>({ showAuthScreen: () => { }, showLoginScreen: () => { }, hideAuthScreen: () => { } });
 export const useAuthScreen = () => useContext(AuthScreenContext);
 
-type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
+// Navigation context - to switch tabs from anywhere (e.g., notification taps)
+interface NavigationContextType {
+  activeTab: TabName;
+  setActiveTab: (tab: TabName) => void;
+  pendingChatUserId: string | null;
+  setPendingChatUserId: (userId: string | null) => void;
+  searchModalVisible: boolean;
+  setSearchModalVisible: (visible: boolean) => void;
+  isGameDeckActive: boolean;
+  setIsGameDeckActive: (active: boolean) => void;
+  isHudHidden: boolean;
+  setIsHudHidden: (hidden: boolean) => void;
+  gameRestartTrigger: number;
+  triggerGameRestart: () => void;
+  gameSkipCounter: { direction: 'next' | 'prev', count: number };
+  triggerGameSkip: (direction: 'next' | 'prev') => void;
+  pendingDraftId: string | null;
+  setPendingDraftId: (id: string | null) => void;
+  activityRequestNonce: number;
+}
+const NavigationContext = createContext<NavigationContextType>({
+  activeTab: 'home', 
+  setActiveTab: () => {}, 
+  pendingChatUserId: null,
+  setPendingChatUserId: () => {},
+  searchModalVisible: false,
+  setSearchModalVisible: () => {},
+  isGameDeckActive: false,
+  setIsGameDeckActive: () => {},
+  isHudHidden: false,
+  setIsHudHidden: () => {},
+  gameRestartTrigger: 0,
+  triggerGameRestart: () => {},
+  gameSkipCounter: { direction: 'next', count: 0 },
+  triggerGameSkip: () => {},
+  pendingDraftId: null,
+  setPendingDraftId: () => {},
+  activityRequestNonce: 0
+});
+export const useNavigation = () => useContext(NavigationContext);
 
-const MainApp = () => {
+type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
+
+const MainApp = ({
+  openCreateNonce = 0,
+  notifChatUserId = null,
+  onNotifChatHandled,
+  notifActivityNonce = 0,
+}: {
+  openCreateNonce?: number;
+  notifChatUserId?: string | null;
+  onNotifChatHandled?: () => void;
+  notifActivityNonce?: number;
+}) => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
+  const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
+  const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
+  const [activityRequestNonce, setActivityRequestNonce] = useState(0);
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [isGameDeckActive, setIsGameDeckActive] = useState(false);
+  const [isHudHidden, setIsHudHidden] = useState(false);
+  const [gameRestartTrigger, setGameRestartTrigger] = useState(0);
+  const [gameSkipCounter, setGameSkipCounter] = useState<{ direction: 'next' | 'prev', count: number }>({ direction: 'next', count: 0 });
+  const [pendingDraftId, setPendingDraftId] = useState<string | null>(null);
   const { isDark, colors } = useTheme();
 
   const handleTabPress = (tab: TabName) => {
@@ -55,12 +126,76 @@ const MainApp = () => {
       // Already on home — trigger refresh
       setHomeRefreshTrigger(prev => prev + 1);
     }
+    
+    // Remember where we came from so the modal can slide back flawlessly
+    if (tab !== 'create') {
+      setPreviousTab(tab);
+    }
+    
     setActiveTab(tab);
+    // Reset game deck when switching tabs manually
+    if (tab === 'home') {
+      setIsGameDeckActive(true);
+    } else {
+      setIsGameDeckActive(false);
+      setIsHudHidden(false); // Reset HUD when leaving home
+    }
   };
+
+  const triggerGameRestart = () => {
+    setGameRestartTrigger(prev => prev + 1);
+  };
+
+  const triggerGameSkip = (direction: 'next' | 'prev') => {
+    setGameSkipCounter(prev => ({ direction, count: prev.count + 1 }));
+  };
+
+  useEffect(() => {
+    if (!openCreateNonce) return;
+    if (activeTab !== 'create') {
+      setPreviousTab(activeTab);
+    }
+    setIsGameDeckActive(false);
+    setIsHudHidden(false);
+    setActiveTab('create');
+  }, [openCreateNonce]);
+
+  // Notification tap → open the Connect tab straight into the sender's DM.
+  useEffect(() => {
+    if (!notifChatUserId) return;
+    setActiveTab('connect');
+    setPendingChatUserId(notifChatUserId);
+    onNotifChatHandled?.();
+  }, [notifChatUserId]);
+
+  // Follow / social notification tap → open the Connect tab's Activity feed.
+  useEffect(() => {
+    if (!notifActivityNonce) return;
+    setActiveTab('connect');
+    setActivityRequestNonce((n) => n + 1);
+  }, [notifActivityNonce]);
 
   // Keep all screens mounted, just hide/show them
   return (
-    <>
+    <NavigationContext.Provider value={{ 
+      activeTab, 
+      setActiveTab, 
+      pendingChatUserId, 
+      setPendingChatUserId, 
+      searchModalVisible, 
+      setSearchModalVisible,
+      isGameDeckActive,
+      setIsGameDeckActive,
+      isHudHidden,
+      setIsHudHidden,
+      gameRestartTrigger,
+      triggerGameRestart,
+      gameSkipCounter,
+      triggerGameSkip,
+      pendingDraftId,
+      setPendingDraftId,
+      activityRequestNonce
+    }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         {/* Home - always mounted */}
@@ -83,8 +218,18 @@ const MainApp = () => {
           <ProfileScreen isActive={activeTab === 'profile'} />
         </View>
       </View>
+      
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
-    </>
+      
+      {/* Sliding Create Screen Modal - Overlays everything natively */}
+      <CreateScreen
+        isActive={activeTab === 'create'}
+        onClose={() => setActiveTab(previousTab)}
+        openDraftId={pendingDraftId}
+        onDraftOpened={() => setPendingDraftId(null)}
+      />
+      
+    </NavigationContext.Provider>
   );
 };
 
@@ -92,6 +237,10 @@ const AppContent = () => {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
+  const [creationNotificationNonce, setCreationNotificationNonce] = useState(0);
+  // Notification deep-links handed down to MainApp (which owns tab state).
+  const [pendingChatNotifUserId, setPendingChatNotifUserId] = useState<string | null>(null);
+  const [activityNotifNonce, setActivityNotifNonce] = useState(0);
   const [showAuth, setShowAuth] = useState(false);
   const [startWithLogin, setStartWithLogin] = useState(false);
   const notificationListener = useRef<any>(null);
@@ -99,12 +248,20 @@ const AppContent = () => {
 
   useEffect(() => {
     checkOnboarding();
-    requestTrackingPermission();
     handleDeepLink();
     setupNotifications();
     
-    // Start background download of multiplayer games immediately
-    startGameDownload().catch(e => console.log('[GameDownload] Background download error:', e));
+    // Start background download of multiplayer games immediately on native.
+    if (Platform.OS !== 'web') {
+      startGameDownload().catch(e => console.log('[GameDownload] Background download error:', e));
+      
+      // Configure audio so WebViews can play sound even if iOS silent switch is ON
+      Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+      }).catch(e => console.log('[AudioConfig] Error:', e));
+    }
 
     // Request notification permission on app start (for existing users after update)
     if (isAuthenticated) {
@@ -129,6 +286,22 @@ const AppContent = () => {
     };
   }, []);
 
+  // Route a tapped notification's payload to the right screen.
+  const handleNotificationData = (data: any) => {
+    if (!data) return;
+    if (data.type === 'game') {
+      setSharedGameId(data.gameId as string);
+    } else if (data.type === 'creation') {
+      setCreationNotificationNonce((value) => value + 1);
+    } else if (data.type === 'message') {
+      // Open the Connect tab straight into the DM with the sender.
+      if (data.userId) setPendingChatNotifUserId(String(data.userId));
+    } else if (data.type === 'social') {
+      // A follow / social event — open the Connect tab's Activity feed.
+      setActivityNotifNonce((value) => value + 1);
+    }
+  };
+
   // Setup notification handlers
   const setupNotifications = () => {
     // Handle notification received while app is open
@@ -136,29 +309,22 @@ const AppContent = () => {
       console.log('[Notifications] Received:', notification);
     });
 
-    // Handle notification tap
+    // Handle notification tap (app already running / backgrounded)
     responseListener.current = addNotificationResponseListener(response => {
       console.log('[Notifications] Tapped:', response);
-      const data = response.notification.request.content.data;
-
-      // Handle different notification types
-      if (data.type === 'game') {
-        setSharedGameId(data.gameId as string);
-      } else if (data.type === 'message') {
-        // Navigate to inbox
-        // You can add a callback here to switch tabs
-      } else if (data.type === 'social') {
-        // Navigate to profile or connect tab
-      }
+      handleNotificationData(response.notification.request.content.data);
     });
+
+    // Handle the tap that cold-started the app from a killed state — the
+    // listener above only fires for taps while the JS runtime is alive.
+    Notifications.getLastNotificationResponseAsync()
+      .then(response => {
+        if (response) handleNotificationData(response.notification.request.content.data);
+      })
+      .catch(e => console.log('[Notifications] getLastResponse error:', e));
   };
 
-  // Hide auth screen when user successfully logs in
-  useEffect(() => {
-    if (isAuthenticated && showAuth) {
-      setShowAuth(false);
-    }
-  }, [isAuthenticated]);
+  // Removed automatic hiding of auth screen so OnboardingFlow can manage its own lifecycle
 
   // Re-check onboarding when user logs out
   useEffect(() => {
@@ -170,8 +336,10 @@ const AppContent = () => {
   }, [isAuthenticated, authLoading]);
 
   const checkOnboarding = async () => {
-    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
-    setShowOnboarding(!hasSeenOnboarding);
+    // Never show onboarding on launch — users go straight to home screen.
+    // Sign up / login is only accessible through auth gates on locked tabs.
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
   };
 
   // Handle deep links
@@ -192,7 +360,7 @@ const AppContent = () => {
 
   const parseDeepLink = (url: string) => {
     try {
-      // Handle gametok://game/flappy-bird or https://gametok.app/game.html?id=flappy-bird
+      // Handle gametok://game/flappy-bird or https://gametok.co/game.html?id=flappy-bird
       const gameMatch = url.match(/game[\/=]([^\/\?&]+)/);
       if (gameMatch) {
         const gameId = gameMatch[1];
@@ -205,13 +373,14 @@ const AppContent = () => {
   };
 
   const clearSharedGame = () => setSharedGameId(null);
+  const openSharedGame = (gameId: string) => setSharedGameId(gameId);
 
   const handleOnboardingComplete = () => {
     AsyncStorage.setItem('hasSeenOnboarding', 'true');
     setShowOnboarding(false);
   };
 
-  // Still loading auth or onboarding check - brief moment after splash
+  // Still loading auth check
   if (showOnboarding === null || authLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
@@ -220,26 +389,14 @@ const AppContent = () => {
     );
   }
 
-  // User hasn't seen onboarding yet - show intro slides
-  if (showOnboarding) {
-    return (
-      <View style={{ flex: 1 }}>
-        <OnboardingFlow
-          onComplete={handleOnboardingComplete}
-          isAuthLoading={false}
-        />
-      </View>
-    );
-  }
-
-  // Show auth screen (triggered from AuthGate)
+  // Show auth screen (triggered from AuthGate on locked tabs)
   if (showAuth) {
     return (
       <View style={{ flex: 1 }}>
         <OnboardingFlow
           onComplete={() => { setShowAuth(false); setStartWithLogin(false); }}
           isAuthLoading={false}
-          skipIntro={startWithLogin}
+          skipIntro={false}
           startWithLogin={startWithLogin}
         />
       </View>
@@ -253,9 +410,14 @@ const AppContent = () => {
       showLoginScreen: () => { setStartWithLogin(true); setShowAuth(true); },
       hideAuthScreen: () => setShowAuth(false)
     }}>
-      <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame }}>
+      <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame, openSharedGame }}>
         <View style={{ flex: 1 }}>
-          <MainApp />
+          <MainApp
+            openCreateNonce={creationNotificationNonce}
+            notifChatUserId={pendingChatNotifUserId}
+            onNotifChatHandled={() => setPendingChatNotifUserId(null)}
+            notifActivityNonce={activityNotifNonce}
+          />
         </View>
       </DeepLinkContext.Provider>
     </AuthScreenContext.Provider>
@@ -265,12 +427,17 @@ const AppContent = () => {
 export default function App() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
 
-  // Load Graphik fonts
+  // Load Graphik (legacy) + Inter (V2 design system) fonts
   const [fontsLoaded] = useFonts({
     'Graphik-Regular': require('./assets/fonts/graphik_arabic.otf'),
     'Graphik-Medium': require('./assets/fonts/graphik_arabic_medium.otf'),
     'Graphik-SemiBold': require('./assets/fonts/graphik_arabic_semibold.otf'),
     'Graphik-Bold': require('./assets/fonts/graphik_arabic_bold.otf'),
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
   });
 
   return (

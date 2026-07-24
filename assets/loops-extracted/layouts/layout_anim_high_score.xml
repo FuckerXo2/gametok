@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<FrameLayout android:id="@id/layout_high_score" android:background="@color/transparent" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <LinearLayout android:gravity="center_horizontal" android:layout_gravity="center" android:orientation="vertical" android:background="@drawable/ic_bg_high_score" android:layout_width="156.0dp" android:layout_height="272.0dp" android:layout_marginBottom="20.0dp">
-        <TextView android:textSize="28.0sp" android:textStyle="bold" android:textColor="@color/white" android:id="@id/tv_score" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="100.0dp" />
-        <com.facebook.drawee.view.SimpleDraweeView android:id="@id/iv_avatar_score" android:background="@drawable/shape_circle_white" android:padding="2.0dp" android:layout_width="60.0dp" android:layout_height="60.0dp" android:layout_marginTop="5.0dp" app:roundAsCircle="true" />
-        <TextView android:textSize="12.0sp" android:textStyle="bold" android:textColor="@color/white" android:gravity="center_horizontal" android:id="@id/tv_name_score" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="5.0dp" android:maxLines="2" android:paddingStart="15.0dp" android:paddingEnd="15.0dp" />
-    </LinearLayout>
-</FrameLayout>

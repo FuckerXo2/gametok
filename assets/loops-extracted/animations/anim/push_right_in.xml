@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<set
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <translate android:duration="300" android:fromXDelta="@dimen/right_in_from_x" android:toXDelta="@dimen/right_in_to_x" />
-</set>

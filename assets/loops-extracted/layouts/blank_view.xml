@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView android:id="@id/blank_view" android:background="@color/main_gray_bg" android:visibility="gone" android:layout_width="match_parent" android:layout_height="match_parent"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <LinearLayout android:gravity="center" android:layout_gravity="center" android:orientation="vertical" android:id="@id/blank_view_root" android:paddingBottom="?android:actionBarSize" android:clipChildren="false" android:clipToPadding="false" android:layout_width="match_parent" android:layout_height="wrap_content">
-        <ImageView android:id="@id/blank_view_image" android:layout_width="wrap_content" android:layout_height="wrap_content" android:src="@drawable/blank_logo_big" android:layout_centerHorizontal="true" android:contentDescription="@null" />
-        <TextView android:textSize="15.0dp" android:textStyle="bold" android:textColor="@color/main_light_dark" android:gravity="center" android:id="@id/blank_view_text" android:paddingRight="20.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="30.0dp" android:text="@string/no_content" android:lines="1" android:layout_below="@id/blank_view_image" android:layout_centerInParent="true" android:paddingStart="20.0dp" android:paddingEnd="20.0dp" />
-        <TextView android:textSize="13.0dp" android:textColor="@color/main_light_dark" android:gravity="center" android:id="@id/blank_view_sub_text" android:paddingRight="20.0dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="" android:lines="1" android:layout_below="@id/blank_view_text" android:layout_centerInParent="true" android:paddingStart="20.0dp" android:paddingEnd="20.0dp" />
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>

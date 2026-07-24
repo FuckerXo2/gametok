@@ -119,8 +119,8 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
-  const getThumbnailUrl = () => `https://gametok-games.pages.dev/thumbnails/${gameId}.png`;
-  const getShareUrl = () => `https://gametok-landing.pages.dev/game.html?id=${gameId}&name=${encodeURIComponent(gameName)}&img=${encodeURIComponent(getThumbnailUrl())}`;
+  const getThumbnailUrl = () => `https://games.gametok.co/thumbnails/${gameId}.png`;
+  const getShareUrl = () => `https://gametok.co/game.html?id=${gameId}&name=${encodeURIComponent(gameName)}&img=${encodeURIComponent(getThumbnailUrl())}`;
   const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮\n${getShareUrl()}`;
 
   const handleExternalShare = async (optionId: string) => {
@@ -171,7 +171,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
           disabled={isSent}
         >
           <View style={styles.avatarContainer}>
-            <Avatar uri={item.avatar} size={AVATAR_SIZE} />
+            <Avatar uri={item.avatar} userId={item.id} size={AVATAR_SIZE} />
             {isSelected && !isSent && (
               <View style={[styles.selectedBadge, { borderColor: colors.surface }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />

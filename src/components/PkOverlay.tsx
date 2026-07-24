@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
-import { LoopsColors } from '../constants/LoopsColors';
+import { View, Text, StyleSheet } from 'react-native';
+import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
+import { Avatar } from './Avatar';
 
 interface Props {
   myScore: number;
@@ -28,7 +29,7 @@ export const PkOverlay: React.FC<Props> = ({ myScore, opponentScore, opponent })
 
       {/* Opponent Score */}
       <View style={[styles.scoreCard, styles.opponentScore]}>
-        <Image source={{ uri: opponent.avatar }} style={styles.avatar} />
+        <Avatar uri={opponent.avatar} userId={opponent.username} size={32} style={styles.avatar} />
         <Text style={styles.scoreLabel} numberOfLines={1}>{opponent.username}</Text>
         <Text style={styles.scoreValue}>{opponentScore}</Text>
       </View>
@@ -56,7 +57,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   myScore: {
-    borderColor: LoopsColors.primary,
+    borderColor: LoopsColors.mainPink,
     borderWidth: 2
   },
   opponentScore: {
@@ -65,12 +66,12 @@ const styles = StyleSheet.create({
   },
   scoreLabel: {
     ...FontStyles.label,
-    color: LoopsColors.textSecondary,
+    color: SemanticColors.textSecondary,
     marginBottom: 4
   },
   scoreValue: {
     ...FontStyles.h2,
-    color: LoopsColors.textPrimary
+    color: SemanticColors.textInverse
   },
   vsContainer: {
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
   },
   vsText: {
     ...FontStyles.button,
-    color: LoopsColors.primary
+    color: LoopsColors.mainPink
   },
   avatar: {
     width: 32,

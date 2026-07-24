@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Pressable, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -7,114 +7,312 @@ import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, G } from 'react-native-svg';
-import { games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress, gamification } from '../services/api';
-import { getAdFrequency, initializeAds } from '../services/ads';
+import { API_URL, games as gamesApi, likes as likesApi, savedGames as savedGamesApi, messages, gameProgress, ai as aiApi, users as usersApi } from '../services/api';
 import { ShareSheet } from '../components/ShareSheet';
-import { CommentsSheet } from '../components/CommentsSheet';
+import { RemixModal } from '../components/RemixModal';
 import { LeaderboardModal } from '../components/LeaderboardModal';
 import { GameLoadingScreen } from '../components/GameLoadingScreen';
-import NativeAdView from '../components/NativeAdView';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
-import { useDeepLink } from '../../App';
+import { CommentsModal } from '../components/CommentsModal';
+import { Avatar } from '../components/Avatar';
+import { UserProfileModal } from '../components/UserProfileModal';
+import { useDeepLink, useNavigation } from '../../App';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import { resolveGameThumbnail } from '../utils/thumbnails';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { LoopsAnimations } from '../constants/LoopsAnimations';
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
-const BOTTOM_ZONE_HEIGHT = SCREEN_HEIGHT * 0.13; // 13% for better swipe detection
-const TOP_ZONE_HEIGHT = SCREEN_HEIGHT * 0.13;
+const TOP_ZONE_HEIGHT = 0; // Removed top scroll zone so taps at the top of the game work
 const SWIPE_THRESHOLD = 50;
 
 interface Game {
   id: string;
   name: string;
+  description?: string;
   embedUrl?: string;
   thumbnail?: string;
+  previewVideoUrl?: string | null;
   likes?: number;
+  plays?: number;
+  saves?: number;
   color?: string;
+  category?: string | null;
+  subcategory?: string | null;
+  primaryTab?: string | null;
+  discoveryChips?: string[];
+  creatorId?: string | null;
+  creatorDisplayName?: string | null;
+  creatorUsername?: string | null;
+  creatorVerified?: boolean;
+  creatorAvatar?: string | null;
+  remixedFrom?: string | null;
 }
 
-// Feed contains games and native ad placeholders every AD_FREQUENCY games
+// Feed contains games
 interface FeedItem {
   game?: Game;
   id: string;
-  isAd?: boolean;
 }
 
+const normalizeFollowKey = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+const getCreatorFollowKey = (game?: Game | null) => (
+  normalizeFollowKey(game?.creatorId || game?.creatorUsername)
+);
+
+const isCreatorFollowed = (followedKeys: Set<string>, game?: Game | null) => {
+  const creatorIdKey = normalizeFollowKey(game?.creatorId);
+  const usernameKey = normalizeFollowKey(game?.creatorUsername);
+  return Boolean(
+    (creatorIdKey && followedKeys.has(creatorIdKey)) ||
+    (usernameKey && followedKeys.has(usernameKey))
+  );
+};
+
 const getGameUrl = (game: Game) => {
-  if (game.embedUrl) {
-    const separator = game.embedUrl.includes('?') ? '&' : '?';
-    return `${game.embedUrl}${separator}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
-  }
-  return `${GAMES_HOST}/${game.id}/`;
+  const rawUrl = game.embedUrl
+    ? (game.embedUrl.startsWith('/') ? `${API_ORIGIN}${game.embedUrl}` : game.embedUrl)
+    : `${GAMES_HOST}/${game.id}/`;
+  const separator = rawUrl.includes('?') ? '&' : '?';
+  return `${rawUrl}${separator}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
 };
 
 const getThumbnailUrl = (game: Game) => {
-  if (game.thumbnail) {
-    return game.thumbnail.startsWith('http') ? game.thumbnail : `${GAMES_HOST}${game.thumbnail}`;
-  }
-  return `${GAMES_HOST}/thumbnails/${game.id}.png`;
+  return resolveGameThumbnail(game.thumbnail, game.id, game);
 };
+
+const getFeedBackdropColor = () => '#050505';
 
 const isExternalGame = (game: Game) => !!game.embedUrl;
 
 // Domains to block at request level
-const AD_DOMAINS = [
-  'imasdk.googleapis.com',
-  'pagead2.googlesyndication.com',
-  'doubleclick.net',
-  'googlesyndication.com',
-  'googleadservices.com',
-  'adservice.google',
-  'googleads.g.doubleclick.net',
-  'www.googletagservices.com',
-  'securepubads.g.doubleclick.net',
-  'tpc.googlesyndication.com',
-  'ad.doubleclick.net',
-  'amazon-adsystem.com',
-  'a-mo.net',
-  'applovin.com',
-  'criteo.com',
-  'pubmatic.com',
-  'rubiconproject.com',
-  'openx.net',
-  'smartadserver.com',
-  'casalemedia.com',
-  // Only specific ad endpoints, do NOT block the main game host domains
-  'api.gamemonetize.com',
-  'api.gamemonetize.co',
-  'gamemonetize.com/gamemonetize.js',
-  'html5.gamedistribution.com/rvv1/gdsdk/gdsdk.js',
-  'gamedistribution.com/rvv1/',
-  'gdsdk.com',
-  'adinplay.com',
-];
 
-// Check if URL should be blocked - uses Set for O(1) lookup on exact matches
-// and falls back to substring matching for partial domain matches
-const AD_DOMAINS_SET = new Set(AD_DOMAINS);
-const shouldBlockRequest = (url: string): boolean => {
-  const urlLower = url.toLowerCase();
-  // Fast path: check if any domain is in the URL
-  for (const domain of AD_DOMAINS) {
-    if (urlLower.includes(domain)) {
-      return true;
+const GAME_AUDIO_GUARD_SCRIPT = `
+(function() {
+  if (window.__gametokAudioGuardInstalled) return true;
+  window.__gametokAudioGuardInstalled = true;
+  window._gametokActive = false;
+  window._gametokMuted = true;
+  window._audioContexts = window._audioContexts || [];
+
+  // Walk this window plus every same-origin child frame. A lot of HTML5 games
+  // (especially distribution/ad-wrapped ones) run their actual audio inside a
+  // nested <iframe>, which the top-frame mute never reached - that is why the
+  // previous game kept playing after a scroll or after leaving the screen.
+  var forEachFrame = function(win, cb) {
+    try { cb(win); } catch (e) {}
+    var frames;
+    try { frames = win.frames; } catch (e) { return; }
+    if (!frames) return;
+    for (var i = 0; i < frames.length; i++) {
+      var child;
+      try {
+        child = frames[i];
+        void child.document; // throws for cross-origin frames -> skip them
+      } catch (e) { continue; }
+      if (child && child !== win) forEachFrame(child, cb);
     }
+  };
+  window.__gametokForEachFrame = function(cb) { forEachFrame(window, cb); };
+
+  var muteWindow = function(win) {
+    try { win._gametokActive = false; win._gametokMuted = true; } catch (e) {}
+    try {
+      win.document && win.document.querySelectorAll('audio, video').forEach(function(el) {
+        try { el.pause(); el.muted = true; el.volume = 0; } catch (e) {}
+      });
+    } catch (e) {}
+    try { (win._audioContexts || []).forEach(function(ctx) { try { ctx.suspend(); } catch (e) {} }); } catch (e) {}
+    try { if (win.Howler) win.Howler.mute(true); } catch (e) {}
+    try {
+      if (win.Phaser && win.Phaser.GAMES) win.Phaser.GAMES.forEach(function(g) {
+        try { if (g && g.sound) { g.sound.mute = true; g.sound.pauseAll && g.sound.pauseAll(); } } catch (e) {}
+      });
+    } catch (e) {}
+    try { if (win.createjs && win.createjs.Sound) win.createjs.Sound.muted = true; } catch (e) {}
+  };
+
+  var unmuteWindow = function(win) {
+    try { win._gametokActive = true; win._gametokMuted = false; } catch (e) {}
+    try { (win._audioContexts || []).forEach(function(ctx) { try { ctx.resume(); } catch (e) {} }); } catch (e) {}
+    try {
+      win.document && win.document.querySelectorAll('audio, video').forEach(function(el) {
+        try { el.muted = false; el.volume = 1; } catch (e) {}
+      });
+    } catch (e) {}
+    try { if (win.Howler) win.Howler.mute(false); } catch (e) {}
+    try {
+      if (win.Phaser && win.Phaser.GAMES) win.Phaser.GAMES.forEach(function(g) {
+        try { if (g && g.sound) g.sound.mute = false; } catch (e) {}
+      });
+    } catch (e) {}
+    try { if (win.createjs && win.createjs.Sound) win.createjs.Sound.muted = false; } catch (e) {}
+  };
+
+  window.__gametokMuteAll = function() {
+    window._gametokActive = false;
+    window._gametokMuted = true;
+    try { window._gamePaused = true; } catch (e) {}
+    try { window.dispatchEvent(new Event('blur')); } catch (e) {}
+    try { document.dispatchEvent(new Event('gametok:pause')); } catch (e) {}
+    forEachFrame(window, muteWindow);
+    try {
+      if (navigator.mediaSession) {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'paused';
+      }
+    } catch (e) {}
+  };
+  window.__gametokUnmuteAll = function() {
+    window._gametokActive = true;
+    window._gametokMuted = false;
+    try { window._gamePaused = false; } catch (e) {}
+    try { window.dispatchEvent(new Event('focus')); } catch (e) {}
+    try { document.dispatchEvent(new Event('gametok:resume')); } catch (e) {}
+    forEachFrame(window, unmuteWindow);
+    try {
+      if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
+    } catch (e) {}
+  };
+
+  // Install the Audio / AudioContext / <media>.play guards into a window realm.
+  // Each same-origin frame has its own constructors and prototypes, so the
+  // guard has to be installed per realm (top frame + nested frames).
+  var installInWindow = function(win) {
+    try {
+      if (win.__gametokRealmGuarded) return;
+      win.__gametokRealmGuarded = true;
+      win._audioContexts = win._audioContexts || [];
+
+      var NativeAudio = win.Audio;
+      if (NativeAudio && !NativeAudio.__gametokWrapped) {
+        var WrappedAudio = function(src) {
+          var audio = new NativeAudio(src);
+          try { audio.muted = true; audio.volume = 0; } catch (e) {}
+          var nativePlay = audio.play ? audio.play.bind(audio) : null;
+          if (nativePlay) {
+            audio.play = function() {
+              if (!window._gametokActive || window._gametokMuted) {
+                try { audio.muted = true; audio.volume = 0; } catch (e) {}
+                return Promise.resolve();
+              }
+              return nativePlay();
+            };
+          }
+          return audio;
+        };
+        WrappedAudio.prototype = NativeAudio.prototype;
+        WrappedAudio.__gametokWrapped = true;
+        win.Audio = WrappedAudio;
+      }
+
+      var NativeAudioContext = win.AudioContext || win.webkitAudioContext;
+      if (NativeAudioContext && !NativeAudioContext.__gametokWrapped) {
+        var WrappedAudioContext = function() {
+          var ctx = new NativeAudioContext();
+          try { win._audioContexts.push(ctx); } catch (e) {}
+          if (!window._gametokActive || window._gametokMuted) {
+            try { ctx.suspend(); } catch (e) {}
+          }
+          return ctx;
+        };
+        WrappedAudioContext.prototype = NativeAudioContext.prototype;
+        WrappedAudioContext.__gametokWrapped = true;
+        win.AudioContext = WrappedAudioContext;
+        win.webkitAudioContext = WrappedAudioContext;
+      }
+
+      if (win.HTMLMediaElement && win.HTMLMediaElement.prototype && !win.HTMLMediaElement.prototype.__gametokPlayWrapped) {
+        var nativeMediaPlay = win.HTMLMediaElement.prototype.play;
+        win.HTMLMediaElement.prototype.play = function() {
+          if (!window._gametokActive || window._gametokMuted) {
+            try { this.muted = true; this.volume = 0; this.pause(); } catch (e) {}
+            return Promise.resolve();
+          }
+          return nativeMediaPlay.apply(this, arguments);
+        };
+        win.HTMLMediaElement.prototype.__gametokPlayWrapped = true;
+      }
+    } catch (e) {}
+  };
+
+  try {
+    if (navigator.mediaSession) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+    }
+  } catch (e) {}
+
+  installInWindow(window);
+
+  // Guard nested same-origin frames as they appear and keep them silent while
+  // this WebView is the inactive/background game.
+  var sweepFrames = function() {
+    forEachFrame(window, function(win) {
+      if (win === window) return;
+      installInWindow(win);
+      if (!window._gametokActive || window._gametokMuted) muteWindow(win);
+    });
+  };
+
+  var installObserver = function() {
+    if (!window._gametokActive || window._gametokMuted) window.__gametokMuteAll();
+    sweepFrames();
+    if (!window._gametokMediaObserver && document.body) {
+      window._gametokMediaObserver = new MutationObserver(function() {
+        if (!window._gametokActive || window._gametokMuted) {
+          window.__gametokMuteAll();
+          sweepFrames();
+        }
+      });
+      window._gametokMediaObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    if (!window._gametokFrameSweep) {
+      window._gametokFrameSweep = setInterval(sweepFrames, 1000);
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installObserver, { once: true });
+  } else {
+    installObserver();
   }
-  return false;
-};
+
+  var handleHostMessage = function(event) {
+    try {
+      var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      if (!data || !data.type) return;
+      if (data.type === 'GAMETOK_PAUSE') window.__gametokMuteAll();
+      if (data.type === 'GAMETOK_RESUME') window.__gametokUnmuteAll();
+    } catch (e) {}
+  };
+  window.addEventListener('message', handleHostMessage);
+  document.addEventListener('message', handleHostMessage);
+})();
+true;
+`;
+
 
 // Script to pause/freeze a game
 const PAUSE_SCRIPT = `
 (function() {
+  if (window.__gametokMuteAll) {
+    try { window.__gametokMuteAll(); } catch(e) {}
+  }
+
   // Immediately mute everything
   window._gamePaused = true;
+  window._gametokActive = false;
+  window._gametokMuted = true;
   
   // Clear ALL intervals to prevent memory leaks
   if (window._muteInterval) {
@@ -180,12 +378,18 @@ const PAUSE_SCRIPT = `
     if (window.createjs && window.createjs.Sound) {
       try { window.createjs.Sound.muted = true; } catch(e) {}
     }
+
+    // 6. Recurse through same-origin child frames (nested-iframe games)
+    if (window.__gametokMuteAll) { try { window.__gametokMuteAll(); } catch(e) {} }
   };
-  
+
   // Mute immediately
   muteAll();
-  
-  // DON'T start a new interval - just mute once. This prevents memory leaks.
+
+  // Keep inactive WebViews silent, but avoid hammering every parked game engine.
+  if (!window._muteInterval) {
+    window._muteInterval = setInterval(muteAll, 2500);
+  }
   
   // Unity
   if (window.unityInstance) {
@@ -225,6 +429,8 @@ const RESUME_SCRIPT = `
 (function() {
   // Clear the mute interval first
   window._gamePaused = false;
+  window._gametokActive = true;
+  window._gametokMuted = false;
   if (window._muteInterval) {
     clearInterval(window._muteInterval);
     window._muteInterval = null;
@@ -292,6 +498,9 @@ const RESUME_SCRIPT = `
   if (window.createjs && window.createjs.Sound) {
     try { window.createjs.Sound.muted = false; } catch(e) {}
   }
+
+  // Resume same-origin child frames (nested-iframe games) too
+  if (window.__gametokUnmuteAll) { try { window.__gametokUnmuteAll(); } catch(e) {} }
 })();
 true;
 `;
@@ -316,7 +525,7 @@ const EDGE_BLOCK_SCRIPT = `
   if (window._edgeBlockActive) return;
   window._edgeBlockActive = true;
   
-  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
+  const TOP_EDGE_ZONE = window.innerHeight * 0.15; // 15% for top swipe detection
   
   // Block touch events in edge zones at capture phase
   // This prevents games from capturing swipes that should go to native gesture handlers
@@ -327,7 +536,7 @@ const EDGE_BLOCK_SCRIPT = `
     const screenHeight = window.innerHeight;
     
     // If touch is in edge zone, stop it from reaching game
-    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+    if (y < TOP_EDGE_ZONE) {
       e.stopPropagation();
       e.stopImmediatePropagation();
       // Don't preventDefault - let native handle it
@@ -343,7 +552,7 @@ const EDGE_BLOCK_SCRIPT = `
   const blockEdgePointer = (e) => {
     const y = e.clientY;
     const screenHeight = window.innerHeight;
-    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
+    if (y < TOP_EDGE_ZONE) {
       e.stopPropagation();
       e.stopImmediatePropagation();
     }
@@ -357,718 +566,7 @@ const EDGE_BLOCK_SCRIPT = `
 true;
 `;
 
-// Inject blurred game thumbnail as CSS background inside WebView
-// Uses body::before pseudo-element so blur stays behind game content
-const createBlurBgScript = (thumbnailUrl: string, fallbackColor: string) => `
-(function() {
-  if (window._blurBgActive) return;
-  window._blurBgActive = true;
-  var thumbUrl = '${thumbnailUrl}';
-  var fallback = '${fallbackColor}';
-  var applyBg = function() {
-    var s = document.getElementById('_gt_blur_bg');
-    if (s) s.remove();
-    s = document.createElement('style');
-    s.id = '_gt_blur_bg';
-    s.textContent = [
-      'html, body { background: ' + fallback + ' !important; background-color: ' + fallback + ' !important; margin:0; padding:0; }',
-      'body::before {',
-      '  content: "";',
-      '  position: fixed;',
-      '  top: -20px; left: -20px; right: -20px; bottom: -20px;',
-      '  background: url(' + thumbUrl + ') center/cover no-repeat;',
-      '  filter: blur(30px);',
-      '  -webkit-filter: blur(30px);',
-      '  opacity: 0.5;',
-      '  z-index: -1;',
-      '  pointer-events: none;',
-      '}',
-    ].join('\\n');
-    if (document.head) document.head.appendChild(s);
-    if (document.documentElement) document.documentElement.style.setProperty('background', fallback, 'important');
-    if (document.body) document.body.style.setProperty('background', 'transparent', 'important');
-  };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', applyBg);
-  } else {
-    applyBg();
-  }
-  setInterval(applyBg, 1500);
-})();
-true;
-`;
 
-// Mock GD SDK to bypass ads completely
-const AD_BLOCKER_SCRIPT = `
-(function() {
-  // Suppress error dialogs
-  window.alert = function() {};
-  window.confirm = function() { return true; };
-  window.prompt = function() { return ''; };
-  
-  // Track audio contexts and gain nodes for pause/resume
-  window._audioContexts = [];
-  window._allGainNodes = [];
-  window._gamePaused = false; // Will be set to true by PAUSE_SCRIPT
-  
-  const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
-  if (OrigAudioContext) {
-    window.AudioContext = window.webkitAudioContext = function() {
-      const ctx = new OrigAudioContext();
-      window._audioContexts.push(ctx);
-      
-      // If game is paused, immediately suspend new contexts
-      if (window._gamePaused) {
-        try { ctx.suspend(); } catch(e) {}
-      }
-      
-      // Also intercept createGain to track all gain nodes
-      const origCreateGain = ctx.createGain.bind(ctx);
-      ctx.createGain = function() {
-        const gain = origCreateGain();
-        window._allGainNodes.push(gain);
-        // If paused, mute new gain nodes
-        if (window._gamePaused) {
-          try { gain.gain.setValueAtTime(0, ctx.currentTime); } catch(e) {}
-        }
-        return gain;
-      };
-      
-      return ctx;
-    };
-  }
-  
-  // Also intercept Audio constructor
-  const OrigAudio = window.Audio;
-  if (OrigAudio) {
-    window.Audio = function(src) {
-      const audio = new OrigAudio(src);
-      // If game is paused, mute new audio elements
-      if (window._gamePaused) {
-        audio.muted = true;
-        audio.volume = 0;
-      }
-      return audio;
-    };
-  }
-  
-  // Fake OneTrust consent - pretend user already accepted
-  // This prevents the consent banner from showing
-  window.OnetrustActiveGroups = ',C0001,C0002,C0003,C0004,';
-  window.OptanonActiveGroups = ',C0001,C0002,C0003,C0004,';
-  window.OneTrust = {
-    IsAlertBoxClosed: function() { return true; },
-    GetDomainData: function() { return { ShowAlertNotice: false }; },
-    Init: function() {},
-    LoadBanner: function() {},
-    ToggleInfoDisplay: function() {},
-    Close: function() {},
-    AllowAll: function() {},
-    RejectAll: function() {}
-  };
-  window.Optanon = window.OneTrust;
-  
-  // Block OneTrust/Optanon scripts from loading
-  const blockScripts = ['onetrust', 'optanon', 'cookielaw', 'cookie-consent', 'consent-manager'];
-  
-  // Override createElement to block consent scripts
-  const origCreateElement = document.createElement.bind(document);
-  document.createElement = function(tag) {
-    const el = origCreateElement(tag);
-    if (tag.toLowerCase() === 'script') {
-      const origSetAttribute = el.setAttribute.bind(el);
-      el.setAttribute = function(name, value) {
-        if (name === 'src' && typeof value === 'string') {
-          if (blockScripts.some(s => value.toLowerCase().includes(s))) {
-            return; // Don't set src for blocked scripts
-          }
-        }
-        return origSetAttribute(name, value);
-      };
-      Object.defineProperty(el, 'src', {
-        set: function(value) {
-          if (typeof value === 'string' && blockScripts.some(s => value.toLowerCase().includes(s))) {
-            return; // Block
-          }
-          origSetAttribute('src', value);
-        },
-        get: function() { return el.getAttribute('src'); }
-      });
-    }
-    return el;
-  };
-
-  // Clear all cookies
-  document.cookie.split(';').forEach(function(c) {
-    document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-  });
-  
-  // Block cookie setting
-  const origCookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') || 
-                         Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie');
-  if (origCookieDesc) {
-    Object.defineProperty(document, 'cookie', {
-      get: function() { return ''; },
-      set: function() { return true; },
-      configurable: true
-    });
-  }
-  
-  // Don't clear localStorage - we need it for game saves!
-  // Only clear sessionStorage for tracking
-  try { sessionStorage.clear(); } catch(e) {}
-
-  window.google = window.google || {};
-  window.google.ima = {
-    AdDisplayContainer: function() { this.initialize = function(){}; },
-    AdsLoader: function() {
-      this.addEventListener = function(){};
-      this.requestAds = function(){};
-      this.contentComplete = function(){};
-    },
-    AdsManager: function() {
-      this.addEventListener = function(){};
-      this.init = function(){};
-      this.start = function(){};
-      this.destroy = function(){};
-    },
-    AdsManagerLoadedEvent: { Type: { ADS_MANAGER_LOADED: 'adsManagerLoaded' } },
-    AdErrorEvent: { Type: { AD_ERROR: 'adError' } },
-    AdEvent: { Type: { 
-      CONTENT_PAUSE_REQUESTED: 'contentPauseRequested',
-      CONTENT_RESUME_REQUESTED: 'contentResumeRequested',
-      ALL_ADS_COMPLETED: 'allAdsCompleted',
-      LOADED: 'loaded',
-      STARTED: 'started',
-      COMPLETE: 'complete'
-    }},
-    AdsRenderingSettings: function(){},
-    AdsRequest: function(){ this.adTagUrl = ''; this.linearAdSlotWidth = 0; this.linearAdSlotHeight = 0; },
-    ViewMode: { NORMAL: 'normal' },
-    settings: { setVpaidMode: function(){}, setLocale: function(){} }
-  };
-
-  // Instant callback - no delay
-  const fireCallbacks = (callbacks) => {
-    if (!callbacks) return;
-    // Fire all callbacks immediately in sequence
-    callbacks.adStarted && callbacks.adStarted();
-    callbacks.adFinished && callbacks.adFinished();
-    callbacks.adReward && callbacks.adReward();
-    // Also try common alternative names
-    callbacks.onAdStarted && callbacks.onAdStarted();
-    callbacks.onAdFinished && callbacks.onAdFinished();
-    callbacks.onComplete && callbacks.onComplete();
-    callbacks.onReward && callbacks.onReward();
-    callbacks.success && callbacks.success();
-    callbacks.complete && callbacks.complete();
-    // More callback variations
-    callbacks.done && callbacks.done();
-    callbacks.finished && callbacks.finished();
-    callbacks.callback && callbacks.callback();
-    callbacks.onDone && callbacks.onDone();
-    callbacks.onFinished && callbacks.onFinished();
-    callbacks.onSuccess && callbacks.onSuccess();
-    callbacks.onClose && callbacks.onClose();
-    callbacks.close && callbacks.close();
-    callbacks.beforeReward && callbacks.beforeReward();
-    callbacks.afterReward && callbacks.afterReward();
-    callbacks.adViewed && callbacks.adViewed();
-    callbacks.onAdViewed && callbacks.onAdViewed();
-    callbacks.rewardReceived && callbacks.rewardReceived();
-    callbacks.onRewardReceived && callbacks.onRewardReceived();
-  };
-  
-  // Aggressive ad container removal
-  const removeAdElements = () => {
-    const adSelectors = [
-      'iframe[src*="ad"]', 'iframe[src*="doubleclick"]', 'iframe[src*="googlesyndication"]',
-      'iframe[id*="ad"]', 'iframe[class*="ad"]', 'iframe[src*="imasdk"]',
-      'div[id*="preroll"]', 'div[class*="preroll"]', 'div[id*="ad-"]', 'div[class*="ad-"]',
-      'div[id*="video-ad"]', 'div[class*="video-ad"]', 'div[id*="rewarded"]',
-      '.gdsdk-container', '#gdsdk-container', '[class*="gdsdk"]', '[id*="gdsdk"]',
-      '.ad-container', '#ad-container', '.ads-container', '#ads-container',
-      '.advertisement', '#advertisement', '.ad-overlay', '#ad-overlay',
-      '[class*="interstitial"]', '[id*="interstitial"]',
-      '[class*="preroll"]', '[id*="preroll"]',
-      'video[src*="ad"]', 'video[class*="ad"]', 'video[id*="ad"]',
-      'iframe[src*="gamemonetize"]', 'div[class*="gamemonetize"]', '#gamemonetize-video'
-    ];
-    adSelectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.display = 'none';
-        el.style.visibility = 'hidden';
-        el.style.opacity = '0';
-        el.style.pointerEvents = 'none';
-        el.style.position = 'absolute';
-        el.style.left = '-9999px';
-        try { el.remove(); } catch(e) {}
-      });
-    });
-    
-    // GameMonetize specific: find and remove "skip" countdown elements
-    document.querySelectorAll('*').forEach(el => {
-      const text = el.innerText || el.textContent || '';
-      if (text.includes('skip this in') || text.includes('Skip Ad') || 
-          text.includes('skip ad') || text.includes('Advertisement') ||
-          text.includes('skip in') || text.includes('Skip in')) {
-        // Find the parent container and nuke it
-        let parent = el;
-        for (let i = 0; i < 5; i++) {
-          if (parent.parentElement) parent = parent.parentElement;
-        }
-        parent.style.display = 'none';
-        try { parent.remove(); } catch(e) {}
-        el.style.display = 'none';
-        try { el.remove(); } catch(e) {}
-      }
-    });
-    
-    // Y8/Yad Games: remove "More Games" links and cross-promo overlays
-    document.querySelectorAll('*').forEach(el => {
-      const text = el.innerText || el.textContent || '';
-      if (text.includes('More Games') || text.includes('more games') ||
-          text.includes('Play More') || text.includes('play more') ||
-          text.includes('Similar Games') || text.includes('You May Also Like') ||
-          text.includes('Recommended') || text.includes('Try These') ||
-          text.includes('Play Again') && el.tagName === 'A') {
-        el.style.display = 'none';
-        el.style.pointerEvents = 'none';
-        try { el.remove(); } catch(e) {}
-      }
-    });
-    
-    // Block all external links (anything not pointing to the game itself)
-    document.querySelectorAll('a[href]').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      if (href.startsWith('http') && !href.includes(window.location.hostname)) {
-        a.style.display = 'none';
-        a.style.pointerEvents = 'none';
-        a.removeAttribute('href');
-        a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
-      }
-    });
-    
-    // Also look for fixed position elements at bottom (ad bars)
-    document.querySelectorAll('div, span, p').forEach(el => {
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      // If it's fixed at bottom and small height, likely an ad bar
-      if (style.position === 'fixed' && rect.bottom > window.innerHeight - 100 && rect.height < 80) {
-        const text = el.innerText || '';
-        if (text.includes('skip') || text.includes('Skip') || text.includes('ad') || text.includes('Ad')) {
-          el.style.display = 'none';
-          try { el.remove(); } catch(e) {}
-        }
-      }
-    });
-  };
-  
-  // Run ad removal periodically (but NOT loader removal - that was breaking games)
-  // Store interval ID so it can be cleared on pause
-  // Run every 2 seconds instead of 500ms to reduce CPU load
-  window._adRemovalInterval = setInterval(removeAdElements, 2000);
-  
-  // Initial ad removal attempts
-  setTimeout(removeAdElements, 0);
-  setTimeout(removeAdElements, 100);
-  setTimeout(removeAdElements, 500);
-  setTimeout(removeAdElements, 1000);
-  setTimeout(removeAdElements, 2000);
-  
-  window.sdk = {
-    showBanner: function() { return Promise.resolve(); },
-    hideBanner: function() { return Promise.resolve(); },
-    showAd: function(type, callbacks) {
-      fireCallbacks(callbacks);
-      return Promise.resolve();
-    },
-    preloadAd: function(cb) { cb && cb(); return Promise.resolve(); },
-    preloadRewardedAd: function(cb) { cb && cb(); return Promise.resolve(); },
-    showRewardedAd: function(callbacks) {
-      fireCallbacks(callbacks);
-      return Promise.resolve();
-    },
-    cancelAd: function() { return Promise.resolve(); },
-    openConsole: function() {},
-    onPauseGame: function() {},
-    onResumeGame: function() {},
-    play: function() { return Promise.resolve(); },
-    start: function() { return Promise.resolve(); },
-    pause: function() { return Promise.resolve(); },
-    resume: function() { return Promise.resolve(); },
-    requestAd: function(callback) { callback && callback(); },
-    customVideoAd: function(functionFunc) { if (typeof functionFunc === 'function') functionFunc(); },
-    adBreak: function(config) {
-      // Handle adBreak API used by some games
-      if (config && config.adBreakDone) config.adBreakDone();
-      if (config && config.afterAd) config.afterAd();
-    },
-    adConfig: function(config) {
-      if (config && config.onReady) config.onReady();
-    }
-  };
-  
-  window.gdsdk = window.sdk;
-  
-  // GameDistribution specific SDK mock
-  window.GD_OPTIONS = {
-    gameId: 'test',
-    onEvent: function(event) {
-      console.log('GD Event:', event);
-    }
-  };
-  
-  // Full GD SDK mock
-  window.gdsdk = {
-    showAd: function(type) {
-      return new Promise(resolve => {
-        if (window.GD_OPTIONS && window.GD_OPTIONS.onEvent) {
-          window.GD_OPTIONS.onEvent({ name: 'SDK_GAME_START' });
-        }
-        resolve();
-      });
-    },
-    preloadAd: function() { return Promise.resolve(); },
-    cancelAd: function() { return Promise.resolve(); },
-    showBanner: function() { return Promise.resolve(); },
-    openConsole: function() {},
-    ...window.sdk
-  };
-  
-  // Mock the GD SDK loader
-  window.GD = window.gdsdk;
-  
-  // Fire SDK ready event
-  setTimeout(() => {
-    if (window.GD_OPTIONS && window.GD_OPTIONS.onEvent) {
-      window.GD_OPTIONS.onEvent({ name: 'SDK_READY' });
-      window.GD_OPTIONS.onEvent({ name: 'SDK_GAME_START' });
-    }
-    // Also dispatch custom event some games listen for
-    window.dispatchEvent(new Event('게임시작'));
-    window.dispatchEvent(new CustomEvent('game-ready'));
-  }, 100);
-  
-  // Also mock adBreak/adConfig globals (used by some SDKs)
-  window.adBreak = window.sdk.adBreak;
-  window.adConfig = window.sdk.adConfig;
-  
-  const adDomains = [
-    'imasdk.googleapis.com', 'pagead2.googlesyndication.com', 'doubleclick.net', 'googlesyndication.com', 
-    'googleadservices.com', 'api.gamemonetize.com', 'gdsdk.com', '/gdsdk/', 'gamemonetize.js'
-  ];
-  
-  // Block ad requests at fetch level
-  const origFetch = window.fetch;
-  window.fetch = function(url) {
-    if (typeof url === 'string') {
-      const urlLower = url.toLowerCase();
-      for (let i = 0; i < adDomains.length; i++) {
-        if (urlLower.includes(adDomains[i])) {
-          console.log('[AdBlock] Blocked fetch:', url);
-          return Promise.resolve(new Response('', { status: 200 }));
-        }
-      }
-    }
-    return origFetch.apply(this, arguments);
-  };
-  
-  // Block ad requests at XHR level
-  const origXHROpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(m, url) {
-    this._blocked = false;
-    if (typeof url === 'string') {
-      const urlLower = url.toLowerCase();
-      for (let i = 0; i < adDomains.length; i++) {
-        if (urlLower.includes(adDomains[i])) {
-          this._blocked = true;
-          console.log('[AdBlock] Blocked XHR:', url);
-          break;
-        }
-      }
-    }
-    return origXHROpen.apply(this, arguments);
-  };
-  const origXHRSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function() {
-    if (this._blocked) {
-      Object.defineProperty(this, 'readyState', { value: 4 });
-      Object.defineProperty(this, 'status', { value: 200 });
-      Object.defineProperty(this, 'responseText', { value: '' });
-      setTimeout(() => {
-        this.onreadystatechange && this.onreadystatechange();
-        this.onload && this.onload();
-      }, 0);
-      return;
-    }
-    return origXHRSend.apply(this, arguments);
-  };
-  
-  // Force fullscreen for external games
-  const fullscreenStyle = document.createElement('style');
-  fullscreenStyle.textContent = \`
-    html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      width: 100% !important;
-      height: 100% !important;
-      overflow: hidden !important;
-      background: #000 !important;
-    }
-    /* Unity WebGL specific */
-    #unity-container, .unity-container, #unityContainer,
-    #unity-canvas, .unity-canvas, #gameContainer,
-    .webgl-content, #webgl-content {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: 100vw !important;
-      max-height: 100vh !important;
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-      background: #000 !important;
-    }
-    canvas, #game-container, .game-container, #game, .game, 
-    #game-canvas, .game-canvas, #gameFrame, .gameFrame, #game_frame, .game_frame {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: 100vw !important;
-      max-height: 100vh !important;
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-    }
-    /* Hide Unity branding/footer/warnings AND loading screens */
-    #unity-footer, .unity-footer, #unity-logo, .unity-logo,
-    #unity-fullscreen-button, #unity-build-title, .unity-mobile-warning,
-    #unity-warning, .unity-warning, #unity-mobile-warning,
-    #unity-progress-bar-empty, #unity-progress-bar-full,
-    #unity-loading-bar, .unity-loading-bar, #unity-loader, .unity-loader,
-    #unity-progress, .unity-progress, #unity-loading, .unity-loading,
-    #unity-loading-cover, .unity-loading-cover,
-    #unity-loading-background, .unity-loading-background,
-    #loading-cover, .loading-cover, #loading-bar, .loading-bar,
-    #preloader, .preloader, #loader, .loader:not(canvas),
-    [class*="unity-warning"], [id*="unity-warning"],
-    [class*="unity-load"], [id*="unity-load"],
-    [class*="loading-screen"], [id*="loading-screen"],
-    [class*="splash-screen"], [id*="splash-screen"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      position: absolute !important;
-      left: -9999px !important;
-      top: -9999px !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    /* Hide any ad containers or overlays */
-    .ad-container, .ads-container, #ad-container, #ads-container,
-    .advertisement, #advertisement, .ad-overlay, #ad-overlay,
-    .gdsdk-container, #gdsdk-container { 
-      display: none !important; 
-    }
-    /* Ad-related elements only */
-    [class*="preroll"], [id*="preroll"], [class*="Preroll"], [id*="Preroll"],
-    [class*="video-ad"], [id*="video-ad"], [class*="videoAd"], [id*="videoAd"],
-    [class*="adContainer"], [id*="adContainer"], [class*="ad-wrapper"], [id*="ad-wrapper"],
-    [class*="rewarded"], [id*="rewarded"], [class*="interstitial"], [id*="interstitial"] {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      position: absolute !important;
-      left: -9999px !important;
-      top: -9999px !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-    /* Hide cookie consent banners */
-    .cookie-consent, .cookie-banner, .cookie-notice, .cookie-popup,
-    .consent-banner, .consent-popup, .consent-modal, .consent-overlay,
-    .gdpr-banner, .gdpr-popup, .gdpr-consent, .privacy-banner,
-    #cookie-consent, #cookie-banner, #cookie-notice, #cookieConsent,
-    #consent-banner, #consent-popup, #gdpr-banner, #privacy-banner,
-    [class*="cookie-consent"], [class*="cookie-banner"], [class*="CookieConsent"],
-    [class*="consent-banner"], [class*="gdpr"], [id*="cookie"], [id*="consent"],
-    .fc-consent-root, .qc-cmp2-container, #qc-cmp2-container,
-    .cmp-container, #cmp-container, .cmpbox, #cmpbox,
-    /* Famobi specific */
-    #onetrust-consent-sdk, .onetrust-pc-dark-filter, #onetrust-banner-sdk,
-    .ot-sdk-container, [class*="onetrust"], [id*="onetrust"],
-    .optanon-alert-box-wrapper, #optanon-popup-bg, #optanon-popup-wrapper {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-  \`;
-  document.head.appendChild(fullscreenStyle);
-  
-  // Auto-accept cookie consent (runs after DOM loads)
-  const autoAcceptCookies = () => {
-    // Famobi uses OneTrust - look for their specific buttons
-    const acceptSelectors = [
-      '#onetrust-accept-btn-handler',
-      '.onetrust-close-btn-handler',
-      '#accept-recommended-btn-handler',
-      'button[id*="accept"]',
-      'button[class*="accept"]',
-      '[class*="accept"][class*="cookie"]',
-      '[class*="Accept"][class*="Cookie"]',
-      'button:contains("Accept All")',
-      '[class*="accept"]', '[class*="Accept"]', '[class*="agree"]', '[class*="Agree"]',
-      '[id*="accept"]', '[id*="Accept"]', '[id*="agree"]', '[id*="Agree"]',
-      'button[class*="consent"]', 'button[class*="cookie"]',
-      '.fc-cta-consent', '.qc-cmp2-summary-buttons button:first-child',
-      '[data-testid="accept-button"]', '[data-action="accept"]'
-    ];
-    
-    for (const selector of acceptSelectors) {
-      try {
-        const btns = document.querySelectorAll(selector);
-        for (const btn of btns) {
-          if (btn && btn.offsetParent !== null && btn.innerText && 
-              (btn.innerText.toLowerCase().includes('accept') || btn.innerText.toLowerCase().includes('agree'))) {
-            btn.click();
-            return true;
-          }
-        }
-        // Also try just clicking first match
-        const btn = document.querySelector(selector);
-        if (btn && btn.offsetParent !== null) {
-          btn.click();
-          return true;
-        }
-      } catch(e) {}
-    }
-    
-    // Famobi specific: find button with "Accept All Cookies" text
-    const allButtons = document.querySelectorAll('button');
-    for (const btn of allButtons) {
-      if (btn.innerText && btn.innerText.includes('Accept All Cookies')) {
-        btn.click();
-        return true;
-      }
-      // Y8 "Got it" button
-      if (btn.innerText && btn.innerText.trim() === 'Got it') {
-        btn.click();
-      }
-    }
-    
-    return false;
-  };
-  
-  // Y8 specific: auto-click "PLAY IN FULLSCREEN" button
-  const autoClickY8Play = () => {
-    const allButtons = document.querySelectorAll('button, a, div');
-    for (const btn of allButtons) {
-      if (btn.innerText && (
-        btn.innerText.includes('PLAY IN FULLSCREEN') || 
-        btn.innerText.includes('Play in Fullscreen') ||
-        btn.innerText.includes('PLAY NOW') ||
-        btn.innerText.includes('Play Now') ||
-        btn.innerText.includes('START GAME') ||
-        btn.innerText.includes('Start Game')
-      )) {
-        btn.click();
-        return true;
-      }
-    }
-    return false;
-  };
-  
-  // Try immediately and after short delays
-  setTimeout(autoAcceptCookies, 100);
-  setTimeout(autoAcceptCookies, 500);
-  setTimeout(autoAcceptCookies, 1000);
-  setTimeout(autoAcceptCookies, 2000);
-  
-  // Y8 play button clicks
-  setTimeout(autoClickY8Play, 500);
-  setTimeout(autoClickY8Play, 1000);
-  setTimeout(autoClickY8Play, 2000);
-  setTimeout(autoClickY8Play, 3000);
-  
-  // Also observe for dynamically added consent dialogs
-  const observer = new MutationObserver(() => {
-    autoAcceptCookies();
-  });
-  if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      observer.observe(document.body, { childList: true, subtree: true });
-    });
-  }
-  setTimeout(() => observer.disconnect(), 10000); // Stop after 10s
-  
-  // Force fullscreen via JavaScript (for Unity games that resist CSS)
-  const forceFullscreen = () => {
-    // Remove Unity mobile warning
-    const warnings = document.querySelectorAll('#unity-warning, .unity-warning, #unity-mobile-warning, .unity-mobile-warning');
-    warnings.forEach(w => w.remove());
-    
-    // Also remove any paragraph with the warning text
-    document.querySelectorAll('p').forEach(p => {
-      if (p.textContent && p.textContent.includes('WebGL builds are not supported')) {
-        p.remove();
-      }
-    });
-    
-    const canvas = document.querySelector('canvas');
-    if (canvas) {
-      canvas.style.cssText = 'width:100vw!important;height:100vh!important;position:fixed!important;top:0!important;left:0!important;display:block!important;';
-    }
-    // Also resize Unity container
-    const containers = document.querySelectorAll('#unity-container, #gameContainer, .webgl-content, #unityContainer');
-    containers.forEach(c => {
-      c.style.cssText = 'width:100vw!important;height:100vh!important;position:fixed!important;top:0!important;left:0!important;background:#000!important;';
-    });
-  };
-  
-  // Run multiple times as Unity loads
-  setTimeout(forceFullscreen, 500);
-  setTimeout(forceFullscreen, 1000);
-  setTimeout(forceFullscreen, 2000);
-  setTimeout(forceFullscreen, 3000);
-  
-  // Also run on window resize
-  window.addEventListener('resize', forceFullscreen);
-  
-  // CRITICAL: Block touch events at screen edges to allow native swipe gestures
-  // This prevents the WebView from capturing swipe gestures at top/bottom
-  const EDGE_ZONE = window.innerHeight * 0.13; // 13% of screen height
-  
-  const blockEdgeTouches = (e) => {
-    if (!e.touches || e.touches.length === 0) return;
-    const touch = e.touches[0];
-    const y = touch.clientY;
-    const screenHeight = window.innerHeight;
-    
-    // Block touches in top or bottom edge zones
-    if (y < EDGE_ZONE || y > screenHeight - EDGE_ZONE) {
-      e.stopPropagation();
-      // Don't preventDefault - let it bubble to native
-    }
-  };
-  
-  // Capture phase to intercept before game handlers
-  document.addEventListener('touchstart', blockEdgeTouches, { capture: true, passive: true });
-  document.addEventListener('touchmove', blockEdgeTouches, { capture: true, passive: true });
-  
-  // NO div blockers - native gesture zones handle swipe detection
-})();
-true;
-`;
 
 // Cloud save script - intercepts localStorage and syncs with server
 // This is a function because we need to inject the gameId and initial data
@@ -1130,6 +628,72 @@ const createCloudSaveScript = (gameId: string, initialData: Record<string, strin
   window.addEventListener('pagehide', syncToServer);
   
   console.log('[CloudSave] Initialized for game:', GAME_ID);
+})();
+true;
+`;
+
+const HUD_INTERACTION_BRIDGE_SCRIPT = `
+(function() {
+  if (window._hudInteractionBridgeActive) return;
+  window._hudInteractionBridgeActive = true;
+
+  let lastHudPing = 0;
+  let lastInteractionPing = 0;
+  let swipeStartY = null;
+  let swipeStartX = null;
+  const notifyInteraction = (type) => {
+    const now = Date.now();
+    if (type === 'USER_SWIPE_INTENT') {
+      if (now - lastHudPing < 1200) return;
+      lastHudPing = now;
+    } else if (type === 'USER_INTERACTION') {
+      if (now - lastInteractionPing < 500) return;
+      lastInteractionPing = now;
+    }
+    
+    window.ReactNativeWebView?.postMessage(JSON.stringify({
+      type,
+      ts: now
+    }));
+  };
+
+  const handleTouchStart = (event) => {
+    notifyInteraction('USER_INTERACTION');
+    const point = event.touches && event.touches[0];
+    if (!point) return;
+    swipeStartY = point.clientY;
+    swipeStartX = point.clientX;
+  };
+
+  const handleTouchMove = (event) => {
+    const point = event.touches && event.touches[0];
+    if (!point || swipeStartY == null || swipeStartX == null) return;
+    const dy = point.clientY - swipeStartY;
+    const dx = point.clientX - swipeStartX;
+    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx)) {
+      notifyInteraction('USER_SWIPE_INTENT');
+    }
+  };
+
+  const resetSwipe = () => {
+    swipeStartY = null;
+    swipeStartX = null;
+  };
+
+  ['touchstart'].forEach((eventName) => {
+    window.addEventListener(eventName, handleTouchStart, { passive: true });
+    document.addEventListener(eventName, handleTouchStart, { passive: true });
+  });
+
+  ['touchmove'].forEach((eventName) => {
+    window.addEventListener(eventName, handleTouchMove, { passive: true });
+    document.addEventListener(eventName, handleTouchMove, { passive: true });
+  });
+
+  ['touchend', 'touchcancel'].forEach((eventName) => {
+    window.addEventListener(eventName, resetSwipe, { passive: true });
+    document.addEventListener(eventName, resetSwipe, { passive: true });
+  });
 })();
 true;
 `;
@@ -1264,31 +828,6 @@ const GAME_READY_SCRIPT = `
 true;
 `;
 
-// Random taglines for games
-const GAME_TAGLINES = [
-  "So addicting 🔥",
-  "Can you beat this?",
-  "Try not to rage quit 😤",
-  "One more game...",
-  "Warning: highly addictive",
-  "Brain melting fun",
-  "Simple but deadly",
-  "You won't put it down",
-  "Challenge accepted? 💪",
-  "Pure chaos",
-  "Satisfying af",
-  "Quick dopamine hit",
-  "Lowkey fire 🔥",
-  "Trust me on this one",
-  "Your new obsession",
-];
-
-const getRandomTagline = (gameId: string) => {
-  // Use gameId to get consistent tagline per game
-  const hash = gameId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-  return GAME_TAGLINES[hash % GAME_TAGLINES.length];
-};
-
 // Format count like TikTok (1.2K, 3.4M, etc)
 const formatCount = (count: number): string => {
   if (count >= 1000000) {
@@ -1312,31 +851,6 @@ const hashString = (str: string): number => {
   return Math.abs(hash);
 };
 
-// Session jitter — random offset generated once per app launch
-const SESSION_JITTER = Math.random();
-
-const getFakeCount = (gameId: string, type: 'likes' | 'comments' | 'saves' | 'shares'): number => {
-  const dayOfYear = Math.floor(Date.now() / 86400000); // changes daily
-  const baseSeed = hashString(gameId + type);
-  const dailySeed = hashString(gameId + type + dayOfYear);
-
-  const ranges: Record<string, [number, number]> = {
-    likes: [800, 86000],
-    comments: [20, 4800],
-    saves: [100, 15000],
-    shares: [50, 9000],
-  };
-  const [min, max] = ranges[type];
-  const baseCount = min + (baseSeed % (max - min));
-
-  // Daily drift: ±5% based on day
-  const dailyDrift = ((dailySeed % 100) - 50) / 1000; // -0.05 to +0.05
-  // Session jitter: ±2%
-  const sessionDrift = (SESSION_JITTER - 0.5) * 0.04; // -0.02 to +0.02
-
-  return Math.max(min, Math.round(baseCount * (1 + dailyDrift + sessionDrift)));
-};
-
 // Shuffle array randomly (Fisher-Yates)
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
@@ -1347,39 +861,21 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
-// Create feed with native ads inserted every AD_FREQUENCY games
+// Create feed of games
 const createFeed = (games: Game[], cycle: number = 0): FeedItem[] => {
   // Shuffle games for variety
   const shuffledGames = shuffleArray(games);
-  const adFrequency = getAdFrequency();
   const result: FeedItem[] = [];
 
   shuffledGames.forEach((game, index) => {
-    // Insert an ad before every N games (after the first batch)
-    if (index > 0 && index % adFrequency === 0) {
-      result.push({
-        id: `ad-${cycle}-${index}`,
-        isAd: true,
-      });
-    }
     result.push({
       game,
       id: `${game.id}-cycle${cycle}-${index}`,
-      isAd: false,
     });
   });
 
   return result;
 };
-
-// Swipe Up Hand Icon Component
-const SwipeUpHand: React.FC<{ size?: number; color?: string }> = ({ size = 48, color = LoopsColors.white }) => (
-  <Svg width={size} height={size} viewBox="0 0 116.91 122.88" fill="none">
-    <G fill={color}>
-      <Path d="M40.75,67.62c-0.15-0.07-0.33-0.18-0.48-0.29c-1.95-1.55-4.09-3.28-5.93-4.79c-2.69-2.21-5.78-4.75-7.95-6.55 c-1.47-1.21-3.17-2.06-4.75-2.39c-1.03-0.18-1.95-0.18-2.69,0.11c-0.59,0.26-1.1,0.74-1.44,1.47c-0.44,0.99-0.66,2.39-0.55,4.31 c0.11,1.69,0.7,3.53,1.47,5.34c1.14,2.61,2.72,5.04,3.9,6.59c0.07,0.11,0.15,0.18,0.18,0.29l23.3,33.28 c0.29,0.44,0.48,0.92,0.52,1.4c0.48,3.83,1.29,6.74,2.47,8.54c0.88,1.33,1.99,1.99,3.42,1.95H88.9c2.28-0.04,4.34-0.7,6.26-2.02 c2.1-1.44,3.98-3.68,5.71-6.7c0.04-0.04,0.07-0.11,0.11-0.15c0.66-1.14,1.55-2.61,2.39-4.01c3.72-6.11,6.96-11.45,7.33-19.03 l-0.22-10.45c-0.04-0.15-0.04-0.29-0.04-0.44c0-0.15,0-1.14,0.04-2.47c0.07-6.92,0.18-15.46-6.15-16.53h-4.09 c-0.04,1.95-0.15,3.94-0.26,5.85c-0.11,1.73-0.22,3.35-0.22,4.93c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06 c0-1.58,0.11-3.42,0.22-5.34c0.41-6.52,0.88-13.99-4.31-14.91h-4.05c-0.22,0-0.44-0.04-0.66-0.07c0.04,2.36-0.11,4.79-0.26,7.14 c-0.11,1.73-0.22,3.35-0.22,4.93c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06c0-1.58,0.11-3.42,0.22-5.34 c0.4-6.52,0.88-13.99-4.31-14.91h-4.05c-0.29,0-0.55-0.04-0.81-0.11v11.89c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06V17.23 c0-5.34-2.17-8.72-4.97-10.12c-1.03-0.52-2.14-0.77-3.2-0.77c-1.07,0-2.17,0.26-3.2,0.77c-2.76,1.4-4.9,4.79-4.9,10.27v55.92 c0,1.69-1.36,3.06-3.06,3.06s-3.06-1.36-3.06-3.06v-5.67H40.75L40.75,67.62z M0.81,12.28c-1.04,0.99-1.08,2.64-0.09,3.68 C1.71,17,3.35,17.04,4.4,16.05l7.69-7.35v22.08c0,1.44,1.17,2.61,2.61,2.61s2.61-1.17,2.61-2.61V8.68l7.73,7.37 c1.04,0.99,2.69,0.95,3.68-0.09c0.99-1.04,0.95-2.69-0.09-3.68L16.49,0.72c-1-0.95-2.58-0.96-3.59,0L0.81,12.28L0.81,12.28z M69.32,31.33c0.26-0.07,0.52-0.11,0.81-0.11h4.23c0.22,0,0.48,0.04,0.7,0.07c5.63,0.88,8.17,4.16,9.2,8.43 c0.4-0.18,0.85-0.29,1.29-0.29h4.23c0.22,0,0.48,0.04,0.7,0.07c6.07,0.96,8.5,4.67,9.39,9.39c0.15-0.04,0.29-0.04,0.48-0.04h4.23 c0.22,0,0.48,0.04,0.7,0.07c11.63,1.8,11.49,13.36,11.37,22.68v2.43l0.26,10.75v0.33c-0.44,9.17-4.05,15.09-8.21,21.94 c-0.7,1.14-1.4,2.32-2.36,3.94c-0.04,0.04-0.04,0.07-0.07,0.11c-2.17,3.79-4.67,6.7-7.55,8.69c-2.91,2.02-6.15,3.06-9.68,3.09 H52.42c-3.64,0.07-6.48-1.51-8.58-4.64c-1.69-2.5-2.8-6.04-3.39-10.45L17.63,75.17l-0.11-0.11c-1.36-1.8-3.2-4.64-4.6-7.77 c-1.03-2.36-1.8-4.9-1.99-7.4c-0.18-2.98,0.22-5.34,1.07-7.22c1.03-2.32,2.72-3.83,4.75-4.64c1.88-0.77,4.01-0.88,6.15-0.44 c2.58,0.52,5.23,1.8,7.47,3.68c1.84,1.55,4.93,4.05,7.95,6.52l2.5,2.06V17.41c0-8.14,3.61-13.36,8.28-15.72 c1.88-0.96,3.9-1.44,5.96-1.44c2.06,0,4.09,0.48,5.96,1.44c4.68,2.36,8.36,7.62,8.36,15.61v14.06L69.32,31.33L69.32,31.33z" />
-    </G>
-  </Svg>
-);
 
 // Animated Like Button
 const AnimatedLikeButton = ({
@@ -1432,36 +928,6 @@ const AnimatedLikeButton = ({
   );
 };
 
-const AnimatedCommentButton = ({
-  onPress,
-  commentCount,
-  styles
-}: {
-  onPress: (e: any) => void;
-  commentCount: number;
-  styles: any;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePress = (e: any) => {
-    onPress(e);
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 0.75, duration: 100, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1.15, friction: 3, tension: 40, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
-    ]).start();
-  };
-
-  return (
-    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons name="chatbubble-ellipses" size={32} color={LoopsColors.white} />
-      </Animated.View>
-      <Text style={styles.actionCount}>{formatCount(commentCount)}</Text>
-    </TouchableOpacity>
-  );
-};
-
 const AnimatedShareButton = ({
   onPress,
   shareCount,
@@ -1492,280 +958,121 @@ const AnimatedShareButton = ({
   );
 };
 
-// Animated Welcome Screen Component
-const WelcomeScreen: React.FC<{ contentHeight: number }> = ({ contentHeight }) => {
-  // Animation values
-  const glowPulse = useRef(new Animated.Value(0.4)).current;
-  const chevron1Y = useRef(new Animated.Value(0)).current;
-  const chevron2Y = useRef(new Animated.Value(0)).current;
-  const chevron3Y = useRef(new Animated.Value(0)).current;
-  const chevronOpacity = useRef(new Animated.Value(0.5)).current;
-  const barWidth = useRef(new Animated.Value(0.6)).current;
-  const handY = useRef(new Animated.Value(0)).current; // New animation for hand
+const AnimatedCommentButton = ({
+  onPress,
+  commentCount,
+  styles
+}: {
+  onPress: (e: any) => void;
+  commentCount: number;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    // Neon glow pulse animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowPulse, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowPulse, {
-          toValue: 0.4,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Hand swipe animation - travels from bottom to near tagline
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(handY, {
-          toValue: -80, // Travel up 80px
-          duration: 1000,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(handY, {
-          toValue: 0,
-          duration: 800,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.delay(300), // Pause at bottom before repeating
-      ])
-    ).start();
-
-    // Chevron bounce animations (staggered wave)
-    const bounceChevron = (anim: Animated.Value, delay: number) => {
-      setTimeout(() => {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, {
-              toValue: -8,
-              duration: 600,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(anim, {
-              toValue: 0,
-              duration: 600,
-              easing: Easing.in(Easing.cubic),
-              useNativeDriver: true,
-            }),
-          ])
-        ).start();
-      }, delay);
-    };
-
-    bounceChevron(chevron1Y, 0);
-    bounceChevron(chevron2Y, 200);
-    bounceChevron(chevron3Y, 400);
-
-    // Chevron opacity pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(chevronOpacity, {
-          toValue: 1,
-          duration: 1200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(chevronOpacity, {
-          toValue: 0.5,
-          duration: 1200,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Bar width pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(barWidth, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(barWidth, {
-          toValue: 0.6,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
+  const handlePress = (e: any) => {
+    onPress(e);
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.72, duration: 90, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1.14, friction: 3, tension: 40, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
+    ]).start();
+  };
 
   return (
-    <View style={welcomeStyles.container}>
-      <Image
-        source={require('../../assets/gametok_bg.png')}
-        style={[welcomeStyles.backgroundImage, { height: contentHeight }]}
-        resizeMode="cover"
-      />
-
-      {/* Logo and title in center */}
-      <View style={welcomeStyles.brandingContainer}>
-        <Image
-          source={require('../../assets/icon.png')}
-          style={welcomeStyles.logo}
-          resizeMode="contain"
-        />
-        <Text style={welcomeStyles.title}>GameTOK</Text>
-      </View>
-
-      {/* Tagline above bottom zone */}
-      <Text style={welcomeStyles.tagline}>Swipe. Play. Repeat.</Text>
-
-      {/* Bottom swipe zone - purple background, no glow */}
-      <View style={welcomeStyles.bottomZone}>
-        <View style={welcomeStyles.purpleBar} />
-      </View>
-
-      {/* Animated swipe hand - positioned absolutely from screen bottom */}
-      <Animated.View style={[
-        welcomeStyles.swipeHandContainer,
-        {
-          transform: [{ translateY: handY }],
-        }
-      ]}>
-        <SwipeUpHand size={32} color={LoopsColors.white} />
+    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons name="chatbubble-outline" size={32} color={LoopsColors.white} />
       </Animated.View>
-
-      {/* Transparent scroll zone indicator */}
-      <View style={welcomeStyles.scrollZoneIndicator} pointerEvents="none" />
-    </View>
+      <Text style={styles.actionCount}>{formatCount(commentCount)}</Text>
+    </TouchableOpacity>
   );
 };
 
-const welcomeStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: SemanticColors.bgDark,
-  },
-  backgroundImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: SCREEN_WIDTH,
-  },
-  scrollZoneIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(168, 85, 247, 0.15)', // Semi-transparent purple
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(168, 85, 247, 0.3)',
-    zIndex: 1,
-  },
-  brandingContainer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 100,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  logo: {
-    width: 120,
-    height: 120,
-    borderRadius: 28,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 1,
-    textShadowColor: '#00f5ff',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-  },
-  tagline: {
-    position: 'absolute',
-    bottom: BOTTOM_ZONE_HEIGHT + 40,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontWeight: '500',
-    letterSpacing: 2,
-  },
-  bottomZone: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT + 80,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 25,
-  },
-  purpleBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'rgba(168, 85, 247, 0.5)',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  glowBarContainer: {
-    width: 200,
-    height: 4,
-    marginBottom: 20,
-    alignItems: 'center',
-  },
-  glowBar: {
-    width: '100%',
-    height: 4,
-    borderRadius: 2,
-  },
-  glowBarBlur: {
-    position: 'absolute',
-    width: '100%',
-    height: 12,
-    borderRadius: 6,
-    opacity: 0.5,
-    top: -4,
-  },
-  chevronsContainer: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  swipeHandContainer: {
-    position: 'absolute',
-    bottom: 15,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  swipeText: {
-    fontSize: 15,
-    color: '#a855f7',
-    fontWeight: '600',
-    textShadowColor: '#a855f7',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
-    letterSpacing: 1,
-  },
-});
+const AnimatedFollowBadge = ({
+  loading,
+  followed,
+  disabled,
+  onPress,
+  styles
+}: {
+  loading: boolean;
+  followed: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  styles: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const ringScale = useRef(new Animated.Value(0.7)).current;
+  const ringOpacity = useRef(new Animated.Value(0)).current;
 
-// Animated Game Loading Component - Glowing geometric shapes
+  useEffect(() => {
+    if (!loading && !followed) return;
+
+    scale.setValue(0.72);
+    ringScale.setValue(0.7);
+    ringOpacity.setValue(0.5);
+
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scale, {
+          toValue: 1.22,
+          friction: 4,
+          tension: 150,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          friction: 5,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(ringScale, {
+        toValue: 1.75,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+      Animated.timing(ringOpacity, {
+        toValue: 0,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [followed, loading, ringOpacity, ringScale, scale]);
+
+  return (
+    <Pressable
+      style={styles.creatorFollowBadgeWrap}
+      onPress={onPress}
+      disabled={disabled || loading || followed}
+      hitSlop={10}
+    >
+      <Animated.View
+        style={[
+          styles.creatorFollowPulse,
+          {
+            opacity: ringOpacity,
+            transform: [{ scale: ringScale }],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.creatorFollowBadge,
+          followed && styles.creatorFollowBadgeDone,
+          { transform: [{ scale }] },
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color="#FFF" />
+        ) : (
+          <Ionicons name={followed ? "checkmark" : "add"} size={20} color="#FFF" />
+        )}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
 const GameLoadingAnimation: React.FC = () => {
   // Shape rotations
   const rotation1 = useRef(new Animated.Value(0)).current;
@@ -2006,16 +1313,274 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refreshTrigger = 0 }) => {
   const insets = useSafeAreaInsets();
   const { sharedGameId, clearSharedGame } = useDeepLink();
+  const { setActiveTab: setRootActiveTab, setPendingDraftId, setSearchModalVisible, setIsGameDeckActive, isGameDeckActive, isHudHidden, setIsHudHidden, gameRestartTrigger, gameSkipCounter } = useNavigation();
   const { user } = useAuth();
+  const { setMyStatus } = useSocket();
   const isFocused = isActive; // Use the prop instead of navigation hook
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1); // Start at -1 for welcome screen
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [interactedGameId, setInteractedGameId] = useState<string | null>(null);
+  const [followingCreatorIds, setFollowingCreatorIds] = useState<Set<string>>(new Set());
+  const [followingLoadingIds, setFollowingLoadingIds] = useState<Set<string>>(new Set());
+  const [followSuccessIds, setFollowSuccessIds] = useState<Set<string>>(new Set());
+  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
+  const [webViewResetKeys, setWebViewResetKeys] = useState<Record<string, number>>({});
+  const followSuccessTimeouts = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    setIsGameDeckActive(false);
+  }, [currentIndex, setIsGameDeckActive]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setFollowingCreatorIds(new Set());
+      setFollowingLoadingIds(new Set());
+      setFollowSuccessIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+    usersApi.following(user.id)
+      .then((res: any) => {
+        if (cancelled) return;
+        const following = Array.isArray(res)
+          ? res
+          : res?.users || res?.following || [];
+        setFollowingCreatorIds(
+          new Set(
+            following
+              .flatMap((item: any) => [
+                normalizeFollowKey(item?.id || item?.userId),
+                normalizeFollowKey(item?.username),
+              ])
+              .filter(Boolean),
+          ),
+        );
+      })
+      .catch((error) => {
+        console.warn("Failed to load following creators:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(followSuccessTimeouts.current).forEach(clearTimeout);
+      followSuccessTimeouts.current = {};
+    };
+  }, []);
+
+  const resolveCreatorId = useCallback(async (creatorId?: string | null, creatorUsername?: string | null) => {
+    if (creatorId) return creatorId;
+    const username = creatorUsername?.trim();
+    if (!username) return null;
+
+    const result = await usersApi.search(username);
+    const users = Array.isArray(result) ? result : result?.users || [];
+    const matchedUser = users.find((candidate: any) => (
+      String(candidate?.username || "").toLowerCase() === username.toLowerCase()
+    )) || users[0];
+
+    return matchedUser?.id ? String(matchedUser.id) : null;
+  }, []);
+
+  const handleOpenCreatorProfile = useCallback(async (game: Game) => {
+    const fallbackId = game.creatorId || game.creatorUsername;
+    if (!fallbackId) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (game.creatorId) {
+      setSelectedProfileUser({
+        id: game.creatorId,
+        username: game.creatorUsername || game.creatorDisplayName || 'creator',
+        displayName: game.creatorDisplayName || game.creatorUsername || 'Creator',
+        avatar: game.creatorAvatar || null,
+        verified: Boolean(game.creatorVerified),
+        status: 'GAME CREATOR',
+        isOnline: false,
+        isFriend: isCreatorFollowed(followingCreatorIds, game),
+      });
+      return;
+    }
+
+    try {
+      const resolvedId = await resolveCreatorId(null, game.creatorUsername);
+      const profile = resolvedId ? await usersApi.get(resolvedId) : null;
+      const profileUser = profile?.user || {};
+      setSelectedProfileUser({
+        id: profileUser.id || resolvedId || fallbackId,
+        username: profileUser.username || game.creatorUsername || 'creator',
+        displayName: profileUser.displayName || game.creatorDisplayName || game.creatorUsername || 'Creator',
+        avatar: profileUser.avatar || game.creatorAvatar || null,
+        verified: Boolean(profileUser.verified ?? game.creatorVerified),
+        status: 'GAME CREATOR',
+        isOnline: false,
+        isFriend: Boolean(profile?.isFollowing),
+      });
+    } catch (error) {
+      console.warn("Failed to open creator profile:", error);
+      setSelectedProfileUser({
+        id: fallbackId,
+        username: game.creatorUsername || 'creator',
+        displayName: game.creatorDisplayName || game.creatorUsername || 'Creator',
+        avatar: game.creatorAvatar || null,
+        verified: Boolean(game.creatorVerified),
+        status: 'GAME CREATOR',
+        isOnline: false,
+        isFriend: false,
+      });
+    }
+  }, [followingCreatorIds, resolveCreatorId]);
+
+  const handleFollowCreator = useCallback(async (creatorId?: string | null, creatorUsername?: string | null) => {
+    const optimisticId = normalizeFollowKey(creatorId || creatorUsername);
+    if (!optimisticId || optimisticId === normalizeFollowKey(user?.id) || followingLoadingIds.has(optimisticId)) {
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFollowingLoadingIds(prev => {
+      const next = new Set(prev);
+      next.add(optimisticId);
+      return next;
+    });
+
+    try {
+      const resolvedCreatorId = await resolveCreatorId(creatorId, creatorUsername);
+      if (!resolvedCreatorId || normalizeFollowKey(resolvedCreatorId) === normalizeFollowKey(user?.id)) {
+        throw new Error("Creator id unavailable");
+      }
+      const resolvedCreatorKey = normalizeFollowKey(resolvedCreatorId);
+      const creatorUsernameKey = normalizeFollowKey(creatorUsername);
+
+      const result = await usersApi.follow(resolvedCreatorId);
+      if (result?.following === false) {
+        setFollowingCreatorIds(prev => {
+          const next = new Set(prev);
+          next.delete(resolvedCreatorKey);
+          if (creatorUsernameKey) next.delete(creatorUsernameKey);
+          return next;
+        });
+        return;
+      }
+
+      setFollowingCreatorIds(prev => {
+        const next = new Set(prev);
+        next.add(resolvedCreatorKey);
+        if (creatorUsernameKey) next.add(creatorUsernameKey);
+        return next;
+      });
+      setFollowSuccessIds(prev => {
+        const next = new Set(prev);
+        next.add(optimisticId);
+        next.add(resolvedCreatorKey);
+        return next;
+      });
+
+      if (followSuccessTimeouts.current[optimisticId]) {
+        clearTimeout(followSuccessTimeouts.current[optimisticId]);
+      }
+      followSuccessTimeouts.current[optimisticId] = setTimeout(() => {
+        setFollowSuccessIds(prev => {
+          const next = new Set(prev);
+          next.delete(optimisticId);
+          next.delete(resolvedCreatorKey);
+          return next;
+        });
+        delete followSuccessTimeouts.current[optimisticId];
+      }, 900);
+    } catch (error) {
+      setFollowingCreatorIds(prev => {
+        const next = new Set(prev);
+        const creatorIdKey = normalizeFollowKey(creatorId);
+        const creatorUsernameKey = normalizeFollowKey(creatorUsername);
+        if (creatorIdKey) next.delete(creatorIdKey);
+        if (creatorUsernameKey) next.delete(creatorUsernameKey);
+        return next;
+      });
+      console.warn("Failed to follow creator:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setFollowingLoadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(optimisticId);
+        return next;
+      });
+    }
+  }, [followingLoadingIds, resolveCreatorId, user?.id]);
+
+  useEffect(() => {
+    if (gameSkipCounter.count > 0) {
+      const idx = currentIndexRef.current;
+      const total = feedRef.current.length;
+      if (gameSkipCounter.direction === 'next' && idx < total - 1) {
+        animateToIndex(idx + 1);
+      } else if (gameSkipCounter.direction === 'prev' && idx > 0) {
+        animateToIndex(idx - 1);
+      }
+    }
+  }, [gameSkipCounter]);
+
+  useEffect(() => {
+    if (gameRestartTrigger > 0 && currentIndex >= 0 && feed[currentIndex]) {
+      const activeGameId = feed[currentIndex].id;
+      // Inject a script to restart the game
+      webViewRefs.current[activeGameId]?.injectJavaScript(`
+        if (typeof window !== 'undefined') {
+          // Hard reload the iframe/window
+          window.location.reload();
+        }
+        true;
+      `);
+    }
+  }, [gameRestartTrigger]);
+
+  // Toggle presence between 'in-game' (when actively playing) and 'online'
+  useEffect(() => {
+    if (!isActive) return;
+    if (currentIndex >= 0) {
+      setMyStatus('in-game');
+    } else {
+      setMyStatus('online');
+    }
+    return () => {
+      setMyStatus('online');
+    };
+  }, [isActive, currentIndex, setMyStatus]);
   const [loading, setLoading] = useState(true);
 
   const [scrollEnabled, setScrollEnabled] = useState(false);
-  const [showSwipeHint, setShowSwipeHint] = useState(false);
-  const swipeHintOpacity = useRef(new Animated.Value(0)).current;
   const [gestureKey, setGestureKey] = useState(0);
+  const hudHintOpacity = useRef(new Animated.Value(0.82)).current;
+  const hideHintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Animated opacity for the "For You" top bar and game info (bottom left)
+  const overlayInfoOpacity = useRef(new Animated.Value(1)).current;
+
+  // Animated slide for right-side action buttons (vertical)
+  const actionButtonsTranslateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(overlayInfoOpacity, {
+      toValue: isGameDeckActive ? 0 : 1,
+      duration: isGameDeckActive ? 200 : 300,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [isGameDeckActive, overlayInfoOpacity]);
+
+  useEffect(() => {
+    Animated.spring(actionButtonsTranslateY, {
+      toValue: isHudHidden ? 120 : 0,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 10,
+    }).start();
+  }, [isHudHidden, actionButtonsTranslateY]);
 
   // Track which games have finished loading (ready to play)
   const [readyGames, setReadyGames] = useState<Set<string>>(new Set());
@@ -2025,9 +1590,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     let timeout: NodeJS.Timeout;
     if (feed.length > 0 && currentIndex >= 0 && currentIndex < feed.length) {
       const activeItem = feed[currentIndex];
-      if (activeItem && !activeItem.isAd && !readyGames.has(activeItem.id)) {
+      if (activeItem && !readyGames.has(activeItem.id)) {
         timeout = setTimeout(() => {
-          setReadyGames(prev => new Set(prev).add(activeItem.id));
+          setReadyGames(prev => {
+            if (prev.has(activeItem.id)) return prev;
+            const next = new Set(prev);
+            next.add(activeItem.id);
+            return next;
+          });
         }, 15000);
       }
     }
@@ -2057,6 +1627,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Gamification - track play time for current game
   const gameStartTimeRef = useRef<number | null>(null);
   const lastTrackedGameRef = useRef<string | null>(null);
+  const playRecordedForSessionRef = useRef<Set<string>>(new Set());
+  const playRecordTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Live session points counter (ticks up every 5 seconds)
   const [sessionPoints, setSessionPoints] = useState(0);
@@ -2069,14 +1641,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [showShare, setShowShare] = useState(false);
   const [shareGameId, setShareGameId] = useState<string>('');
   const [shareGameName, setShareGameName] = useState<string>('');
+  const [showComments, setShowComments] = useState(false);
+  const [commentGameId, setCommentGameId] = useState<string>('');
+  const [commentGameName, setCommentGameName] = useState<string>('');
+  const [remixTarget, setRemixTarget] = useState<Game | null>(null);
+  const [remixLoading, setRemixLoading] = useState(false);
 
   // Click animation state - track position of last tap
   const [clickAnimations, setClickAnimations] = useState<Array<{ id: string; x: number; y: number }>>([]);
-
-  // Comments sheet state
-  const [showComments, setShowComments] = useState(false);
-  const [commentsGameId, setCommentsGameId] = useState<string>('');
-  const [commentsGameName, setCommentsGameName] = useState<string>('');
 
   // Leaderboard modal state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -2092,7 +1664,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
       if (playTimeSeconds >= 5) {
         try {
-          await gamification.gamePlayed(gameId, playTimeSeconds);
+          // Gamification removed
+          console.log(`[Game] Played ${gameId} for ${playTimeSeconds}s`);
           // Reset the start time to now (so we don't double-count)
           gameStartTimeRef.current = Date.now();
         } catch (e) {
@@ -2106,8 +1679,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     setShowLeaderboard(true);
   };
 
-  // Calculate actual content height (screen minus tab bar)
-  const contentHeight = SCREEN_HEIGHT - TAB_BAR_HEIGHT - insets.bottom;
+  // Keep the playable surface inside the phone chrome boundaries.
+  const contentHeight = SCREEN_HEIGHT - insets.top - TAB_BAR_HEIGHT - insets.bottom;
+  const contentHeightRef = useRef(contentHeight);
+  
+  useEffect(() => {
+    contentHeightRef.current = contentHeight;
+  }, [contentHeight]);
 
   // Trigger click animation at button position
   const triggerClickAnimation = (event: any) => {
@@ -2120,6 +1698,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       setClickAnimations(prev => prev.filter(anim => anim.id !== id));
     }, 500);
   };
+
+  const clearHudTimers = useCallback(() => {
+    if (hideHintTimeoutRef.current) {
+      clearTimeout(hideHintTimeoutRef.current);
+      hideHintTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleImmersiveHud = useCallback(() => {
+    clearHudTimers();
+
+    hideHintTimeoutRef.current = setTimeout(() => {
+      Animated.timing(hudHintOpacity, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    }, 7000);
+  }, [clearHudTimers, hudHintOpacity]);
+
+  const restoreHud = useCallback((reschedule: boolean = true) => {
+    clearHudTimers();
+    Animated.timing(hudHintOpacity, {
+      toValue: 0.82,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+
+    if (reschedule) {
+      scheduleImmersiveHud();
+    }
+  }, [clearHudTimers, hudHintOpacity, scheduleImmersiveHud]);
 
   // Handle like - calls API and updates count
   const handleLike = async (gameId: string) => {
@@ -2247,6 +1859,51 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     }
   };
 
+  const handleRemix = (game: Game) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    const sourceId = game.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    if (!sourceId) {
+      Alert.alert('Cannot remix', "This game can't be remixed.");
+      return;
+    }
+    setRemixTarget(game);
+  };
+
+  const confirmRemix = async () => {
+    if (!remixTarget || remixLoading) return;
+    const sourceId = remixTarget.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    if (!sourceId) { setRemixTarget(null); return; }
+    setRemixLoading(true);
+    try {
+      const res = await aiApi.remixGame(sourceId);
+      if (res?.draftId) {
+        setRemixTarget(null);
+        // Jump straight into editing the fresh remix draft.
+        setPendingDraftId(res.draftId);
+        setRootActiveTab('create');
+      } else {
+        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
+      }
+    } catch (e: any) {
+      Alert.alert('Remix failed', e?.message || String(e));
+    } finally {
+      setRemixLoading(false);
+    }
+  };
+
+  const handleOpenComments = (game: Game) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setCommentGameId(game.id);
+      setCommentGameName(game.name);
+      setShowComments(true);
+    } catch (e: any) {
+      Alert.alert('Comments Error', e.message || String(e));
+    }
+  };
+
   // Handle sending game to friend
   const handleSendToFriend = async (friendId: string, gameId: string) => {
     try {
@@ -2259,35 +1916,115 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     }
   };
 
+  const getFeedCount = useCallback((gameId: string, type: 'likes' | 'saves' | 'shares') => {
+    if (type === 'likes') {
+      return Math.max(0, likeCounts[gameId] ?? 0);
+    }
+    if (type === 'saves') {
+      return Math.max(0, saveCounts[gameId] ?? 0);
+    }
+    return Math.max(0, shareCounts[gameId] ?? 0);
+  }, [likeCounts, saveCounts, shareCounts]);
+
   const currentIndexRef = useRef(0);
   const feedRef = useRef<FeedItem[]>([]);
   const translateY = useRef(new Animated.Value(0)).current;
+  const isAnimating = useRef(false);
+  const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
+  const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
+
+  const pauseWebView = useCallback((webView?: WebViewType | null) => {
+    if (!webView) return;
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_PAUSE' }));
+    webView.injectJavaScript(PAUSE_SCRIPT);
+  }, []);
+
+  const resumeWebView = useCallback((webView?: WebViewType | null) => {
+    if (!webView) return;
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RESUME' }));
+    webView.injectJavaScript(RESUME_SCRIPT);
+  }, []);
+
+  const pauseAllWebViews = useCallback(() => {
+    Object.values(webViewRefs.current).forEach(pauseWebView);
+  }, [pauseWebView]);
+
+  const resetWebView = useCallback((itemId?: string | null) => {
+    if (!itemId) return;
+    const webView = webViewRefs.current[itemId];
+    if (webView) {
+      pauseWebView(webView);
+      try {
+        webView.stopLoading?.();
+      } catch {}
+      try {
+        webView.injectJavaScript(`
+          try {
+            if (window.__gametokMuteAll) window.__gametokMuteAll();
+            document.querySelectorAll('audio, video').forEach(function(el) {
+              try { el.pause(); el.src = ''; el.load && el.load(); } catch(e) {}
+            });
+            window.location.replace('about:blank');
+          } catch(e) {}
+          true;
+        `);
+      } catch {}
+    }
+    delete webViewRefs.current[itemId];
+    setReadyGames(prev => {
+      if (!prev.has(itemId)) return prev;
+      const next = new Set(prev);
+      next.delete(itemId);
+      return next;
+    });
+    setWebViewResetKeys(prev => ({
+      ...prev,
+      [itemId]: (prev[itemId] || 0) + 1,
+    }));
+  }, [pauseWebView]);
+
+  const resetAllWebViews = useCallback(() => {
+    Object.keys(webViewRefs.current).forEach(resetWebView);
+  }, [resetWebView]);
+
+  // Restore thumbnail state when user exits Game Deck by pressing "Home".
+  // This hard-resets the WebViews instead of only injecting pause, because some
+  // games/audio engines keep playing after soft pause.
+  useEffect(() => {
+    if (!isGameDeckActive) {
+      setInteractedGameId(null);
+      resetAllWebViews();
+    }
+  }, [isGameDeckActive, resetAllWebViews]);
 
   // Listen for AppState changes to unlock broken gestures
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'background' || state === 'inactive') {
+        resetAllWebViews();
+        setInteractedGameId(null);
+        setIsGameDeckActive(false);
         if (!isAnimating.current) {
           translateY.setValue(0);
         }
         setScrollEnabled(false);
+      } else if (state === 'active' && isFocused) {
+        // Only resume if the game was already being played (interacted with)
+        const currItem = currentIndexRef.current >= 0 ? feedRef.current[currentIndexRef.current] : null;
+        if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
+          resumeWebView(webViewRefs.current[currItem.id]);
+        }
       }
     });
     return () => sub.remove();
-  }, [translateY, isFocused]);
-  const isAnimating = useRef(false);
-  const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
-  const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
+  }, [translateY, isFocused, interactedGameId, resetAllWebViews, resumeWebView, setIsGameDeckActive]);
 
   // Pause/resume WebViews when focus changes (navigating to/from other tabs)
   useEffect(() => {
     if (!isFocused) {
       // Pause ALL games when leaving the tab
-      Object.values(webViewRefs.current).forEach(webView => {
-        if (webView) {
-          webView.injectJavaScript(PAUSE_SCRIPT);
-        }
-      });
+      resetAllWebViews();
+      setInteractedGameId(null);
 
       // Record play time when leaving tab
       if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
@@ -2295,10 +2032,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         const gameId = lastTrackedGameRef.current;
 
         if (playTimeSeconds >= 5) {
-          console.log(`[Gamification] Tab unfocused - played ${gameId} for ${playTimeSeconds}s`);
-          gamification.gamePlayed(gameId, playTimeSeconds).catch(e => {
-            console.log('[Gamification] Failed to record play:', e);
-          });
+          console.log(`[Game] Tab unfocused - played ${gameId} for ${playTimeSeconds}s`);
+          // Gamification removed
         }
         gameStartTimeRef.current = null;
       }
@@ -2315,10 +2050,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       isAnimating.current = false;
       translateY.setValue(0); // Reset any partial swipe animation
 
-      // Resume current game when coming back to the tab
+      // Resume current game ONLY if it was already being played (interacted with)
       const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
-      if (currItem && webViewRefs.current[currItem.id]) {
-        webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+      if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
+        resumeWebView(webViewRefs.current[currItem.id]);
       }
 
       // Restart play time tracking when coming back
@@ -2334,7 +2069,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         }
       }
     }
-  }, [isFocused]);
+  }, [isFocused, resetAllWebViews, resumeWebView, currentIndex, feed, interactedGameId, user]);
 
   // Pause/resume WebViews when index changes
   useEffect(() => {
@@ -2348,25 +2083,81 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const currItem = currIdx >= 0 ? feed[currIdx] : null;
       const currItemId = currItem?.id;
 
-      // Pause all games EXCEPT the current one
+      // Freeze old/offscreen games. Do not "preload by resuming" because games
+      // can start audio before the user taps them.
       Object.entries(webViewRefs.current).forEach(([id, webView]) => {
         if (webView && id !== currItemId) {
-          webView.injectJavaScript(PAUSE_SCRIPT);
+          resetWebView(id);
         }
       });
 
-      // Resume the current game (if not on welcome screen)
+      // When swiping to a new game, reset interaction state to show thumbnail
+      setIsGameDeckActive(false);
+      setInteractedGameId(null);
+
+      // Pause the current game initially - it will resume when user taps thumbnail
       if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
-        webViewRefs.current[currItem.id]?.injectJavaScript(RESUME_SCRIPT);
+        resetWebView(currItem.id);
       }
 
       prevIndexRef.current = currIdx;
     }
-  }, [currentIndex, feed, isFocused]);
+  }, [currentIndex, feed, isFocused, resetWebView, setIsGameDeckActive]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
+
+  useEffect(() => {
+    if (playRecordTimeoutRef.current) {
+      clearTimeout(playRecordTimeoutRef.current);
+      playRecordTimeoutRef.current = null;
+    }
+
+    if (!isFocused) return;
+    if (currentIndex < 0) return;
+
+    const currentItem = feed[currentIndex];
+    if (!currentItem || !currentItem.game?.id) return;
+
+    const gameId = currentItem.game.id;
+    if (playRecordedForSessionRef.current.has(gameId)) return;
+
+    // Count a play only after the user has actually stayed on the game briefly.
+    playRecordTimeoutRef.current = setTimeout(() => {
+      gamesApi.recordPlay(gameId)
+        .then((result) => {
+          if (result?.counted === false) {
+            return;
+          }
+          playRecordedForSessionRef.current.add(gameId);
+          setFeed((prev) => prev.map((entry) => (
+            entry.game?.id === gameId
+              ? {
+                  ...entry,
+                  game: {
+                    ...entry.game,
+                    plays: (entry.game.plays || 0) + 1,
+                  },
+                }
+              : entry
+          )));
+        })
+        .catch((error) => {
+          console.log('[HomeScreen] recordPlay error:', error?.message || error);
+        })
+        .finally(() => {
+          playRecordTimeoutRef.current = null;
+        });
+    }, 1800);
+
+    return () => {
+      if (playRecordTimeoutRef.current) {
+        clearTimeout(playRecordTimeoutRef.current);
+        playRecordTimeoutRef.current = null;
+      }
+    };
+  }, [currentIndex, feed, isFocused]);
 
   // Track game play time for gamification
   useEffect(() => {
@@ -2383,14 +2174,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       // Only track if played for at least 5 seconds
       if (playTimeSeconds >= 5) {
-        console.log(`[Gamification] Played ${gameId} for ${playTimeSeconds}s`);
-        gamification.gamePlayed(gameId, playTimeSeconds).then(result => {
-          console.log('[Gamification] Points earned:', result.pointsEarned, 'XP:', result.xpEarned);
-          // Clear saved session points after successful sync
-          gameSessionPointsRef.current[gameId] = 0;
-        }).catch(e => {
-          console.log('[Gamification] Failed to record play:', e);
-        });
+        console.log(`[Game] Played ${gameId} for ${playTimeSeconds}s`);
+        // Gamification removed - clear saved session points
+        gameSessionPointsRef.current[gameId] = 0;
       }
 
       gameStartTimeRef.current = null;
@@ -2437,18 +2223,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         clearInterval(periodicSyncIntervalRef.current);
       }
       periodicSyncIntervalRef.current = setInterval(() => {
-        console.log(`[Gamification] Sync check - gameStartTime: ${gameStartTimeRef.current}, user: ${user?.id || 'NO USER'}, gameId: ${currentGameId}`);
+        console.log(`[Game] Sync check - gameStartTime: ${gameStartTimeRef.current}, user: ${user?.id || 'NO USER'}, gameId: ${currentGameId}`);
         if (gameStartTimeRef.current && user && currentGameId) {
           const playTimeSeconds = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
           if (playTimeSeconds >= 5) {
-            console.log(`[Gamification] Syncing ${currentGameId}: ${playTimeSeconds}s played`);
-            gamification.gamePlayed(currentGameId, playTimeSeconds).then((result) => {
-              console.log(`[Gamification] Sync SUCCESS - points earned: ${result.pointsEarned}`);
-              // Reset start time after successful sync
-              gameStartTimeRef.current = Date.now();
-            }).catch(e => {
-              console.log('[Gamification] Sync FAILED:', e.message || e);
-            });
+            console.log(`[Game] Syncing ${currentGameId}: ${playTimeSeconds}s played`);
+            // Gamification removed
+            gameStartTimeRef.current = Date.now();
           }
         }
       }, 5000); // Sync every 5 seconds
@@ -2472,34 +2253,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   }, [feed]);
 
   useEffect(() => {
+    if (!isFocused || currentIndex < 0 || !feed[currentIndex]) {
+      clearHudTimers();
+      return;
+    }
+
+    restoreHud();
+
+    return () => {
+      clearHudTimers();
+    };
+  }, [clearHudTimers, currentIndex, feed, isFocused, restoreHud]);
+
+  useEffect(() => {
     const init = async () => {
       console.log('[HomeScreen] Starting init...');
 
-      // Check if this is the first launch
+      // Mark that the app has been launched (kept for legacy analytics/flags if needed)
       const hasLaunchedBefore = await AsyncStorage.getItem('hasLaunchedBefore');
-      const isFirstLaunch = !hasLaunchedBefore;
-
-      if (!isFirstLaunch) {
-        // Skip welcome screen on subsequent launches
+      if (!hasLaunchedBefore) {
+        await AsyncStorage.setItem('hasLaunchedBefore', 'true');
+      } else {
+        // Returning user — skip welcome screen, go straight to games
         setCurrentIndex(0);
       }
 
-      // Mark that the app has been launched
-      if (isFirstLaunch) {
-        await AsyncStorage.setItem('hasLaunchedBefore', 'true');
-      }
-
-      // Initialize ads SDK (don't block on this)
-      console.log('[HomeScreen] Initializing ads...');
-      initializeAds().then(() => {
-        console.log('[HomeScreen] Ads SDK initialized successfully');
-        // Native ads are loaded on-demand by NativeAdView component
-      }).catch(e => console.log('[HomeScreen] Ads init error:', e));
-
-      // Fetch games immediately (don't wait for ads)
+      // Fetch games immediately
       console.log('[HomeScreen] Fetching games...');
       try {
-        const data = await gamesApi.list(50);
+        const data = await gamesApi.list(50, 0, { sort: 'discover' });
         console.log('[HomeScreen] Games fetched:', data?.games?.length || 0);
         if (data.games?.length > 0) {
           allGamesRef.current = data.games;
@@ -2508,12 +2290,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           // Store initial like and save counts from API
           const likeCnts: { [id: string]: number } = {};
           const saveCnts: { [id: string]: number } = {};
+          const shareCnts: { [id: string]: number } = {};
           data.games.forEach((g: any) => {
             likeCnts[g.id] = g.likes || 0;
             saveCnts[g.id] = g.saves || 0;
+            shareCnts[g.id] = 0;
           });
           setLikeCounts(likeCnts);
           setSaveCounts(saveCnts);
+          setShareCounts(shareCnts);
 
           // Check which games user has liked (fire and forget)
           const gameIds = data.games.map((g: Game) => g.id);
@@ -2565,19 +2350,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     // Otherwise fetch fresh
     setLoading(true);
     try {
-      const data = await gamesApi.list(50);
+      const data = await gamesApi.list(50, 0, { sort: 'discover' });
       if (data.games?.length > 0) {
         allGamesRef.current = data.games;
         setFeed(createFeed(data.games));
         setCurrentIndex(0);
         translateY.setValue(0);
+
+        const likeCnts: { [id: string]: number } = {};
+        const saveCnts: { [id: string]: number } = {};
+        const shareCnts: { [id: string]: number } = {};
+        data.games.forEach((g: any) => {
+          likeCnts[g.id] = g.likes || 0;
+          saveCnts[g.id] = g.saves || 0;
+          shareCnts[g.id] = shareCounts[g.id] ?? 0;
+        });
+        setLikeCounts(likeCnts);
+        setSaveCounts(saveCnts);
+        setShareCounts(shareCnts);
       }
     } catch (e: any) {
       console.log('[HomeScreen] Refresh error:', e?.message || e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [shareCounts]);
 
   // Handle refreshTrigger from parent (home button re-tap)
   const lastRefreshTrigger = useRef(0);
@@ -2606,13 +2403,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       } else {
         // Game not in current feed - try to fetch it and add to front
         console.log('[DeepLink] Game not in feed, fetching...');
-        gamesApi.list(100).then(data => {
+        gamesApi.list(100, 0, { sort: 'discover' }).then(data => {
           const game = data.games?.find((g: Game) =>
             g.id === sharedGameId || g.id?.toLowerCase() === sharedGameId.toLowerCase()
           );
           if (game) {
             // Add the shared game to the front of the feed
-            const newItem: FeedItem = { game, id: `shared-${game.id}`, isAd: false };
+            const newItem: FeedItem = { game, id: `shared-${game.id}` };
             setFeed(prev => [newItem, ...prev]);
             setCurrentIndex(0);
           }
@@ -2631,7 +2428,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       // Fetch fresh random games from server
       const fetchMoreGames = async () => {
         try {
-          const data = await gamesApi.list(50);
+          const data = await gamesApi.list(50, 0, { sort: 'discover' });
           if (data.games?.length > 0) {
             feedCycleRef.current += 1;
             const cycle = feedCycleRef.current;
@@ -2665,43 +2462,36 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    // Safety timeout — if the animation callback or rAF never fires
+    // (e.g. JS thread blocked by heavy WebView mount on iPhone X),
+    // force-unlock gestures after 600ms so scrolling doesn't permanently freeze.
+    const safetyTimer = setTimeout(() => {
+      if (isAnimating.current) {
+        console.log('[Feed] Safety timeout: force-unlocking isAnimating');
+        translateY.setValue(0);
+        isAnimating.current = false;
+        setGestureKey(prev => prev + 1);
+      }
+    }, 600);
+
     Animated.timing(translateY, {
       toValue: direction * contentHeight,
       duration: 200,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
-      // Update state first — items will change positions
+      // Reset the animated offset before changing the rendered window.
+      // Updating currentIndex while translateY is still +/-height causes a
+      // one-frame flash where the next stack renders with the old offset.
+      clearTimeout(safetyTimer);
+      translateY.setValue(0);
       setCurrentIndex(newIndex);
 
-      // Delay resetting translateY so it aligns perfectly with the next native render tick
       requestAnimationFrame(() => {
-        translateY.setValue(0);
         isAnimating.current = false;
         setGestureKey(prev => prev + 1);
       });
     });
-  };
-
-  // Show swipe hint with fade in
-  const showHint = () => {
-    if (currentIndexRef.current !== -1) { // Not on welcome screen
-      setShowSwipeHint(true);
-      Animated.timing(swipeHintOpacity, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-    }
-  };
-
-  // Hide swipe hint with fade out
-  const hideHint = () => {
-    Animated.timing(swipeHintOpacity, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => setShowSwipeHint(false));
   };
 
   // Helper function to update translateY value (for runOnJS)
@@ -2712,7 +2502,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Helper function to handle gesture end (for runOnJS)
   // Uses both distance and velocity for snappy TikTok-like scrolling
   const handleGestureEnd = useCallback((translationY: number, velocityY?: number) => {
-    hideHint();
     setScrollEnabled(false);
 
     if (isAnimating.current) return;
@@ -2727,7 +2516,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
     if (swipeUp && idx < total - 1) {
       animateToIndex(idx + 1);
-    } else if (swipeDown && idx > -1) {
+    } else if (swipeDown && idx > 0) {
       animateToIndex(idx - 1);
     } else {
       Animated.spring(translateY, {
@@ -2742,95 +2531,84 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Helper to handle gesture start (for runOnJS)
   const handleGestureStart = useCallback(() => {
     setScrollEnabled(true);
-    showHint();
   }, []);
 
-  // Bottom zone gesture - uses react-native-gesture-handler for better touch handling
-  const bottomPanGesture = Gesture.Pan()
-    .activeOffsetY([-25, 25])
-    .failOffsetX([-20, 20])
-    .minDistance(25)
-    .onStart(() => {
-      'worklet';
-      runOnJS(handleGestureStart)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isAnimating.current) {
-        runOnJS(updateTranslateY)(event.translationY);
-      }
-    })
-    .onEnd((event) => {
-      'worklet';
-      runOnJS(handleGestureEnd)(event.translationY, event.velocityY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(setScrollEnabled)(false); // Safety reset
-      runOnJS(hideHint)();
-    });
+  const touchStartY = useRef(0);
 
-  // Top zone gesture - same as bottom but for swiping down to previous game
-  const topPanGesture = Gesture.Pan()
-    .activeOffsetY([-25, 25])
-    .failOffsetX([-20, 20])
-    .minDistance(25)
-    .onStart(() => {
-      'worklet';
-      runOnJS(handleGestureStart)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isAnimating.current) {
-        runOnJS(updateTranslateY)(event.translationY);
-      }
-    })
-    .onEnd((event) => {
-      'worklet';
-      runOnJS(handleGestureEnd)(event.translationY, event.velocityY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(setScrollEnabled)(false); // Safety reset
-      runOnJS(hideHint)();
-    });
+  // Edge pan responder - natively intercepts touches BEFORE they reach the WebView
+  // but ONLY if the touch started in the top 15% or bottom 15% and is a swipe.
+  // This guarantees taps pass through while scrolling always works.
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: (e) => {
+        touchStartY.current = e.nativeEvent.pageY;
+        return false; // Let taps pass through
+      },
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        // Use EXACT mathematically precise boundaries based on the latest physical rendered height
+        // This flawlessly syncs the invisible PanResponder zone to the visible purple box overlay
+        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT; 
+        const isEdge = isTopEdge;
+        if (Math.abs(gesture.dy) > 6) restoreHud();
+        
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe; // Steal touch if it's an edge swipe
+      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT;
+        const isEdge = isTopEdge;
+        if (Math.abs(gesture.dy) > 6) restoreHud();
+        
+        const isVerticalSwipe = Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        return isEdge && isVerticalSwipe;
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!isAnimating.current) {
+          translateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (isAnimating.current) return;
 
-  // Full-screen gesture specifically for Ads
-  // Native ad views swallow PanResponder touches, so we use Gesture Handler here to enable full-screen swiping
-  // We use activeOffsetY to wait for actual movement, letting taps pass through to the ad's CTA buttons.
-  const adPanGesture = Gesture.Pan()
-    .activeOffsetY([-15, 15])
-    .failOffsetX([-20, 20])
-    .minDistance(15)
-    .onStart(() => {
-      'worklet';
-      runOnJS(handleGestureStart)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isAnimating.current) {
-        runOnJS(updateTranslateY)(event.translationY);
+        const idx = currentIndexRef.current;
+        const total = feedRef.current.length;
+
+        const swipeUp = gestureState.dy < -SWIPE_THRESHOLD || gestureState.vy < -0.5;
+        const swipeDown = gestureState.dy > SWIPE_THRESHOLD || gestureState.vy > 0.5;
+
+        if (swipeUp && idx < total - 1) {
+          animateToIndex(idx + 1);
+        } else if (swipeDown && idx > 0) {
+          animateToIndex(idx - 1);
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (isAnimating.current) return;
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
       }
     })
-    .onEnd((event) => {
-      'worklet';
-      runOnJS(handleGestureEnd)(event.translationY, event.velocityY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(setScrollEnabled)(false); // Safety reset
-      runOnJS(hideHint)();
-    });
+  ).current;
 
   // Overlay pan responder - captures touches when scroll mode is active
   const overlayPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => {
+        restoreHud();
         // Tap disables scroll mode
         setScrollEnabled(false);
         return false; // Don't capture the tap, let it pass through after disabling
       },
       onMoveShouldSetPanResponder: (_, gesture) => {
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         return Math.abs(gesture.dy) > 10;
       },
       onPanResponderMove: (_, gesture) => {
@@ -2871,10 +2649,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => false, // Let taps pass through to buttons
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         return Math.abs(gesture.dy) > 15; // Take over aggressively in capture phase if vertical swipe
       },
       onStartShouldSetPanResponder: () => false, // Let taps pass through to buttons
       onMoveShouldSetPanResponder: (_, gesture) => {
+        if (Math.abs(gesture.dy) > 6) restoreHud();
         return Math.abs(gesture.dy) > 15; // Only take over if it's a clear vertical swipe
       },
       onPanResponderMove: (_, gesture) => {
@@ -2893,7 +2673,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
         if (swipeUp && idx < total - 1) {
           animateToIndex(idx + 1);
-        } else if (swipeDown && idx > -1) {
+        } else if (swipeDown && idx > 0) {
           animateToIndex(idx - 1);
         } else {
           Animated.spring(translateY, {
@@ -2912,40 +2692,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     })
   ).current;
 
-  // Only keep current + 1 ahead. NO position 2 preload.
-  // This limits live WebViews to 1 (only position 0 gets a real WebView).
+  // Keep only the swipe neighbors alive. Each item is a full game WebView,
+  // so preloading too far ahead causes home-feed jank on real devices.
   const visibleItems = useMemo(() => {
-    const result: { item: FeedItem | null; position: number; isWelcome: boolean }[] = [];
+    const result: { item: FeedItem | null; position: number }[] = [];
 
-    // Welcome screen at position -1
-    if (currentIndex === -1) {
-      result.push({ item: null, position: 0, isWelcome: true });
-      if (feed[0]) {
-        result.push({ item: feed[0], position: 1, isWelcome: false });
-      }
-    } else {
-      // Previous item (position -1)
-      if (currentIndex === 0) {
-        result.push({ item: null, position: -1, isWelcome: true });
-      } else if (feed[currentIndex - 1]) {
-        result.push({ item: feed[currentIndex - 1], position: -1, isWelcome: false });
-      }
+    // Previous item (position -1)
+    if (currentIndex > 0 && feed[currentIndex - 1]) {
+      result.push({ item: feed[currentIndex - 1], position: -1 });
+    }
 
-      // Current item (position 0)
-      if (feed[currentIndex]) {
-        result.push({ item: feed[currentIndex], position: 0, isWelcome: false });
-      }
+    // Current item (position 0)
+    if (feed[currentIndex]) {
+      result.push({ item: feed[currentIndex], position: 0 });
+    }
 
-      // Next item (position +1)
-      if (feed[currentIndex + 1]) {
-        result.push({ item: feed[currentIndex + 1], position: 1, isWelcome: false });
-      }
-
-      // One more ahead (position +2) — only if an ad is nearby (ads are empty off-screen, so we have memory room)
-      const hasNearbyAd = (feed[currentIndex - 1]?.isAd) || (feed[currentIndex]?.isAd) || (feed[currentIndex + 1]?.isAd);
-      if (feed[currentIndex + 2] && hasNearbyAd) {
-        result.push({ item: feed[currentIndex + 2], position: 2, isWelcome: false });
-      }
+    // Next item (position +1)
+    if (feed[currentIndex + 1]) {
+      result.push({ item: feed[currentIndex + 1], position: 1 });
     }
 
     return result;
@@ -2957,53 +2721,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   if (feed.length === 0) return null;
 
-  const isCurrentAd = currentIndex > -1 && feed[currentIndex] && feed[currentIndex].isAd;
+  const renderedItems = isFocused ? visibleItems : [];
 
   return (
     <View style={styles.container}>
-      {visibleItems.map(({ item, position, isWelcome }) => (
-        <Animated.View
-          key={isWelcome ? 'welcome' : item!.id}
-          style={[
-            styles.gameContainer,
-            {
-              height: contentHeight,
-              transform: [{
-                translateY: Animated.add(translateY, position * contentHeight)
-              }],
-              zIndex: position === 0 ? 1 : 0,
-            }
-          ]}
-        >
-          {isWelcome ? (
-            // Welcome screen
-            <GestureDetector gesture={bottomPanGesture}>
-              <View style={{ flex: 1 }} collapsable={false}>
-                <WelcomeScreen contentHeight={contentHeight} />
-              </View>
-            </GestureDetector>
-          ) : item!.isAd ? (
-            // Native Ad — load at position 0 and +1 (so it's visible during scroll animation)
-            <GestureDetector gesture={adPanGesture}>
-              <Animated.View style={{ flex: 1, backgroundColor: '#000' }} collapsable={false}>
-                {(position === 0 || position === 1) && <NativeAdView contentHeight={contentHeight} />}
-              </Animated.View>
-            </GestureDetector>
-          ) : (
-            // Game screen
-            <View style={{ flex: 1, backgroundColor: item!.game?.color || '#1a1a2e' }}>
-              {/* Blurred thumbnail background for letterboxed games */}
-              {item!.game && (
-                <Image
-                  source={{ uri: getThumbnailUrl(item!.game) }}
-                  style={[StyleSheet.absoluteFillObject, { opacity: 0.45 }]}
-                  blurRadius={40}
-                />
-              )}
-
+      <View style={{ flex: 1 }}>
+      <View style={[styles.gameViewport, { top: insets.top, height: contentHeight }]}>
+        {renderedItems.map(({ item, position }) => (
+          <Animated.View
+            key={item!.id}
+            style={[
+              styles.gameContainer,
+              {
+                height: contentHeight,
+                transform: [{
+                  translateY: Animated.add(translateY, position * contentHeight)
+                }],
+                zIndex: position === 0 ? 1 : 0,
+              }
+            ]}
+          >
+          {/* Game screen - conditionally allows swipe only if not interacted */}
+          <Animated.View {...((item!.game!.id !== interactedGameId || position !== 0) ? fullScreenPanResponder.panHandlers : {})} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
               <Animated.View style={{ flex: 1 }}>
                 <WebView
-                  ref={(ref) => { webViewRefs.current[item!.id] = ref; }}
+                  key={`${item!.id}-webview-${webViewResetKeys[item!.id] || 0}`}
+                  ref={(ref) => {
+                    if (ref) {
+                      webViewRefs.current[item!.id] = ref;
+                    } else {
+                      delete webViewRefs.current[item!.id];
+                    }
+                  }}
                   source={{ uri: getGameUrl(item!.game!) }}
                   style={styles.webview} // Already has backgroundColor: 'transparent'
                   opaque={false} // Crucial for iOS transparent background
@@ -3020,11 +2769,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   nestedScrollEnabled={false}
                   thirdPartyCookiesEnabled={false}
                   sharedCookiesEnabled={false}
-                  injectedJavaScriptBeforeContentLoaded={isExternalGame(item!.game!) ? AD_BLOCKER_SCRIPT + EDGE_BLOCK_SCRIPT : EDGE_BLOCK_SCRIPT}
-                  injectedJavaScript={createBlurBgScript(getThumbnailUrl(item!.game!), item!.game?.color || '#1a1a2e')}
+                  injectedJavaScriptBeforeContentLoaded={GAME_AUDIO_GUARD_SCRIPT + EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT}
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
+                      if (data.type === 'USER_INTERACTION') {
+                        setIsGameDeckActive(true);
+                        return;
+                      }
+                      if (data.type === 'USER_SWIPE_INTENT') {
+                        restoreHud();
+                        return;
+                      }
                       if (data.type === 'CLOUD_SAVE' && user) {
                         try {
                           await gameProgress.save(data.gameId, data.storageData);
@@ -3040,24 +2796,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   javaScriptCanOpenWindowsAutomatically={false}
                   setSupportMultipleWindows={false}
                   onLoadEnd={async () => {
-                    // Inject blurred thumbnail bg after page fully loads (backup)
-                    const thumbUrl = getThumbnailUrl(item!.game!);
-                    const fallback = item!.game?.color || '#1a1a2e';
-                    webViewRefs.current[item!.id]?.injectJavaScript(`
-                      document.documentElement.style.setProperty('background', '${fallback}', 'important');
-                      document.body.style.setProperty('background', 'transparent', 'important');
-                      if(!document.getElementById('_gt_blur_bg')){
-                        var s=document.createElement('style');s.id='_gt_blur_bg';
-                        s.textContent='body::before{content:"";position:fixed;top:-20px;left:-20px;right:-20px;bottom:-20px;background:url(${thumbUrl}) center/cover no-repeat;filter:blur(30px);-webkit-filter:blur(30px);opacity:0.5;z-index:-1;pointer-events:none;}';
-                        document.head.appendChild(s);
-                      }
-                      true;
-                    `);
-
-                    // Page fully loaded — wait 3s for game to render, then mark ready
-                    setTimeout(() => {
-                      setReadyGames(prev => new Set(prev).add(item!.id));
-                    }, 3000);
+                    // Only animate the visible game's loading state. Preloaded
+                    // neighbors should not run hidden loading animations.
+                    if (position === 0) {
+                      setTimeout(() => {
+                        setReadyGames(prev => {
+                          if (prev.has(item!.id)) return prev;
+                          const next = new Set(prev);
+                          next.add(item!.id);
+                          return next;
+                        });
+                      }, 3000);
+                    } else {
+                      setReadyGames(prev => {
+                        if (prev.has(item!.id)) return prev;
+                        const next = new Set(prev);
+                        next.add(item!.id);
+                        return next;
+                      });
+                    }
 
                     if (isExternalGame(item!.game!) && user && item!.game?.id) {
                       try {
@@ -3071,132 +2828,221 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         webViewRefs.current[item!.id]?.injectJavaScript(createCloudSaveScript(item!.game!.id, {}));
                       }
                     }
+
+                    // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
+                    // Otherwise, keep it paused so it doesn't play in the background
+                    const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused && item!.game!.id === interactedGameId;
+                    if (shouldResume) {
+                      resumeWebView(webViewRefs.current[item!.id]);
+                    } else {
+                      pauseWebView(webViewRefs.current[item!.id]);
+                    }
                   }}
                   onLoad={() => {
-                    const shouldPause = position !== 0 || currentIndex === -1;
-                    if (shouldPause && webViewRefs.current[item!.id]) {
-                      webViewRefs.current[item!.id]?.injectJavaScript(PAUSE_SCRIPT);
+                    // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
+                    // Otherwise, keep it paused so it doesn't play in the background
+                    const shouldResume = position === 0 && currentIndex !== -1 && isFocused && item!.game!.id === interactedGameId;
+                    if (!shouldResume && webViewRefs.current[item!.id]) {
+                      pauseWebView(webViewRefs.current[item!.id]);
                     }
                   }}
                   onShouldStartLoadWithRequest={(request) => {
-                    if (isExternalGame(item!.game!)) {
-                      return !shouldBlockRequest(request.url);
-                    }
                     return true;
                   }}
                 />
+              </Animated.View>
 
-                {/* Native gesture zones (GestureDetector) handle edge swipes */}
-                {/* No need for additional edge blockers inside WebView container */}
+              {/* Native gesture zones intercept handled earlier via Animated.View pointerEvents box-none */}
 
-                {/* Loading overlay - shows until game is ready */}
-                {!readyGames.has(item!.id) && item!.game && (
-                  <View style={styles.gameLoadingOverlay}>
-                    <GameLoadingScreen
-                      gameName={item!.game.name}
-                      gameThumbnail={getThumbnailUrl(item!.game)}
-                      progress={75} // Can be dynamic if you track actual load progress
-                    />
+                {/* Thumbnail Overlay - always rendered, opacity-controlled to prevent blink on skip */}
+                {item!.game && (
+                  <View 
+                    style={[StyleSheet.absoluteFill, { zIndex: 5, justifyContent: 'center', alignItems: 'center', opacity: (item!.game!.id !== interactedGameId || position !== 0) ? 1 : 0 }]} 
+                    pointerEvents={(item!.game!.id !== interactedGameId || position !== 0) ? 'auto' : 'none'}
+                    onStartShouldSetResponder={() => (item!.game!.id !== interactedGameId || position !== 0)}
+                    onResponderRelease={() => {
+                      if (position === 0) {
+                        if (item!.game!.id === interactedGameId) {
+                          // Tapping thumbnail while game is playing - reset to show thumbnail
+                          setInteractedGameId(null);
+                          setIsGameDeckActive(false);
+                          // Pause the game
+                          resetWebView(item!.id);
+                        } else {
+                          // Tapping thumbnail to start game
+                          setInteractedGameId(item!.game!.id);
+                          setIsGameDeckActive(true);
+                          // Resume the game
+                          resumeWebView(webViewRefs.current[item!.id]);
+                        }
+                      }
+                    }}
+                  >
+                    {/* The crisp thumbnail card floating on top */}
+                    <View style={styles.thumbnailCardContainer}>
+                      <View style={styles.thumbnailCardInner}>
+                        <Image 
+                          source={{ uri: getThumbnailUrl(item!.game) }} 
+                          style={styles.thumbnailCardImage} 
+                        />
+                        <View style={styles.thumbnailCardPlayPill}>
+                          <Ionicons 
+                            name={item!.game!.id === interactedGameId && position === 0 ? "reload-circle" : "play"} 
+                            size={12} 
+                            color="#fff" 
+                          />
+                        </View>
+                      </View>
+                    </View>
                   </View>
                 )}
 
-                {/* Only show action buttons and game info for games, not ads */}
-                {!item!.isAd && (
-                  <>
-                    {/* TikTok-style action buttons - right side */}
-                    <View style={styles.actionButtons}>
-                      {/* Session Points Counter - tap for leaderboard */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleOpenLeaderboard(item!.game!.id, item!.game!.name);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="trophy" size={32} color={LoopsColors.coinGold} />
-                        <Text style={[styles.actionCount, { color: LoopsColors.coinGold }]}>+{sessionPoints}</Text>
-                      </TouchableOpacity>
+                {/* TikTok-style action buttons - right side - animated slide */}
+                  <Animated.View style={[styles.actionButtons, { bottom: 64, transform: [{ translateY: actionButtonsTranslateY }], opacity: actionButtonsTranslateY.interpolate({ inputRange: [0, 120], outputRange: [1, 0] }) }]}>
+                    <AnimatedLikeButton
+                      isLiked={likedGames.has(item!.game!.id)}
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleLike(item!.game!.id);
+                      }}
+                      likeCount={getFeedCount(item!.game!.id, 'likes')}
+                      styles={styles}
+                    />
+                    <AnimatedCommentButton
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleOpenComments(item!.game!);
+                      }}
+                      commentCount={0}
+                      styles={styles}
+                    />
+                    {/* Share */}
+                    <AnimatedShareButton
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleShare(item!.game!);
+                      }}
+                      shareCount={getFeedCount(item!.game!.id, 'shares')}
+                      styles={styles}
+                    />
+                    {/* Remix */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      activeOpacity={0.9}
+                      onPress={(e) => {
+                        triggerClickAnimation(e);
+                        handleRemix(item!.game!);
+                      }}
+                    >
+                      <Ionicons name="git-branch" size={30} color={LoopsColors.white} />
+                      <Text style={styles.actionCount}>Remix</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
 
-                      <AnimatedLikeButton
-                        isLiked={likedGames.has(item!.game!.id)}
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleLike(item!.game!.id);
-                        }}
-                        likeCount={getFakeCount(item!.game!.id, 'likes') + (likedGames.has(item!.game!.id) ? 1 : 0)}
-                        styles={styles}
-                      />
-
-                      {/* Comments */}
-                      <AnimatedCommentButton
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setCommentsGameId(item!.game!.id);
-                          setCommentsGameName(item!.game!.name);
-                          setShowComments(true);
-                        }}
-                        commentCount={getFakeCount(item!.game!.id, 'comments')}
-                        styles={styles}
-                      />
-
-                      {/* Bookmark/Save */}
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleSave(item!.game!.id);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="bookmark"
-                          size={32}
-                          color={savedGames.has(item!.game!.id) ? LoopsColors.coinGold : LoopsColors.white}
-                        />
-                        <Text style={styles.actionCount}>{formatCount(getFakeCount(item!.game!.id, 'saves') + (savedGames.has(item!.game!.id) ? 1 : 0))}</Text>
-                      </TouchableOpacity>
-
-                      {/* Share */}
-                      <AnimatedShareButton
-                        onPress={(e) => {
-                          triggerClickAnimation(e);
-                          handleShare(item!.game!);
-                        }}
-                        shareCount={getFakeCount(item!.game!.id, 'shares')}
-                        styles={styles}
-                      />
-                    </View>
-
-                    {/* Game info - bottom left */}
-                    <View style={styles.gameInfo} pointerEvents="none">
-                      <View style={styles.gameNameRow}>
-                        <Text style={styles.gameName}>{item!.game!.name}</Text>
-                        <View style={styles.gameBadge}>
-                          <Ionicons name="game-controller" size={12} color={LoopsColors.white} />
-                        </View>
+                {/* Game info - bottom left (V2 mockup-faithful) - animated fade */}
+                  <Animated.View style={[styles.gameInfo, { opacity: overlayInfoOpacity }]} pointerEvents="box-none">
+                    <View style={styles.gameTitleRow}>
+                      <Text style={styles.gameName} numberOfLines={2}>
+                        {item!.game!.name}
+                      </Text>
+                      <View style={styles.gameTitlePill}>
+                        <Ionicons name="game-controller" size={12} color="#fff" />
                       </View>
-                      <Text style={styles.gameTagline}>{getRandomTagline(item!.game!.id)}</Text>
                     </View>
-                  </>
-                )}
-              </Animated.View>
-            </View>
-          )}
-        </Animated.View>
-      ))}
-
-      {/* For You header - tappable to refresh, swipes pass through around it */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]} pointerEvents="box-none">
-        <TouchableOpacity
-          onPress={refreshFeed}
-          activeOpacity={0.7}
-          style={styles.forYouButton}
-        >
-          <Text style={styles.forYouText}>For You</Text>
-        </TouchableOpacity>
+                    {!!item!.game!.creatorDisplayName && (
+                      <View style={styles.creatorRow}>
+                        <View style={styles.creatorAvatarWrap}>
+                          <Pressable
+                            style={styles.creatorAvatarPressable}
+                            onPress={() => handleOpenCreatorProfile(item!.game!)}
+                          >
+                            <Avatar
+                              uri={item!.game!.creatorAvatar || null}
+                              userId={
+                                item!.game!.creatorId ||
+                                item!.game!.creatorUsername ||
+                                item!.game!.creatorDisplayName ||
+                                item!.game!.id
+                              }
+                              size={50}
+                            />
+                          </Pressable>
+                          {(item!.game!.creatorId || item!.game!.creatorUsername) &&
+                            item!.game!.creatorId !== user?.id &&
+                            (
+                              !isCreatorFollowed(followingCreatorIds, item!.game!) ||
+                              followSuccessIds.has(getCreatorFollowKey(item!.game!))
+                            ) && (
+                              <AnimatedFollowBadge
+                                loading={followingLoadingIds.has(getCreatorFollowKey(item!.game!))}
+                                followed={followSuccessIds.has(getCreatorFollowKey(item!.game!))}
+                                disabled={
+                                  followingLoadingIds.has(getCreatorFollowKey(item!.game!)) ||
+                                  followSuccessIds.has(getCreatorFollowKey(item!.game!))
+                                }
+                                onPress={() => handleFollowCreator(item!.game!.creatorId, item!.game!.creatorUsername)}
+                                styles={styles}
+                              />
+                            )}
+                        </View>
+                        <Pressable
+                          style={styles.creatorNameWrap}
+                          onPress={() => handleOpenCreatorProfile(item!.game!)}
+                        >
+                          <Text style={styles.creatorDisplayName} numberOfLines={1}>
+                            {item!.game!.creatorDisplayName || item!.game!.creatorUsername}
+                          </Text>
+                          {item!.game!.creatorVerified ? (
+                            <View style={styles.verifiedDot}>
+                              <MaterialIcons name="verified" size={18} color="#a855f7" />
+                            </View>
+                          ) : null}
+                        </Pressable>
+                      </View>
+                    )}
+                    {!!item!.game!.remixedFrom && (
+                      <View style={styles.remixCreditRow}>
+                        <Ionicons name="git-branch" size={11} color="rgba(255,255,255,0.75)" />
+                        <Text style={styles.remixCreditText} numberOfLines={1}>
+                          Remixed from @{item!.game!.remixedFrom}
+                        </Text>
+                      </View>
+                    )}
+                  </Animated.View>
+            </Animated.View>
+          </Animated.View>
+        ))}
       </View>
+
+      {/* V2 Top bar (mockup): gametok / search - animated fade */}
+        <Animated.View
+          style={[styles.topBarV2, { paddingTop: insets.top + 8, opacity: overlayInfoOpacity }]}
+          pointerEvents={isGameDeckActive ? 'none' : 'box-none'}
+        >
+          <View style={styles.topBarV2Row}>
+            <View style={styles.topBarV2Side} />
+            <View style={styles.topBarV2Center}>
+              <TouchableOpacity
+                onPress={refreshFeed}
+                activeOpacity={0.85}
+                style={styles.forYouV2Pill}
+              >
+                <Text style={[styles.forYouV2Text, { marginRight: 4 }]}>For You</Text>
+                <View style={styles.forYouV2Dot} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.topBarV2Side, { alignItems: 'flex-end' }]}>
+              <TouchableOpacity
+                style={styles.topV2IconBtn}
+                onPress={() => setSearchModalVisible(true)}
+                activeOpacity={0.85}
+                hitSlop={6}
+              >
+                <Ionicons name="search" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
 
       {/* Scroll overlay - only visible when scroll mode is active */}
       {scrollEnabled && (
@@ -3206,35 +3052,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         />
       )}
 
-      <GestureDetector gesture={topPanGesture}>
-        <View key={`top-zone-${gestureKey}`} style={styles.topZone} pointerEvents="box-only" collapsable={false} />
-      </GestureDetector>
+      {/* Overlay gesture zones removed - scrolling is handled completely by PanResponders now */}
 
-      <GestureDetector gesture={bottomPanGesture}>
-        <View key={`bottom-zone-${gestureKey}`} style={styles.bottomZone} pointerEvents="box-only" collapsable={false} />
-      </GestureDetector>
 
-      {/* Swipe hint - permanent on welcome, on-touch for games */}
-      {(currentIndex === -1 || showSwipeHint) && (
-        <Animated.View
-          style={[
-            styles.hintContainer,
-            currentIndex !== -1 && { opacity: swipeHintOpacity }
-          ]}
-          pointerEvents="none"
-        >
-          {currentIndex !== -1 && (
-            <View style={[
-              styles.hintGlow,
-              styles.hintGlowDark
-            ]} />
-          )}
-          <Text style={[
-            styles.hintText,
-            currentIndex !== -1 && styles.hintTextDark
-          ]}>Swipe from bottom to browse</Text>
-        </Animated.View>
-      )}
+      </View>
 
       {/* Share Sheet */}
       <ShareSheet
@@ -3245,12 +3066,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         onSendToFriend={handleSendToFriend}
       />
 
-      {/* Comments Sheet */}
-      <CommentsSheet
+      <RemixModal
+        visible={!!remixTarget}
+        gameName={remixTarget?.name}
+        gameThumbnail={remixTarget ? (remixTarget.thumbnail || resolveGameThumbnail(remixTarget as any)) : null}
+        loading={remixLoading}
+        onCancel={() => { if (!remixLoading) setRemixTarget(null); }}
+        onConfirm={confirmRemix}
+      />
+
+      <CommentsModal
         visible={showComments}
         onClose={() => setShowComments(false)}
-        gameId={commentsGameId}
-        gameName={commentsGameName}
+        gameId={commentGameId}
+        gameName={commentGameName}
       />
 
       {/* Leaderboard Modal */}
@@ -3269,8 +3098,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         sessionPlayTime={gameStartTimeRef.current ? Math.floor((Date.now() - gameStartTimeRef.current) / 1000) : 0}
       />
 
-      {/* Onboarding Tooltip Walkthrough */}
-      <OnboardingOverlay onComplete={() => { }} />
+      <UserProfileModal
+        visible={!!selectedProfileUser}
+        onClose={() => setSelectedProfileUser(null)}
+        user={selectedProfileUser}
+        onFriendStatusChange={(creatorId, isFollowing) => {
+          setFollowingCreatorIds(prev => {
+            const next = new Set(prev);
+            const creatorIdKey = normalizeFollowKey(creatorId);
+            const usernameKey = normalizeFollowKey(selectedProfileUser?.username);
+            if (isFollowing) {
+              if (creatorIdKey) next.add(creatorIdKey);
+              if (usernameKey) next.add(usernameKey);
+            } else {
+              if (creatorIdKey) next.delete(creatorIdKey);
+              if (usernameKey) next.delete(usernameKey);
+            }
+            return next;
+          });
+        }}
+      />
 
       {/* Click animations overlay */}
       {clickAnimations.map(anim => (
@@ -3302,6 +3149,77 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: LoopsColors.black, // Fallback for loading state
   },
+  // ── V2 mockup top bar ────────────────────────────────────────────
+  topBarV2: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10000,
+    paddingHorizontal: 14,
+  },
+  topBarV2Row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  topBarV2Side: {
+    flex: 1,
+  },
+  topBarV2Center: {
+    alignItems: 'center',
+  },
+  gametokLogoV2: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  topV2IconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forYouV2Wrap: {
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  forYouV2Pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 118,
+    height: 43,
+    justifyContent: 'center',
+    paddingHorizontal: 19,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,8,10,0.62)',
+    borderWidth: 1.25,
+    borderColor: 'rgba(255,255,255,0.13)',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  forYouV2Dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#ff2f92',
+    shadowColor: '#ff2f92',
+    shadowOpacity: 0.85,
+    shadowRadius: 6,
+  },
+  forYouV2Text: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 0,
+  },
   header: {
     position: 'absolute',
     top: 0,
@@ -3310,14 +3228,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10000,
   },
+  headerRail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  feedModePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.45)',
+  },
+  feedModeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: '#a855f7',
+    marginRight: 8,
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
   forYouText: {
     color: LoopsColors.white,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
-  forYouButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 6,
+  gameViewport: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+    backgroundColor: getFeedBackdropColor(),
   },
   gameContainer: {
     position: 'absolute',
@@ -3334,20 +3282,11 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    bottom: BOTTOM_ZONE_HEIGHT,
+    bottom: 0,
     backgroundColor: 'transparent',
     zIndex: 5,
   },
-  bottomZone: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: 'transparent',
-    zIndex: 9999,
-    elevation: 9999,
-  },
+
   topZone: {
     position: 'absolute',
     top: 0,
@@ -3358,47 +3297,12 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
   },
-  hintContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT + 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 15,
-  },
-  hintGlow: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: BOTTOM_ZONE_HEIGHT,
-    backgroundColor: '#a855f7',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    shadowColor: '#a855f7',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
-  },
-  hintText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-    textShadowColor: '#a855f7',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
-    marginBottom: 10,
-  },
-  hintGlowDark: {
-    backgroundColor: '#a855f7',
-    shadowOpacity: 0.7,
-  },
-  hintTextDark: {
-    color: '#a855f7',
-    textShadowRadius: 10,
-  },
+
+
+
+
+
+
   errorContainer: {
     flex: 1,
     backgroundColor: LoopsColors.black, // Match GameLoadingScreen background
@@ -3424,13 +3328,13 @@ const styles = StyleSheet.create({
   actionButtons: {
     position: 'absolute',
     right: 8,
-    bottom: 100,
+    bottom: 24,
     alignItems: 'center',
     zIndex: 10,
   },
   actionButton: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 18,
   },
   actionCount: {
     color: LoopsColors.white,
@@ -3448,38 +3352,235 @@ const styles = StyleSheet.create({
     right: 80,
     zIndex: 10,
   },
+  gameTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  gameTitlePill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#a855f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#a855f7',
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+  },
   gameNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  creatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  creatorAvatarWrap: {
+    position: 'relative',
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorAvatarPressable: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorFollowBadgeWrap: {
+    position: 'absolute',
+    right: -3,
+    bottom: -4,
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorFollowPulse: {
+    position: 'absolute',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 45, 85, 0.35)',
+  },
+  creatorFollowBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ff2d55',
+    borderWidth: 2,
+    borderColor: '#050505',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ff2d55',
+    shadowOpacity: 0.65,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  creatorFollowBadgeDone: {
+    backgroundColor: '#22c55e',
+    shadowColor: '#22c55e',
+  },
+  creatorNameWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 1,
+    paddingTop: 2,
+  },
+  remixCreditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  remixCreditText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  creatorAvatarBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  creatorAvatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorAvatarInitial: {
+    color: LoopsColors.white,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  creatorDisplayName: {
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    flexShrink: 1,
+  },
+  verifiedDot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifiedCheck: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: -1,
   },
   gameName: {
     color: LoopsColors.white,
     fontSize: 22,
-    fontWeight: '700',
-    textShadowColor: LoopsColors.black90,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 6,
+    flexShrink: 1,
   },
   gameBadge: {
-    backgroundColor: LoopsColors.mainPink,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    marginLeft: 8,
+    backgroundColor: 'rgba(168,85,247,0.85)',
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  gameTagline: {
-    color: LoopsColors.white80,
-    fontSize: 14,
-    textShadowColor: LoopsColors.black80,
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  gameMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
   },
-  gameLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: LoopsColors.black, // Seamless with container
+  gameMetaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  gameMetaPillAccent: {
+    backgroundColor: 'rgba(168,85,247,0.18)',
+    borderColor: 'rgba(168,85,247,0.4)',
+  },
+  gameMetaText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  thumbnailBgBlur: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 100,
+    width: '100%',
+    height: '100%',
+  },
+  thumbnailOverlayDarken: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 10, 25, 0.7)',
+  },
+  thumbnailCardContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '75%', // Narrower to match competitor
+    maxWidth: 360,
+    zIndex: 10,
+    marginTop: 60, // Push down from center to match competitor positioning
+  },
+  thumbnailCardInner: {
+    width: '100%',
+    aspectRatio: 0.72, // Taller card like competitor
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+  },
+  thumbnailCardImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  thumbnailCardPlayPill: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  thumbnailCardPlayText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 6,
   },
 });

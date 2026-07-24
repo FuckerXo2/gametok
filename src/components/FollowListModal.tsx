@@ -32,6 +32,8 @@ interface FollowListModalProps {
     username: string;
     initialTab?: 'followers' | 'following';
     onUserPress?: (user: UserItem) => void;
+    // Fires once this modal has fully closed — use to chain into another modal.
+    onClosed?: () => void;
 }
 
 export const FollowListModal: React.FC<FollowListModalProps> = ({
@@ -41,6 +43,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     username,
     initialTab = 'followers',
     onUserPress,
+    onClosed,
 }) => {
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
@@ -49,6 +52,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     const [followers, setFollowers] = useState<UserItem[]>([]);
     const [following, setFollowing] = useState<UserItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [actioningId, setActioningId] = useState<string | null>(null);
 
     // Sync initial tab when modal opens
     useEffect(() => {
@@ -76,6 +80,23 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
 
     const currentData = activeTab === 'followers' ? followers : following;
 
+    const handleFollowPress = async (item: UserItem) => {
+        if (actioningId) return;
+        setActioningId(item.id);
+        try {
+            await users.follow(item.id);
+            const updateUser = (candidate: UserItem) => (
+                candidate.id === item.id ? { ...candidate, isFollowing: !candidate.isFollowing } : candidate
+            );
+            setFollowers(prev => prev.map(updateUser));
+            setFollowing(prev => prev.map(updateUser));
+        } catch (e) {
+            console.log('Failed to follow user:', e);
+        } finally {
+            setActioningId(null);
+        }
+    };
+
     const renderItem = ({ item }: { item: UserItem }) => {
         const isCurrentMe = currentUser?.id === item.id;
 
@@ -85,13 +106,13 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
                 onPress={() => onUserPress && onUserPress(item)}
                 activeOpacity={0.7}
             >
-                <Avatar uri={item.avatar} size={54} />
+                <Avatar uri={item.avatar} userId={item.id} size={54} />
                 <View style={styles.userInfo}>
-                    <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
-                        {item.username}
-                    </Text>
-                    <Text style={[styles.displayName, { color: colors.textSecondary }]} numberOfLines={1}>
+                    <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
                         {item.displayName || item.username}
+                    </Text>
+                    <Text style={[styles.username, { color: colors.textSecondary }]} numberOfLines={1}>
+                        @{item.username}
                     </Text>
                 </View>
                 {!isCurrentMe && (
@@ -100,13 +121,13 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
                             styles.actionButton,
                             item.isFollowing ? styles.messageBtn : styles.followBtn
                         ]}
-                        onPress={() => onUserPress && onUserPress(item)}
+                        onPress={() => item.isFollowing ? onUserPress?.(item) : handleFollowPress(item)}
                     >
                         <Text style={[
                             styles.actionButtonText,
                             item.isFollowing ? styles.messageBtnText : styles.followBtnText
                         ]}>
-                            {item.isFollowing ? 'Message' : 'Follow'}
+                            {actioningId === item.id ? '...' : item.isFollowing ? 'View' : 'Follow'}
                         </Text>
                     </AnimatedButton>
                 )}
@@ -115,16 +136,14 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     };
 
     return (
-        <SlideRightModal visible={visible} onClose={onClose}>
+        <SlideRightModal visible={visible} onClose={onClose} onClosed={onClosed}>
             <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>
                     <TouchableOpacity style={styles.iconButton} onPress={onClose}>
                         <Ionicons name="chevron-back" size={28} color={colors.text} />
                     </TouchableOpacity>
-                    <Text style={[styles.title, { color: colors.text }]}>{username}</Text>
-                    <TouchableOpacity style={styles.iconButton}>
-                        <Ionicons name="person-add-outline" size={24} color={colors.text} />
-                    </TouchableOpacity>
+                    <Text style={[styles.title, { color: colors.text }]}>@{username}</Text>
+                    <View style={styles.iconButton} />
                 </View>
 
                 <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
@@ -154,7 +173,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
 
                 {loading ? (
                     <View style={styles.centerContainer}>
-                        <ActivityIndicator size="large" color="#a855f7" />
+                        <ActivityIndicator size="large" color={colors.textSecondary} />
                     </View>
                 ) : (
                     <FlatList
@@ -164,6 +183,11 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
                         contentContainerStyle={styles.list}
                         ListEmptyComponent={
                             <View style={styles.centerContainer}>
+                                <Ionicons
+                                    name={activeTab === 'followers' ? 'people-outline' : 'person-add-outline'}
+                                    size={44}
+                                    color={colors.textSecondary}
+                                />
                                 <Text style={{ color: colors.textSecondary, fontSize: 16 }}>
                                     No {activeTab} yet.
                                 </Text>
@@ -244,12 +268,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     username: {
-        fontSize: 14,
-        fontWeight: '700',
+        fontSize: 13,
+        marginTop: 3,
     },
     displayName: {
-        fontSize: 14,
-        marginTop: 2,
+        fontSize: 16,
+        fontWeight: '700',
     },
     actionButton: {
         paddingHorizontal: 16,
@@ -263,7 +287,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.2)',
     },
     followBtn: {
-        backgroundColor: '#a855f7',
+        backgroundColor: '#f3f4f6',
     },
     actionButtonText: {
         fontSize: 13,
@@ -273,7 +297,7 @@ const styles = StyleSheet.create({
         color: '#ffffff',
     },
     followBtnText: {
-        color: '#ffffff',
+        color: '#111111',
     },
     centerContainer: {
         flex: 1,

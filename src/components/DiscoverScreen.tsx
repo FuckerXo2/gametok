@@ -30,7 +30,7 @@ import { Avatar } from './Avatar';
 import { FriendRequestsScreen } from './FriendRequestsScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GAMES_HOST = 'https://gametok-games.pages.dev';
+const GAMES_HOST = 'https://games.gametok.co';
 
 interface UserResult {
   id: string;
@@ -85,7 +85,7 @@ const ActivityCard: React.FC<{
       <LinearGradient colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']} style={styles.activityCardGradient} />
 
       <TouchableOpacity style={styles.activityUserRow} onPress={onUserPress} activeOpacity={0.8}>
-        <Avatar uri={item.user.avatar} size={28} />
+        <Avatar uri={item.user.avatar} userId={item.user.id} size={28} />
         <Text style={styles.activityUsername} numberOfLines={1}>{item.user.displayName || item.user.username}</Text>
         {isRecent && <View style={styles.liveDot} />}
       </TouchableOpacity>
@@ -262,7 +262,7 @@ export const DiscoverScreen: React.FC = () => {
               contentContainerStyle={{ paddingHorizontal: 16 }}
               renderItem={({ item }) => (
                 <TouchableOpacity style={[styles.userRow, { borderBottomColor: colors.border }]} onPress={() => { setSelectedUser({ id: item.id, username: item.username, displayName: item.displayName, avatar: item.avatar, status: 'GAMETOK USER', isOnline: false, isFriend: addedUsers.has(item.id) }); setShowUserProfile(true); }}>
-                  <Avatar uri={item.avatar} size={48} />
+                  <Avatar uri={item.avatar} userId={item.id} size={48} />
                   <View style={styles.userInfo}>
                     <Text style={[styles.userName, { color: colors.text }]}>{item.displayName || item.username}</Text>
                     <Text style={[styles.userHandle, { color: colors.textSecondary }]}>@{item.username}</Text>

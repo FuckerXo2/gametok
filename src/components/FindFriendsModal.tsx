@@ -169,7 +169,7 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
                                         activeOpacity={0.7}
                                         onPress={() => onOpenProfile(item)}
                                     >
-                                        <Avatar uri={item.avatar} size={48} />
+                                        <Avatar uri={item.avatar} userId={item.id} size={48} />
                                         <View style={styles.userInfo}>
                                             <Text style={[styles.displayName, { color: theme.text }]} numberOfLines={1}>
                                                 {item.displayName || item.username}

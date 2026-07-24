@@ -105,7 +105,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
         <View style={styles.playerCardInner}>
           <View style={styles.playerCardLeft}>
             <View style={styles.playerAvatarWrap}>
-              <Avatar uri={item.avatar || null} size={50} />
+              <Avatar uri={item.avatar || null} userId={item.id} size={50} />
               <View style={styles.onlineDot} />
             </View>
             <View style={styles.playerTextWrap}>
@@ -250,7 +250,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
             <View style={styles.emptyLobby}>
               <Animated.View entering={ZoomIn.delay(200).springify()}>
                 <View style={styles.emptyLobbyCircle}>
-                  <Ionicons name="radar-outline" size={48} color="#a855f7" />
+                  <Ionicons name="radio-outline" size={48} color="#a855f7" />
                 </View>
               </Animated.View>
               <Text style={styles.emptyTitle}>
@@ -284,7 +284,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
               <View style={styles.challengerInfo}>
                 <View style={styles.challengerAvatarContainer}>
                   <LinearGradient colors={['#a855f7', '#ec4899']} style={styles.avatarGlowBorder} />
-                  <Avatar uri={incomingChallenge.from.avatar || null} size={80} />
+                  <Avatar uri={incomingChallenge.from.avatar || null} userId={incomingChallenge.from.id} size={80} />
                 </View>
                 <Text style={styles.challengerName}>
                   {incomingChallenge.from.displayName || incomingChallenge.from.username}
@@ -340,7 +340,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
 
               <View style={styles.matchVsRow}>
                 <Animated.View entering={SlideInDown.delay(300).springify()} style={styles.matchPlayerCol}>
-                  <Avatar uri={(user as any)?.avatar || null} size={72} />
+                  <Avatar uri={(user as any)?.avatar || null} userId={(user as any)?.id} size={72} />
                   <Text style={styles.matchPlayerName}>YOU</Text>
                 </Animated.View>
 
@@ -349,7 +349,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
                 </Animated.View>
 
                 <Animated.View entering={SlideInDown.delay(400).springify()} style={styles.matchPlayerCol}>
-                  <Avatar uri={matchReady.opponent.avatar || null} size={72} />
+                  <Avatar uri={matchReady.opponent.avatar || null} userId={matchReady.opponent.id} size={72} />
                   <Text style={styles.matchPlayerName}>
                     {matchReady.opponent.displayName?.toUpperCase() || matchReady.opponent.username.toUpperCase()}
                   </Text>

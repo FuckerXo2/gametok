@@ -76,7 +76,7 @@ export const AddFriendsScreen: React.FC<AddFriendsScreenProps> = ({ visible, onC
     
     return (
       <View style={[styles.userItem, { borderBottomColor: colors.border }]}>
-        <Avatar uri={item.avatar} size={50} style={styles.userAvatar} />
+        <Avatar uri={item.avatar} userId={item.id} size={50} style={styles.userAvatar} />
         
         <View style={styles.userInfo}>
           <Text style={[styles.displayName, { color: colors.text }]}>

@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <GridView android:scrollbarStyle="outsideOverlay" android:id="@id/albumGridView" android:fadingEdge="none" android:layout_width="match_parent" android:layout_height="match_parent" android:listSelector="@android:color/transparent" android:scrollingCache="false" android:cacheColorHint="@android:color/transparent" android:stretchMode="columnWidth" android:numColumns="3" android:paddingStart="10.0dp" android:paddingEnd="10.0dp" />
-    <include android:id="@id/list_empty_view" android:layout_width="match_parent" android:layout_height="match_parent" layout="@layout/blank_view" />
-    <include android:id="@id/send_operation_layout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_alignParentBottom="true" layout="@layout/multi_choose_bottom" />
-</RelativeLayout>

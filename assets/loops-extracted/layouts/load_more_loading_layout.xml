@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:gravity="center" android:orientation="vertical" android:paddingTop="20.0dp" android:layout_width="match_parent" android:layout_height="wrap_content"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <mozat.mchatcore.ui.view.BallPulseLoadingView android:id="@id/loading_bar" android:layout_width="wrap_content" android:layout_height="wrap_content" app:ballColor="#abadbb" />
-    <TextView android:textSize="@dimen/font_middle" android:textColor="@color/text_hint" android:gravity="center" android:id="@id/load_failed" android:padding="10.0dp" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/loading_failed" />
-</LinearLayout>

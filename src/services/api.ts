@@ -1,7 +1,64 @@
 // GameTok API Service
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  mockGenerateSpec,
+  mockRefineSpec,
+  mockDreamLabs,
+  mockEditGame,
+  mockPublish,
+} from './aiMock';
 
 export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
+
+// ── Wish-studio AI: auto-fallback to a local mock when the backend is down ────
+//
+// How the AI calls (generateSpec / refineSpec / dreamLabs / editGame) resolve:
+//   'auto' — use the real backend when it's reachable; fall back to the local
+//            mock when it's down, and switch back automatically when it returns.
+//   'mock' — always use the local mock (canned spec + a playable local preview).
+//   'live' — always use the backend.
+//
+// Auto-fallback only mocks in development, so a real user never gets a mock game:
+// production builds are forced to 'live' (backend-down shows the real error UI).
+export type AiMode = 'auto' | 'mock' | 'live';
+export const AI_MODE: AiMode = (__DEV__ ? 'auto' : 'live') as AiMode;
+
+// Auto mode learns whether the AI actually works from real call *results* — a
+// server that's up but whose model is down still fails, and a plain health ping
+// can't see that. So instead: try the real call, and on failure (a throw, a
+// non-success result, or a `fallback` flag) transparently use the mock, and
+// remember the AI is down so the follow-up build/edit/publish calls mock too.
+let aiHealthy: boolean | null = null; // null = unknown (no real call yet)
+const markAi = (ok: boolean) => { aiHealthy = ok; };
+
+// A spec response only counts as "the AI is working" if the model actually wrote
+// it — the endpoint returns success:true with a `fallback` flag for canned filler.
+const specSucceeded = (res: any): boolean =>
+  !!res && res.success !== false && !!res.spec && !res.fallback;
+
+// Build/publish calls return { promise, cancel } synchronously, so they can't
+// try-then-fall-back. They lean on what the preceding spec call learned: by the
+// time the user taps Create, a generate/refine call has set aiHealthy.
+const mockBuilds = (): boolean =>
+  AI_MODE === 'mock' ? true : AI_MODE === 'live' ? false : aiHealthy === false;
+const CLIENT_ID_STORAGE_KEY = 'clientId';
+
+// Default per-request timeout. Without this, a fetch that never settles hangs
+// the caller forever (the inbox spinner never clearing was exactly this).
+// Long-running endpoints (AI generation, publish) pass their own larger value;
+// pass 0 to disable the timeout entirely.
+const DEFAULT_TIMEOUT_MS = 20000;
+
+const createClientId = () => `gtk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+
+const getClientId = async () => {
+  let clientId = await AsyncStorage.getItem(CLIENT_ID_STORAGE_KEY);
+  if (!clientId) {
+    clientId = createClientId();
+    await AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
+  }
+  return clientId;
+};
 
 // Token management - always read from AsyncStorage to avoid stale cache
 export const setToken = async (token: string | null) => {
@@ -22,37 +79,105 @@ export const getToken = async () => {
 
 const headers = async () => {
   const token = await getToken();
+  const clientId = await getClientId();
   return {
     'Content-Type': 'application/json',
+    'X-Client-Id': clientId,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 };
 
 // Generic request handler
-const request = async (endpoint: string, options: RequestInit = {}) => {
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers: await headers(),
-  });
+const request = async (endpoint: string, options: RequestInit = {}, timeoutMs: number = DEFAULT_TIMEOUT_MS) => {
+  // Use caller's signal if provided (for cancellation), otherwise create one for timeout
+  const externalSignal = options.signal as AbortSignal | undefined;
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeout = timeoutMs ? setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs) : null;
 
-  // Get response text first to handle non-JSON responses
-  const text = await response.text();
+  // If external signal aborts, propagate to our controller
+  if (externalSignal) {
+    if (externalSignal.aborted) { controller.abort(); }
+    else { externalSignal.addEventListener('abort', () => controller.abort(), { once: true }); }
+  }
 
-  let data;
   try {
-    data = JSON.parse(text);
-  } catch (e) {
-    console.error('[API] Invalid JSON response:', text.substring(0, 200));
-    throw new Error('Server returned invalid response');
-  }
+    const { signal: _, ...restOptions } = options;
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...restOptions,
+      headers: await headers(),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const error: any = new Error(data.error || 'Request failed');
-    error.status = response.status;
+    // Get response text first to handle non-JSON responses
+    const text = await response.text();
+
+    let data;
+    try {
+      // The backend sends whitespace heartbeats to keep connections alive.
+      // Strip them before parsing JSON.
+      data = JSON.parse(text.trim());
+    } catch (e) {
+      console.error('[API] Invalid JSON response:', text.substring(0, 200));
+      const error: any = new Error(response.ok ? 'Server returned invalid response' : `Request failed with status ${response.status}`);
+      error.status = response.status;
+      error.responseText = text;
+      throw error;
+    }
+
+    if (!response.ok) {
+      const error: any = new Error(data.error || data.message || `Request failed. Dump: ${JSON.stringify(data)}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    if (didTimeout) {
+      const timeoutError: any = new Error('Request timed out.');
+      timeoutError.code = 'REQUEST_TIMEOUT';
+      throw timeoutError;
+    }
     throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
+};
 
-  return data;
+const requestJsonIfAvailable = async (endpoint: string, options: RequestInit = {}) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers: await headers(),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    const trimmed = text.trim();
+
+    if (!response.ok) {
+      return null;
+    }
+
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 // Auth API
@@ -108,6 +233,10 @@ export const users = {
     return request(`/users/${userId}`);
   },
 
+  created: async (userId: string, limit = 30) => {
+    return request(`/users/${userId}/created?limit=${limit}`);
+  },
+
   update: async (userId: string, data: { username?: string; displayName?: string; bio?: string; avatar?: string }) => {
     return request(`/users/${userId}`, {
       method: 'PUT',
@@ -117,6 +246,23 @@ export const users = {
 
   follow: async (userId: string) => {
     return request(`/users/${userId}/follow`, { method: 'POST' });
+  },
+
+  acceptRequest: async (userId: string) => {
+    try {
+      return await request(`/users/${userId}/accept-request`, { method: 'POST' });
+    } catch (error: any) {
+      const missingEndpoint =
+        error?.status === 404 &&
+        typeof error?.responseText === 'string' &&
+        (error.responseText.includes('Cannot POST') || error.responseText.includes('<!DOCTYPE'));
+
+      if (missingEndpoint) {
+        return request(`/users/${userId}/follow`, { method: 'POST' });
+      }
+
+      throw error;
+    }
   },
 
   followers: async (userId: string) => {
@@ -135,6 +281,10 @@ export const users = {
     return request(`/users/${userId}/following`);
   },
 
+  played: async (userId: string, limit = 30) => {
+    return request(`/users/${userId}/played?limit=${limit}`);
+  },
+
   search: async (query: string) => {
     return request(`/users/search/${encodeURIComponent(query)}`);
   },
@@ -145,8 +295,64 @@ export const users = {
 
 // Games API
 export const games = {
-  list: async (limit = 10, offset = 0) => {
-    return request(`/games?limit=${limit}&offset=${offset}`);
+  list: async (limit = 10, offset = 0, options?: { sort?: string }) => {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (options?.sort) params.set('sort', options.sort);
+    return request(`/games?${params.toString()}`);
+  },
+
+  discoverLanes: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 12,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    return request(`/games/discover-lanes?${params.toString()}`);
+  },
+
+  discoverDebug: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 25,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    return request(`/games/discover-debug?${params.toString()}`);
+  },
+
+  trendingSummary: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 5,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    return requestJsonIfAvailable(`/games/trending-summary?${params.toString()}`) || {
+      tab,
+      pulses: { searchHeat: 0, creatorsRising: 0, gamesPopping: 0 },
+      topSearches: [],
+      topCreators: [],
+      topGames: [],
+    };
+  },
+
+  top: async (
+    tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
+    limit = 10,
+  ) => {
+    const params = new URLSearchParams({
+      tab,
+      limit: String(limit),
+    });
+    const data = await requestJsonIfAvailable(`/games/top?${params.toString()}`);
+    return data || { tab, games: [] };
   },
 
   // Get multiplayer-only games (for Connect screen)
@@ -164,6 +370,21 @@ export const games = {
 
   recordPlay: async (gameId: string) => {
     return request(`/games/${gameId}/play`, { method: 'POST' });
+  },
+};
+
+export const search = {
+  trending: async (limit = 12) => {
+    const data = await requestJsonIfAvailable(`/search/trending?limit=${limit}`);
+    return data || { topics: [] };
+  },
+
+  track: async (query: string, source = 'explore') => {
+    const data = await requestJsonIfAvailable('/search/track', {
+      method: 'POST',
+      body: JSON.stringify({ query, source }),
+    });
+    return data || { success: false, tracked: false };
   },
 };
 
@@ -301,10 +522,10 @@ export const comments = {
     return request(`/comments/${gameId}?limit=${limit}`);
   },
 
-  create: async (gameId: string, text: string) => {
+  create: async (gameId: string, text: string, gifUrl?: string) => {
     return request('/comments', {
       method: 'POST',
-      body: JSON.stringify({ gameId, text }),
+      body: JSON.stringify({ gameId, text, gifUrl }),
     });
   },
 
@@ -343,74 +564,48 @@ export const moderation = {
 };
 
 // Gamification API
+// Gamification API - REMOVED
+// All gamification endpoints have been removed
 export const gamification = {
-  // Get user's points, streak, and level stats
-  getStats: async () => {
-    return request('/gamification/stats');
-  },
-
-  // Claim daily login bonus
-  claimDaily: async () => {
-    return request('/gamification/daily-claim', { method: 'POST' });
-  },
-
-  // Claim reward for watching an ad
-  claimAdReward: async () => {
-    return request('/gamification/ad-reward', { method: 'POST' });
-  },
-
-  // Record game played (awards points/XP)
-  gamePlayed: async (gameId: string, playTimeSeconds?: number) => {
-    return request('/gamification/game-played', {
-      method: 'POST',
-      body: JSON.stringify({ gameId, playTimeSeconds }),
-    });
-  },
-
-  // Get daily challenges
-  getChallenges: async () => {
-    return request('/gamification/challenges');
-  },
-
-  // Claim challenge reward
-  claimChallenge: async (challengeId: string) => {
-    return request(`/gamification/challenges/${challengeId}/claim`, { method: 'POST' });
-  },
-
-  // Get all achievements
-  getAchievements: async () => {
-    return request('/gamification/achievements');
-  },
-
-  // Get rewards shop
-  getRewards: async () => {
-    return request('/gamification/rewards');
-  },
-
-  // Claim a reward
-  claimReward: async (rewardId: string) => {
-    return request(`/gamification/rewards/${rewardId}/claim`, { method: 'POST' });
-  },
-
-  // Get user's claimed rewards
-  getMyRewards: async () => {
-    return request('/gamification/my-rewards');
-  },
-
-  // Get points transaction history
-  getTransactions: async (limit = 50) => {
-    return request(`/gamification/transactions?limit=${limit}`);
-  },
-
-  // Get leaderboard
-  getLeaderboard: async (type: 'points' | 'level' | 'streak' = 'points', limit = 50) => {
-    return request(`/gamification/leaderboard?type=${type}&limit=${limit}`);
-  },
-
-  // Get per-game leaderboard
-  getGameLeaderboard: async (gameId: string, limit = 50) => {
-    return request(`/gamification/leaderboard/${gameId}?limit=${limit}`);
-  },
+  getStats: async () => ({
+    points: {
+      balance: 0,
+      lifetimeEarned: 0,
+      usdValue: 0,
+      coinsPerUsd: 5667,
+    },
+    streak: {
+      current: 0,
+      longest: 0,
+      lastClaimDate: null,
+      multiplier: 1,
+    },
+  }),
+  getChallenges: async () => ({
+    challenges: [],
+  }),
+  getAchievements: async () => ({
+    achievements: [],
+  }),
+  getRewards: async () => ({
+    rewards: [],
+  }),
+  claimChallenge: async (_challengeId: string) => ({
+    success: true,
+    pointsEarned: 0,
+  }),
+  claimReward: async (_rewardId: string) => ({
+    success: true,
+    newBalance: 0,
+  }),
+  claimAdReward: async () => ({
+    success: true,
+    pointsEarned: 0,
+    newBalance: 0,
+  }),
+  getGameLeaderboard: async (_gameId: string, _limit = 100) => ({
+    leaderboard: [],
+  }),
 };
 
 // Multiplayer API
@@ -489,5 +684,419 @@ export const multiplayer = {
 
   getReceivedChallenges: async () => {
     return request('/multiplayer/challenges/received');
+  },
+};
+
+// // DreamStream AI Engine API
+export const ai = {
+  cancelDreamJob: async (jobId: string) => {
+    return request(`/ai/dream/cancel/${jobId}`, { method: 'POST' });
+  },
+
+  retryDreamJob: async (jobId: string) => {
+    return request(`/ai/dream/retry/${jobId}`, { method: 'POST' });
+  },
+
+  narrativeChat: async (messages: { role: 'ai' | 'user'; text: string }[]) => {
+    return request('/ai/narrative/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, 45000);
+  },
+
+  generateSpec: async (prompt: string) => {
+    if (AI_MODE === 'mock') return mockGenerateSpec(prompt);
+    const call = () => request('/ai/generate-spec', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    }, 30000);
+    if (AI_MODE === 'live') return call();
+    try {
+      const res: any = await call();
+      if (specSucceeded(res)) { markAi(true); return res; }
+      markAi(false);
+      return mockGenerateSpec(prompt);
+    } catch {
+      markAi(false);
+      return mockGenerateSpec(prompt);
+    }
+  },
+
+  refineSpec: async (conversationHistory: Array<{ role: 'ai' | 'user'; content: string }>, userMessage: string) => {
+    if (AI_MODE === 'mock') return mockRefineSpec(conversationHistory, userMessage);
+    const call = () => request('/ai/refine-spec', {
+      method: 'POST',
+      body: JSON.stringify({ conversationHistory, userMessage }),
+    }, 30000);
+    if (AI_MODE === 'live') return call();
+    try {
+      const res: any = await call();
+      if (specSucceeded(res)) { markAi(true); return res; }
+      markAi(false);
+      return mockRefineSpec(conversationHistory, userMessage);
+    } catch {
+      markAi(false);
+      return mockRefineSpec(conversationHistory, userMessage);
+    }
+  },
+
+  interpretEdit: async (payload: {
+    instructions: string;
+    gameTitle?: string;
+    currentSummary?: string;
+    conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  }) => {
+    return request('/ai/interpret-edit', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, 25000);
+  },
+
+  // Apply an edit to an existing game: POST /ai/edit returns a jobId, then poll
+  // /ai/dream/status/:jobId (the same status endpoint, which surfaces edit progress).
+  editGame: (
+    draftId: string,
+    instructions: string,
+    attachments: Array<{ type: string; role?: string; url: string; instruction: string; label?: string }> = [],
+    options?: { onStatus?: (status: any) => void },
+  ) => {
+    if (mockBuilds()) return mockEditGame(draftId, instructions, attachments, options);
+    const controller = new AbortController();
+    const promise = new Promise<any>(async (resolve, reject) => {
+      try {
+        const res = await request('/ai/edit', {
+          method: 'POST',
+          body: JSON.stringify({ draftId, instructions, attachments }),
+          signal: controller.signal,
+        }, 60000);
+        const jobId = res.jobId;
+        if (!jobId) { reject(new Error(res.error || 'Edit did not start')); return; }
+        let errs = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) { clearInterval(interval); reject(new Error('aborted')); return; }
+          try {
+            const status = await request(`/ai/dream/status/${jobId}`);
+            options?.onStatus?.(status);
+            if (status.status === 'complete') { clearInterval(interval); resolve(status); }
+            else if (status.status === 'error') { clearInterval(interval); reject(new Error(status.error || 'Edit failed')); }
+            errs = 0;
+          } catch (e: any) {
+            if (++errs >= 10) { clearInterval(interval); reject(new Error('Lost connection to the edit job.')); }
+          }
+        }, 2500);
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (e) { reject(e); }
+    });
+    return { promise, cancel: () => controller.abort() };
+  },
+
+  dreamLabs: (
+    prompt: string,
+    attachments: any[] = [],
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
+  ) => {
+    if (mockBuilds()) return mockDreamLabs(prompt, attachments, options);
+    const controller = new AbortController();
+    let remoteJobId: string | null = null;
+
+    const cancelRemoteJob = () => {
+      controller.abort();
+      if (remoteJobId) {
+        request(`/ai/dream/cancel/${remoteJobId}`, { method: 'POST' })
+          .catch((err: any) => console.warn('[DreamLabs] Remote cancel failed:', err?.message || err));
+      }
+    };
+    
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        // Wish Studio "Create it" runs on the same job pipeline as /dream — the
+        // one that feeds user media attachments to the Kimi CLI maker. (There is
+        // no separate /dream-labs route on the backend; this used to 404.)
+        const res = await request('/ai/dream', {
+          method: 'POST',
+          body: JSON.stringify({ prompt, attachments }),
+          signal: controller.signal,
+        }, 300000); // Allow up to 5 minutes for the initial job handshake
+
+        if (!res.jobId && res.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
+        const jobId = res.jobId;
+        remoteJobId = jobId || null;
+        if (jobId) {
+          options?.onJobStarted?.(jobId);
+        }
+        console.log(`[DreamLabs] Background Job ${jobId} initiated. Polling status...`);
+
+        let pollErrorCount = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/ai/dream/status/${jobId}`);
+            options?.onStatus?.(statusRes);
+            
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
+            }
+            // Reset error count on successful poll
+            pollErrorCount = 0;
+          } catch (pollingErr: any) {
+            pollErrorCount++;
+            console.warn(`[DreamLabs] Polling error ${pollErrorCount}/10:`, pollingErr.message);
+            // After 10 consecutive errors (50 seconds), give up
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+        
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort(), cancelRemote: cancelRemoteJob };
+  },
+  dream: (
+    prompt: string,
+    attachments: any[] = [],
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
+  ) => {
+    const controller = new AbortController();
+    let remoteJobId: string | null = null;
+
+    const cancelRemoteJob = () => {
+      controller.abort();
+      if (remoteJobId) {
+        request(`/ai/dream/cancel/${remoteJobId}`, { method: 'POST' })
+          .catch((err: any) => console.warn('[DreamStream] Remote cancel failed:', err?.message || err));
+      }
+    };
+    
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        // Step 1: Tell backend to start generation process and return immediately
+        const res = await request('/ai/dream', {
+          method: 'POST',
+          body: JSON.stringify({ prompt, attachments }),
+          signal: controller.signal,
+        }, 300000); // Allow up to 5 minutes for the initial Dream job handshake
+
+        // Fallback or legacy instant-return support
+        if (!res.jobId && res.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
+        const jobId = res.jobId;
+        remoteJobId = jobId || null;
+        if (jobId) {
+          options?.onJobStarted?.(jobId);
+        }
+        console.log(`[DreamStream] Background Job ${jobId} initiated. Polling status...`);
+
+        // Step 2: Poll the backend every 5 seconds until generation finishes
+        let pollErrorCount = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/ai/dream/status/${jobId}?t=${Date.now()}`);
+            options?.onStatus?.(statusRes);
+            
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
+            } else {
+              // Status is 'pending', just keep waiting
+              console.log(`[DreamStream] Job ${jobId} is still pending...`);
+            }
+            // Reset error count on successful poll
+            pollErrorCount = 0;
+          } catch (pollingErr: any) {
+            pollErrorCount++;
+            console.warn(`[DreamStream] Polling error ${pollErrorCount}/10:`, pollingErr.message);
+            // After 10 consecutive errors (50 seconds), give up
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+        
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort(), cancelRemote: cancelRemoteJob };
+  },
+  resumeDreamJob: (jobId: string, options?: { onStatus?: (status: any) => void }) => {
+    const controller = new AbortController();
+
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const checkStatus = async () => {
+          const statusRes = await request(`/ai/dream/status/${jobId}?t=${Date.now()}`);
+          options?.onStatus?.(statusRes);
+          if (statusRes.status === 'complete') {
+            resolve(statusRes);
+            return true;
+          }
+          if (statusRes.status === 'error') {
+            reject(new Error(statusRes.error || 'Unknown AI server error'));
+            return true;
+          }
+          if (statusRes.status === 'canceled') {
+            reject(new Error(statusRes.error || 'Generation cancelled'));
+            return true;
+          }
+          return false;
+        };
+
+        const resolvedImmediately = await checkStatus();
+        if (resolvedImmediately) {
+          return;
+        }
+
+        let pollErrorCount = 0;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const resolved = await checkStatus();
+            if (resolved) {
+              clearInterval(interval);
+            }
+            pollErrorCount = 0;
+          } catch (pollingErr: any) {
+            pollErrorCount++;
+            console.warn(`[DreamStream] Resume polling error ${pollErrorCount}/10:`, pollingErr.message);
+            if (pollErrorCount >= 10) {
+              clearInterval(interval);
+              reject(new Error('Generation lost - server may have restarted. Please try again.'));
+            }
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort() };
+  },
+  edit: (draftId: string, instructions: string, newAsset?: any, attachments: any[] = []) => {
+    const controller = new AbortController();
+    
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const res = await request('/ai/edit', {
+          method: 'POST',
+          body: JSON.stringify({ draftId, instructions, newAsset, attachments }),
+          signal: controller.signal,
+        }, 300000); // Allow up to 5 minutes for the initial edit job handshake
+
+        if (!res.jobId && res.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
+        const jobId = res.jobId;
+        const interval = setInterval(async () => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            reject(new Error('aborted'));
+            return;
+          }
+
+          try {
+            const statusRes = await request(`/ai/dream/status/${jobId}?t=${Date.now()}`);
+            if (statusRes.status === 'complete') {
+              clearInterval(interval);
+              resolve(statusRes);
+            } else if (statusRes.status === 'error') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Unknown AI server error'));
+            } else if (statusRes.status === 'canceled') {
+              clearInterval(interval);
+              reject(new Error(statusRes.error || 'Generation cancelled'));
+            }
+          } catch (pollingErr: any) {
+            console.warn('[DreamStream] Polling blip (ignoring):', pollingErr.message);
+          }
+        }, 5000);
+
+        controller.signal.addEventListener('abort', () => clearInterval(interval));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    return { promise, cancel: () => controller.abort() };
+  },
+  generateAsset: async (prompt: string) => {
+    return request('/ai/generate-asset', {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    });
+  },
+  drafts: async () => {
+    return request('/ai/drafts');
+  },
+  getDraft: async (draftId: string) => {
+    return request(`/ai/drafts/${draftId}`);
+  },
+  // Remix a public published game -> returns a fresh draft owned by the current user.
+  remixGame: async (sourceId: string) => {
+    return request(`/ai/remix/${sourceId}`, { method: 'POST' });
+  },
+  deleteDraft: async (draftId: string) => {
+    return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
+  },
+  publish: async (draftId: string, title?: string, privacy?: string, html?: string) => {
+    if (mockBuilds()) return mockPublish(draftId, title);
+    // Publishing uploads the full game HTML — allow longer than the default.
+    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) }, 60000);
+  },
+  reclassifyPublished: async (draftId?: string, limit = 20) => {
+    return request('/ai/reclassify-published', {
+      method: 'POST',
+      body: JSON.stringify({ draftId, limit }),
+    });
   },
 };
