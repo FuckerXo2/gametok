@@ -1,7 +1,46 @@
 // GameTok API Service
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  mockGenerateSpec,
+  mockRefineSpec,
+  mockDreamLabs,
+  mockEditGame,
+  mockPublish,
+} from './aiMock';
 
 export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
+
+// ── Wish-studio AI: auto-fallback to a local mock when the backend is down ────
+//
+// How the AI calls (generateSpec / refineSpec / dreamLabs / editGame) resolve:
+//   'auto' — use the real backend when it's reachable; fall back to the local
+//            mock when it's down, and switch back automatically when it returns.
+//   'mock' — always use the local mock (canned spec + a playable local preview).
+//   'live' — always use the backend.
+//
+// Auto-fallback only mocks in development, so a real user never gets a mock game:
+// production builds are forced to 'live' (backend-down shows the real error UI).
+export type AiMode = 'auto' | 'mock' | 'live';
+export const AI_MODE: AiMode = (__DEV__ ? 'auto' : 'live') as AiMode;
+
+// Auto mode learns whether the AI actually works from real call *results* — a
+// server that's up but whose model is down still fails, and a plain health ping
+// can't see that. So instead: try the real call, and on failure (a throw, a
+// non-success result, or a `fallback` flag) transparently use the mock, and
+// remember the AI is down so the follow-up build/edit/publish calls mock too.
+let aiHealthy: boolean | null = null; // null = unknown (no real call yet)
+const markAi = (ok: boolean) => { aiHealthy = ok; };
+
+// A spec response only counts as "the AI is working" if the model actually wrote
+// it — the endpoint returns success:true with a `fallback` flag for canned filler.
+const specSucceeded = (res: any): boolean =>
+  !!res && res.success !== false && !!res.spec && !res.fallback;
+
+// Build/publish calls return { promise, cancel } synchronously, so they can't
+// try-then-fall-back. They lean on what the preceding spec call learned: by the
+// time the user taps Create, a generate/refine call has set aiHealthy.
+const mockBuilds = (): boolean =>
+  AI_MODE === 'mock' ? true : AI_MODE === 'live' ? false : aiHealthy === false;
 const CLIENT_ID_STORAGE_KEY = 'clientId';
 
 // Default per-request timeout. Without this, a fetch that never settles hangs
@@ -666,17 +705,39 @@ export const ai = {
   },
 
   generateSpec: async (prompt: string) => {
-    return request('/ai/generate-spec', {
+    if (AI_MODE === 'mock') return mockGenerateSpec(prompt);
+    const call = () => request('/ai/generate-spec', {
       method: 'POST',
       body: JSON.stringify({ prompt }),
     }, 30000);
+    if (AI_MODE === 'live') return call();
+    try {
+      const res: any = await call();
+      if (specSucceeded(res)) { markAi(true); return res; }
+      markAi(false);
+      return mockGenerateSpec(prompt);
+    } catch {
+      markAi(false);
+      return mockGenerateSpec(prompt);
+    }
   },
 
   refineSpec: async (conversationHistory: Array<{ role: 'ai' | 'user'; content: string }>, userMessage: string) => {
-    return request('/ai/refine-spec', {
+    if (AI_MODE === 'mock') return mockRefineSpec(conversationHistory, userMessage);
+    const call = () => request('/ai/refine-spec', {
       method: 'POST',
       body: JSON.stringify({ conversationHistory, userMessage }),
     }, 30000);
+    if (AI_MODE === 'live') return call();
+    try {
+      const res: any = await call();
+      if (specSucceeded(res)) { markAi(true); return res; }
+      markAi(false);
+      return mockRefineSpec(conversationHistory, userMessage);
+    } catch {
+      markAi(false);
+      return mockRefineSpec(conversationHistory, userMessage);
+    }
   },
 
   interpretEdit: async (payload: {
@@ -699,6 +760,7 @@ export const ai = {
     attachments: Array<{ type: string; role?: string; url: string; instruction: string; label?: string }> = [],
     options?: { onStatus?: (status: any) => void },
   ) => {
+    if (mockBuilds()) return mockEditGame(draftId, instructions, attachments, options);
     const controller = new AbortController();
     const promise = new Promise<any>(async (resolve, reject) => {
       try {
@@ -733,6 +795,7 @@ export const ai = {
     attachments: any[] = [],
     options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
   ) => {
+    if (mockBuilds()) return mockDreamLabs(prompt, attachments, options);
     const controller = new AbortController();
     let remoteJobId: string | null = null;
 
@@ -746,11 +809,14 @@ export const ai = {
     
     const promise = new Promise(async (resolve, reject) => {
       try {
-        const res = await request('/ai/dream-labs', {
+        // Wish Studio "Create it" runs on the same job pipeline as /dream — the
+        // one that feeds user media attachments to the Kimi CLI maker. (There is
+        // no separate /dream-labs route on the backend; this used to 404.)
+        const res = await request('/ai/dream', {
           method: 'POST',
           body: JSON.stringify({ prompt, attachments }),
           signal: controller.signal,
-        }, 300000); // Allow up to 5 minutes for the initial DreamLabs job handshake
+        }, 300000); // Allow up to 5 minutes for the initial job handshake
 
         if (!res.jobId && res.htmlPreview) {
           resolve(res);
@@ -1023,6 +1089,7 @@ export const ai = {
     return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
   },
   publish: async (draftId: string, title?: string, privacy?: string, html?: string) => {
+    if (mockBuilds()) return mockPublish(draftId, title);
     // Publishing uploads the full game HTML — allow longer than the default.
     return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) }, 60000);
   },
