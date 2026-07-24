@@ -58,6 +58,7 @@ import { useAuthScreen } from "../../App";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { Audio, ResizeMode, Video } from "expo-av";
+import { VideoThumb } from "../components/VideoThumb";
 import { ForgeDefenseGame } from "../components/ForgeDefenseGame";
 import { Avatar } from "../components/Avatar";
 import Svg, {
@@ -525,6 +526,19 @@ const ATTACHMENT_ROLE_OPTIONS: Record<
   ],
 };
 
+// Plain-language one-liner for each role, shown under the chips so the labels
+// aren't a vocabulary test.
+const ROLE_DESCRIPTIONS: Record<AttachmentRole, string> = {
+  hero: "The main character or star object of the game.",
+  background: "Fills the whole screen behind the game.",
+  overlay: "Pops up on top — a meme, sticker, or reaction.",
+  panel: "Shown inside a screen, TV, card, or frame.",
+  prop: "An object the player grabs, uses, or collects.",
+  reference: "Inspiration for the style — not shown directly.",
+  bgm: "Plays as looping background music.",
+  sfx: "Plays as a sound effect at key moments.",
+};
+
 // =============================================
 // STEP INDICATOR COMPONENT (for generation phase)
 // =============================================
@@ -603,9 +617,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     title: string;
   } | null>(null);
   const webviewRef = useRef<WebView>(null);
-  const ideasScrollRefs = useRef<Array<ScrollView | null>>([]);
-  const ideasOffsetRefs = useRef([0, 0, 0]);
-  const ideasContentWidthRefs = useRef([0, 0, 0]);
+  // Template-chip marquee: 3 rows drift horizontally via translateX. Widths are
+  // the measured length of ONE copy of a row (each row is rendered twice), and
+  // the marquee pauses briefly whenever a chip is touched so it holds still.
+  const ideasTx0 = useSharedValue(0);
+  const ideasTx1 = useSharedValue(0);
+  const ideasTx2 = useSharedValue(0);
+  const ideasTx = [ideasTx0, ideasTx1, ideasTx2];
+  const ideasLoopWidths = useRef([0, 0, 0]);
   const ideasPauseUntilRef = useRef(0);
 
   // Game Config Bridge State (Rezona-style)
@@ -656,6 +675,27 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     {},
   );
   const [communityVideos, setCommunityVideos] = useState<any[]>([]);
+  // Community video pagination — the pool is large, so load it a page at a time
+  // and fetch more as the user scrolls. Refs avoid stale closures in loadVideos.
+  const [videosInitialLoading, setVideosInitialLoading] = useState(false);
+  const [videosLoadingMore, setVideosLoadingMore] = useState(false);
+  const videosOffsetRef = useRef(0);
+  const videosHasMoreRef = useRef(true);
+  const videosLoadingRef = useRef(false);
+  const VIDEOS_PAGE_SIZE = 30;
+  // Which video tiles are on screen right now — only those animate (play); the
+  // rest show the static cover, so we never spin up 30 players at once.
+  const [visibleVideoIds, setVisibleVideoIds] = useState<Set<string>>(new Set());
+  const onVideoViewRef = useRef((info: { viewableItems: any[] }) => {
+    setVisibleVideoIds(
+      new Set(
+        info.viewableItems
+          .map((v) => v.item?.id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+  });
+  const videoViewConfigRef = useRef({ itemVisiblePercentThreshold: 60 });
   const [communityAudios, setCommunityAudios] = useState<any[]>([]);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [showPhotosModal, setShowPhotosModal] = useState(false);
@@ -682,6 +722,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [assetIntentRole, setAssetIntentRole] =
     useState<AttachmentRole>("hero");
   const [assetIntentText, setAssetIntentText] = useState("");
+  // Video preview in the asset-intent modal starts muted (autoplay), tap to hear.
+  const [assetPreviewMuted, setAssetPreviewMuted] = useState(true);
+  // The custom-instruction field is collapsed by default — the common path is
+  // just "attach as <role>", so most users never need to type anything.
+  const [assetIntentShowInstruction, setAssetIntentShowInstruction] =
+    useState(false);
+  const assetIntentScrollRef = useRef<ScrollView>(null);
+  const scrollAssetIntentToEnd = () =>
+    setTimeout(
+      () => assetIntentScrollRef.current?.scrollToEnd({ animated: true }),
+      120,
+    );
   const [editingAttachedAssetIndex, setEditingAttachedAssetIndex] = useState<
     number | null
   >(null);
@@ -899,6 +951,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const orbPulse = useSharedValue(1);
   const orbRotation = useSharedValue(0);
   const studioChipData = GENRE_CHIPS;
+  // Each row is duplicated so the translateX marquee can loop seamlessly: when
+  // the first copy has scrolled fully out, we snap back to 0 and the second copy
+  // is already in the same place. The motion is a transform (not a ScrollView
+  // scroll), so it never steals taps from the chips.
   const studioChipRows = chunkIntoRows(studioChipData, 3).map((row) => [
     ...row,
     ...row,
@@ -1706,40 +1762,37 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     fetchDrafts,
   ]);
 
-  useEffect(() => {
-    ideasOffsetRefs.current = [0, 0, 0];
-    ideasContentWidthRefs.current = [0, 0, 0];
-    ideasScrollRefs.current.forEach((ref) =>
-      ref?.scrollTo({ x: 0, animated: false }),
-    );
-  }, []);
-
+  // Drive the chip marquee. Even rows drift left, odd rows drift right; when a
+  // copy scrolls fully out we wrap by exactly one loop width for a seamless join.
   useEffect(() => {
     if (studioTab !== "create" || phase !== "idle") return;
     const interval = setInterval(() => {
       if (Date.now() < ideasPauseUntilRef.current) return;
-      ideasScrollRefs.current.forEach((ref, rowIndex) => {
-        const loopWidth = ideasContentWidthRefs.current[rowIndex] / 2;
-        if (!loopWidth || !ref) return;
-        const direction = rowIndex % 2 === 0 ? 1 : -1;
+      ideasTx.forEach((tx, rowIndex) => {
+        const loopWidth = ideasLoopWidths.current[rowIndex];
+        if (!loopWidth) return;
+        const direction = rowIndex % 2 === 0 ? -1 : 1;
         const speed = rowIndex === 1 ? 0.5 : 0.75;
-        let nextOffset = ideasOffsetRefs.current[rowIndex] + direction * speed;
-
-        if (direction === 1 && nextOffset >= loopWidth) {
-          nextOffset = 0;
-          ref.scrollTo({ x: 0, animated: false });
-        } else if (direction === -1 && nextOffset <= 0) {
-          nextOffset = loopWidth;
-          ref.scrollTo({ x: loopWidth, animated: false });
-        } else {
-          ref.scrollTo({ x: nextOffset, animated: false });
-        }
-
-        ideasOffsetRefs.current[rowIndex] = nextOffset;
+        let next = tx.value + direction * speed;
+        if (next <= -loopWidth) next += loopWidth;
+        else if (next >= 0) next -= loopWidth;
+        tx.value = next;
       });
     }, 24);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studioTab, phase]);
+
+  const ideasRow0Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: ideasTx0.value }],
+  }));
+  const ideasRow1Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: ideasTx1.value }],
+  }));
+  const ideasRow2Style = useAnimatedStyle(() => ({
+    transform: [{ translateX: ideasTx2.value }],
+  }));
+  const ideasRowStyles = [ideasRow0Style, ideasRow1Style, ideasRow2Style];
 
   const animatedOrbStyle = useAnimatedStyle(() => ({
     transform: [
@@ -1756,7 +1809,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       genrePrompts[Math.floor(Math.random() * genrePrompts.length)];
     setPrompt(randomPrompt);
     setErrorMsg(null);
-    ideasPauseUntilRef.current = Date.now() + 1200;
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
@@ -2394,6 +2446,49 @@ Description: ${gameSpec.description}
   ];
 
   // === UGC HANDLERS ===
+  // Paginated loader for the community video pool. `reset` starts from page 0
+  // (fresh open / prefetch); otherwise it appends the next page (infinite scroll).
+  // Falls back gracefully if the backend doesn't paginate (no `hasMore` → one page).
+  const loadVideos = useCallback(async (reset = false) => {
+    if (videosLoadingRef.current) return;
+    if (!reset && !videosHasMoreRef.current) return;
+    videosLoadingRef.current = true;
+    const offset = reset ? 0 : videosOffsetRef.current;
+    if (reset) setVideosInitialLoading(true);
+    else setVideosLoadingMore(true);
+    try {
+      const res = await fetch(
+        `${API_URL}/assets/trending?type=video&limit=${VIDEOS_PAGE_SIZE}&offset=${offset}`,
+      );
+      const data = await res.json();
+      if (data.success && Array.isArray(data.assets)) {
+        setCommunityVideos((prev) =>
+          reset ? data.assets : [...prev, ...data.assets],
+        );
+        // Warm the RN image cache for this page's covers so the tiles paint
+        // instantly instead of downloading each one when they scroll into view.
+        data.assets.forEach((a: any) => {
+          const cover = a.thumbnail || a.thumb;
+          if (cover) Image.prefetch(cover).catch(() => {});
+        });
+        videosOffsetRef.current = offset + data.assets.length;
+        // If the backend omits `hasMore` (old build), assume the one response is
+        // the whole list so we don't loop requesting more.
+        videosHasMoreRef.current =
+          typeof data.hasMore === "boolean"
+            ? data.hasMore
+            : false;
+      }
+    } catch (e) {
+      // Keep whatever we already have; the user can retry by reopening.
+      console.warn("Failed to load videos:", (e as any)?.message || e);
+    } finally {
+      videosLoadingRef.current = false;
+      setVideosInitialLoading(false);
+      setVideosLoadingMore(false);
+    }
+  }, []);
+
   const fetchCommunityAssets = async (type: string) => {
     try {
       const res = await fetch(`${API_URL}/assets/trending?type=${type}`);
@@ -2560,8 +2655,10 @@ Description: ${gameSpec.description}
   );
 
   useEffect(() => {
-    if (showVideosModal) fetchCommunityAssets("video");
-  }, [showVideosModal]);
+    // Load the first page once and keep it — reopens are instant, more pages
+    // stream in on scroll.
+    if (showVideosModal && communityVideos.length === 0) loadVideos(true);
+  }, [showVideosModal, communityVideos.length, loadVideos]);
 
   useEffect(() => {
     if (showAudioModal) fetchCommunityAssets(audioTab);
@@ -2586,6 +2683,13 @@ Description: ${gameSpec.description}
     fetchFreesound("bgm", "");
     fetchFreesound("sfx", "");
   }, []);
+
+  // Warm the community video pool the moment the Create screen is opened (before
+  // the user ever taps the video button), so the picker is already populated —
+  // and retried on each open if an earlier attempt came back empty.
+  useEffect(() => {
+    if (isActive && communityVideos.length === 0) loadVideos(true);
+  }, [isActive, communityVideos.length, loadVideos]);
 
   useEffect(() => {
     if (showPhotosModal) {
@@ -2840,6 +2944,8 @@ Description: ${gameSpec.description}
     setPendingAssetIntent({ ...attachment, role: defaultRole });
     setAssetIntentRole(defaultRole);
     setAssetIntentText("");
+    setAssetPreviewMuted(true);
+    setAssetIntentShowInstruction(false);
     setEditingAttachedAssetIndex(index);
     setShowAssetIntentModal(true);
   };
@@ -3078,6 +3184,11 @@ Description: ${gameSpec.description}
         onClose={() => setStudioOpen(false)}
         initialPrompt={studioPrompt}
         initialAttachments={attachedAssets}
+        onPublished={() => {
+          // Game is live: close the studio and leave Create → back to the Feed.
+          setStudioOpen(false);
+          onClose();
+        }}
       />
 
       <Modal
@@ -3090,33 +3201,47 @@ Description: ${gameSpec.description}
           setEditingAttachedAssetIndex(null);
         }}
       >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.85)",
-            justifyContent: "center",
-            alignItems: "center",
-            padding: 24,
-          }}
-          onPress={() => {
-            setShowAssetIntentModal(false);
-            setPendingAssetIntent(null);
-            setEditingAttachedAssetIndex(null);
-          }}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.85)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 24,
+            }}
+            onPress={() => {
+              setShowAssetIntentModal(false);
+              setPendingAssetIntent(null);
+              setEditingAttachedAssetIndex(null);
+            }}
+          >
           <Animated.View
             entering={FadeInUp.duration(220)}
             style={{
               width: "100%",
               maxWidth: 380,
+              maxHeight: "88%",
               backgroundColor: "#141416",
               borderRadius: 28,
-              padding: 20,
               borderWidth: 1,
               borderColor: "rgba(255,255,255,0.08)",
             }}
             onStartShouldSetResponder={() => true}
+            onResponderRelease={() => Keyboard.dismiss()}
           >
+            <ScrollView
+              ref={assetIntentScrollRef}
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ padding: 20 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
             <Text
               style={{
                 color: "#FFF",
@@ -3137,39 +3262,86 @@ Description: ${gameSpec.description}
                     marginTop: 18,
                   }}
                 >
-                  <View
-                    style={{
-                      width: 64,
-                      height: 64,
-                      borderRadius: 16,
-                      overflow: "hidden",
-                      backgroundColor: "#222",
-                    }}
-                  >
-                    {pendingAssetIntent.type === "bgm" ||
-                    pendingAssetIntent.type === "sfx" ? (
+                  {pendingAssetIntent.type === "video" ? (
+                    // Live, tappable preview — autoplays muted, tap to hear it.
+                    <Pressable
+                      onPress={() => setAssetPreviewMuted((m) => !m)}
+                      style={{
+                        width: 96,
+                        height: 128,
+                        borderRadius: 16,
+                        overflow: "hidden",
+                        backgroundColor: "#000",
+                      }}
+                    >
+                      <Video
+                        source={{ uri: pendingAssetIntent.url }}
+                        style={{ width: "100%", height: "100%" }}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay
+                        isLooping
+                        isMuted={assetPreviewMuted}
+                        useNativeControls={false}
+                      />
                       <View
                         style={{
-                          flex: 1,
+                          position: "absolute",
+                          bottom: 6,
+                          right: 6,
+                          width: 26,
+                          height: 26,
+                          borderRadius: 13,
+                          backgroundColor: "rgba(0,0,0,0.6)",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
                       >
-                        <Ionicons name="musical-notes" size={26} color="#FFF" />
+                        <Ionicons
+                          name={assetPreviewMuted ? "volume-mute" : "volume-high"}
+                          size={14}
+                          color="#FFF"
+                        />
                       </View>
-                    ) : (
-                      <Image
-                        source={{
-                          uri:
-                            pendingAssetIntent.thumb ||
-                            pendingAssetIntent.thumbnail ||
-                            pendingAssetIntent.url,
-                        }}
-                        style={{ width: "100%", height: "100%" }}
-                        resizeMode="cover"
-                      />
-                    )}
-                  </View>
+                    </Pressable>
+                  ) : (
+                    <View
+                      style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 16,
+                        overflow: "hidden",
+                        backgroundColor: "#222",
+                      }}
+                    >
+                      {pendingAssetIntent.type === "bgm" ||
+                      pendingAssetIntent.type === "sfx" ? (
+                        <View
+                          style={{
+                            flex: 1,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Ionicons
+                            name="musical-notes"
+                            size={26}
+                            color="#FFF"
+                          />
+                        </View>
+                      ) : (
+                        <Image
+                          source={{
+                            uri:
+                              pendingAssetIntent.thumb ||
+                              pendingAssetIntent.thumbnail ||
+                              pendingAssetIntent.url,
+                          }}
+                          style={{ width: "100%", height: "100%" }}
+                          resizeMode="cover"
+                        />
+                      )}
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text
                       style={{ color: "#FFF", fontSize: 15, fontWeight: "700" }}
@@ -3243,80 +3415,150 @@ Description: ${gameSpec.description}
 
                 <Text
                   style={{
-                    color: "#FFF",
-                    fontSize: 14,
-                    fontWeight: "700",
-                    marginTop: 20,
-                    marginBottom: 10,
+                    color: "rgba(255,255,255,0.55)",
+                    fontSize: 13,
+                    lineHeight: 18,
+                    marginTop: 10,
                   }}
                 >
-                  Tell the AI what to do with it
+                  {ROLE_DESCRIPTIONS[assetIntentRole]}
                 </Text>
-                <TextInput
-                  value={assetIntentText}
-                  onChangeText={setAssetIntentText}
-                  placeholder="Example: make this the face on the main character, use this as the room background, use this as a meme popup..."
-                  placeholderTextColor="rgba(255,255,255,0.28)"
-                  multiline
-                  style={{
-                    minHeight: 110,
-                    borderRadius: 18,
-                    backgroundColor: "rgba(255,255,255,0.04)",
-                    borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.08)",
-                    paddingHorizontal: 14,
-                    paddingVertical: 14,
-                    color: "#FFF",
-                    textAlignVertical: "top",
-                    fontSize: 14,
-                    lineHeight: 20,
-                  }}
-                />
 
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
+                {assetIntentShowInstruction ? (
+                  <>
+                    <Text
+                      style={{
+                        color: "#FFF",
+                        fontSize: 14,
+                        fontWeight: "700",
+                        marginTop: 20,
+                        marginBottom: 10,
+                      }}
+                    >
+                      Tell the AI what to do with it{" "}
+                      <Text
+                        style={{
+                          color: "rgba(255,255,255,0.4)",
+                          fontWeight: "500",
+                        }}
+                      >
+                        (optional)
+                      </Text>
+                    </Text>
+                    <TextInput
+                      value={assetIntentText}
+                      onChangeText={setAssetIntentText}
+                      autoFocus
+                      onFocus={scrollAssetIntentToEnd}
+                      placeholder="Example: make this the face on the main character, use this as the room background, use this as a meme popup..."
+                      placeholderTextColor="rgba(255,255,255,0.28)"
+                      multiline
+                      style={{
+                        minHeight: 80,
+                        borderRadius: 18,
+                        backgroundColor: "rgba(255,255,255,0.04)",
+                        borderWidth: 1,
+                        borderColor: "rgba(255,255,255,0.08)",
+                        paddingHorizontal: 14,
+                        paddingVertical: 14,
+                        color: "#FFF",
+                        textAlignVertical: "top",
+                        fontSize: 14,
+                        lineHeight: 20,
+                      }}
+                    />
+                  </>
+                ) : (
                   <Pressable
-                    style={{
-                      flex: 1,
-                      paddingVertical: 15,
-                      borderRadius: 18,
-                      backgroundColor: "#555",
-                      alignItems: "center",
-                    }}
                     onPress={() => {
-                      setShowAssetIntentModal(false);
-                      setPendingAssetIntent(null);
-                      setEditingAttachedAssetIndex(null);
+                      setAssetIntentShowInstruction(true);
+                      scrollAssetIntentToEnd();
                     }}
-                  >
-                    <Text
-                      style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
-                    >
-                      Cancel
-                    </Text>
-                  </Pressable>
-                  <Pressable
                     style={{
-                      flex: 1,
-                      paddingVertical: 15,
-                      borderRadius: 18,
-                      backgroundColor: "#a855f7",
+                      flexDirection: "row",
                       alignItems: "center",
+                      gap: 7,
+                      marginTop: 20,
+                      paddingVertical: 4,
                     }}
-                    onPress={handleConfirmAssetIntent}
+                    hitSlop={8}
                   >
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={19}
+                      color="#a855f7"
+                    />
                     <Text
-                      style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
+                      style={{
+                        color: "#a855f7",
+                        fontSize: 14,
+                        fontWeight: "700",
+                      }}
                     >
-                      {activeDraftId && editingAttachedAssetIndex === null
-                        ? "Apply"
-                        : "Attach"}
+                      Add specific instructions
                     </Text>
                   </Pressable>
-                </View>
+                )}
               </>
             )}
+            </ScrollView>
+
+            {/* Buttons pinned below the scroll so they stay above the keyboard. */}
+            {pendingAssetIntent && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 12,
+                  paddingHorizontal: 20,
+                  paddingTop: 14,
+                  paddingBottom: 20,
+                  borderTopWidth: 1,
+                  borderTopColor: "rgba(255,255,255,0.06)",
+                }}
+              >
+                <Pressable
+                  style={{
+                    flex: 1,
+                    paddingVertical: 15,
+                    borderRadius: 18,
+                    backgroundColor: "#555",
+                    alignItems: "center",
+                  }}
+                  onPress={() => {
+                    setShowAssetIntentModal(false);
+                    setPendingAssetIntent(null);
+                    setEditingAttachedAssetIndex(null);
+                  }}
+                >
+                  <Text
+                    style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
+                  >
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={{
+                    flex: 1,
+                    paddingVertical: 15,
+                    borderRadius: 18,
+                    backgroundColor: "#a855f7",
+                    alignItems: "center",
+                  }}
+                  onPress={handleConfirmAssetIntent}
+                >
+                  <Text
+                    style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
+                  >
+                    {activeDraftId && editingAttachedAssetIndex === null
+                      ? "Apply"
+                      : "Attach"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </Animated.View>
-        </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* === MODIFY MODAL === */}
@@ -4063,6 +4305,10 @@ Description: ${gameSpec.description}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 4 }}
               columnWrapperStyle={{ gap: 4, marginBottom: 4 }}
+              onEndReachedThreshold={0.6}
+              onEndReached={() => loadVideos(false)}
+              onViewableItemsChanged={onVideoViewRef.current}
+              viewabilityConfig={videoViewConfigRef.current}
               renderItem={({ item }: any) => {
                 if (item.isUpload) {
                   return (
@@ -4122,19 +4368,36 @@ Description: ${gameSpec.description}
                     onPress={() => setSelectedVideo(item)}
                   >
                     {videoUrl ? (
-                      <Video
-                        source={{ uri: videoUrl }}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          opacity: isSelected ? 0.65 : 1,
-                        }}
-                        resizeMode={ResizeMode.COVER}
-                        shouldPlay
-                        isLooping
-                        isMuted
-                        useNativeControls={false}
-                      />
+                      visibleVideoIds.has(item.id) ? (
+                        // On screen → animate. The cover is the poster, so the
+                        // tile shows the frame instantly and never flashes black.
+                        <Video
+                          source={{ uri: videoUrl }}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            opacity: isSelected ? 0.65 : 1,
+                          }}
+                          resizeMode={ResizeMode.COVER}
+                          shouldPlay
+                          isLooping
+                          isMuted
+                          usePoster
+                          posterSource={
+                            item.thumbnail || item.thumb
+                              ? { uri: item.thumbnail || item.thumb }
+                              : undefined
+                          }
+                          posterStyle={{ resizeMode: "cover" }}
+                          useNativeControls={false}
+                        />
+                      ) : (
+                        <VideoThumb
+                          uri={videoUrl}
+                          poster={item.thumbnail || item.thumb}
+                          dimmed={isSelected}
+                        />
+                      )
                     ) : (
                       <View
                         style={{
@@ -4201,7 +4464,7 @@ Description: ${gameSpec.description}
               }}
               ListFooterComponent={
                 <>
-                  {communityVideos.length === 0 && (
+                  {communityVideos.length === 0 && videosInitialLoading && (
                     <View
                       style={{
                         width: "100%",
@@ -4211,6 +4474,17 @@ Description: ${gameSpec.description}
                       }}
                     >
                       <ActivityIndicator size="large" color="#a855f7" />
+                    </View>
+                  )}
+                  {communityVideos.length > 0 && videosLoadingMore && (
+                    <View
+                      style={{
+                        width: "100%",
+                        paddingVertical: 16,
+                        alignItems: "center",
+                      }}
+                    >
+                      <ActivityIndicator size="small" color="#a855f7" />
                     </View>
                   )}
                   <View style={{ height: 40 }} />
@@ -7099,70 +7373,46 @@ Description: ${gameSpec.description}
               </View>
               <View style={styles.ideasLaneStack}>
                 {studioChipRows.map((row, rowIndex) => (
-                  <ScrollView
+                  <View
                     key={`ideas-row-${rowIndex}`}
-                    ref={(ref) => {
-                      ideasScrollRefs.current[rowIndex] = ref;
-                    }}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    scrollEnabled
-                    scrollEventThrottle={16}
-                    contentContainerStyle={styles.ideasLane}
-                    onTouchStart={() => {
-                      ideasPauseUntilRef.current = Date.now() + 1200;
-                    }}
-                    onScrollBeginDrag={() => {
-                      // Pause the marquee while the user is actively dragging.
-                      ideasPauseUntilRef.current = Date.now() + 3_600_000;
-                    }}
-                    onScroll={(e) => {
-                      // While paused (user-driven), keep the marquee's offset in
-                      // sync so auto-scroll resumes from where the finger left it.
-                      if (Date.now() < ideasPauseUntilRef.current) {
-                        ideasOffsetRefs.current[rowIndex] =
-                          e.nativeEvent.contentOffset.x;
-                      }
-                    }}
-                    onScrollEndDrag={() => {
+                    style={styles.ideasLaneClip}
+                    onStartShouldSetResponderCapture={() => {
+                      // Freeze the marquee the instant a finger lands so the chip
+                      // holds still under the tap.
                       ideasPauseUntilRef.current = Date.now() + 1500;
-                    }}
-                    onMomentumScrollEnd={() => {
-                      ideasPauseUntilRef.current = Date.now() + 1500;
-                    }}
-                    onContentSizeChange={(width) => {
-                      ideasContentWidthRefs.current[rowIndex] = width;
-                      if (rowIndex % 2 === 1) {
-                        const startX = width / 2;
-                        ideasOffsetRefs.current[rowIndex] = startX;
-                        ideasScrollRefs.current[rowIndex]?.scrollTo({
-                          x: startX,
-                          animated: false,
-                        });
-                      }
+                      return false;
                     }}
                   >
-                    {row.map((chip, chipIndex) => (
-                      <Pressable
-                        key={`${chip.label}-${rowIndex}-${chipIndex}`}
-                        style={({ pressed }) => [
-                          styles.ideaPill,
-                          pressed && { transform: [{ scale: 0.96 }] },
-                        ]}
-                        onPressIn={() => {
-                          ideasPauseUntilRef.current = Date.now() + 1200;
-                        }}
-                        onPress={() => handleGenreSelect(chip.prompts)}
-                      >
-                        <Ionicons
-                          name={chip.icon as any}
-                          size={15}
-                          color={chip.iconColor}
-                        />
-                        <Text style={styles.ideaLabel}>{chip.label}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
+                    <Animated.View
+                      style={[styles.ideasLane, ideasRowStyles[rowIndex]]}
+                      onLayout={(e) => {
+                        // Row holds two copies of the chips → one loop = half.
+                        ideasLoopWidths.current[rowIndex] =
+                          e.nativeEvent.layout.width / 2;
+                      }}
+                    >
+                      {row.map((chip, chipIndex) => (
+                        <Pressable
+                          key={`${chip.label}-${rowIndex}-${chipIndex}`}
+                          style={({ pressed }) => [
+                            styles.ideaPill,
+                            pressed && { transform: [{ scale: 0.96 }] },
+                          ]}
+                          onPressIn={() => {
+                            ideasPauseUntilRef.current = Date.now() + 1500;
+                          }}
+                          onPress={() => handleGenreSelect(chip.prompts)}
+                        >
+                          <Ionicons
+                            name={chip.icon as any}
+                            size={15}
+                            color={chip.iconColor}
+                          />
+                          <Text style={styles.ideaLabel}>{chip.label}</Text>
+                        </Pressable>
+                      ))}
+                    </Animated.View>
+                  </View>
                 ))}
               </View>
             </Animated.View>
@@ -8454,14 +8704,21 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 20,
   },
+  ideasLaneClip: {
+    width: "100%",
+    overflow: "hidden",
+  },
   ideasLane: {
-    gap: 12,
-    paddingRight: 20,
+    flexDirection: "row",
+    alignSelf: "flex-start",
   },
   ideaPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
+    // Uniform trailing space on EVERY chip (including each copy's last) so the
+    // duplicated row is perfectly periodic and the marquee loop has no seam.
+    marginRight: 12,
     backgroundColor: "rgba(255,255,255,0.04)",
     paddingHorizontal: 16,
     paddingVertical: 11,

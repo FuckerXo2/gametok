@@ -27,6 +27,14 @@ interface ForgeDefenseGameProps {
   generationProgress?: number | null;
   generationPhase?: string | null;
   generationStatusMessage?: string | null;
+  /**
+   * Embedded mode: render inside a parent card (the studio's Preview pane)
+   * instead of taking over the whole screen. The stage sizes to its container,
+   * and the forge's own chrome (top close/chip + the big Stop/Cook/SPELL bar) is
+   * dropped — the surrounding studio header + tab bar own navigation. A compact
+   * status line replaces the full bottom bar.
+   */
+  embedded?: boolean;
 }
 
 const FRAME_MS = 1000 / 24;
@@ -47,9 +55,12 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
   generationProgress,
   generationPhase,
   generationStatusMessage,
+  embedded = false,
 }) => {
   const insets = useSafeAreaInsets();
   const [frame, setFrame] = useState(0);
+  // Measured size of the parent card when embedded.
+  const [box, setBox] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -59,8 +70,16 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
   }, []);
 
   const bottomBarReserve = 174 + Math.max(insets.bottom, 16);
-  const stageHeight = Math.max(SCREEN_HEIGHT - insets.top - bottomBarReserve - 62, 360);
-  const stageWidth = SCREEN_WIDTH - 16;
+  // Embedded: fit the stage to the measured card, reserving room for the compact
+  // progress panel + status line. Full-screen: size from the window as before.
+  // Embedded stage fills the card edge-to-edge (its own frame is stripped, so no
+  // margin allowance); full-screen keeps the 8px inset it was designed with.
+  const stageWidth = embedded ? box.w || SCREEN_WIDTH : SCREEN_WIDTH - 16;
+  // Embedded: stage fills the card except for the compact status bar below it.
+  // (The title and progress panel float *inside* the stage, so no extra reserve.)
+  const stageHeight = embedded
+    ? Math.max((box.h || SCREEN_HEIGHT) - 60, 240)
+    : Math.max(SCREEN_HEIGHT - insets.top - bottomBarReserve - 62, 360);
   const time = frame / 24;
 
   const warm = labsMode ? '#4CFFB8' : '#FFB45E';
@@ -151,23 +170,35 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
     : fallbackStepChip;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View
+      style={embedded ? styles.embeddedContainer : [styles.container, { paddingTop: insets.top }]}
+      onLayout={
+        embedded
+          ? (e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setBox((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+            }
+          : undefined
+      }
+    >
       <LinearGradient colors={[inkTop, inkMid, inkBottom]} style={StyleSheet.absoluteFillObject} />
 
-      <Animated.View entering={FadeIn.duration(240)} style={styles.header}>
-        <Pressable style={styles.closeBtn} onPressIn={onCancel}>
-          <Ionicons name="close" size={20} color="#FFF" />
-        </Pressable>
-        <View style={[styles.headerChip, labsMode && styles.headerChipLabs]}>
-          <Ionicons name="sparkles" size={14} color={warm} />
-          <Text style={[styles.headerChipText, labsMode && styles.headerChipTextLabs]}>
-            {labsMode ? 'Labs Forge' : 'Dream Forge'}
-          </Text>
-        </View>
-        <View style={{ width: 36 }} />
-      </Animated.View>
+      {!embedded && (
+        <Animated.View entering={FadeIn.duration(240)} style={styles.header}>
+          <Pressable style={styles.closeBtn} onPressIn={onCancel}>
+            <Ionicons name="close" size={20} color="#FFF" />
+          </Pressable>
+          <View style={[styles.headerChip, labsMode && styles.headerChipLabs]}>
+            <Ionicons name="sparkles" size={14} color={warm} />
+            <Text style={[styles.headerChipText, labsMode && styles.headerChipTextLabs]}>
+              {labsMode ? 'Labs Forge' : 'Dream Forge'}
+            </Text>
+          </View>
+          <View style={{ width: 36 }} />
+        </Animated.View>
+      )}
 
-      <View style={[styles.stage, { height: stageHeight }]}>
+      <View style={[styles.stage, embedded && styles.stageEmbedded, { height: stageHeight }]}>
         <LinearGradient
           colors={labsMode ? ['#0E211B', '#0B121A'] : ['#111B30', '#0B111C']}
           start={{ x: 0, y: 0 }}
@@ -425,49 +456,86 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
         </View>
       </View>
 
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <View style={styles.statusRow}>
-          <View style={styles.statusDot}>
-            <View style={[styles.statusPulse, { shadowColor: warm }]} />
-            <ActivityIndicator size="small" color={warm} />
-          </View>
-          <View style={styles.statusTextCol}>
-            <Text style={styles.statusHeadline} numberOfLines={1}>
-              {cookingStatusLines[activeStep % cookingStatusLines.length]}
+      {embedded ? (
+        // Compact status inside the card — the studio's tab bar handles "cook in
+        // background" (flip to Wish) and back navigation, so no big action bar.
+        errorMessage ? (
+          <View style={styles.embeddedBar}>
+            <Text style={styles.embeddedErrorText} numberOfLines={2}>
+              {errorMessage}
             </Text>
-            <Text style={styles.statusMeta} numberOfLines={1}>
-              {generationStatusMessage || generationSteps[activeStep]?.text || 'Finishing up...'}
+            <Pressable
+              style={({ pressed }) => [styles.embeddedRetryBtn, pressed && styles.pressedBtn]}
+              onPressIn={onRetry}
+            >
+              <Ionicons name="refresh" size={15} color="#000" />
+              <Text style={styles.embeddedRetryText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.embeddedBar}>
+            <View style={styles.statusDot}>
+              <View style={[styles.statusPulse, { shadowColor: warm }]} />
+              <ActivityIndicator size="small" color={warm} />
+            </View>
+            <View style={styles.statusTextCol}>
+              <Text style={styles.statusHeadline} numberOfLines={1}>
+                {cookingStatusLines[activeStep % cookingStatusLines.length]}
+              </Text>
+              <Text style={styles.statusMeta} numberOfLines={1}>
+                {generationStatusMessage || generationSteps[activeStep]?.text || 'Finishing up...'}
+              </Text>
+            </View>
+            <Pressable hitSlop={8} onPressIn={onCancel}>
+              <Text style={styles.embeddedStopText}>Stop</Text>
+            </Pressable>
+          </View>
+        )
+      ) : (
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.statusRow}>
+            <View style={styles.statusDot}>
+              <View style={[styles.statusPulse, { shadowColor: warm }]} />
+              <ActivityIndicator size="small" color={warm} />
+            </View>
+            <View style={styles.statusTextCol}>
+              <Text style={styles.statusHeadline} numberOfLines={1}>
+                {cookingStatusLines[activeStep % cookingStatusLines.length]}
+              </Text>
+              <Text style={styles.statusMeta} numberOfLines={1}>
+                {generationStatusMessage || generationSteps[activeStep]?.text || 'Finishing up...'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.promptPill}>
+            <Text style={styles.promptLabel}>SPELL</Text>
+            <Text style={styles.promptEmoji}>{STATUS_EMOJIS[activeStep % STATUS_EMOJIS.length]}</Text>
+            <Text style={styles.promptText} numberOfLines={1}>
+              {prompt.length > 58 ? `${prompt.slice(0, 58)}...` : prompt}
             </Text>
           </View>
-        </View>
 
-        <View style={styles.promptPill}>
-          <Text style={styles.promptLabel}>SPELL</Text>
-          <Text style={styles.promptEmoji}>{STATUS_EMOJIS[activeStep % STATUS_EMOJIS.length]}</Text>
-          <Text style={styles.promptText} numberOfLines={1}>
-            {prompt.length > 58 ? `${prompt.slice(0, 58)}...` : prompt}
-          </Text>
-        </View>
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={({ pressed }) => [styles.cancelActionBtn, pressed && styles.pressedBtn]}
+              onPressIn={onCancel}
+            >
+              <Ionicons name="stop-circle-outline" size={16} color="#FF7B7B" />
+              <Text style={styles.cancelText}>Stop</Text>
+            </Pressable>
 
-        <View style={styles.actionsRow}>
-          <Pressable
-            style={({ pressed }) => [styles.cancelActionBtn, pressed && styles.pressedBtn]}
-            onPressIn={onCancel}
-          >
-            <Ionicons name="stop-circle-outline" size={16} color="#FF7B7B" />
-            <Text style={styles.cancelText}>Stop</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [styles.minimizeBtn, pressed && styles.pressedBtn]}
-            onPressIn={onMinimize}
-          >
-            <Ionicons name="flame" size={16} color="#000" />
-            <Text style={styles.minimizeText}>Cook in background</Text>
-            <Ionicons name="chevron-down" size={14} color="#666" />
-          </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.minimizeBtn, pressed && styles.pressedBtn]}
+              onPressIn={onMinimize}
+            >
+              <Ionicons name="flame" size={16} color="#000" />
+              <Text style={styles.minimizeText}>Cook in background</Text>
+              <Ionicons name="chevron-down" size={14} color="#666" />
+            </Pressable>
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 };
@@ -477,6 +545,52 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#08101B',
     zIndex: 99999,
+  },
+  embeddedContainer: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  // Strip the stage's own frame when embedded — the parent forge card already
+  // supplies the border/radius, so the nested one just read as a double edge.
+  stageEmbedded: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    borderRadius: 0,
+    borderWidth: 0,
+    shadowOpacity: 0,
+  },
+  embeddedBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  embeddedStopText: {
+    color: '#FF7B7B',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  embeddedErrorText: {
+    flex: 1,
+    color: '#FFB4B4',
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  embeddedRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  embeddedRetryText: {
+    color: '#000',
+    fontSize: 13,
+    fontWeight: '700',
   },
   header: {
     flexDirection: 'row',

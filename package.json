@@ -37,6 +37,7 @@
     "expo-sharing": "^13.1.5",
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~2.2.3",
+    "expo-video-thumbnails": "~10.0.8",
     "expo-web-browser": "~14.1.6",
     "lucide-react-native": "^1.14.0",
     "react": "^19.1.0",
