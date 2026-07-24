@@ -1053,13 +1053,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: HORIZ_PAD,
     marginBottom: 12,
   },
-  sectionTitle: {
-    color: TEXT,
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    marginBottom: 12,
-  },
   sectionTitleInset: {
     paddingHorizontal: HORIZ_PAD,
   },
