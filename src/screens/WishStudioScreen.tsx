@@ -23,7 +23,6 @@ import { palette, spacing, radii, type as t } from '../theme/tokens';
 import { WishConversation } from '../components/wish/WishConversation';
 import { PreviewPane } from '../components/wish/PreviewPane';
 import { StudioTabBar } from '../components/wish/StudioTabBar';
-import { PublishSheet, type Privacy } from '../components/wish/PublishSheet';
 import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
 import { briefToPrompt } from '../services/planner';
 import { ai } from '../services/api';
@@ -36,8 +35,17 @@ interface Props {
   initialPrompt: string;
   /** Images/Videos/Sounds/BGM they attached for the game to use. */
   initialAttachments?: any[];
-  /** Fired after a successful publish — parent closes the studio and lands on the Feed. */
-  onPublished?: () => void;
+  /**
+   * Hand the finished game to Dream Forge's Publish Game screen (the original
+   * one: live preview + privacy settings + Post Game). The studio closes and the
+   * parent takes over from there.
+   */
+  onRequestPublish?: (game: {
+    draftId: string;
+    html: string | null;
+    gameUrl: string | null;
+    title: string;
+  }) => void;
 }
 
 // Forge scene copy — same voice as Dream Forge's build screen.
@@ -57,7 +65,7 @@ const COOKING_STATUS_LINES = [
 let idCounter = 0;
 const nextId = () => `w${++idCounter}`;
 
-export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttachments = [], onPublished }: Props) => {
+export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttachments = [], onRequestPublish }: Props) => {
   const [tab, setTab] = useState<StudioTab>('wish');
   const [phase, setPhase] = useState<StudioPhase>('planning');
   const [messages, setMessages] = useState<WishMessage[]>([]);
@@ -73,9 +81,6 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
   const [genPhase, setGenPhase] = useState<string | null>(null);
   const [genStatusMessage, setGenStatusMessage] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
-  // Publish-to-Feed sheet.
-  const [publishOpen, setPublishOpen] = useState(false);
-  const [publishing, setPublishing] = useState(false);
 
   const briefRef = useRef<GameBrief | null>(null);
   const refinementsRef = useRef<string[]>([]);
@@ -221,8 +226,6 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
     setGenProgress(null);
     setGenPhase(null);
     setGenStatusMessage(null);
-    setPublishOpen(false);
-    setPublishing(false);
 
     const attachNote =
       initialAttachments.length > 0
@@ -321,33 +324,25 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
     }
   }, [handleCreate]);
 
-  // ── Publish: ship the live game to the Feed ────────────────────────────────
+  // ── Publish: hand off to Dream Forge's Publish Game screen ─────────────────
 
-  const handlePublish = useCallback(
-    async (title: string, privacy: Privacy) => {
-      const draftId = draftIdRef.current;
-      if (!draftId) {
-        Alert.alert('Not ready', 'Create the game first, then publish it.');
-        return;
-      }
-      setPublishing(true);
-      try {
-        const res = (await ai.publish(draftId, title, privacy, html || undefined)) as any;
-        if (res?.success) {
-          setPublishing(false);
-          setPublishOpen(false);
-          // Close the studio and land the maker on the Feed where it's now live.
-          onPublished ? onPublished() : onClose();
-        } else {
-          throw new Error(res?.error || 'Publish failed.');
-        }
-      } catch (err: any) {
-        setPublishing(false);
-        Alert.alert('Publish failed', err?.message || 'Something went wrong. Try again.');
-      }
-    },
-    [html, onPublished, onClose],
-  );
+  const handlePublish = useCallback(() => {
+    const draftId = draftIdRef.current;
+    if (!draftId) {
+      Alert.alert('Not ready', 'Create the game first, then publish it.');
+      return;
+    }
+    if (!onRequestPublish) {
+      onClose();
+      return;
+    }
+    onRequestPublish({
+      draftId,
+      html,
+      gameUrl,
+      title: briefRef.current?.name ?? '',
+    });
+  }, [html, gameUrl, onRequestPublish, onClose]);
 
   const handleSend = useCallback(() => {
     const wish = input.trim();
@@ -400,7 +395,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
             </View>
             {canPublish ? (
               <Pressable
-                onPress={() => setPublishOpen(true)}
+                onPress={handlePublish}
                 style={styles.publishPill}
                 hitSlop={6}
               >
@@ -471,14 +466,6 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
             />
           )}
         </SafeAreaView>
-
-        <PublishSheet
-          visible={publishOpen}
-          defaultTitle={gameName ?? 'Your Game'}
-          publishing={publishing}
-          onCancel={() => !publishing && setPublishOpen(false)}
-          onPublish={handlePublish}
-        />
       </View>
     </Modal>
   );

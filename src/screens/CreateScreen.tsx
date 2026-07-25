@@ -3184,10 +3184,15 @@ Description: ${gameSpec.description}
         onClose={() => setStudioOpen(false)}
         initialPrompt={studioPrompt}
         initialAttachments={attachedAssets}
-        onPublished={() => {
-          // Game is live: close the studio and leave Create → back to the Feed.
+        onRequestPublish={({ draftId, html, gameUrl, title }) => {
+          // Hand the studio's finished game to the original Publish Game screen
+          // (live preview + privacy settings + Post Game).
+          setActiveDraftId(draftId);
+          setActiveHtml(html);
+          setActiveGameUrl(gameUrl);
+          if (title) setGameTitle(title);
           setStudioOpen(false);
-          onClose();
+          setPhase("publish");
         }}
       />
 
