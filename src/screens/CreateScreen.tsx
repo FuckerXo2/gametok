@@ -59,6 +59,12 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { Audio, ResizeMode, Video } from "expo-av";
 import { VideoThumb } from "../components/VideoThumb";
+import {
+  palette as pal,
+  spacing as sp,
+  radii as rad,
+  type as typo,
+} from "../theme/tokens";
 import { ForgeDefenseGame } from "../components/ForgeDefenseGame";
 import { Avatar } from "../components/Avatar";
 import Svg, {
@@ -3116,6 +3122,14 @@ Description: ${gameSpec.description}
   };
 
   const [isPublishing, setIsPublishing] = useState(false);
+  // Publish can be reached from the Wish studio or from the draft editor. Back
+  // should return where you came from, not strand you in the other one.
+  const [publishCameFromStudio, setPublishCameFromStudio] = useState(false);
+  // Publish is an overlay, not a phase: swapping phases remounts the whole
+  // tree and would wipe the Wish studio's live session.
+  const [publishOpen, setPublishOpen] = useState(false);
+  // Bumped when returning to the studio to edit, so it opens on the Forge tab.
+  const [studioForgeNonce, setStudioForgeNonce] = useState(0);
 
   const handlePublish = async () => {
     if (!activeDraftId) {
@@ -3176,14 +3190,160 @@ Description: ${gameSpec.description}
     }
   };
 
+  const renderPublishScreen = () => {
+    if (!publishOpen || !(activeHtml || activeGameUrl)) return null;
+    // One exclusive choice — rendered as radio rows, not three separate toggles.
+    const PRIVACY_OPTIONS: Array<{
+      key: string;
+      label: string;
+      sub: string;
+      icon: keyof typeof Ionicons.glyphMap;
+    }> = [
+      { key: "public", label: "Public games", sub: "Anyone can play and remix", icon: "people" },
+      { key: "play_only", label: "Public for play only", sub: "Anyone can play but not remix", icon: "eye" },
+      { key: "private", label: "Only me", sub: "Only visible to me", icon: "lock-closed" },
+    ];
+
+    // Back out of publishing: to the Wish studio if that is where we came from,
+    // otherwise to the draft editor.
+    const leavePublish = () => {
+      setPublishOpen(false);
+      if (publishCameFromStudio) {
+        setPublishCameFromStudio(false);
+        setStudioForgeNonce((n) => n + 1);
+        setStudioOpen(true);
+      }
+    };
+
+    return (
+      <Modal
+        visible
+        animationType="slide"
+        onRequestClose={leavePublish}
+        presentationStyle="fullScreen"
+      >
+      <Animated.View
+        entering={FadeIn.duration(260)}
+        style={[styles.screen, { paddingTop: insets.top }]}
+      >
+        <View style={styles.previewTopBar}>
+          <Pressable style={styles.closeBtn} onPress={leavePublish}>
+            <Ionicons name="chevron-back" size={22} color={pal.text} />
+          </Pressable>
+          <Text style={styles.pubHeaderTitle}>Publish Game</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{ padding: sp.xl, paddingBottom: sp.huge }}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Live game preview. The edit affordance sits BELOW the card so it
+              never covers the game's own HUD. */}
+          <View style={{ alignItems: "center", marginBottom: sp.xxl }}>
+            <View style={styles.pubPreviewCard}>
+              <WebView
+                source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
+                style={{ flex: 1, backgroundColor: pal.black }}
+                scrollEnabled={false}
+                javaScriptEnabled={true}
+                originWhitelist={["*"]}
+                allowsInlineMediaPlayback={true}
+                mediaPlaybackRequiresUserAction={true}
+                setSupportMultipleWindows={false}
+                injectedJavaScript={MUTE_WEBVIEW_JS}
+              />
+            </View>
+            <Pressable style={styles.pubEditBtn} onPress={leavePublish} hitSlop={8}>
+              <Ionicons name="create-outline" size={15} color={pal.purpleSoft} />
+              <Text style={styles.pubEditText}>Edit game</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.pubLabel}>GAME NAME</Text>
+          <TextInput
+            style={styles.pubInput}
+            placeholder="Enter your game's name"
+            placeholderTextColor={pal.textGhost}
+            value={gameTitle}
+            onChangeText={setGameTitle}
+            maxLength={60}
+          />
+
+          <Text style={styles.pubLabel}>PRIVACY</Text>
+          <View style={styles.pubCard}>
+            {PRIVACY_OPTIONS.map((opt, index) => {
+              const active = privacySetting === opt.key;
+              return (
+                <React.Fragment key={opt.key}>
+                  {index > 0 && <View style={styles.pubDivider} />}
+                  <Pressable
+                    style={styles.pubRow}
+                    onPress={() => setPrivacySetting(opt.key as any)}
+                  >
+                    <View style={[styles.pubRowIcon, active && styles.pubRowIconActive]}>
+                      <Ionicons
+                        name={opt.icon}
+                        size={19}
+                        color={active ? pal.purpleSoft : pal.textDim}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pubRowLabel, active && { color: pal.text }]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={styles.pubRowSub}>{opt.sub}</Text>
+                    </View>
+                    <View style={[styles.pubRadio, active && styles.pubRadioActive]}>
+                      {active && <Ionicons name="checkmark" size={14} color={pal.black} />}
+                    </View>
+                  </Pressable>
+                </React.Fragment>
+              );
+            })}
+          </View>
+
+          <Text style={styles.pubTerms}>
+            By creating a game, you agree to GameTok's{" "}
+            <Text style={{ color: pal.purpleSoft }}>Terms</Text>.
+          </Text>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.pubPostBtn,
+              isPublishing && styles.pubPostBtnDisabled,
+              pressed && !isPublishing && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+            ]}
+            onPress={handlePublish}
+            disabled={isPublishing}
+          >
+            {isPublishing ? (
+              <ActivityIndicator size="small" color={pal.text} />
+            ) : (
+              <Ionicons name="rocket" size={18} color={pal.text} />
+            )}
+            <Text style={styles.pubPostText}>
+              {isPublishing ? "Posting..." : "Post Game"}
+            </Text>
+          </Pressable>
+        </ScrollView>
+
+      </Animated.View>
+      </Modal>
+    );
+  };
+
   const renderSharedModals = () => (
     <>
+      {renderPublishScreen()}
       {/* Forge It → the Wish studio: Kimi pitches, user creates, game goes live. */}
       <WishStudioScreen
         visible={studioOpen}
         onClose={() => setStudioOpen(false)}
         initialPrompt={studioPrompt}
         initialAttachments={attachedAssets}
+        focusForgeNonce={studioForgeNonce}
         onRequestPublish={({ draftId, html, gameUrl, title }) => {
           // Hand the studio's finished game to the original Publish Game screen
           // (live preview + privacy settings + Post Game).
@@ -3191,8 +3351,9 @@ Description: ${gameSpec.description}
           setActiveHtml(html);
           setActiveGameUrl(gameUrl);
           if (title) setGameTitle(title);
+          setPublishCameFromStudio(true);
           setStudioOpen(false);
-          setPhase("publish");
+          setPublishOpen(true);
         }}
       />
 
@@ -5368,370 +5529,6 @@ Description: ${gameSpec.description}
   // ======================
   // RENDER: PUBLISH SETTINGS
   // ======================
-  if (phase === "publish" && (activeHtml || activeGameUrl)) {
-    return (
-      <View style={[styles.screen, { paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={styles.previewTopBar}>
-          <Pressable
-            style={styles.closeBtn}
-            onPress={() => setPhase("preview")}
-          >
-            <Ionicons name="chevron-back" size={22} color="#FFF" />
-          </Pressable>
-          <Text style={{ color: "#FFF", fontSize: 17, fontWeight: "700" }}>
-            Publish Game
-          </Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          {/* Game Thumbnail Preview */}
-          <View style={{ alignItems: "center", marginBottom: 28 }}>
-            <View
-              style={{
-                width: 180,
-                height: 240,
-                borderRadius: 20,
-                overflow: "hidden",
-                backgroundColor: "#1E1E1E",
-                shadowColor: "#a855f7",
-                shadowOpacity: 0.3,
-                shadowRadius: 24,
-                shadowOffset: { width: 0, height: 8 },
-              }}
-            >
-              <WebView
-                source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
-                style={{ flex: 1, backgroundColor: "#000" }}
-                scrollEnabled={false}
-                javaScriptEnabled={true}
-                originWhitelist={["*"]}
-                allowsInlineMediaPlayback={true}
-                mediaPlaybackRequiresUserAction={true}
-                setSupportMultipleWindows={false}
-                injectedJavaScript={MUTE_WEBVIEW_JS}
-              />
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 12,
-                  right: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  backgroundColor: "rgba(0,0,0,0.6)",
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  borderRadius: 14,
-                }}
-              >
-                <Text
-                  style={{ color: "#FFF", fontSize: 12, fontWeight: "600" }}
-                >
-                  Edit
-                </Text>
-                <Ionicons
-                  name="create-outline"
-                  size={14}
-                  color="#FFF"
-                  style={{ marginLeft: 4 }}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Game Name */}
-          <Text
-            style={{
-              color: "#FFF",
-              fontSize: 16,
-              fontWeight: "700",
-              marginBottom: 10,
-            }}
-          >
-            Game Name
-          </Text>
-          <View
-            style={{
-              backgroundColor: "#1E1E1E",
-              borderRadius: 16,
-              paddingHorizontal: 16,
-              paddingVertical: 14,
-              marginBottom: 28,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.06)",
-            }}
-          >
-            <TextInput
-              style={{ color: "#FFF", fontSize: 16, fontWeight: "500" }}
-              placeholder="Enter your game's name"
-              placeholderTextColor="#555"
-              value={gameTitle}
-              onChangeText={setGameTitle}
-              maxLength={60}
-            />
-          </View>
-
-          {/* Privacy Settings */}
-          <Text
-            style={{
-              color: "#FFF",
-              fontSize: 16,
-              fontWeight: "700",
-              marginBottom: 12,
-            }}
-          >
-            Privacy Settings
-          </Text>
-          <View
-            style={{
-              backgroundColor: "#1E1E1E",
-              borderRadius: 20,
-              overflow: "hidden",
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.06)",
-            }}
-          >
-            {/* Public games */}
-            <Pressable
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-              }}
-              onPress={() => setPrivacySetting("public")}
-            >
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  backgroundColor: "rgba(52,199,89,0.12)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 14,
-                }}
-              >
-                <Ionicons name="people" size={20} color="#34C759" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{ color: "#FFF", fontSize: 15, fontWeight: "600" }}
-                >
-                  Public games
-                </Text>
-                <Text style={{ color: "#888", fontSize: 13, marginTop: 2 }}>
-                  Anyone can play and remix
-                </Text>
-              </View>
-              <View
-                style={{
-                  width: 50,
-                  height: 30,
-                  borderRadius: 15,
-                  backgroundColor:
-                    privacySetting === "public" ? "#34C759" : "#3A3A3C",
-                  justifyContent: "center",
-                  padding: 2,
-                }}
-              >
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 13,
-                    backgroundColor: "#FFF",
-                    alignSelf:
-                      privacySetting === "public" ? "flex-end" : "flex-start",
-                  }}
-                />
-              </View>
-            </Pressable>
-            <View
-              style={{
-                height: 1,
-                backgroundColor: "rgba(255,255,255,0.05)",
-                marginLeft: 70,
-              }}
-            />
-
-            {/* Public for play only */}
-            <Pressable
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-              }}
-              onPress={() => setPrivacySetting("play_only")}
-            >
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  backgroundColor: "rgba(168,85,247,0.12)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 14,
-                }}
-              >
-                <Ionicons name="eye" size={20} color="#a855f7" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{ color: "#FFF", fontSize: 15, fontWeight: "600" }}
-                >
-                  Public for play only
-                </Text>
-                <Text style={{ color: "#888", fontSize: 13, marginTop: 2 }}>
-                  Anyone can play but not remix
-                </Text>
-              </View>
-              <View
-                style={{
-                  width: 50,
-                  height: 30,
-                  borderRadius: 15,
-                  backgroundColor:
-                    privacySetting === "play_only" ? "#34C759" : "#3A3A3C",
-                  justifyContent: "center",
-                  padding: 2,
-                }}
-              >
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 13,
-                    backgroundColor: "#FFF",
-                    alignSelf:
-                      privacySetting === "play_only"
-                        ? "flex-end"
-                        : "flex-start",
-                  }}
-                />
-              </View>
-            </Pressable>
-            <View
-              style={{
-                height: 1,
-                backgroundColor: "rgba(255,255,255,0.05)",
-                marginLeft: 70,
-              }}
-            />
-
-            {/* Only me */}
-            <Pressable
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-              }}
-              onPress={() => setPrivacySetting("private")}
-            >
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  backgroundColor: "rgba(255,255,255,0.06)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 14,
-                }}
-              >
-                <Ionicons name="lock-closed" size={20} color="#888" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{ color: "#FFF", fontSize: 15, fontWeight: "600" }}
-                >
-                  Only me
-                </Text>
-                <Text style={{ color: "#888", fontSize: 13, marginTop: 2 }}>
-                  Only visible to me
-                </Text>
-              </View>
-              <View
-                style={{
-                  width: 50,
-                  height: 30,
-                  borderRadius: 15,
-                  backgroundColor:
-                    privacySetting === "private" ? "#34C759" : "#3A3A3C",
-                  justifyContent: "center",
-                  padding: 2,
-                }}
-              >
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 13,
-                    backgroundColor: "#FFF",
-                    alignSelf:
-                      privacySetting === "private" ? "flex-end" : "flex-start",
-                  }}
-                />
-              </View>
-            </Pressable>
-          </View>
-
-          {/* Terms text */}
-          <Text
-            style={{
-              color: "#666",
-              fontSize: 13,
-              textAlign: "center",
-              marginTop: 30,
-              marginBottom: 16,
-            }}
-          >
-            By creating a game, you agree to GameTok's{" "}
-            <Text style={{ color: "#a855f7" }}>Terms</Text>.
-          </Text>
-
-          {/* Post Game Button */}
-          <Pressable
-            style={({ pressed }) => [
-              {
-                backgroundColor: isPublishing ? "#666" : colors.primary,
-                paddingVertical: 18,
-                borderRadius: 30,
-                alignItems: "center",
-                flexDirection: "row",
-                justifyContent: "center",
-                gap: 10,
-                shadowColor: colors.primary,
-                shadowOpacity: 0.4,
-                shadowRadius: 12,
-                shadowOffset: { width: 0, height: 4 },
-              },
-              pressed &&
-                !isPublishing && {
-                  opacity: 0.85,
-                  transform: [{ scale: 0.98 }],
-                },
-            ]}
-            onPress={handlePublish}
-            disabled={isPublishing}
-          >
-            {isPublishing && <ActivityIndicator size="small" color="#FFF" />}
-            <Text style={{ color: "#FFF", fontSize: 18, fontWeight: "800" }}>
-              {isPublishing ? "Posting..." : "Post Game"}
-            </Text>
-          </Pressable>
-        </ScrollView>
-      </View>
-    );
-  }
 
   // ======================
   // RENDER: EXIT CONFIRMATION MODAL (rendered on top of any phase)
@@ -5884,7 +5681,7 @@ Description: ${gameSpec.description}
                 styles.previewPublishPill,
                 { backgroundColor: colors.primary },
               ]}
-              onPress={() => setPhase("publish")}
+              onPress={() => setPublishOpen(true)}
             >
               <Text style={{ color: "#FFF", fontSize: 14, fontWeight: "800" }}>
                 Next
@@ -9343,5 +9140,145 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     paddingHorizontal: 4,
     paddingBottom: 8,
+  },
+
+  // ── Publish Game screen (design-token styled) ─────────────────────────────
+  pubHeaderTitle: {
+    color: pal.text,
+    fontSize: typo.size.bodyLg,
+    fontFamily: typo.family.bold,
+    letterSpacing: typo.letter.snug,
+  },
+  pubPreviewCard: {
+    width: 180,
+    height: 240,
+    borderRadius: rad.xl,
+    overflow: "hidden",
+    backgroundColor: pal.ink700,
+    borderWidth: 1,
+    borderColor: pal.line,
+    shadowColor: pal.purple,
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  pubEditBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: sp.md,
+    paddingHorizontal: sp.lg,
+    paddingVertical: sp.sm,
+    borderRadius: rad.pill,
+    backgroundColor: pal.glassWhite,
+  },
+  pubEditText: {
+    color: pal.purpleSoft,
+    fontSize: typo.size.small,
+    fontFamily: typo.family.semibold,
+  },
+  pubLabel: {
+    color: pal.textDim,
+    fontSize: typo.size.micro,
+    fontFamily: typo.family.semibold,
+    letterSpacing: typo.letter.wide,
+    marginBottom: sp.sm,
+  },
+  pubInput: {
+    backgroundColor: pal.ink600,
+    borderRadius: rad.md,
+    borderWidth: 1,
+    borderColor: pal.line,
+    color: pal.text,
+    fontSize: typo.size.bodyLg,
+    fontFamily: typo.family.semibold,
+    paddingHorizontal: sp.lg,
+    paddingVertical: sp.md,
+    marginBottom: sp.xxl,
+  },
+  pubCard: {
+    backgroundColor: pal.ink600,
+    borderRadius: rad.lg,
+    borderWidth: 1,
+    borderColor: pal.line,
+    overflow: "hidden",
+  },
+  pubDivider: {
+    height: 1,
+    backgroundColor: pal.line,
+    marginLeft: 62,
+  },
+  pubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: sp.lg,
+    paddingVertical: sp.lg,
+  },
+  pubRowIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: rad.sm,
+    backgroundColor: pal.glassWhite,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: sp.md,
+  },
+  pubRowIconActive: {
+    backgroundColor: pal.purpleGlow,
+  },
+  pubRowLabel: {
+    color: pal.textMuted,
+    fontSize: typo.size.body,
+    fontFamily: typo.family.semibold,
+  },
+  pubRowSub: {
+    color: pal.textDim,
+    fontSize: typo.size.caption,
+    fontFamily: typo.family.regular,
+    marginTop: 2,
+  },
+  pubRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: pal.lineStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pubRadioActive: {
+    backgroundColor: pal.purple,
+    borderColor: pal.purple,
+  },
+  pubTerms: {
+    color: pal.textGhost,
+    fontSize: typo.size.small,
+    fontFamily: typo.family.regular,
+    textAlign: "center",
+    marginTop: sp.xxxl,
+    marginBottom: sp.lg,
+  },
+  pubPostBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: sp.sm,
+    backgroundColor: pal.purple,
+    borderRadius: rad.pill,
+    paddingVertical: sp.lg,
+    shadowColor: pal.purple,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  pubPostBtnDisabled: {
+    backgroundColor: pal.ink500,
+    shadowOpacity: 0,
+  },
+  pubPostText: {
+    color: pal.text,
+    fontSize: typo.size.bodyLg,
+    fontFamily: typo.family.bold,
+    letterSpacing: typo.letter.snug,
   },
 });

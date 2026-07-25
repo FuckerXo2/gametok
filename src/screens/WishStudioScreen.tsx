@@ -46,6 +46,12 @@ interface Props {
     gameUrl: string | null;
     title: string;
   }) => void;
+  /**
+   * Bump this to reopen the studio on the Forge tab (the conversation), e.g.
+   * when the user taps "Edit game" from the Publish screen — they want to make
+   * a wish, not stare at the game again.
+   */
+  focusForgeNonce?: number;
 }
 
 // Forge scene copy — same voice as Dream Forge's build screen.
@@ -65,7 +71,7 @@ const COOKING_STATUS_LINES = [
 let idCounter = 0;
 const nextId = () => `w${++idCounter}`;
 
-export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttachments = [], onRequestPublish }: Props) => {
+export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttachments = [], onRequestPublish, focusForgeNonce = 0 }: Props) => {
   const [tab, setTab] = useState<StudioTab>('wish');
   const [phase, setPhase] = useState<StudioPhase>('planning');
   const [messages, setMessages] = useState<WishMessage[]>([]);
@@ -234,6 +240,12 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
     setMessages([{ id: nextId(), role: 'user', text: initialPrompt + attachNote }]);
     proposeBrief();
   }, [visible, initialPrompt, initialAttachments.length, proposeBrief]);
+
+  // "Edit game" from the Publish screen reopens the studio to make a wish, so
+  // land on the Forge conversation rather than whatever tab was last open.
+  useEffect(() => {
+    if (focusForgeNonce > 0) setTab('wish');
+  }, [focusForgeNonce]);
 
   // ── Create: the toggle is born, Preview opens on the forge ─────────────────
 
