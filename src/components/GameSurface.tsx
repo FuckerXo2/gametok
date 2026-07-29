@@ -101,7 +101,17 @@ export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
       }
     >
       {!waitingForMeasure && (
-        <WebView ref={ref} {...webViewProps} style={[rotatedStyle ?? styles.webview, style]} />
+        <WebView
+          // Transparent by DEFAULT (callers can still override). Without these the WebView paints
+          // its own opaque white until the document arrives — that is the white flash before a
+          // game appears, and it sits on top of whatever loading UI the host is showing. `opaque`
+          // is the iOS lever, `backgroundColor` the Android one; both are needed.
+          opaque={false}
+          backgroundColor="transparent"
+          ref={ref}
+          {...webViewProps}
+          style={[rotatedStyle ?? styles.webview, style]}
+        />
       )}
     </View>
   );

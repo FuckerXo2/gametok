@@ -1995,6 +1995,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     Object.values(webViewRefs.current).forEach(pauseWebView);
   }, [pauseWebView]);
 
+  // Silence a game WITHOUT tearing it down: pause its loop, stop and detach any audio/video, but
+  // leave the WebView mounted so its last rendered frame stays on screen behind the thumbnail.
+  // This is what "the game paused in the background behind the poster" needs — resetWebView below
+  // bumps the React key, which destroys the WebView and restarts the download, leaving nothing to
+  // show. Use this for the thumbnail tap; keep resetWebView for cases where the frame is not
+  // wanted anymore (app backgrounded, leaving the game deck).
+  const suspendWebView = useCallback((itemId?: string | null) => {
+    if (!itemId) return;
+    const webView = webViewRefs.current[itemId];
+    if (!webView) return;
+    pauseWebView(webView);
+    try {
+      webView.injectJavaScript(`
+        try {
+          if (window.__gametokMuteAll) window.__gametokMuteAll();
+          document.querySelectorAll('audio, video').forEach(function(el) {
+            try { el.pause(); } catch(e) {}
+          });
+        } catch(e) {}
+        true;
+      `);
+    } catch {}
+  }, [pauseWebView]);
+
   const resetWebView = useCallback((itemId?: string | null) => {
     if (!itemId) return;
     const webView = webViewRefs.current[itemId];
@@ -2033,15 +2057,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     Object.keys(webViewRefs.current).forEach(resetWebView);
   }, [resetWebView]);
 
-  // Restore thumbnail state when user exits Game Deck by pressing "Home".
-  // This hard-resets the WebViews instead of only injecting pause, because some
-  // games/audio engines keep playing after soft pause.
+  const suspendAllWebViews = useCallback(() => {
+    Object.keys(webViewRefs.current).forEach(suspendWebView);
+  }, [suspendWebView]);
+
+  // Leaving the game deck suspends rather than hard-resets. It used to reset — but this effect
+  // fires on the thumbnail tap too (that handler sets isGameDeckActive false), so a hard reset
+  // here destroyed the WebView the tap had just suspended, which is the other half of why no
+  // paused frame ever showed behind the poster.
+  //
+  // The hard reset existed because some games keep audio alive through a soft pause. suspend
+  // still mutes and pauses all media, and the genuinely destructive exits — app backgrounded,
+  // feed unfocused — still call resetAllWebViews below, so a leaking game is still caught there.
   useEffect(() => {
     if (!isGameDeckActive) {
       setInteractedGameId(null);
-      resetAllWebViews();
+      suspendAllWebViews();
     }
-  }, [isGameDeckActive, resetAllWebViews]);
+  }, [isGameDeckActive, suspendAllWebViews]);
 
   // Listen for AppState changes to unlock broken gestures
   useEffect(() => {
@@ -2929,17 +2962,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                 {/* Thumbnail Overlay - always rendered, opacity-controlled to prevent blink on skip */}
                 {item!.game && (
                   <View 
-                    style={[StyleSheet.absoluteFill, { zIndex: 5, justifyContent: 'center', alignItems: 'center', opacity: (item!.game!.id !== interactedGameId || position !== 0) ? 1 : 0 }]} 
+                    // Hold the poster until the game has actually finished loading, not merely
+                    // until it was tapped. `readyGames` was already being tracked (and given a 15s
+                    // safety net) but never read by anything, so the cover art dropped the instant
+                    // you tapped and you stared at an empty WebView until the game painted.
+                    // Deliberately the thumbnail and not explore's GameLoadingScreen: a branded
+                    // loading card has no place mid-scroll in the feed.
+                    style={[StyleSheet.absoluteFill, { zIndex: 5, justifyContent: 'center', alignItems: 'center', opacity: (item!.game!.id !== interactedGameId || position !== 0 || !readyGames.has(item!.id)) ? 1 : 0 }]}
                     pointerEvents={(item!.game!.id !== interactedGameId || position !== 0) ? 'auto' : 'none'}
                     onStartShouldSetResponder={() => (item!.game!.id !== interactedGameId || position !== 0)}
                     onResponderRelease={() => {
                       if (position === 0) {
                         if (item!.game!.id === interactedGameId) {
-                          // Tapping thumbnail while game is playing - reset to show thumbnail
+                          // Tapping the thumbnail while playing SUSPENDS the game — it stays
+                          // mounted and its last frame keeps rendering behind the poster. It used
+                          // to call resetWebView, which bumps the React key and destroys the
+                          // WebView, so the game restarted from the network every time and there
+                          // was nothing behind the thumbnail but the backdrop colour.
                           setInteractedGameId(null);
                           setIsGameDeckActive(false);
-                          // Pause the game
-                          resetWebView(item!.id);
+                          suspendWebView(item!.id);
                         } else {
                           // Tapping thumbnail to start game
                           setInteractedGameId(item!.game!.id);

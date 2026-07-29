@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, View, StyleSheet, Pressable, Text, Animated as RNAnimated } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +22,10 @@ interface BottomNavProps {
   activeTab: TabName;
   onTabPress: (tab: TabName) => void;
 }
+
+// The deck coach tip is onboarding, not chrome: show it for the first few app opens and then stop.
+const DECK_COACH_SHOWS_KEY = '@gametok_deck_coach_shows';
+const DECK_COACH_MAX_SHOWS = 3;
 
 const NAV_WHITE = '#ffffff';
 const BRAND_PURPLE = '#a855f7';
@@ -140,6 +145,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
   const { isGameDeckActive, setIsGameDeckActive, isHudHidden, setIsHudHidden, triggerGameRestart, triggerGameSkip } = useNavigation();
   const [showDeckCoach, setShowDeckCoach] = useState(false);
   const [hasShownDeckCoachThisOpen, setHasShownDeckCoachThisOpen] = useState(false);
+  // How many app opens have shown the deck coach. Persisted, because the tip is only useful while
+  // the controls are unfamiliar — it used to reset on every foreground and so reappeared forever.
+  const deckCoachShowsRef = useRef<number | null>(null);
   const coachOpacity = useRef(new RNAnimated.Value(0)).current;
   const coachScale = useRef(new RNAnimated.Value(0.96)).current;
   const coachGlowOpacity = useSharedValue(0.18);
@@ -161,13 +169,30 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
 
   useEffect(() => {
     if (activeTab !== 'home' || !isGameDeckActive || hasShownDeckCoachThisOpen) return;
-    coachOpacity.stopAnimation();
-    coachScale.stopAnimation();
-    coachOpacity.setValue(0);
-    coachScale.setValue(0.96);
-    coachGlowOpacity.value = 0;
-    setShowDeckCoach(true);
+
+    // Claim this app-open synchronously so the async read below cannot race a second trigger.
     setHasShownDeckCoachThisOpen(true);
+
+    (async () => {
+      let shows = deckCoachShowsRef.current;
+      if (shows === null) {
+        const stored = await AsyncStorage.getItem(DECK_COACH_SHOWS_KEY).catch(() => null);
+        shows = Number(stored) || 0;
+      }
+      if (shows >= DECK_COACH_MAX_SHOWS) {
+        deckCoachShowsRef.current = shows;
+        return;
+      }
+      deckCoachShowsRef.current = shows + 1;
+      AsyncStorage.setItem(DECK_COACH_SHOWS_KEY, String(shows + 1)).catch(() => {});
+
+      coachOpacity.stopAnimation();
+      coachScale.stopAnimation();
+      coachOpacity.setValue(0);
+      coachScale.setValue(0.96);
+      coachGlowOpacity.value = 0;
+      setShowDeckCoach(true);
+    })();
   }, [activeTab, coachGlowOpacity, coachOpacity, coachScale, hasShownDeckCoachThisOpen, isGameDeckActive]);
 
   useEffect(() => {
