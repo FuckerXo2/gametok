@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Animated, TouchableOpacity, Pressable, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, useWindowDimensions, PanResponder, Animated, TouchableOpacity, Pressable, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -25,6 +25,8 @@ import { useSocket } from '../context/SocketContext';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { LoopsAnimations } from '../constants/LoopsAnimations';
+import { isLandscape, type Orientation } from '../constants/orientation';
+import { GameSurface } from '../components/GameSurface';
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -55,6 +57,11 @@ interface Game {
   creatorVerified?: boolean;
   creatorAvatar?: string | null;
   remixedFrom?: string | null;
+  /**
+   * 'portrait' (default) or 'landscape'. A landscape game is played by rotating the WebView's
+   * content 90° inside this portrait-locked card — the device never rotates, the player does.
+   */
+  orientation?: Orientation | null;
 }
 
 // Feed contains games
@@ -511,7 +518,9 @@ true;
 // 1. Native gesture zones handle the actual swipe detection
 // 2. Div blockers with pointer-events:auto could interfere with native touch handling
 // 3. Event listeners just stop propagation within the WebView, letting native handle it
-const EDGE_BLOCK_SCRIPT = `
+// Split out of EDGE_BLOCK_SCRIPT so landscape cards can take this half without the edge-zone
+// blocker below (see EDGE_BLOCK_SCRIPT's note). Nothing here is orientation-dependent.
+const MEDIA_SESSION_GUARD_SCRIPT = `
 (function() {
   // Prevent iOS Now Playing widget
   if (navigator.mediaSession) {
@@ -521,7 +530,17 @@ const EDGE_BLOCK_SCRIPT = `
     navigator.mediaSession.playbackState = 'none';
   }
   try { Object.defineProperty(navigator, 'mediaSession', { get: function() { return { metadata: null, setActionHandler: function(){}, playbackState: 'none', setPositionState: function(){} }; }, configurable: true }); } catch(e) {}
+})();
+true;
+`;
 
+// PORTRAIT ONLY. This blocks touches in the top 15% of the *content*, to complement a native
+// gesture band measured in device coordinates. On a rotated landscape card those two bands are
+// perpendicular — content-top is the user's left — so the blocker would silently eat touches down
+// one whole edge of the screen, which is exactly where a landscape HUD lives, while protecting
+// nothing. (The native band it pairs with is already inert: TOP_ZONE_HEIGHT is 0.)
+const EDGE_BLOCK_SCRIPT = `
+(function() {
   if (window._edgeBlockActive) return;
   window._edgeBlockActive = true;
   
@@ -632,10 +651,23 @@ const createCloudSaveScript = (gameId: string, initialData: Record<string, strin
 true;
 `;
 
-const HUD_INTERACTION_BRIDGE_SCRIPT = `
+/**
+ * Tells native when the player touched the game (hide chrome) and when they made a feed-swipe
+ * gesture inside it (bring chrome back).
+ *
+ * The swipe test MUST match the orientation. These deltas are content-frame `clientX/clientY`,
+ * but the feed pages on device-Y — and on a rotated landscape card, device-Y *is* content-X.
+ * Getting this wrong is not cosmetic: `fullScreenPanResponder` is stripped the moment the player
+ * interacts with a game (see the WebView's gesture wrapper) and `edgePanResponder` is inert
+ * (TOP_ZONE_HEIGHT is 0), so this message is the only thing that restores the chrome. If it never
+ * fires, the player is trapped in the game with no way back to the feed.
+ */
+const buildHudInteractionBridgeScript = (orientation: Orientation) => `
 (function() {
   if (window._hudInteractionBridgeActive) return;
   window._hudInteractionBridgeActive = true;
+  // The content axis that corresponds to the feed's paging direction.
+  var SWIPE_AXIS = ${JSON.stringify(isLandscape(orientation) ? 'x' : 'y')};
 
   let lastHudPing = 0;
   let lastInteractionPing = 0;
@@ -670,7 +702,10 @@ const HUD_INTERACTION_BRIDGE_SCRIPT = `
     if (!point || swipeStartY == null || swipeStartX == null) return;
     const dy = point.clientY - swipeStartY;
     const dx = point.clientX - swipeStartX;
-    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx)) {
+    // along = movement on the feed's paging axis, across = the perpendicular one.
+    const along = SWIPE_AXIS === 'x' ? dx : dy;
+    const across = SWIPE_AXIS === 'x' ? dy : dx;
+    if (Math.abs(along) > 18 && Math.abs(along) > Math.abs(across)) {
       notifyInteraction('USER_SWIPE_INTENT');
     }
   };
@@ -1327,9 +1362,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [webViewResetKeys, setWebViewResetKeys] = useState<Record<string, number>>({});
   const followSuccessTimeouts = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  const isGameDeckActiveRef = useRef(isGameDeckActive);
   useEffect(() => {
-    setIsGameDeckActive(false);
-  }, [currentIndex, setIsGameDeckActive]);
+    isGameDeckActiveRef.current = isGameDeckActive;
+  }, [isGameDeckActive]);
+
+  const interactedGameIdRef = useRef(interactedGameId);
+  useEffect(() => {
+    interactedGameIdRef.current = interactedGameId;
+  }, [interactedGameId]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -1680,6 +1721,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   };
 
   // Keep the playable surface inside the phone chrome boundaries.
+  // SCREEN_WIDTH/SCREEN_HEIGHT above are captured once at module load, which is fine on a
+  // portrait-locked phone. iPad is NOT locked (see ios/GameTOK/Info.plist), so read the live
+  // window too — the landscape-rotation decision below depends on the window's true shape.
+  const windowDims = useWindowDimensions();
+  const windowIsPortrait = windowDims.height >= windowDims.width;
   const contentHeight = SCREEN_HEIGHT - insets.top - TAB_BAR_HEIGHT - insets.bottom;
   const contentHeightRef = useRef(contentHeight);
   
@@ -2091,18 +2137,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         }
       });
 
-      // When swiping to a new game, reset interaction state to show thumbnail
-      setIsGameDeckActive(false);
-      setInteractedGameId(null);
+      // If user was actively playing in game deck mode, seamlessly transition to the next game in deck mode
+      const wasInGameDeck = isGameDeckActiveRef.current || interactedGameIdRef.current !== null;
 
-      // Pause the current game initially - it will resume when user taps thumbnail
-      if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
-        resetWebView(currItem.id);
+      if (wasInGameDeck && currItem?.game?.id) {
+        setInteractedGameId(currItem.game.id);
+        setIsGameDeckActive(true);
+        if (webViewRefs.current[currItem.id]) {
+          resumeWebView(webViewRefs.current[currItem.id]);
+        }
+      } else {
+        // When browsing feed thumbnails, reset interaction state
+        setIsGameDeckActive(false);
+        setInteractedGameId(null);
+        if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
+          resetWebView(currItem.id);
+        }
       }
 
       prevIndexRef.current = currIdx;
     }
-  }, [currentIndex, feed, isFocused, resetWebView, setIsGameDeckActive]);
+  }, [currentIndex, feed, isFocused, resetWebView, resumeWebView, setIsGameDeckActive]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
@@ -2723,11 +2778,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   const renderedItems = isFocused ? visibleItems : [];
 
+  // The card box is known up front, so hand it to GameSurface rather than making it measure —
+  // that way a landscape game is already rotated on its first paint. The rotation itself (and the
+  // reasoning behind it) lives in GameSurface, shared with explore.
+  const cardBox = { width: windowDims.width, height: contentHeight };
+
   return (
     <View style={styles.container}>
       <View style={{ flex: 1 }}>
       <View style={[styles.gameViewport, { top: insets.top, height: contentHeight }]}>
-        {renderedItems.map(({ item, position }) => (
+        {renderedItems.map(({ item, position }) => {
+          // Rotate only when the card box is actually portrait. On an iPad already held in
+          // landscape the window IS the right shape, so a landscape game plays unrotated — and
+          // rotating it there would turn it back into a portrait letterbox.
+          const cardIsLandscape = isLandscape(item!.game!.orientation) && windowIsPortrait;
+          return (
           <Animated.View
             key={item!.id}
             style={[
@@ -2744,8 +2809,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           {/* Game screen - conditionally allows swipe only if not interacted */}
           <Animated.View {...((item!.game!.id !== interactedGameId || position !== 0) ? fullScreenPanResponder.panHandlers : {})} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
               <Animated.View style={{ flex: 1 }}>
-                <WebView
+                <GameSurface
                   key={`${item!.id}-webview-${webViewResetKeys[item!.id] || 0}`}
+                  orientation={cardIsLandscape ? 'landscape' : 'portrait'}
+                  box={cardBox}
                   ref={(ref) => {
                     if (ref) {
                       webViewRefs.current[item!.id] = ref;
@@ -2754,7 +2821,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     }
                   }}
                   source={{ uri: getGameUrl(item!.game!) }}
-                  style={styles.webview} // Already has backgroundColor: 'transparent'
                   opaque={false} // Crucial for iOS transparent background
                   backgroundColor="transparent" // Crucial for Android transparent background
                   javaScriptEnabled
@@ -2769,7 +2835,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   nestedScrollEnabled={false}
                   thirdPartyCookiesEnabled={false}
                   sharedCookiesEnabled={false}
-                  injectedJavaScriptBeforeContentLoaded={GAME_AUDIO_GUARD_SCRIPT + EDGE_BLOCK_SCRIPT + HUD_INTERACTION_BRIDGE_SCRIPT}
+                  injectedJavaScriptBeforeContentLoaded={
+                    GAME_AUDIO_GUARD_SCRIPT
+                    + MEDIA_SESSION_GUARD_SCRIPT
+                    // The edge-zone blocker is portrait-only — see EDGE_BLOCK_SCRIPT.
+                    + (cardIsLandscape ? '' : EDGE_BLOCK_SCRIPT)
+                    + buildHudInteractionBridgeScript(cardIsLandscape ? 'landscape' : 'portrait')
+                  }
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
@@ -2878,7 +2950,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       }
                     }}
                   >
-                    {/* The crisp thumbnail card floating on top */}
+                    {/* The crisp thumbnail card floating on top. Deliberately NOT rotated for
+                        landscape games: this overlay is only ever shown in the browse state (the
+                        tap handler above resets the WebView rather than pausing it), and browsing
+                        happens with the phone upright. Only the game itself rotates — sideways
+                        content is its own instruction to turn the phone. */}
                     <View style={styles.thumbnailCardContainer}>
                       <View style={styles.thumbnailCardInner}>
                         <Image 
@@ -2886,10 +2962,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                           style={styles.thumbnailCardImage} 
                         />
                         <View style={styles.thumbnailCardPlayPill}>
-                          <Ionicons 
-                            name={item!.game!.id === interactedGameId && position === 0 ? "reload-circle" : "play"} 
-                            size={12} 
-                            color="#fff" 
+                          <Ionicons
+                            name={item!.game!.id === interactedGameId && position === 0 ? "reload-circle" : "play"}
+                            size={12}
+                            color="#fff"
                           />
                         </View>
                       </View>
@@ -2897,7 +2973,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   </View>
                 )}
 
-                {/* TikTok-style action buttons - right side - animated slide */}
+                {/* TikTok-style action buttons - right side - animated slide.
+                    Hidden on landscape cards: this rail is positioned with portrait-relative
+                    safe-area insets, so rotating it would land it on the wrong physical edge, and
+                    leaving it un-rotated would print it sideways across the game. Like/comment/
+                    remix stay reachable from the (rotated) pause overlay above. */}
+                {!cardIsLandscape && (
                   <Animated.View style={[styles.actionButtons, { bottom: 64, transform: [{ translateY: actionButtonsTranslateY }], opacity: actionButtonsTranslateY.interpolate({ inputRange: [0, 120], outputRange: [1, 0] }) }]}>
                     <AnimatedLikeButton
                       isLiked={likedGames.has(item!.game!.id)}
@@ -2938,8 +3019,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       <Text style={styles.actionCount}>Remix</Text>
                     </TouchableOpacity>
                   </Animated.View>
+                )}
 
-                {/* Game info - bottom left (V2 mockup-faithful) - animated fade */}
+                {/* Game info - bottom left (V2 mockup-faithful) - animated fade.
+                    Hidden on landscape cards for the same inset reason as the action rail. */}
+                {!cardIsLandscape && (
                   <Animated.View style={[styles.gameInfo, { opacity: overlayInfoOpacity }]} pointerEvents="box-none">
                     <View style={styles.gameTitleRow}>
                       <Text style={styles.gameName} numberOfLines={2}>
@@ -3009,9 +3093,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       </View>
                     )}
                   </Animated.View>
+                )}
             </Animated.View>
           </Animated.View>
-        ))}
+          );
+        })}
       </View>
 
       {/* V2 Top bar (mockup): gametok / search - animated fade */}
@@ -3268,6 +3354,9 @@ const styles = StyleSheet.create({
     backgroundColor: getFeedBackdropColor(),
   },
   gameContainer: {
+    // Belt-and-braces for Android: the rotation math already lands the WebView exactly on the card
+    // box, but a hardware-layer child under a transform is not reliably clipped without this.
+    overflow: 'hidden',
     position: 'absolute',
     top: 0,
     left: 0,

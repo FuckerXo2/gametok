@@ -16,13 +16,13 @@ import { CustomImage as Image } from './CustomImage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { WebView } from 'react-native-webview';
+import { GamePlayerModal } from './GamePlayerModal';
+import type { Orientation } from '../constants/orientation';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useNavigation } from '../../App';
 import { API_URL, games as gamesApi, users as usersApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
-import { GameLoadingScreen } from './GameLoadingScreen';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 
 const PURPLE = '#a855f7';
@@ -157,6 +157,8 @@ interface ExploreGame {
   name: string;
   description?: string;
   embedUrl?: string;
+  /** 'portrait' (default) or 'landscape' — GameSurface rotates the latter. */
+  orientation?: Orientation | null;
   thumbnail?: string;
   plays?: number;
   likes?: number;
@@ -190,14 +192,6 @@ interface HeroSlide {
 
 const resolveThumbnail = (thumbnail?: string | null, gameId?: string, game?: ExploreGame) => {
   return resolveGameThumbnail(thumbnail, gameId, game);
-};
-
-const getGameUrl = (game: ExploreGame) => {
-  const rawUrl = game.embedUrl
-    ? (game.embedUrl.startsWith('/') ? `${API_ORIGIN}${game.embedUrl}` : game.embedUrl)
-    : `${GAMES_HOST}/${game.id}/`;
-  const separator = rawUrl.includes('?') ? '&' : '?';
-  return `${rawUrl}${separator}gd_sdk_referrer_url=${encodeURIComponent(GAMES_HOST)}`;
 };
 
 const formatCount = (n?: number) => {
@@ -252,8 +246,6 @@ export const ExploreScreen: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState<any>(null);
   const [playingGame, setPlayingGame] = useState<ExploreGame | null>(null);
-  const [gameLoaded, setGameLoaded] = useState(false);
-  const [loadProgress, setLoadProgress] = useState(0); // real WebView progress, 0-100
   const [activeCategoryByTab, setActiveCategoryByTab] = useState<Record<NonForYouTab, string>>({
     Games: 'Recommend',
     Horror: 'Recommend',
@@ -261,7 +253,6 @@ export const ExploreScreen: React.FC = () => {
     Roleplay: 'Recommend',
   });
   const heroScrollRef = useRef<ScrollView>(null);
-  const playerWebViewRef = useRef<WebView>(null);
 
   // Filter games by tab
   const filteredGames = useMemo(() => {
@@ -404,8 +395,6 @@ export const ExploreScreen: React.FC = () => {
 
     if (existingGame) {
       setPlayingGame(existingGame);
-      setGameLoaded(false);
-      setLoadProgress(0);
       gamesApi.recordPlay(existingGame.id).catch(() => {});
       return;
     }
@@ -415,8 +404,6 @@ export const ExploreScreen: React.FC = () => {
       const fetchedGame = data?.game || data;
       if (fetchedGame?.id) {
         setPlayingGame(fetchedGame);
-        setGameLoaded(false);
-        setLoadProgress(0);
         gamesApi.recordPlay(fetchedGame.id).catch(() => {});
       }
     } catch (err) {
@@ -756,64 +743,12 @@ export const ExploreScreen: React.FC = () => {
               </View>
       </Modal>
 
-      {/* Direct game player */}
-      <Modal
-        visible={!!playingGame}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => {
-          setPlayingGame(null);
-          setGameLoaded(false);
-        }}
-      >
-        <View style={[styles.playerRoot, { backgroundColor: playingGame?.color || '#000' }]}>
-          <StatusBar hidden />
-          {playingGame ? (
-            <WebView
-              ref={playerWebViewRef}
-              source={{ uri: getGameUrl(playingGame) }}
-              style={styles.playerWebView}
-              scrollEnabled={false}
-              bounces={false}
-              overScrollMode="never"
-              javaScriptEnabled
-              domStorageEnabled
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              allowsAirPlayForMediaPlayback={false}
-              onLoadProgress={({ nativeEvent }) => {
-                setLoadProgress(Math.round((nativeEvent.progress || 0) * 100));
-              }}
-              onLoadEnd={() => {
-                setLoadProgress(100);
-                setTimeout(() => setGameLoaded(true), 1200);
-              }}
-            />
-          ) : null}
-
-          {!gameLoaded && playingGame ? (
-            <View style={StyleSheet.absoluteFill}>
-              <GameLoadingScreen
-                gameName={playingGame.name}
-                gameThumbnail={resolveThumbnail(playingGame.thumbnail, playingGame.id, playingGame)}
-                creatorName={playingGame.creatorDisplayName || playingGame.creatorUsername}
-                progress={loadProgress}
-              />
-            </View>
-          ) : null}
-
-          <Pressable
-            style={[styles.playerCloseBtn, { top: insets.top + 10 }]}
-            onPress={() => {
-              setPlayingGame(null);
-              setGameLoaded(false);
-            }}
-            hitSlop={8}
-          >
-            <Ionicons name="close" size={24} color="#fff" />
-          </Pressable>
-        </View>
-      </Modal>
+      {/* Direct game player — the shared shell every surface now uses. */}
+      <GamePlayerModal
+        game={playingGame}
+        onClose={() => setPlayingGame(null)}
+        recordPlay={false}
+      />
 
 
 

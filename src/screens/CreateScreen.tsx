@@ -67,6 +67,12 @@ import {
 } from "../theme/tokens";
 import { ForgeDefenseGame } from "../components/ForgeDefenseGame";
 import { Avatar } from "../components/Avatar";
+import {
+  ORIENTATION_OPTIONS,
+  normalizeOrientation,
+  DEFAULT_ORIENTATION,
+  type Orientation,
+} from "../constants/orientation";
 import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
@@ -81,7 +87,9 @@ const GAMETOK_BG = require("../../assets/gametok_bg.png");
 // =============================================
 // TYPES
 // =============================================
-type DreamPhase = "idle" | "refining" | "generating" | "preview" | "publish";
+// No "preview" phase: the finished game lives in the Wish studio's Preview tab,
+// never in a second editor of its own. Publish is an overlay, not a phase.
+type DreamPhase = "idle" | "refining" | "generating";
 type StudioTab = "create" | "drafts";
 
 interface DraftItem {
@@ -89,6 +97,8 @@ interface DraftItem {
   title: string;
   prompt: string;
   thumbnail?: string;
+  /** Snake-case straight off the ai_games row — /ai/drafts returns raw rows. */
+  orientation?: string | null;
   created_at: string;
 }
 
@@ -231,6 +241,8 @@ type PendingDreamJob = {
   jobId: string;
   prompt: string;
   labsMode: boolean;
+  /** Carried so a resumed or retried job rebuilds in the shape the creator chose. */
+  orientation: Orientation;
   savedAt: string;
   status: PendingDreamJobStatus;
   progress: number | null;
@@ -294,6 +306,7 @@ const makePendingDreamJob = (payload: {
   jobId: string;
   prompt?: string;
   labsMode?: boolean;
+  orientation?: Orientation;
   savedAt?: string;
   status?: string;
   progress?: number | null;
@@ -304,6 +317,7 @@ const makePendingDreamJob = (payload: {
   jobId: payload.jobId,
   prompt: payload.prompt || "",
   labsMode: Boolean(payload.labsMode),
+  orientation: normalizeOrientation(payload.orientation),
   savedAt: payload.savedAt || new Date().toISOString(),
   status: normalizePendingDreamStatus(payload.status || "queued"),
   progress:
@@ -621,6 +635,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     gameUrl?: string;
     draftId: string;
     title: string;
+    orientation?: Orientation;
   } | null>(null);
   const webviewRef = useRef<WebView>(null);
   // Template-chip marquee: 3 rows drift horizontally via translateX. Widths are
@@ -661,7 +676,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const [activeStep, setActiveStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [showEditor, setShowEditor] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -722,6 +736,19 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // Wish studio handoff: Forge It opens the studio with this brief.
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioPrompt, setStudioPrompt] = useState("");
+  // Compulsory: no default. Forge It stays disabled until the creator picks a shape, because
+  // orientation cannot be changed after generation — the game is built and verified for one.
+  const [orientation, setOrientation] = useState<Orientation | null>(null);
+  const [studioOrientation, setStudioOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
+  const [isOpeningDraft, setIsOpeningDraft] = useState(false);
+  // ...or with a game that already exists (draft, remix, finished build), in
+  // which case the studio skips planning and opens on Preview.
+  const [studioGame, setStudioGame] = useState<{
+    draftId: string;
+    html: string | null;
+    gameUrl: string | null;
+    title: string;
+  } | null>(null);
   const [showAssetIntentModal, setShowAssetIntentModal] = useState(false);
   const [pendingAssetIntent, setPendingAssetIntent] =
     useState<StructuredAttachment | null>(null);
@@ -1040,23 +1067,61 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     }
   }, [isActive, isAuthenticated, fetchDrafts, MUTE_WEBVIEW_JS]);
 
-  // Load a draft straight into the preview/edit view (used by the drafts list
-  // and by the Remix hand-off from the feed).
-  const openDraftInEditor = useCallback(async (draftId: string) => {
-    try {
-      const res = (await ai.getDraft(draftId)) as any;
-      if (res?.draft?.html_payload || res?.draft?.game_url) {
-        setActiveHtml(res.draft.html_payload || null);
-        setActiveGameUrl(res.draft.game_url || null);
-        setActiveDraftId(res.draft.id);
-        setActiveDraftThumbnail(getDraftThumbnail(res.draft));
-        setGameTitle(res.draft.title || "Untitled Game");
-        setPhase("preview");
+  // Every finished game — a draft, a remix, a build that just landed — opens in
+  // the Wish studio's Preview tab. There is no second editor to send it to.
+  const openGameInStudio = useCallback(
+    (game: {
+      draftId: string;
+      html: string | null;
+      gameUrl: string | null;
+      title: string;
+      orientation?: Orientation | string | null;
+    }) => {
+      setActiveDraftId(game.draftId);
+      setActiveHtml(game.html);
+      setActiveGameUrl(game.gameUrl);
+      setGameTitle(game.title);
+      setErrorMsg(null);
+      setPhase("idle");
+      setStudioPrompt("");
+      // An existing game brings its OWN orientation — the composer's pick is irrelevant here, and
+      // using it would make the studio preview render the game in the wrong box. When the caller
+      // has nothing to say (an edit result reopening the game we're already on), keep what we have
+      // rather than silently falling back to portrait.
+      setStudioOrientation((prev) =>
+        game.orientation != null ? normalizeOrientation(game.orientation) : prev,
+      );
+      setStudioGame(game);
+      setStudioOpen(true);
+    },
+    [],
+  );
+
+  // Load a draft straight into the studio (used by the drafts list and by the
+  // Remix hand-off from the feed).
+  const openDraftInEditor = useCallback(
+    async (draftId: string) => {
+      setIsOpeningDraft(true);
+      try {
+        const res = (await ai.getDraft(draftId)) as any;
+        if (res?.draft?.html_payload || res?.draft?.game_url) {
+          setActiveDraftThumbnail(getDraftThumbnail(res.draft));
+          openGameInStudio({
+            draftId: res.draft.id,
+            html: res.draft.html_payload || null,
+            gameUrl: res.draft.game_url || null,
+            title: res.draft.title || "Untitled Game",
+            orientation: res.draft.orientation,
+          });
+        }
+      } catch (e) {
+        console.error("Failed to open draft:", e);
+      } finally {
+        setIsOpeningDraft(false);
       }
-    } catch (e) {
-      console.error("Failed to open draft:", e);
-    }
-  }, []);
+    },
+    [openGameInStudio],
+  );
 
   // When the feed hands us a freshly-remixed draft, open it for editing.
   useEffect(() => {
@@ -1434,6 +1499,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         gameUrl: status.gameUrl,
         draftId: status.draftId,
         title: status.title || "Untitled Dream",
+        orientation: status.orientation ? normalizeOrientation(status.orientation) : undefined,
       };
     }
   }, [pendingJobId, removePendingDreamJob, writePendingDreamJobs]);
@@ -1451,7 +1517,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   );
 
   const persistPendingDreamJob = useCallback(
-    async (payload: { jobId: string; prompt: string; labsMode: boolean }) => {
+    async (payload: { jobId: string; prompt: string; labsMode: boolean; orientation: Orientation }) => {
       const pendingJob = makePendingDreamJob({
         ...payload,
         status: "queued",
@@ -1556,7 +1622,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
 
   useEffect(() => {
     if (!isActive) return;
-    if (phase === "preview") return;
+    if (studioOpen) return; // a game is already on screen — don't yank it away
     if (phase !== "idle" && phase !== "generating") return;
     if (cancelRef.current) return;
     if (resumingPendingJobRef.current) return;
@@ -1607,12 +1673,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           );
           setGameConfig({});
           setEditableSlots([]);
-          setActiveHtml(res.htmlPreview || null);
-          setActiveGameUrl(res.gameUrl || null);
-          setActiveDraftId(res.draftId);
           setActiveDraftThumbnail(getDraftThumbnail(res));
-          setGameTitle(res.title || "Untitled Dream");
-          setPhase("preview");
+          openGameInStudio({
+            draftId: res.draftId,
+            html: res.htmlPreview || null,
+            gameUrl: res.gameUrl || null,
+            title: res.title || "Untitled Dream",
+            orientation: res.orientation,
+          });
           await fetchDrafts();
         } else {
           const message = res.error || "Generation failed to load preview.";
@@ -1741,7 +1809,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     const timeout = setTimeout(async () => {
       if (phase !== "generating" || !completionDataRef.current) return;
       console.log(
-        "[Watchdog] Force-transitioning to preview — promise chain may be stuck",
+        "[Watchdog] Force-transitioning to the studio — promise chain may be stuck",
       );
       completionDataRef.current = null;
       try {
@@ -1751,12 +1819,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       }
       setGameConfig({});
       setEditableSlots([]);
-      setActiveHtml(data.htmlPreview || null);
-      setActiveGameUrl(data.gameUrl || null);
-      setActiveDraftId(data.draftId);
       setActiveDraftThumbnail(null);
-      setGameTitle(data.title);
-      setPhase("preview");
+      openGameInStudio({
+        draftId: data.draftId,
+        html: data.htmlPreview || null,
+        gameUrl: data.gameUrl || null,
+        title: data.title,
+        orientation: data.orientation,
+      });
       fetchDrafts().catch(() => {});
     }, 1500);
     return () => clearTimeout(timeout);
@@ -1766,6 +1836,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     generationProgress,
     completePendingDreamJob,
     fetchDrafts,
+    openGameInStudio,
   ]);
 
   // Drive the chip marquee. Even rows drift left, odd rows drift right; when a
@@ -1831,10 +1902,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       setGenerationProgress(null);
       setGenerationPhase(null);
       setGenerationStatusMessage(null);
+      // A retry must rebuild in the same shape as the job it replaces, or a landscape build
+      // silently comes back portrait.
+      const retryOrientation = normalizeOrientation(
+        pendingJobs.find((job) => job.jobId === pendingJobId)?.orientation ?? orientation,
+      );
       const retryJob = ai.dream(retryPrompt, [], {
+        orientation: retryOrientation,
         onJobStarted: (jobId: string) => {
           retryJobId = jobId;
-          persistPendingDreamJob({ jobId, prompt: retryPrompt, labsMode });
+          persistPendingDreamJob({ jobId, prompt: retryPrompt, labsMode, orientation: retryOrientation });
         },
         onStatus: (status: any) =>
           applyGenerationStatus({ ...status, jobId: status?.jobId || retryJobId }),
@@ -1855,12 +1932,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           );
           setGameConfig({});
           setEditableSlots([]);
-          setActiveHtml(res.htmlPreview || null);
-          setActiveGameUrl(res.gameUrl || null);
-          setActiveDraftId(res.draftId);
           setActiveDraftThumbnail(getDraftThumbnail(res));
-          setGameTitle(res.title || "Untitled Dream");
-          setPhase("preview");
+          openGameInStudio({
+            draftId: res.draftId,
+            html: res.htmlPreview || null,
+            gameUrl: res.gameUrl || null,
+            title: res.title || "Untitled Dream",
+            orientation: res.orientation,
+          });
           await fetchDrafts();
         }
       } else {
@@ -1987,14 +2066,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           duration,
         }),
       );
+      const dreamOrientation = normalizeOrientation(orientation);
       const onJobStarted = (jobId: string) => {
         dreamJobId = jobId;
-        persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode });
+        persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode, orientation: dreamOrientation });
       };
       const { promise, cancel, cancelRemote } = ai.dream(
         finalPrompt,
         attachments,
         {
+          orientation: dreamOrientation,
           onJobStarted,
           onStatus: (status: any) =>
             applyGenerationStatus({ ...status, jobId: status?.jobId || dreamJobId }),
@@ -2013,12 +2094,13 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         );
         setGameConfig({});
         setEditableSlots([]);
-        setActiveHtml(res.htmlPreview || null);
-        setActiveGameUrl(res.gameUrl || null);
-        setActiveDraftId(res.draftId);
         setActiveDraftThumbnail(getDraftThumbnail(res));
-        setGameTitle(res.title || "Untitled Dream");
-        setPhase("preview");
+        openGameInStudio({
+          draftId: res.draftId,
+          html: res.htmlPreview || null,
+          gameUrl: res.gameUrl || null,
+          title: res.title || "Untitled Dream",
+        });
         await fetchDrafts();
       } else {
         setErrorMsg(res.error || "Generation failed");
@@ -2064,6 +2146,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
+    if (!orientation) {
+      setErrorMsg("Pick a screen shape — portrait or landscape.");
+      return;
+    }
     setErrorMsg(null);
     Keyboard.dismiss();
 
@@ -2072,8 +2158,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     }
 
     // Forge It hands the brief (and any attached assets) to the Wish studio,
-    // where Kimi pitches the game and the user taps "Create it" to build.
+    // where Kimi pitches the game and the user taps "Create it" to build. A new
+    // brief is a new game — drop any game the studio was last opened on.
+    setStudioGame(null);
     setStudioPrompt(finalPrompt);
+    setStudioOrientation(orientation);
     setStudioOpen(true);
     return;
 
@@ -2224,17 +2313,18 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         const res = (await promise) as any;
         cancelRef.current = null;
         if (res.success && (res.htmlPreview || res.gameUrl)) {
-          setActiveHtml(res.htmlPreview || null);
-          setActiveGameUrl(res.gameUrl || null);
-          if (res.draftId) {
-            setActiveDraftId(res.draftId);
-            setActiveDraftThumbnail(getDraftThumbnail(res));
-          } else {
-            setActiveDraftThumbnail(null);
-          }
+          setActiveDraftThumbnail(
+            res.draftId ? getDraftThumbnail(res) : null,
+          );
           setPendingEditRequest(null);
           setEditIntent(null);
-          setPhase("preview");
+          openGameInStudio({
+            draftId: res.draftId || editRequest.draftId,
+            html: res.htmlPreview || null,
+            gameUrl: res.gameUrl || null,
+            title: gameTitle || "Untitled Game",
+            orientation: res.orientation,
+          });
           await fetchDrafts();
         } else {
           throw new Error(res.error || "Failed to modify game.");
@@ -2246,7 +2336,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         setPhase("refining");
       }
     },
-    [fetchDrafts, formatDreamError],
+    [fetchDrafts, formatDreamError, gameTitle, openGameInStudio],
   );
 
   const handleStartBuilding = () => {
@@ -2274,8 +2364,22 @@ Description: ${gameSpec.description}
   };
 
   const handleBackFromRefinement = () => {
-    const shouldReturnToPreview = Boolean(pendingEditRequest && (activeHtml || activeGameUrl));
-    setPhase(shouldReturnToPreview ? "preview" : "idle");
+    // Abandoning an edit returns to the game it was an edit of — which now
+    // lives in the studio — otherwise back to Dream Forge.
+    const editedDraftId = pendingEditRequest?.draftId || activeDraftId;
+    const shouldReturnToPreview = Boolean(
+      pendingEditRequest && editedDraftId && (activeHtml || activeGameUrl),
+    );
+    if (shouldReturnToPreview) {
+      openGameInStudio({
+        draftId: editedDraftId!,
+        html: activeHtml,
+        gameUrl: activeGameUrl,
+        title: gameTitle || "Untitled Game",
+      });
+    } else {
+      setPhase("idle");
+    }
     setPendingEditRequest(null);
     setEditIntent(null);
     setRefinementBrief("");
@@ -2795,7 +2899,6 @@ Description: ${gameSpec.description}
     }
   };
 
-  const handleModify = () => setShowModifyModal(true);
   const handleGeneratePhoto = () => setShowImageModal(true);
   const handleSounds = () => setShowSoundsModal(true);
   const runCreateAction = useCallback(
@@ -3084,6 +3187,7 @@ Description: ${gameSpec.description}
     setGameConfig({});
     setEditableSlots([]);
     setErrorMsg(null);
+    setStudioGame(null);
     setPhase("idle");
   };
 
@@ -3105,13 +3209,10 @@ Description: ${gameSpec.description}
       return;
     }
 
-    // Only confirm when leaving a live preview / test surface.
-    if (phase === "preview" && (activeDraftId || activeHtml || activeGameUrl)) {
-      setShowExitConfirm(actionType);
-    } else {
-      if (actionType === "closeApp") onClose();
-      else handleRegenerate();
-    }
+    // Nothing live to lose here any more — the game itself lives in the studio,
+    // which guards its own exit.
+    if (actionType === "closeApp") onClose();
+    else handleRegenerate();
   };
 
   const handleConfirmExit = () => {
@@ -3128,8 +3229,9 @@ Description: ${gameSpec.description}
   // Publish is an overlay, not a phase: swapping phases remounts the whole
   // tree and would wipe the Wish studio's live session.
   const [publishOpen, setPublishOpen] = useState(false);
-  // Bumped when returning to the studio to edit, so it opens on the Forge tab.
-  const [studioForgeNonce, setStudioForgeNonce] = useState(0);
+  // Bumped when returning to the studio, carrying the tab to land on.
+  const [studioReopenNonce, setStudioReopenNonce] = useState(0);
+  const [studioReopenTab, setStudioReopenTab] = useState<"wish" | "preview">("preview");
 
   const handlePublish = async () => {
     if (!activeDraftId) {
@@ -3158,6 +3260,12 @@ Description: ${gameSpec.description}
           {
             text: "Let's Go",
             onPress: () => {
+              // The game shipped — tear down the whole create stack (Publish,
+              // the studio behind it, then Dream Forge) so "Let's Go" lands on
+              // the feed instead of the studio it was launched from.
+              setPublishOpen(false);
+              setPublishCameFromStudio(false);
+              setStudioOpen(false);
               handleRegenerate();
               onClose();
             },
@@ -3180,15 +3288,6 @@ Description: ${gameSpec.description}
     }
   };
 
-  const handleBack = () => {
-    if (phase === "preview") {
-      handleRegenerate();
-    } else if (phase === "generating") {
-      handleCancel();
-    } else {
-      onClose();
-    }
-  };
 
   const renderPublishScreen = () => {
     if (!publishOpen || !(activeHtml || activeGameUrl)) return null;
@@ -3204,14 +3303,16 @@ Description: ${gameSpec.description}
       { key: "private", label: "Only me", sub: "Only visible to me", icon: "lock-closed" },
     ];
 
-    // Back out of publishing: to the Wish studio if that is where we came from,
-    // otherwise to the draft editor.
-    const leavePublish = () => {
+    // Back out of publishing. The studio never closed — it is sitting right
+    // behind this modal — so this is a single slide down onto it. Backing out
+    // lands on the game preview; only "Edit game" asks for the conversation.
+    // (publishCameFromStudio stays set: flipping it would move this modal's
+    // mount point mid-dismiss and eat the animation.)
+    const leavePublish = (target: "wish" | "preview" = "preview") => {
       setPublishOpen(false);
       if (publishCameFromStudio) {
-        setPublishCameFromStudio(false);
-        setStudioForgeNonce((n) => n + 1);
-        setStudioOpen(true);
+        setStudioReopenTab(target);
+        setStudioReopenNonce((n) => n + 1);
       }
     };
 
@@ -3219,7 +3320,7 @@ Description: ${gameSpec.description}
       <Modal
         visible
         animationType="slide"
-        onRequestClose={leavePublish}
+        onRequestClose={() => leavePublish("preview")}
         presentationStyle="fullScreen"
       >
       <Animated.View
@@ -3227,7 +3328,7 @@ Description: ${gameSpec.description}
         style={[styles.screen, { paddingTop: insets.top }]}
       >
         <View style={styles.previewTopBar}>
-          <Pressable style={styles.closeBtn} onPress={leavePublish}>
+          <Pressable style={styles.closeBtn} onPress={() => leavePublish("preview")}>
             <Ionicons name="chevron-back" size={22} color={pal.text} />
           </Pressable>
           <Text style={styles.pubHeaderTitle}>Publish Game</Text>
@@ -3242,7 +3343,12 @@ Description: ${gameSpec.description}
           {/* Live game preview. The edit affordance sits BELOW the card so it
               never covers the game's own HUD. */}
           <View style={{ alignItems: "center", marginBottom: sp.xxl }}>
-            <View style={styles.pubPreviewCard}>
+            <View
+              style={[
+                styles.pubPreviewCard,
+                studioOrientation === "landscape" && styles.pubPreviewCardLandscape,
+              ]}
+            >
               <WebView
                 source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
                 style={{ flex: 1, backgroundColor: pal.black }}
@@ -3255,7 +3361,7 @@ Description: ${gameSpec.description}
                 injectedJavaScript={MUTE_WEBVIEW_JS}
               />
             </View>
-            <Pressable style={styles.pubEditBtn} onPress={leavePublish} hitSlop={8}>
+            <Pressable style={styles.pubEditBtn} onPress={() => leavePublish("wish")} hitSlop={8}>
               <Ionicons name="create-outline" size={15} color={pal.purpleSoft} />
               <Text style={styles.pubEditText}>Edit game</Text>
             </Pressable>
@@ -3336,26 +3442,34 @@ Description: ${gameSpec.description}
 
   const renderSharedModals = () => (
     <>
-      {renderPublishScreen()}
+      {/* Reached from the draft editor: Publish presents over the preview. */}
+      {!publishCameFromStudio && renderPublishScreen()}
       {/* Forge It → the Wish studio: Kimi pitches, user creates, game goes live. */}
       <WishStudioScreen
         visible={studioOpen}
         onClose={() => setStudioOpen(false)}
         initialPrompt={studioPrompt}
+        initialGame={studioGame}
         initialAttachments={attachedAssets}
-        focusForgeNonce={studioForgeNonce}
+        initialOrientation={studioOrientation}
+        reopenNonce={studioReopenNonce}
+        reopenTab={studioReopenTab}
         onRequestPublish={({ draftId, html, gameUrl, title }) => {
           // Hand the studio's finished game to the original Publish Game screen
-          // (live preview + privacy settings + Post Game).
+          // (live preview + privacy settings + Post Game). The studio stays open
+          // underneath so Publish slides straight over it — one animation, and
+          // Dream Forge never flashes in between.
           setActiveDraftId(draftId);
           setActiveHtml(html);
           setActiveGameUrl(gameUrl);
           if (title) setGameTitle(title);
           setPublishCameFromStudio(true);
-          setStudioOpen(false);
           setPublishOpen(true);
         }}
-      />
+      >
+        {/* Reached from the studio: Publish presents over the studio itself. */}
+        {publishCameFromStudio && renderPublishScreen()}
+      </WishStudioScreen>
 
       <Modal
         visible={showAssetIntentModal}
@@ -5622,325 +5736,10 @@ Description: ${gameSpec.description}
     </Modal>
   );
 
-  if (phase === "preview" && (activeHtml || activeGameUrl)) {
-    return (
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={[styles.screen, { paddingTop: insets.top }]}
-      >
-        {/* === TOP BAR === */}
-        <Animated.View
-          entering={FadeInDown.duration(400)}
-          style={styles.previewTopBar}
-        >
-          <Pressable
-            style={styles.closeBtn}
-            onPress={() => handleIntentClose("discard")}
-          >
-            <Ionicons name="close" size={22} color="#FFF" />
-          </Pressable>
-          <View
-            style={{
-              flexDirection: "row",
-              backgroundColor: "#2C2C2E",
-              borderRadius: 20,
-              padding: 3,
-            }}
-          >
-            <View
-              style={{
-                paddingVertical: 6,
-                paddingHorizontal: 16,
-                backgroundColor: "#1C1C1E",
-                borderRadius: 18,
-              }}
-            >
-              <Text style={{ color: "#FFF", fontSize: 13, fontWeight: "700" }}>
-                Preview
-              </Text>
-            </View>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Pressable
-              onPress={() => setShowEditor(!showEditor)}
-              style={{
-                marginRight: 16,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                padding: 8,
-                borderRadius: 20,
-              }}
-            >
-              <Ionicons
-                name={showEditor ? "eye-outline" : "eye-off-outline"}
-                size={20}
-                color="#FFF"
-              />
-            </Pressable>
-            <Pressable
-              style={[
-                styles.previewPublishPill,
-                { backgroundColor: colors.primary },
-              ]}
-              onPress={() => setPublishOpen(true)}
-            >
-              <Text style={{ color: "#FFF", fontSize: 14, fontWeight: "800" }}>
-                Next
-              </Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-
-        {/* === GAME WEBVIEW === */}
-        <View style={[styles.webviewContainer, { top: insets.top + 66 }]}>
-          <WebView
-            ref={webviewRef}
-            source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
-            style={{ flex: 1, backgroundColor: "#000" }}
-            originWhitelist={["*"]}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            bounces={false}
-            scrollEnabled={false}
-            allowsInlineMediaPlayback={true}
-            mixedContentMode="always"
-            allowFileAccess={true}
-            allowUniversalAccessFromFileURLs={true}
-            allowFileAccessFromFileURLs={true}
-            setSupportMultipleWindows={false}
-            injectedJavaScript={BRIDGE_INJECT_JS}
-            onLoadStart={() => setErrorMsg(null)}
-            onMessage={handleWebViewMessage}
-            onError={(e) => {
-              console.log("WebView Error: code", e.nativeEvent.code);
-              showPreviewError(
-                `Preview WebView failed to load (code ${e.nativeEvent.code}).`,
-              );
-            }}
-            onHttpError={(e) => {
-              console.log("WebView HTTP Error: code", e.nativeEvent.statusCode);
-              showPreviewError(
-                `Preview HTTP error ${e.nativeEvent.statusCode}.`,
-              );
-            }}
-          />
-          {keyboardVisible && (
-            <Pressable
-              style={[StyleSheet.absoluteFill, { zIndex: 999 }]}
-              onPress={() => Keyboard.dismiss()}
-            />
-          )}
-        </View>
-
-        {/* === BOTTOM TOOL STRIP & INPUT === */}
-        {showEditor && (
-          <Animated.View
-            entering={SlideInDown.duration(500)}
-            exiting={SlideOutDown.duration(300)}
-            style={{
-              position: "absolute",
-              bottom: keyboardVisible
-                ? Math.max(keyboardHeight - insets.bottom, 0)
-                : 0,
-              left: 0,
-              right: 0,
-              zIndex: 10,
-              paddingHorizontal: 16,
-              paddingTop: 16,
-              paddingBottom: Math.max(insets.bottom, 16),
-            }}
-          >
-            {/* Media Toolbar Pill */}
-            {!keyboardVisible && (
-              <Animated.View
-                entering={FadeInDown.duration(300)}
-                exiting={FadeOutDown.duration(200)}
-                style={{
-                  backgroundColor: "#1E1E1E",
-                  borderRadius: 40,
-                  paddingVertical: 14,
-                  paddingHorizontal: 24,
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  marginBottom: 16,
-                }}
-              >
-                {[
-                  { icon: "options", label: "Modify", action: handleModify },
-                  {
-                    icon: "color-palette-outline",
-                    label: "Colors",
-                    action: () => setShowColorsModal(true),
-                  },
-                  {
-                    icon: "image-outline",
-                    label: "Memes",
-                    action: () => setShowPhotosModal(true),
-                  },
-                  {
-                    icon: "film-outline",
-                    label: "Videos",
-                    action: () => setShowVideosModal(true),
-                  },
-                  {
-                    icon: "musical-notes-outline",
-                    label: "Sounds",
-                    action: () => setShowAudioModal(true),
-                  },
-                ].map((tool, i) => (
-                  <Pressable
-                    key={i}
-                    style={{ alignItems: "center", gap: 6 }}
-                    onPress={() => runCreateAction(tool.action)}
-                  >
-                    <Ionicons
-                      name={tool.icon as any}
-                      size={22}
-                      color="#D2CDC5"
-                    />
-                    <Text
-                      style={{ color: "#888", fontSize: 11, fontWeight: "500" }}
-                    >
-                      {tool.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </Animated.View>
-            )}
-
-            {/* Chat Input Row */}
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
-            >
-              <Pressable
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: "#1E1E1E",
-                  borderWidth: 1,
-                  borderColor: "#333",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name="add" size={24} color="#FFF" />
-              </Pressable>
-
-              <View
-                style={{
-                  flex: 1,
-                  backgroundColor: "#1E1E1E",
-                  borderWidth: 1,
-                  borderColor: "#333",
-                  borderRadius: 24,
-                  paddingVertical: 6,
-                  paddingLeft: 16,
-                  paddingRight: 6,
-                  flexDirection: "row",
-                  alignItems: "center",
-                }}
-              >
-                <TextInput
-                  style={{
-                    flex: 1,
-                    color: "#FFF",
-                    fontSize: 15,
-                    paddingVertical: 6,
-                  }}
-                  placeholder="Add some awesome sauce..."
-                  placeholderTextColor="#666"
-                  value={prompt}
-                  onChangeText={setPrompt}
-                  onSubmitEditing={() => {
-                    if (prompt.trim()) {
-                      handleEdit(prompt);
-                      setPrompt("");
-                    }
-                  }}
-                  returnKeyType="send"
-                />
-                <Pressable
-                  onPress={() => {
-                    if (prompt.trim()) {
-                      handleEdit(prompt);
-                      setPrompt("");
-                    }
-                  }}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: "#333",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Ionicons
-                    name="arrow-up"
-                    size={18}
-                    color={prompt.trim() ? "#FFF" : "#666"}
-                  />
-                </Pressable>
-              </View>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* === EDIT ERROR TOAST (visible in preview) === */}
-        {errorMsg && (
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={{
-              position: "absolute",
-              top: insets.top + 60,
-              left: 16,
-              right: 16,
-              zIndex: 20,
-              backgroundColor: "rgba(255,59,48,0.95)",
-              borderRadius: 16,
-              padding: 14,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <Ionicons name="warning" size={18} color="#FFF" />
-            <Text
-              style={{
-                color: "#FFF",
-                fontSize: 13,
-                fontWeight: "600",
-                flex: 1,
-              }}
-              numberOfLines={2}
-            >
-              {errorMsg}
-            </Text>
-            <Pressable
-              onPressIn={() => setErrorMsg(null)}
-              hitSlop={12}
-              style={styles.errorDismissBtn}
-            >
-              <Ionicons
-                name="close-circle"
-                size={20}
-                color="rgba(255,255,255,0.7)"
-              />
-            </Pressable>
-          </Animated.View>
-        )}
-
-        {renderSharedModals()}
-        {exitModal}
-      </KeyboardAvoidingView>
-    );
-  }
-
   // ======================
   // RENDER: REFINING
   // ======================
-  if (phase === "refining") {
-    return (
+  const renderRefiningPhase = () => (
       <View
         style={[
           styles.screenWithBottomNav,
@@ -6446,14 +6245,12 @@ Description: ${gameSpec.description}
           </View>
         )}
       </View>
-    );
-  }
+  );
 
   // ======================
   // RENDER: GENERATING
   // ======================
-  if (phase === "generating") {
-    return (
+  const renderGeneratingPhase = () => (
       <ForgeDefenseGame
         prompt={prompt}
         activeStep={activeStep}
@@ -6468,13 +6265,12 @@ Description: ${gameSpec.description}
         generationPhase={generationPhase}
         generationStatusMessage={generationStatusMessage}
       />
-    );
-  }
+  );
 
   // ======================
   // RENDER: IDLE (PROMPT INPUT)
   // ======================
-  return (
+  const renderIdlePhase = () => (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       {/* Full-screen background (Removed to ensure perfect black) */}
 
@@ -6825,6 +6621,51 @@ Description: ${gameSpec.description}
                     </Text>
                   )}
 
+                  {/*
+                    Screen shape — required, and permanent. The game is written AND sandbox-verified
+                    for one viewport (390x844 or 844x390), so this can't be changed later; that's
+                    why it's a deliberate tap rather than a default the creator can slide past.
+                  */}
+                  <View style={styles.orientationBlock}>
+                    <Text style={styles.orientationLabel}>Screen shape</Text>
+                    <View style={styles.orientationRow}>
+                      {ORIENTATION_OPTIONS.map((opt) => {
+                        const active = orientation === opt.key;
+                        return (
+                          <Pressable
+                            key={opt.key}
+                            style={[
+                              styles.orientationCard,
+                              active && styles.orientationCardActive,
+                            ]}
+                            onPress={() => {
+                              setOrientation(opt.key);
+                              if (errorMsg) setErrorMsg(null);
+                            }}
+                            hitSlop={6}
+                          >
+                            <Ionicons
+                              name={opt.glyph}
+                              size={22}
+                              color={active ? "#C084FC" : "rgba(255,255,255,0.32)"}
+                            />
+                            <Text
+                              style={[
+                                styles.orientationCardLabel,
+                                active && styles.orientationCardLabelActive,
+                              ]}
+                            >
+                              {opt.label}
+                            </Text>
+                            <Text style={styles.orientationCardSub} numberOfLines={2}>
+                              {opt.sub}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+
                   {/* Bottom row inside input — surprise me + send */}
                   <View style={[styles.inputBottomRow, { zIndex: 99 }]}>
                     <Pressable
@@ -6857,7 +6698,7 @@ Description: ${gameSpec.description}
                     <Pressable
                       style={[
                         styles.sendBtn,
-                        !prompt.trim() && styles.sendBtnIdle,
+                        (!prompt.trim() || !orientation) && styles.sendBtnIdle,
                       ]}
                       onPressIn={handleDreamComposerPress}
                       hitSlop={14}
@@ -6943,7 +6784,15 @@ Description: ${gameSpec.description}
                   <Animated.View entering={FadeInUp.delay(150).duration(400)}>
                     <Pressable
                       style={styles.generatedPreviewCard}
-                      onPress={() => setPhase("preview")}
+                      onPress={() =>
+                        activeDraftId &&
+                        openGameInStudio({
+                          draftId: activeDraftId,
+                          html: activeHtml,
+                          gameUrl: activeGameUrl,
+                          title: displayTitle,
+                        })
+                      }
                     >
                       <Image
                         source={thumbnailSource}
@@ -7283,23 +7132,9 @@ Description: ${gameSpec.description}
                       styles.draftCard,
                       pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
                     ]}
-                    onPress={async () => {
-                      try {
-                        const res = (await ai.getDraft(draft.id)) as any;
-                        if (res?.draft?.html_payload || res?.draft?.game_url) {
-                          setActiveHtml(res.draft.html_payload || null);
-                          setActiveGameUrl(res.draft.game_url || null);
-                          setActiveDraftId(res.draft.id);
-                          setActiveDraftThumbnail(
-                            getDraftThumbnail(res.draft) ||
-                              getDraftThumbnail(draft),
-                          );
-                          setGameTitle(res.draft.title || "Untitled Game");
-                          setPhase("preview");
-                        }
-                      } catch (e) {
-                        console.error("Failed to open draft:", e);
-                      }
+                    onPress={() => {
+                      setActiveDraftThumbnail(getDraftThumbnail(draft));
+                      void openDraftInEditor(draft.id);
                     }}
                   >
                     <Pressable
@@ -7316,10 +7151,19 @@ Description: ${gameSpec.description}
                     {/* Thumbnail */}
                     <View style={styles.draftThumbnail}>
                       {draft.thumbnail ? (
+                        // An unpublished landscape draft's only art is the 844x390 sandbox shot,
+                        // and cover-cropping that into a 0.75 box throws most of the frame away.
+                        // Letterbox it instead — the grid geometry stays uniform, which reads far
+                        // better than a grid of mixed-aspect tiles. (Once published, cover art
+                        // generation replaces this with a portrait poster.)
                         <Image
                           source={{ uri: draft.thumbnail }}
                           style={StyleSheet.absoluteFillObject}
-                          resizeMode="cover"
+                          resizeMode={
+                            normalizeOrientation(draft.orientation) === "landscape"
+                              ? "contain"
+                              : "cover"
+                          }
                         />
                       ) : (
                         <>
@@ -7430,6 +7274,32 @@ Description: ${gameSpec.description}
           </View>
         </InputAccessoryView>
       )}
+    </View>
+  );
+  // ── One stable shell ───────────────────────────────────────────────────────
+  // Phases render as CONTENT inside this shell instead of being early returns.
+  // An early return swaps the whole tree, so every phase change unmounted the
+  // long-lived siblings below — the Wish studio lives in the shared modals, and
+  // that remount wiped its entire session (conversation, brief, built game).
+  // The shell carries `styles.screen` (absolute fill + zIndex): CreateScreen is
+  // an overlay above the whole app, not a flow-layout child. A plain flex:1
+  // wrapper here drops it into App's layout, below the tab bar.
+  const showLoading = isOpeningDraft || !!openDraftId;
+
+  return (
+    <View style={styles.screen}>
+      {showLoading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#08080C" }}>
+          <ActivityIndicator size="large" color="#FF3B30" />
+          <Text style={{ color: "#8E8E93", marginTop: 16, fontSize: 16, fontWeight: "600" }}>
+            Opening Remix...
+          </Text>
+        </View>
+      ) : phase === "refining"
+        ? renderRefiningPhase()
+        : phase === "generating"
+          ? renderGeneratingPhase()
+          : renderIdlePhase()}
 
       {renderSharedModals()}
       {exitModal}
@@ -8364,6 +8234,48 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 0,
   },
+  orientationBlock: {
+    marginTop: 12,
+  },
+  orientationLabel: {
+    color: "rgba(255,255,255,0.34)",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  orientationRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  orientationCard: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.03)",
+    gap: 4,
+  },
+  orientationCardActive: {
+    borderColor: "rgba(192,132,252,0.55)",
+    backgroundColor: "rgba(168,85,247,0.12)",
+  },
+  orientationCardLabel: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  orientationCardLabelActive: {
+    color: "#FFF",
+  },
+  orientationCardSub: {
+    color: "rgba(255,255,255,0.26)",
+    fontSize: 11,
+    lineHeight: 15,
+  },
   surpriseBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -9161,6 +9073,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 8 },
+  },
+  // A landscape game gets a landscape card rather than the feed's rotate-the-content treatment:
+  // this is a small confirmation preview, and nobody should have to turn their phone sideways to
+  // check a thumbnail before posting.
+  pubPreviewCardLandscape: {
+    width: 300,
+    height: 168,
   },
   pubEditBtn: {
     flexDirection: "row",

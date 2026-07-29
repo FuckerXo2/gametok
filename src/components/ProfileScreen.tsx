@@ -20,10 +20,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useAuthScreen, useDeepLink, useNavigation } from '../../App';
+import { useAuthScreen } from '../../App';
 import { auth, likes as likesApi, users as usersApi } from '../services/api';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { AddFriendsScreen } from './AddFriendsScreen';
+import { GamePlayerModal } from './GamePlayerModal';
+import type { Orientation } from '../constants/orientation';
 import { EditProfileModal } from './EditProfileModal';
 import { Avatar } from './Avatar';
 import { FollowListModal } from './FollowListModal';
@@ -51,6 +53,9 @@ interface Game {
   name: string;
   thumbnail?: string;
   plays?: number;
+  embedUrl?: string;
+  /** 'portrait' (default) or 'landscape' — GameSurface rotates the latter. */
+  orientation?: Orientation | null;
 }
 
 const getThumbnailUrl = (game: Game) => {
@@ -71,10 +76,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const { user, isAuthenticated, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { showAuthScreen, showLoginScreen } = useAuthScreen();
-  const { openSharedGame } = useDeepLink();
-  const { setActiveTab } = useNavigation();
 
   const [showAddFriends, setShowAddFriends] = useState(false);
+  const [playingGame, setPlayingGame] = useState<Game | null>(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -140,9 +144,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     }
   };
 
+  // Play in place, the way explore does. This used to call openSharedGame + setActiveTab('home'),
+  // which threw the user out of their profile and into the feed just to play one game.
   const openProfileGame = (game: Game) => {
-    openSharedGame(game.id);
-    setActiveTab('home');
+    setPlayingGame(game);
   };
 
   const handleShareProfile = async () => {
@@ -270,6 +275,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           </View>
         )}
       </ScrollView>
+
+      {/* Fullscreen player — the exact component explore uses. */}
+      <GamePlayerModal game={playingGame} onClose={() => setPlayingGame(null)} />
 
       {/* Modals */}
       <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
@@ -693,6 +701,21 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: BG,
+  },
+  playerRoot: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  playerCloseBtn: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   topBar: {
     flexDirection: 'row',

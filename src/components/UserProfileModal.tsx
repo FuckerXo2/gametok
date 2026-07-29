@@ -18,7 +18,7 @@ import {
   StatusBar,
   Share,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { GamePlayerModal } from './GamePlayerModal';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,6 +66,7 @@ interface ChatMessage {
 }
 
 const GAMES_HOST = 'https://games.gametok.co';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 const SUGGESTED_FRIENDS: any[] = [];
 const PROFILE_GRID_GAP = 2;
@@ -108,7 +109,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   const [playingGame, setPlayingGame] = useState<any | null>(null);
-  const [gameLoaded, setGameLoaded] = useState(false);
 
   const isCurrentMe = currentUser?.id === activeUser?.id;
 
@@ -618,7 +618,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                     style={styles.gameTile}
                     onPress={() => {
                       setPlayingGame({ id: game.id, name: game.name, color: game.color || '#181818' });
-                      setGameLoaded(false);
                     }}
                     activeOpacity={0.9}
                   >
@@ -740,40 +739,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
         }}
       />
 
-      {/* Game Playing Modal */}
-      <Modal visible={playingGame !== null} animationType="slide" onRequestClose={() => setPlayingGame(null)}>
-        {playingGame && (
-          <View style={{ flex: 1, backgroundColor: '#000' }}>
-            <StatusBar hidden />
-            <WebView
-              source={{ uri: `${GAMES_HOST}/${playingGame.id}/` }}
-              style={{ flex: 1 }}
-              scrollEnabled={false}
-              bounces={false}
-              onLoadEnd={() => setGameLoaded(true)}
-              javaScriptEnabled
-              domStorageEnabled
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              allowsAirPlayForMediaPlayback={false}
-            />
-            {!gameLoaded && (
-              <View style={[StyleSheet.absoluteFillObject, { backgroundColor: playingGame.color, justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color="#fff" />
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginTop: 16 }}>Loading {playingGame.name}...</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={{ position: 'absolute', right: 16, top: insets.top + 10, zIndex: 100 }}
-              onPress={() => { setPlayingGame(null); setGameLoaded(false); }}
-            >
-              <BlurView intensity={50} tint="dark" style={{ width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </BlurView>
-            </TouchableOpacity>
-          </View>
-        )}
-      </Modal>
+      {/* Game player — the shared shell explore uses. */}
+      <GamePlayerModal game={playingGame} onClose={() => setPlayingGame(null)} />
 
     </SlideRightModal>
   );

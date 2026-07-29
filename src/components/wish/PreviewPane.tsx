@@ -6,11 +6,12 @@
 // Philosophy: the wait should feel like anticipation, not dread. The user never
 // sees implementation vocabulary — they see their game coming alive.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Animated, FlatList } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { palette, radii, spacing, type as t } from '../../theme/tokens';
 import type { BuildBeat } from './wishTypes';
+import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../../constants/orientation';
 
 interface Props {
   state: 'empty' | 'building' | 'ready';
@@ -18,6 +19,8 @@ interface Props {
   beats: BuildBeat[];
   html: string | null;
   gameUrl: string | null;
+  /** Landscape games are rotated inside the pane, exactly as the feed does it. */
+  orientation?: Orientation;
 }
 
 const Building = ({ gameName, beats }: { gameName: string | null; beats: BuildBeat[] }) => {
@@ -57,21 +60,53 @@ const Building = ({ gameName, beats }: { gameName: string | null; beats: BuildBe
   );
 };
 
-export const PreviewPane = ({ state, gameName, beats, html, gameUrl }: Props) => {
+export const PreviewPane = ({ state, gameName, beats, html, gameUrl, orientation = DEFAULT_ORIENTATION }: Props) => {
+  // The card is flex-sized, so the rotation needs a measured box. Until the first layout lands we
+  // render nothing rotated — a one-frame wait, versus guessing the size and flashing a wrong one.
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+
   if (state === 'ready' && (html || gameUrl)) {
+    // Same rotate-the-content trick the feed uses (see HomeScreen's landscapeWebViewStyle), so the
+    // creator can actually play-test the landscape game they just built instead of squinting at it
+    // squashed into a portrait pane.
+    const rotated = isLandscape(orientation) && box && box.height >= box.width;
+    const landscapeStyle = rotated
+      ? {
+          position: 'absolute' as const,
+          flex: 0,
+          width: box!.height,
+          height: box!.width,
+          marginLeft: (box!.width - box!.height) / 2,
+          marginTop: (box!.height - box!.width) / 2,
+          transform: [{ rotate: '90deg' }],
+          backgroundColor: palette.ink900,
+        }
+      : null;
+
     return (
-      <View style={styles.gameCard}>
-        <WebView
-          source={html ? { html } : { uri: gameUrl as string }}
-          style={styles.webview}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          originWhitelist={['*']}
-          scrollEnabled={false}
-          bounces={false}
-        />
+      <View
+        style={styles.gameCard}
+        collapsable={false}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setBox((prev) =>
+            prev && prev.width === width && prev.height === height ? prev : { width, height },
+          );
+        }}
+      >
+        {(!isLandscape(orientation) || box) && (
+          <WebView
+            source={html ? { html } : { uri: gameUrl as string }}
+            style={landscapeStyle ?? styles.webview}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            originWhitelist={['*']}
+            scrollEnabled={false}
+            bounces={false}
+          />
+        )}
       </View>
     );
   }

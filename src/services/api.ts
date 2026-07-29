@@ -7,6 +7,7 @@ import {
   mockEditGame,
   mockPublish,
 } from './aiMock';
+import { normalizeOrientation, type Orientation } from '../constants/orientation';
 
 export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
 
@@ -793,7 +794,7 @@ export const ai = {
   dreamLabs: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void; orientation?: Orientation },
   ) => {
     if (mockBuilds()) return mockDreamLabs(prompt, attachments, options);
     const controller = new AbortController();
@@ -814,7 +815,7 @@ export const ai = {
         // no separate /dream-labs route on the backend; this used to 404.)
         const res = await request('/ai/dream', {
           method: 'POST',
-          body: JSON.stringify({ prompt, attachments }),
+          body: JSON.stringify({ prompt, attachments, orientation: normalizeOrientation(options?.orientation) }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial job handshake
 
@@ -877,7 +878,7 @@ export const ai = {
   dream: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void },
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void; orientation?: Orientation },
   ) => {
     const controller = new AbortController();
     let remoteJobId: string | null = null;
@@ -895,7 +896,7 @@ export const ai = {
         // Step 1: Tell backend to start generation process and return immediately
         const res = await request('/ai/dream', {
           method: 'POST',
-          body: JSON.stringify({ prompt, attachments }),
+          body: JSON.stringify({ prompt, attachments, orientation: normalizeOrientation(options?.orientation) }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial Dream job handshake
 

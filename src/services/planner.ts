@@ -13,6 +13,7 @@
 // - State choices as decisions, not options. No hedging.
 
 import type { GameBrief } from '../components/wish/wishTypes';
+import { normalizeOrientation, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 
 interface StructuralGuess {
   structural: string;      // e.g. "3D chase-cam racer"
@@ -109,12 +110,22 @@ function coinName(wish: string, seeds: string[]): string {
   return `${cap} ${seed}`;
 }
 
-/** Compose the brief for a wish (plus any pre-create refinement wishes). */
-export function planBrief(wishText: string, refinements: string[] = []): GameBrief {
+/**
+ * Compose the brief for a wish (plus any pre-create refinement wishes).
+ *
+ * `orientation` is passed in rather than guessed: the creator already chose it in the Forge before
+ * the studio opened, so the brief only echoes that decision back.
+ */
+export function planBrief(
+  wishText: string,
+  refinements: string[] = [],
+  orientation: Orientation = DEFAULT_ORIENTATION,
+): GameBrief {
   const combined = [wishText, ...refinements].join('. ');
   const g = guessStructure(combined);
   return {
     name: coinName(wishText, g.nameSeed),
+    orientation: normalizeOrientation(orientation),
     pitch: `A ${g.structural} — ${g.pitchTail}.`,
     structural: g.structural,
     spine: g.spine,
@@ -129,6 +140,11 @@ export function briefToPrompt(brief: GameBrief, wishText: string, refinements: s
     ...refinements,
     '',
     `Build this as: ${brief.pitch}`,
+    // Restated in prose for the model's benefit. The authoritative copy travels as a structured
+    // field on the request — the sandbox viewport depends on it, and prose is not a reliable channel.
+    normalizeOrientation(brief.orientation) === 'landscape'
+      ? '- Orientation: LANDSCAPE (wide, short screen).'
+      : '- Orientation: PORTRAIT (tall, narrow screen).',
     ...brief.spine.map((s) => `- ${s}`),
     ...brief.flavor.map((f) => `- ${f}`),
   ].join('\n');

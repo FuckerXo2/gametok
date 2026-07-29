@@ -27,14 +27,31 @@ import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
 import { briefToPrompt } from '../services/planner';
 import { ai } from '../services/api';
 import type { WishMessage, StudioPhase, StudioTab, GameBrief } from '../components/wish/wishTypes';
+import { normalizeOrientation, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   /** The brief the user forged on Dream Forge. */
   initialPrompt: string;
+  /**
+   * Open straight onto a game that already exists — a draft from the list, a
+   * remix from the feed, a finished build. There is nothing to pitch, so the
+   * studio skips planning and lands on Preview with the game playable.
+   */
+  initialGame?: {
+    draftId: string;
+    html: string | null;
+    gameUrl: string | null;
+    title: string;
+  } | null;
   /** Images/Videos/Sounds/BGM they attached for the game to use. */
   initialAttachments?: any[];
+  /**
+   * Portrait or landscape, chosen on Dream Forge before the studio opened. The studio never asks —
+   * it just carries the decision into the brief and onto the generation request.
+   */
+  initialOrientation?: Orientation;
   /**
    * Hand the finished game to Dream Forge's Publish Game screen (the original
    * one: live preview + privacy settings + Post Game). The studio closes and the
@@ -47,11 +64,14 @@ interface Props {
     title: string;
   }) => void;
   /**
-   * Bump this to reopen the studio on the Forge tab (the conversation), e.g.
-   * when the user taps "Edit game" from the Publish screen — they want to make
-   * a wish, not stare at the game again.
+   * Bump this to reopen the studio on a specific tab. Backing out of Publish
+   * should land on 'preview' (the user wants their game back); "Edit game"
+   * lands on 'wish', because they came to make a wish.
    */
-  focusForgeNonce?: number;
+  reopenNonce?: number;
+  reopenTab?: StudioTab;
+  /** Rendered inside the studio's modal, above it — see the bottom of render. */
+  children?: React.ReactNode;
 }
 
 // Forge scene copy — same voice as Dream Forge's build screen.
@@ -71,7 +91,8 @@ const COOKING_STATUS_LINES = [
 let idCounter = 0;
 const nextId = () => `w${++idCounter}`;
 
-export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttachments = [], onRequestPublish, focusForgeNonce = 0 }: Props) => {
+export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame = null, initialAttachments = [], initialOrientation = DEFAULT_ORIENTATION, onRequestPublish, reopenNonce = 0, reopenTab = 'wish', children }: Props) => {
+  const orientation = normalizeOrientation(initialOrientation);
   const [tab, setTab] = useState<StudioTab>('wish');
   const [phase, setPhase] = useState<StudioPhase>('planning');
   const [messages, setMessages] = useState<WishMessage[]>([]);
@@ -111,6 +132,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
   /** Map a backend spec (DeepSeek-written) into the brief the pitch renders. */
   const specToBrief = (spec: any): GameBrief => ({
     name: spec?.title || 'Your Game',
+    orientation,
     pitch: spec?.description || '',
     structural: spec?.structural || '',
     spine: Array.isArray(spec?.features) ? spec.features : [],
@@ -212,7 +234,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
   // Opening handoff from Dream Forge: their brief lands as the first turn and
   // Kimi immediately pitches back. No greeting, no re-asking.
   useEffect(() => {
-    if (!visible || !initialPrompt.trim()) return;
+    if (!visible || initialGame || !initialPrompt.trim()) return;
     if (seededForRef.current === initialPrompt) return;
     seededForRef.current = initialPrompt;
 
@@ -239,13 +261,54 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
         : '';
     setMessages([{ id: nextId(), role: 'user', text: initialPrompt + attachNote }]);
     proposeBrief();
-  }, [visible, initialPrompt, initialAttachments.length, proposeBrief]);
+  }, [visible, initialGame, initialPrompt, initialAttachments.length, proposeBrief]);
 
-  // "Edit game" from the Publish screen reopens the studio to make a wish, so
-  // land on the Forge conversation rather than whatever tab was last open.
+  // Opening an existing game: no pitch, no planning — it is already built, so
+  // the studio starts where the old draft editor used to, on the live game.
+  const seededGameRef = useRef<string | null>(null);
   useEffect(() => {
-    if (focusForgeNonce > 0) setTab('wish');
-  }, [focusForgeNonce]);
+    if (!visible || !initialGame) return;
+    // Keyed on the payload, not just the id: reopening the same draft after it
+    // changed elsewhere should show the new build, not the one we cached.
+    const key = `${initialGame.draftId}::${initialGame.gameUrl ?? ''}::${initialGame.html?.length ?? 0}`;
+    if (seededGameRef.current === key) return;
+    seededGameRef.current = key;
+
+    idCounter = 0;
+    const name = initialGame.title?.trim() || 'Your game';
+    briefRef.current = { name, orientation, pitch: '', structural: '', spine: [], flavor: [] };
+    refinementsRef.current = [];
+    specHistoryRef.current = [];
+    draftIdRef.current = initialGame.draftId;
+    cancelJobRef.current = null;
+    setHtml(initialGame.html);
+    setGameUrl(initialGame.gameUrl);
+    setHasCreated(true);
+    setPhase('live');
+    setTab('preview');
+    setPreviewHasNews(false);
+    setInput('');
+    setBuildError(null);
+    setGenProgress(null);
+    setGenPhase(null);
+    setGenStatusMessage(null);
+    setMessages([
+      {
+        id: nextId(),
+        role: 'kimi',
+        text: `${name} is here. Every wish changes the game — say it and I’ll make it so.`,
+      },
+    ]);
+  }, [visible, initialGame]);
+
+  // Coming back from the Publish screen: land on the tab the parent asked for
+  // rather than whatever was last open. Keyed on the nonce alone — the tab is
+  // read through a ref so a re-render can't yank the user off their tab.
+  const reopenTabRef = useRef(reopenTab);
+  reopenTabRef.current = reopenTab;
+  useEffect(() => {
+    if (reopenNonce > 0) setTab(reopenTabRef.current);
+  }, [reopenNonce]);
 
   // ── Create: the toggle is born, Preview opens on the forge ─────────────────
 
@@ -287,10 +350,12 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
 
     const prompt = briefToPrompt(brief, initialPrompt, refinementsRef.current);
     runBuild(
-      ai.dreamLabs(prompt, initialAttachments, { onStatus: onJobStatus }),
+      // Orientation goes as a structured field, not just the prose line briefToPrompt adds — the
+      // sandbox verifies at 844x390 vs 390x844 off this value.
+      ai.dreamLabs(prompt, initialAttachments, { onStatus: onJobStatus, orientation }),
       (name) => `${name} is live — go play it. From here every wish changes the game: say it and I’ll make it so.`,
     );
-  }, [phase, initialPrompt, initialAttachments, pushMessage, onJobStatus, runBuild]);
+  }, [phase, initialPrompt, initialAttachments, orientation, pushMessage, onJobStatus, runBuild]);
 
   // ── Live: every wish edits the game Kimi already built ─────────────────────
 
@@ -460,6 +525,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
                 beats={[]}
                 html={html}
                 gameUrl={gameUrl}
+                orientation={orientation}
               />
             )}
           </View>
@@ -478,6 +544,11 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialAttac
             />
           )}
         </SafeAreaView>
+
+        {/* Screens that present ON TOP of the studio (Publish). Nested here so
+            they slide over a studio that never goes anywhere — dismissing the
+            studio first would flash Dream Forge between the two animations. */}
+        {children}
       </View>
     </Modal>
   );
