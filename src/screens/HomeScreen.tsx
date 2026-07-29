@@ -3197,7 +3197,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       <RemixModal
         visible={!!remixTarget}
         gameName={remixTarget?.name}
-        gameThumbnail={remixTarget ? (remixTarget.thumbnail || resolveGameThumbnail(remixTarget as any)) : null}
+        gameThumbnail={remixTarget ? getThumbnailUrl(remixTarget) : null}
         loading={remixLoading}
         onCancel={() => { if (!remixLoading) setRemixTarget(null); }}
         onConfirm={confirmRemix}
