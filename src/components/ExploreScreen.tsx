@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,17 +11,20 @@ import {
   TextInput,
   Modal,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { CustomImage as Image } from './CustomImage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GamePlayerModal } from './GamePlayerModal';
-import type { Orientation } from '../constants/orientation';
+import { isLandscape, type Orientation } from '../constants/orientation';
+import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useNavigation } from '../../App';
-import { API_URL, games as gamesApi, users as usersApi } from '../services/api';
+import { API_URL, games as gamesApi, users as usersApi, ai as aiApi } from '../services/api';
 import { Avatar } from './Avatar';
+import { RemixModal } from './RemixModal';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 
@@ -39,108 +42,10 @@ const GAMES_HOST = 'https://games.gametok.co';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 const GAMETOK_BG = require('../../assets/gametok_bg.png');
-const DREAM_FORGE_HERO = require('../../assets/dream-forge-hero.png');
 
-const TABS = ['For You', 'Games', 'Horror', 'Quiz', 'Roleplay'] as const;
-type ExploreTab = (typeof TABS)[number];
-type NonForYouTab = Exclude<ExploreTab, 'For You'>;
-
-const TAB_CATEGORY_CHIPS: Record<NonForYouTab, Array<{ label: string; keywords: string[] }>> = {
-  Games: [
-    { label: 'Recommend', keywords: [] },
-    { label: 'Action', keywords: ['action', 'battle', 'fight', 'combat', 'adventure'] },
-    { label: 'Arcade', keywords: ['arcade', 'runner', 'classic', 'neon'] },
-    { label: 'Racing', keywords: ['race', 'racing', 'drive', 'drift', 'car'] },
-    { label: 'Puzzle', keywords: ['puzzle', 'brain', 'logic'] },
-    { label: 'Casual', keywords: ['casual', 'cozy', 'simple'] },
-    { label: 'Sports', keywords: ['sport', 'football', 'soccer', 'basketball'] },
-  ],
-  Horror: [
-    { label: 'Recommend', keywords: [] },
-    { label: 'Psychological', keywords: ['psychological', 'watched', 'mind'] },
-    { label: 'Survival', keywords: ['survival', 'escape', 'run'] },
-    { label: 'Mystery', keywords: ['mystery', 'detective', 'secret'] },
-    { label: 'Dark', keywords: ['dark', 'night', 'shadow'] },
-    { label: 'Short Scares', keywords: ['short', 'scare', 'ghost', 'haunted'] },
-  ],
-  Quiz: [
-    { label: 'Recommend', keywords: [] },
-    { label: 'Brain Teasers', keywords: ['brain', 'puzzle', 'logic'] },
-    { label: 'Trivia', keywords: ['trivia', 'quiz', 'question'] },
-    { label: 'Party', keywords: ['party', 'friends', 'group'] },
-    { label: 'Guess', keywords: ['guess', 'who', 'what'] },
-    { label: 'Challenge', keywords: ['challenge', 'test', 'score'] },
-  ],
-  Roleplay: [
-    { label: 'Recommend', keywords: [] },
-    { label: 'Immersive Worlds', keywords: ['world', 'immersive', 'open'] },
-    { label: 'Fantasy', keywords: ['fantasy', 'magic', 'kingdom'] },
-    { label: 'Anime', keywords: ['anime', 'naruto', 'school'] },
-    { label: 'Social Rooms', keywords: ['social', 'room', 'friends'] },
-  ],
-};
-
-const TAB_COPY: Record<ExploreTab, {
-  pill: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  line1: string;
-  line2: string;
-  subtitle: string;
-  cta: string;
-  sectionTitles: string[];
-  keywords: string[];
-}> = {
-  'For You': {
-    pill: 'Dream Forge',
-    icon: 'sparkles',
-    line1: 'Make a playable',
-    line2: 'world.',
-    subtitle: 'You imagine it. We build it.',
-    cta: 'Create Now',
-    sectionTitles: ['Trending Now 🔥', 'Made For You'],
-    keywords: [],
-  },
-  Games: {
-    pill: 'Instant Play',
-    icon: 'game-controller',
-    line1: 'Jump into',
-    line2: 'games.',
-    subtitle: 'Fast rounds. Big worlds.',
-    cta: 'Play Now',
-    sectionTitles: ['Trending Games', 'New Games', 'Arcade Picks'],
-    keywords: ['game', 'arcade', 'race', 'runner', 'survival', 'battle', 'parkour'],
-  },
-  Horror: {
-    pill: 'Horror Picks',
-    icon: 'moon',
-    line1: 'Play something',
-    line2: 'haunted.',
-    subtitle: 'Short scares. Dark stories.',
-    cta: 'Enter',
-    sectionTitles: ['Psychological Horror', 'Short Scares', 'Mystery Worlds'],
-    keywords: ['horror', 'scary', 'haunted', 'ghost', 'nightmare', 'dark', 'mystery', 'watched'],
-  },
-  Roleplay: {
-    pill: 'Live Worlds',
-    icon: 'people',
-    line1: 'Start a',
-    line2: 'story.',
-    subtitle: 'Join rooms. Build lore.',
-    cta: 'Join World',
-    sectionTitles: ['Active Roleplays', 'Fantasy Worlds', 'Social Rooms'],
-    keywords: ['roleplay', 'rp', 'story', 'world', 'city', 'school', 'fantasy', 'anime'],
-  },
-  Quiz: {
-    pill: 'Quiz Rush',
-    icon: 'help-circle',
-    line1: 'Test your',
-    line2: 'friends.',
-    subtitle: 'Quick questions. Big bragging rights.',
-    cta: 'Start Quiz',
-    sectionTitles: ['Trending Quizzes', 'Party Quiz', 'Guess The Game'],
-    keywords: ['quiz', 'trivia', 'question', 'guess', 'test', 'challenge'],
-  },
-};
+// The old explore tabs (For You / Games / Horror / Quiz / Roleplay) and their keyword-matched
+// chips lived here. They had already been cut from the render tree but left behind as dead state.
+// Discovery categories now come from the server — see src/constants/categories.ts.
 
 const TRENDING_SEARCHES = [
   'dream forge',
@@ -159,11 +64,13 @@ interface ExploreGame {
   embedUrl?: string;
   /** 'portrait' (default) or 'landscape' — GameSurface rotates the latter. */
   orientation?: Orientation | null;
+  /** Discovery categories (multi-label) from the game_categories join table. */
+  categories?: string[];
+  createdAt?: string | null;
   thumbnail?: string;
   plays?: number;
   likes?: number;
   color?: string;
-  category?: string;
   creatorDisplayName?: string | null;
   creatorUsername?: string | null;
 }
@@ -176,19 +83,6 @@ interface ExploreCreator {
   verified?: boolean;
 }
 
-interface HeroSlide {
-  id: string;
-  title: { line1: string; line2: string; accent: 'first' | 'second' };
-  subtitle: string;
-  ctaLabel: string;
-  ctaIcon: keyof typeof Ionicons.glyphMap;
-  ctaTarget: 'create' | 'game';
-  pillIcon: keyof typeof Ionicons.glyphMap;
-  pillLabel: string;
-  imageSource?: any;
-  imageUri?: string;
-  game?: ExploreGame;
-}
 
 const resolveThumbnail = (thumbnail?: string | null, gameId?: string, game?: ExploreGame) => {
   return resolveGameThumbnail(thumbnail, gameId, game);
@@ -201,90 +95,33 @@ const formatCount = (n?: number) => {
   return String(n);
 };
 
-const gameMatchesKeywords = (game: ExploreGame, keywords: string[]) => {
-  if (keywords.length === 0) return true;
-  const haystack = `${game.name || ''} ${game.category || ''}`.toLowerCase();
-  return keywords.some((keyword) => haystack.includes(keyword));
-};
 
-const rotateGames = (games: ExploreGame[], offset: number) => {
-  if (games.length === 0) return games;
-  const normalized = offset % games.length;
-  return [...games.slice(normalized), ...games.slice(0, normalized)];
-};
-
-const cardMetaForTab = (tab: ExploreTab, game: ExploreGame, index: number) => {
-  if (tab === 'Horror') {
-    return index % 2 === 0 ? '2-5 min' : 'Lights off';
-  }
-  if (tab === 'Roleplay') {
-    return index % 2 === 0 ? `${Math.max(3, ((game.plays || 0) % 9) + 2)} online` : 'Open room';
-  }
-  if (tab === 'Quiz') {
-    return `${8 + (index % 5) * 2} questions`;
-  }
-  if (tab === 'Games') {
-    return formatCount(game.plays || 0);
-  }
-  return formatCount(game.plays || 0);
-};
 
 export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen } = useAuthScreen();
-  const { setActiveTab, searchModalVisible, setSearchModalVisible } = useNavigation();
+  const { setActiveTab, setPendingDraftId, searchModalVisible, setSearchModalVisible } = useNavigation();
 
-  const [activeTab, setActiveTabState] = useState<ExploreTab>('For You');
   const [allGames, setAllGames] = useState<ExploreGame[]>([]);
   const [creators, setCreators] = useState<ExploreCreator[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [heroIndex, setHeroIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ExploreGame[]>([]);
   const [searchCreators, setSearchCreators] = useState<ExploreCreator[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState<any>(null);
   const [playingGame, setPlayingGame] = useState<ExploreGame | null>(null);
-  const [activeCategoryByTab, setActiveCategoryByTab] = useState<Record<NonForYouTab, string>>({
-    Games: 'Recommend',
-    Horror: 'Recommend',
-    Quiz: 'Recommend',
-    Roleplay: 'Recommend',
-  });
-  const heroScrollRef = useRef<ScrollView>(null);
+  const [remixTarget, setRemixTarget] = useState<ExploreGame | null>(null);
+  const [remixLoading, setRemixLoading] = useState(false);
+  // Active discovery category, or null for "Home" (all games).
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Filter games by tab
-  const filteredGames = useMemo(() => {
-    if (activeTab === 'For You') return allGames;
-    const lc = activeTab.toLowerCase();
-    const keywords = TAB_COPY[activeTab].keywords;
-    return allGames.filter((g) => {
-      const cat = (g.category || '').toLowerCase();
-      const name = (g.name || '').toLowerCase();
-      if (activeTab === 'Games') return true;
-      return cat.includes(lc) || name.includes(lc) || gameMatchesKeywords(g, keywords);
-    });
-  }, [allGames, activeTab]);
-
-  const tabGames = filteredGames.length > 0 ? filteredGames : allGames;
-  const tabCopy = TAB_COPY[activeTab];
-  const activeCategory =
-    activeTab === 'For You' ? null : activeCategoryByTab[activeTab as NonForYouTab];
-  const categoryChips = activeTab === 'For You' ? [] : TAB_CATEGORY_CHIPS[activeTab as NonForYouTab];
-  const activeCategoryConfig = activeCategory
-    ? categoryChips.find((chip) => chip.label === activeCategory)
-    : undefined;
+  // Games in the current category. Multi-label: a game shows under every category it carries.
   const categoryGames = useMemo(() => {
-    if (!activeCategoryConfig || activeCategoryConfig.keywords.length === 0) return tabGames;
-    const matched = tabGames.filter((game) => gameMatchesKeywords(game, activeCategoryConfig.keywords));
-    return matched.length > 0 ? matched : tabGames;
-  }, [activeCategoryConfig, tabGames]);
-
-  useEffect(() => {
-    setHeroIndex(0);
-    heroScrollRef.current?.scrollTo({ x: 0, animated: false });
-  }, [activeTab]);
+    if (!activeCategory) return allGames;
+    return allGames.filter((g) => (g.categories || []).includes(activeCategory));
+  }, [allGames, activeCategory]);
 
   const loadData = async () => {
     try {
@@ -312,48 +149,6 @@ export const ExploreScreen: React.FC = () => {
     await loadData();
     setRefreshing(false);
   };
-
-  // Build hero carousel: Dream Forge promo + top 4 trending games
-  const heroSlides = useMemo<HeroSlide[]>(() => {
-    const featured = tabGames[0];
-    const slides: HeroSlide[] = [
-      {
-        id: activeTab === 'For You' ? 'dream-forge' : `tab-${activeTab}`,
-        title: { line1: tabCopy.line1, line2: tabCopy.line2, accent: 'second' },
-        subtitle: tabCopy.subtitle,
-        ctaLabel: tabCopy.cta,
-        ctaIcon: tabCopy.icon,
-        ctaTarget: activeTab === 'For You' || !featured ? 'create' : 'game',
-        pillIcon: tabCopy.icon,
-        pillLabel: tabCopy.pill,
-        imageSource: activeTab === 'For You' ? DREAM_FORGE_HERO : undefined,
-        imageUri: activeTab === 'For You' || !featured ? undefined : resolveThumbnail(featured.thumbnail, featured.id, featured),
-        game: activeTab === 'For You' ? undefined : featured,
-      },
-    ];
-    tabGames.slice(activeTab === 'For You' ? 0 : 1, activeTab === 'For You' ? 4 : 5).forEach((g) => {
-      slides.push({
-        id: `game-${g.id}`,
-        title: { line1: g.name.split(' ').slice(0, 2).join(' '), line2: g.name.split(' ').slice(2).join(' ') || 'Play now.', accent: 'second' },
-        subtitle: g.creatorDisplayName ? `by @${g.creatorDisplayName}` : 'Trending now',
-        ctaLabel: 'Play Now',
-        ctaIcon: 'play',
-        ctaTarget: 'game',
-        pillIcon: 'flame',
-        pillLabel: 'Trending',
-        imageUri: resolveThumbnail(g.thumbnail, g.id, g),
-        game: g,
-      });
-    });
-    return slides;
-  }, [activeTab, tabCopy, tabGames]);
-
-  const tabSections = useMemo(() => {
-    return tabCopy.sectionTitles.map((title, index) => ({
-      title,
-      games: rotateGames(tabGames, index * 3).slice(0, 8),
-    }));
-  }, [tabCopy.sectionTitles, tabGames]);
 
   const topGames = useMemo(() => {
     return [...allGames]
@@ -388,6 +183,43 @@ export const ExploreScreen: React.FC = () => {
     return () => clearTimeout(t);
   }, [searchQuery]);
 
+  // Remix from the player's action rail. Mirrors HomeScreen: confirm first, because a stray tap
+  // would otherwise silently create a draft.
+  const handleRemix = (game: ExploreGame) => {
+    const sourceId = game.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    if (!sourceId) {
+      Alert.alert('Cannot remix', "This game can't be remixed.");
+      return;
+    }
+    setRemixTarget(game);
+  };
+
+  const confirmRemix = async () => {
+    if (!remixTarget || remixLoading) return;
+    const sourceId = remixTarget.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    if (!sourceId) {
+      setRemixTarget(null);
+      return;
+    }
+    setRemixLoading(true);
+    try {
+      const res = await aiApi.remixGame(sourceId);
+      if (res?.draftId) {
+        setRemixTarget(null);
+        setPlayingGame(null);
+        // Jump straight into editing the fresh remix draft.
+        setPendingDraftId(res.draftId);
+        setActiveTab('create');
+      } else {
+        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
+      }
+    } catch (e: any) {
+      Alert.alert('Remix failed', e?.message || String(e));
+    } finally {
+      setRemixLoading(false);
+    }
+  };
+
   const openGame = async (gameOrId: string | ExploreGame) => {
     const existingGame = typeof gameOrId === 'string'
       ? allGames.find((game) => game.id === gameOrId)
@@ -412,12 +244,21 @@ export const ExploreScreen: React.FC = () => {
   };
 
   const trendingGames = useMemo(() => {
-    return [...allGames].sort((a, b) => (b.plays || 0) - (a.plays || 0));
-  }, [allGames]);
+    return [...categoryGames].sort((a, b) => (b.plays || 0) - (a.plays || 0));
+  }, [categoryGames]);
 
-  const freshGames = allGames;
+  // Genuinely newest-first. This used to be `allGames` verbatim — the backend's
+  // order relabelled "New", which meant it was never actually sorted by date.
+  const freshGames = useMemo(() => {
+    return [...categoryGames].sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
+  }, [categoryGames]);
 
   const CARD_WIDTH = (Dimensions.get('window').width - 52) / 3;
+  // A landscape game is built for 844x390. Squeezing it into the 3:4 portrait card
+  // letterboxed it; wide games get a wide tile spanning two columns instead.
+  const WIDE_CARD_WIDTH = CARD_WIDTH * 2 + 8;
 
   const renderGameRow = (title: string, gamesList: ExploreGame[]) => {
     if (gamesList.length === 0) return null;
@@ -440,8 +281,19 @@ export const ExploreScreen: React.FC = () => {
             style={{ marginBottom: chunkIndex < chunks.length - 1 ? 14 : 0 }}
           >
             {chunk.map((g) => (
-              <Pressable key={g.id} style={[styles.gameCard, { width: CARD_WIDTH }]} onPress={() => openGame(g.id)}>
-                <View style={[styles.gameCardThumb, { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 }]}>
+              <Pressable
+                key={g.id}
+                style={[styles.gameCard, { width: isLandscape(g.orientation) ? WIDE_CARD_WIDTH : CARD_WIDTH }]}
+                onPress={() => openGame(g.id)}
+              >
+                <View
+                  style={[
+                    styles.gameCardThumb,
+                    isLandscape(g.orientation)
+                      ? { width: WIDE_CARD_WIDTH, height: WIDE_CARD_WIDTH * (390 / 844) }
+                      : { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 },
+                  ]}
+                >
                   <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
                 </View>
                 <View style={styles.gameCardMeta}>
@@ -487,37 +339,37 @@ export const ExploreScreen: React.FC = () => {
           <Text style={styles.searchBarPlaceholder}>Search games, creators, worlds</Text>
         </Pressable>
 
-        {/* Creators strip */}
-        {creators.length > 0 && (
-          <View style={styles.creatorSection}>
-            <Text style={styles.sectionTitle}>People to follow</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.creatorScrollContent}>
-              {creators.slice(0, 20).map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={styles.creatorCol}
-                  onPress={() =>
-                    setSelectedCreator({
-                      id: c.id,
-                      username: c.username,
-                      displayName: c.displayName,
-                      avatar: c.avatar,
-                      verified: c.verified,
-                      isFriend: false,
-                    })
-                  }
-                >
-                  <View style={styles.creatorAvatarWrap}>
-                    <Avatar uri={c.avatar} userId={c.id} size={62} />
-                  </View>
-                  <Text style={styles.creatorHandle} numberOfLines={1}>
-                    @{c.username}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        {/* Category nav. "Home" is the all-games tab, not a category a game can carry.
+            Inside any category the sub-navigation is just Trending and New. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryNav}
+          style={styles.categoryNavWrap}
+        >
+          <Pressable
+            style={[styles.categoryChip, !activeCategory && styles.categoryChipActive]}
+            onPress={() => setActiveCategory(null)}
+          >
+            <Text style={[styles.categoryChipText, !activeCategory && styles.categoryChipTextActive]}>
+              Home
+            </Text>
+          </Pressable>
+          {CATEGORIES.map((c) => {
+            const active = activeCategory === c.slug;
+            return (
+              <Pressable
+                key={c.slug}
+                style={[styles.categoryChip, active && styles.categoryChipActive]}
+                onPress={() => setActiveCategory(c.slug)}
+              >
+                <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                  {c.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
         {/* Game Rows */}
         {renderGameRow('Trending', trendingGames)}
@@ -525,7 +377,9 @@ export const ExploreScreen: React.FC = () => {
 
         {trendingGames.length === 0 && freshGames.length === 0 && (
           <View style={styles.exploreEmpty}>
-            <Text style={styles.exploreEmptyText}>No games found.</Text>
+            <Text style={styles.exploreEmptyText}>
+              {activeCategory ? `Nothing in ${categoryLabel(activeCategory)} yet.` : 'No games found.'}
+            </Text>
           </View>
         )}
 
@@ -748,6 +602,16 @@ export const ExploreScreen: React.FC = () => {
         game={playingGame}
         onClose={() => setPlayingGame(null)}
         recordPlay={false}
+        onRemix={(game) => handleRemix(game as ExploreGame)}
+      />
+
+      <RemixModal
+        visible={!!remixTarget}
+        gameName={remixTarget?.name}
+        gameThumbnail={remixTarget ? resolveThumbnail(remixTarget.thumbnail, remixTarget.id, remixTarget) : null}
+        loading={remixLoading}
+        onCancel={() => { if (!remixLoading) setRemixTarget(null); }}
+        onConfirm={confirmRemix}
       />
 
 
@@ -1369,25 +1233,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: HORIZ_PAD,
     gap: 14,
   },
-  creatorCol: {
-    width: 70,
-    alignItems: 'center',
-  },
-  creatorAvatarWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    overflow: 'hidden',
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  creatorHandle: {
-    color: TEXT_MUTED,
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
 
   searchModal: {
     flex: 1,
@@ -1613,12 +1458,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  creatorSection: {
-    marginBottom: 24,
+  categoryNavWrap: {
+    marginBottom: 22,
   },
-  creatorScrollContent: {
+  categoryNav: {
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  categoryChipActive: {
+    backgroundColor: '#fff',
+    borderColor: '#fff',
+  },
+  categoryChipText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryChipTextActive: {
+    color: '#000',
   },
   gameRowSection: {
     marginBottom: 28,

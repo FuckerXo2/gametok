@@ -14,7 +14,8 @@ import { games as gamesApi, API_URL } from '../services/api';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GameLoadingScreen } from './GameLoadingScreen';
 import { GameSurface, buildGameUrl } from './GameSurface';
-import type { Orientation } from '../constants/orientation';
+import { GameActionRail } from './GameActionRail';
+import { isLandscape, type Orientation } from '../constants/orientation';
 
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
@@ -30,6 +31,7 @@ export interface PlayableGame {
   orientation?: Orientation | string | null;
   creatorDisplayName?: string | null;
   creatorUsername?: string | null;
+  likes?: number | null;
 }
 
 interface Props {
@@ -40,9 +42,14 @@ interface Props {
    * recorded the play itself, or double counting will inflate the number.
    */
   recordPlay?: boolean;
+  /**
+   * Provide to show Remix on the action rail. Needs the host to be able to route into the create
+   * tab with the new draft, so hosts that can't are simply not given the button.
+   */
+  onRemix?: (game: PlayableGame) => void;
 }
 
-export const GamePlayerModal = ({ game, onClose, recordPlay = true }: Props) => {
+export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: Props) => {
   const insets = useSafeAreaInsets();
   const [loaded, setLoaded] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -101,6 +108,20 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true }: Props) => 
               progress={progress}
             />
           </View>
+        ) : null}
+
+        {/* Action rail — only once the game is up, so it never sits over the loading screen.
+            Skipped for landscape games for the same reason HomeScreen skips it: the rail is
+            positioned against portrait-relative insets, and the game's content is rotated 90deg
+            inside the portrait frame, so an un-rotated rail would print sideways across the game. */}
+        {game && loaded && !isLandscape(game.orientation) ? (
+          <GameActionRail
+            gameId={game.id}
+            gameName={game.name}
+            initialLikeCount={game.likes || 0}
+            bottomOffset={insets.bottom + 24}
+            onRemix={onRemix ? () => onRemix(game) : undefined}
+          />
         ) : null}
 
         <Pressable

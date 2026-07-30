@@ -17,6 +17,11 @@ import { LeaderboardModal } from '../components/LeaderboardModal';
 import { GameLoadingScreen } from '../components/GameLoadingScreen';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CommentsModal } from '../components/CommentsModal';
+import {
+  AnimatedLikeButton,
+  AnimatedShareButton,
+  AnimatedCommentButton,
+} from '../components/GameActionRail';
 import { Avatar } from '../components/Avatar';
 import { UserProfileModal } from '../components/UserProfileModal';
 import { useDeepLink, useNavigation } from '../../App';
@@ -47,10 +52,8 @@ interface Game {
   plays?: number;
   saves?: number;
   color?: string;
-  category?: string | null;
-  subcategory?: string | null;
-  primaryTab?: string | null;
-  discoveryChips?: string[];
+  /** Discovery categories (multi-label). Replaces category/subcategory/primaryTab/discoveryChips. */
+  categories?: string[];
   creatorId?: string | null;
   creatorDisplayName?: string | null;
   creatorUsername?: string | null;
@@ -863,17 +866,6 @@ const GAME_READY_SCRIPT = `
 true;
 `;
 
-// Format count like TikTok (1.2K, 3.4M, etc)
-const formatCount = (count: number): string => {
-  if (count >= 1000000) {
-    return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-  }
-  if (count >= 1000) {
-    return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-  }
-  return count.toString();
-};
-
 // Generate fake engagement numbers that vary per day + session
 // Numbers "grow" over time (day-based) and jitter per session
 const hashString = (str: string): number => {
@@ -910,117 +902,6 @@ const createFeed = (games: Game[], cycle: number = 0): FeedItem[] => {
   });
 
   return result;
-};
-
-// Animated Like Button
-const AnimatedLikeButton = ({
-  isLiked,
-  onPress,
-  likeCount,
-  styles
-}: {
-  isLiked: boolean;
-  onPress: (e: any) => void;
-  likeCount: number;
-  styles: any;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePress = (e: any) => {
-    Animated.sequence([
-      Animated.timing(scale, {
-        toValue: 0.7,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scale, {
-        toValue: 1.2,
-        friction: 3,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scale, {
-        toValue: 1,
-        friction: 4,
-        tension: 100,
-        useNativeDriver: true,
-      })
-    ]).start();
-    onPress(e);
-  };
-
-  return (
-    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons
-          name="heart"
-          size={35}
-          color={isLiked ? LoopsColors.mainPink : LoopsColors.white}
-        />
-      </Animated.View>
-      <Text style={styles.actionCount}>{formatCount(likeCount)}</Text>
-    </TouchableOpacity>
-  );
-};
-
-const AnimatedShareButton = ({
-  onPress,
-  shareCount,
-  styles
-}: {
-  onPress: (e: any) => void;
-  shareCount: number;
-  styles: any;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePress = (e: any) => {
-    onPress(e);
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 0.7, duration: 100, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1.2, friction: 3, tension: 40, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
-    ]).start();
-  };
-
-  return (
-    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons name="arrow-redo" size={32} color={LoopsColors.white} />
-      </Animated.View>
-      <Text style={styles.actionCount}>{formatCount(shareCount)}</Text>
-    </TouchableOpacity>
-  );
-};
-
-const AnimatedCommentButton = ({
-  onPress,
-  commentCount,
-  styles
-}: {
-  onPress: (e: any) => void;
-  commentCount: number;
-  styles: any;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const handlePress = (e: any) => {
-    onPress(e);
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 0.72, duration: 90, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1.14, friction: 3, tension: 40, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, friction: 4, tension: 100, useNativeDriver: true })
-    ]).start();
-  };
-
-  return (
-    <TouchableOpacity style={styles.actionButton} onPress={handlePress} activeOpacity={0.9}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons name="chatbubble-outline" size={32} color={LoopsColors.white} />
-      </Animated.View>
-      <Text style={styles.actionCount}>{formatCount(commentCount)}</Text>
-    </TouchableOpacity>
-  );
 };
 
 const AnimatedFollowBadge = ({

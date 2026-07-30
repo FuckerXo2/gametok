@@ -740,7 +740,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // orientation cannot be changed after generation — the game is built and verified for one.
   const [orientation, setOrientation] = useState<Orientation | null>(null);
   const [studioOrientation, setStudioOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
-  const [isOpeningDraft, setIsOpeningDraft] = useState(false);
+  // Which draft is being fetched, so the spinner can sit on that tile instead of blanking the
+  // whole Forge. Null when nothing is opening.
+  const [openingDraftId, setOpeningDraftId] = useState<string | null>(null);
   // ...or with a game that already exists (draft, remix, finished build), in
   // which case the studio skips planning and opens on Preview.
   const [studioGame, setStudioGame] = useState<{
@@ -1101,7 +1103,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // Remix hand-off from the feed).
   const openDraftInEditor = useCallback(
     async (draftId: string) => {
-      setIsOpeningDraft(true);
+      setOpeningDraftId(draftId);
       try {
         const res = (await ai.getDraft(draftId)) as any;
         if (res?.draft?.html_payload || res?.draft?.game_url) {
@@ -1117,7 +1119,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       } catch (e) {
         console.error("Failed to open draft:", e);
       } finally {
-        setIsOpeningDraft(false);
+        setOpeningDraftId(null);
       }
     },
     [openGameInStudio],
@@ -2164,44 +2166,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     setStudioPrompt(finalPrompt);
     setStudioOrientation(orientation);
     setStudioOpen(true);
-    return;
-
-    // Generate game spec
-    setPhase("refining");
-    setIsGeneratingSpec(true);
-    setIsRefiningSpecMessage(false);
-    setRefinementBrief(finalPrompt);
-    setGameSpec(null);
-    setConversationHistory([]);
-    setAiMessage(null);
-    hasAutoScrolledToSpecRef.current = false;
-
-    try {
-      const res = (await ai.generateSpec(finalPrompt)) as any;
-      setIsGeneratingSpec(false);
-
-      if (res.success && res.spec) {
-        setGameSpec(res.spec);
-        const introMessage = `I shaped this into ${res.spec.title}. You can tweak the idea here, or tap Create when it feels right.`;
-        setAiMessage(introMessage);
-        setConversationHistory([
-          { role: "user", content: finalPrompt },
-          { role: "ai", content: introMessage },
-        ]);
-      } else {
-        // Show error and stay on refining screen
-        Alert.alert("Oops", "Failed to generate game spec. Please try again.", [
-          { text: "OK", onPress: () => setPhase("idle") },
-        ]);
-      }
-    } catch (error) {
-      console.error("Spec generation failed:", error);
-      setIsGeneratingSpec(false);
-      // Show error and stay on refining screen
-      Alert.alert("Oops", "Spec generation timed out. Please try again.", [
-        { text: "OK", onPress: () => setPhase("idle") },
-      ]);
-    }
   };
 
   const interpretEditIntent = useCallback(
@@ -6665,7 +6629,7 @@ Description: ${gameSpec.description}
                             >
                               {opt.label}
                             </Text>
-                            <Text style={styles.orientationCardSub} numberOfLines={2}>
+                            <Text style={styles.orientationCardSub} numberOfLines={1}>
                               {opt.sub}
                             </Text>
                           </Pressable>
@@ -7140,7 +7104,9 @@ Description: ${gameSpec.description}
                       styles.draftCard,
                       pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
                     ]}
+                    disabled={!!openingDraftId}
                     onPress={() => {
+                      if (openingDraftId) return;
                       setActiveDraftThumbnail(getDraftThumbnail(draft));
                       void openDraftInEditor(draft.id);
                     }}
@@ -7194,6 +7160,14 @@ Description: ${gameSpec.description}
                       <View style={styles.draftBadge}>
                         <Text style={styles.draftBadgeText}>Completed</Text>
                       </View>
+
+                      {/* Opening this draft — scoped to the tapped tile so the rest of the Forge
+                          stays put while the draft is fetched. */}
+                      {openingDraftId === draft.id && (
+                        <View style={styles.draftOpeningVeil}>
+                          <ActivityIndicator color="#FFF" />
+                        </View>
+                      )}
                     </View>
 
                     {/* Info */}
@@ -7292,7 +7266,11 @@ Description: ${gameSpec.description}
   // The shell carries `styles.screen` (absolute fill + zIndex): CreateScreen is
   // an overlay above the whole app, not a flow-layout child. A plain flex:1
   // wrapper here drops it into App's layout, below the tab bar.
-  const showLoading = isOpeningDraft || !!openDraftId;
+  // Only the feed's remix hand-off gets a full-screen cover: the user arrives from the feed with
+  // the Forge not yet on screen, so there is nothing behind to show. Tapping one of your own drafts
+  // keeps the drafts list visible and puts a spinner on that tile instead — blanking the whole
+  // screen for a single GET was the jarring part.
+  const showLoading = !!openDraftId;
 
   return (
     <View style={styles.screen}>
@@ -7300,7 +7278,7 @@ Description: ${gameSpec.description}
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#08080C" }}>
           <ActivityIndicator size="large" color="#FF3B30" />
           <Text style={{ color: "#8E8E93", marginTop: 16, fontSize: 16, fontWeight: "600" }}>
-            Opening Remix...
+            Opening remix...
           </Text>
         </View>
       ) : phase === "refining"
@@ -9023,6 +9001,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  draftOpeningVeil: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(8,8,12,0.62)",
+    borderRadius: 14,
   },
   draftThumbnail: {
     width: "100%",

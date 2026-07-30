@@ -34,8 +34,6 @@ import { UserProfileModal } from './UserProfileModal';
 // V2 design tokens — kept inline so this screen is self-contained.
 const PURPLE = '#a855f7';
 const PURPLE_DEEP = '#7c3aed';
-const CYAN = '#22d3ee';
-const GOLD = '#f59e0b';
 const TEXT = '#ffffff';
 const TEXT_MUTED = '#9a9aa8';
 const TEXT_DIM = '#6b6b78';
@@ -206,13 +204,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
         {/* Bio */}
         {bio ? <Text style={styles.bio}>{bio}</Text> : null}
-
-        {/* Badge row */}
-        <View style={styles.badgeRow}>
-          <BadgePill icon="sparkles" label="Creator" tint={PURPLE} />
-          <BadgePill icon="game-controller" label="Game Builder" tint={CYAN} />
-          <BadgePill icon="ribbon" label="Early Access" tint={GOLD} />
-        </View>
 
         {/* Stat row (4 columns, no card) */}
         <View style={styles.statsRow}>
@@ -415,35 +406,6 @@ const VerifiedDot: React.FC<{ size?: number }> = ({ size = 16 }) => (
     <MaterialIcons name="verified" size={size} color={PURPLE} />
   </View>
 );
-
-const BadgePill: React.FC<{ icon: keyof typeof Ionicons.glyphMap; label: string; tint: string }> = ({
-  icon,
-  label,
-  tint,
-}) => (
-  <View style={[badgeStyles.pill, { borderColor: `${tint}55` }]}>
-    <Ionicons name={icon} size={13} color={tint} />
-    <Text style={[badgeStyles.label, { color: TEXT }]}>{label}</Text>
-  </View>
-);
-
-const badgeStyles = StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: -0.1,
-  },
-});
 
 const StatCol: React.FC<{ value: number; label: string; onPress?: () => void }> = ({ value, label, onPress }) => {
   const Wrapper: any = onPress ? Pressable : View;
@@ -785,15 +747,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
     paddingHorizontal: 32,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-    marginTop: 16,
-    paddingHorizontal: 16,
-    minHeight: 36, // Fixed height to prevent layout shift
   },
   statsRow: {
     flexDirection: 'row',

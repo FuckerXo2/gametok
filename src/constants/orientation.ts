@@ -30,13 +30,13 @@ export const ORIENTATION_OPTIONS: Array<{
   {
     key: 'portrait',
     label: 'Portrait',
-    sub: 'Tall screen — runners, flappy, stackers',
+    sub: 'Tall screen',
     glyph: 'phone-portrait-outline',
   },
   {
     key: 'landscape',
     label: 'Landscape',
-    sub: 'Wide screen — racers, platformers, fighters',
+    sub: 'Wide screen',
     glyph: 'phone-landscape-outline',
   },
 ];

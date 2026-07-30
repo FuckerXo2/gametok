@@ -73,8 +73,6 @@ const PROFILE_GRID_GAP = 2;
 const PROFILE_GRID_SIZE = (Dimensions.get('window').width - PROFILE_GRID_GAP * 4) / 3;
 const PROFILE_TILE_HEIGHT = PROFILE_GRID_SIZE * 1.34;
 const PURPLE = '#a855f7';
-const CYAN = '#22d3ee';
-const GOLD = '#f59e0b';
 
 const formatCompactNumber = (value?: number | null) => {
   if (typeof value !== 'number') return '—';
@@ -477,21 +475,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 {activeUser.bio || 'GameTok player.'}
               </Text>
 
-              <View style={styles.badgeRow}>
-                <View style={[styles.badgePill, { borderColor: `${PURPLE}55` }]}>
-                  <Ionicons name="sparkles" size={13} color={PURPLE} />
-                  <Text style={styles.badgeText}>Creator</Text>
-                </View>
-                <View style={[styles.badgePill, { borderColor: `${CYAN}55` }]}>
-                  <Ionicons name="game-controller" size={13} color={CYAN} />
-                  <Text style={styles.badgeText}>Game Builder</Text>
-                </View>
-                <View style={[styles.badgePill, { borderColor: `${GOLD}55` }]}>
-                  <Ionicons name="ribbon" size={13} color={GOLD} />
-                  <Text style={styles.badgeText}>Early Access</Text>
-                </View>
-              </View>
-
               <View style={styles.statsRow}>
                 <TouchableOpacity style={styles.statItem} onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}>
                   <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactNumber(userStats?.following)}</Text>
@@ -822,30 +805,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     maxWidth: 280,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 7,
-    marginTop: 12,
-    paddingHorizontal: 6,
-  },
-  badgePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: -0.1,
   },
   statsRow: {
     flexDirection: 'row',

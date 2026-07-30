@@ -7,9 +7,6 @@ type ThumbnailGame = {
   id?: string | null;
   name?: string | null;
   title?: string | null;
-  category?: string | null;
-  subcategory?: string | null;
-  primaryTab?: string | null;
 };
 
 export const resolveGameThumbnail = (
