@@ -3279,10 +3279,18 @@ Description: ${gameSpec.description}
       }
     } catch (e: any) {
       console.error("Publish error:", e?.message || e);
-      Alert.alert(
-        "Publish Failed",
-        e?.message || "Something went wrong. Please try again.",
-      );
+      // Not a failure so much as a rule: an untouched remix is just someone else's game.
+      if (e?.code === "REMIX_UNCHANGED") {
+        Alert.alert(
+          "Change something first",
+          "This remix is still identical to the original. Tap “Edit game” and make at least one change before posting it as yours.",
+        );
+      } else {
+        Alert.alert(
+          "Publish Failed",
+          e?.message || "Something went wrong. Please try again.",
+        );
+      }
     } finally {
       setIsPublishing(false);
     }

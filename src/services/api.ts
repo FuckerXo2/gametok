@@ -132,6 +132,9 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs: n
     if (!response.ok) {
       const error: any = new Error(data.error || data.message || `Request failed. Dump: ${JSON.stringify(data)}`);
       error.status = response.status;
+      // Carry the machine-readable code through so callers can react to a specific failure
+      // instead of string-matching the human message.
+      if (data.code) error.code = data.code;
       throw error;
     }
 
