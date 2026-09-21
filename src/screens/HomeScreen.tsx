@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Dimensions, useWindowDimensions, PanResponder, Animated, TouchableOpacity, Pressable, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, useWindowDimensions, PanResponder, Animated, TouchableOpacity, Pressable, Image, ImageBackground, Easing, ActivityIndicator, AppState, Alert, Platform } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { WebView as WebViewType } from 'react-native-webview';
@@ -32,9 +32,22 @@ import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { LoopsAnimations } from '../constants/LoopsAnimations';
 import { isLandscape, type Orientation } from '../constants/orientation';
 import { GameSurface } from '../components/GameSurface';
+import {
+  createLifecycleMessage,
+  createQualityMessage,
+  type GameTokQualityTier,
+  type GameTokRuntimeMessage,
+} from '../runtime/web/GameTokWebRuntime';
+import {
+  GAME_AUDIO_GUARD_SCRIPT,
+  COOPERATIVE_PAUSE_SCRIPT,
+  COOPERATIVE_RESUME_SCRIPT,
+  COOPERATIVE_WARM_SCRIPT,
+  HARD_MUTE_CLEANUP_SCRIPT,
+} from '../runtime/web/GameAudioGuard';
 
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GAMES_HOST = 'https://games.gametok.co';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 const TAB_BAR_HEIGHT = 50; // Base tab bar height (insets.bottom added dynamically)
@@ -106,414 +119,7 @@ const isExternalGame = (game: Game) => !!game.embedUrl;
 
 // Domains to block at request level
 
-const GAME_AUDIO_GUARD_SCRIPT = `
-(function() {
-  if (window.__gametokAudioGuardInstalled) return true;
-  window.__gametokAudioGuardInstalled = true;
-  window._gametokActive = false;
-  window._gametokMuted = true;
-  window._audioContexts = window._audioContexts || [];
-
-  // Walk this window plus every same-origin child frame. A lot of HTML5 games
-  // (especially distribution/ad-wrapped ones) run their actual audio inside a
-  // nested <iframe>, which the top-frame mute never reached - that is why the
-  // previous game kept playing after a scroll or after leaving the screen.
-  var forEachFrame = function(win, cb) {
-    try { cb(win); } catch (e) {}
-    var frames;
-    try { frames = win.frames; } catch (e) { return; }
-    if (!frames) return;
-    for (var i = 0; i < frames.length; i++) {
-      var child;
-      try {
-        child = frames[i];
-        void child.document; // throws for cross-origin frames -> skip them
-      } catch (e) { continue; }
-      if (child && child !== win) forEachFrame(child, cb);
-    }
-  };
-  window.__gametokForEachFrame = function(cb) { forEachFrame(window, cb); };
-
-  var muteWindow = function(win) {
-    try { win._gametokActive = false; win._gametokMuted = true; } catch (e) {}
-    try {
-      win.document && win.document.querySelectorAll('audio, video').forEach(function(el) {
-        try { el.pause(); el.muted = true; el.volume = 0; } catch (e) {}
-      });
-    } catch (e) {}
-    try { (win._audioContexts || []).forEach(function(ctx) { try { ctx.suspend(); } catch (e) {} }); } catch (e) {}
-    try { if (win.Howler) win.Howler.mute(true); } catch (e) {}
-    try {
-      if (win.Phaser && win.Phaser.GAMES) win.Phaser.GAMES.forEach(function(g) {
-        try { if (g && g.sound) { g.sound.mute = true; g.sound.pauseAll && g.sound.pauseAll(); } } catch (e) {}
-      });
-    } catch (e) {}
-    try { if (win.createjs && win.createjs.Sound) win.createjs.Sound.muted = true; } catch (e) {}
-  };
-
-  var unmuteWindow = function(win) {
-    try { win._gametokActive = true; win._gametokMuted = false; } catch (e) {}
-    try { (win._audioContexts || []).forEach(function(ctx) { try { ctx.resume(); } catch (e) {} }); } catch (e) {}
-    try {
-      win.document && win.document.querySelectorAll('audio, video').forEach(function(el) {
-        try { el.muted = false; el.volume = 1; } catch (e) {}
-      });
-    } catch (e) {}
-    try { if (win.Howler) win.Howler.mute(false); } catch (e) {}
-    try {
-      if (win.Phaser && win.Phaser.GAMES) win.Phaser.GAMES.forEach(function(g) {
-        try { if (g && g.sound) g.sound.mute = false; } catch (e) {}
-      });
-    } catch (e) {}
-    try { if (win.createjs && win.createjs.Sound) win.createjs.Sound.muted = false; } catch (e) {}
-  };
-
-  window.__gametokMuteAll = function() {
-    window._gametokActive = false;
-    window._gametokMuted = true;
-    try { window._gamePaused = true; } catch (e) {}
-    try { window.dispatchEvent(new Event('blur')); } catch (e) {}
-    try { document.dispatchEvent(new Event('gametok:pause')); } catch (e) {}
-    forEachFrame(window, muteWindow);
-    try {
-      if (navigator.mediaSession) {
-        navigator.mediaSession.metadata = null;
-        navigator.mediaSession.playbackState = 'paused';
-      }
-    } catch (e) {}
-  };
-  window.__gametokUnmuteAll = function() {
-    window._gametokActive = true;
-    window._gametokMuted = false;
-    try { window._gamePaused = false; } catch (e) {}
-    try { window.dispatchEvent(new Event('focus')); } catch (e) {}
-    try { document.dispatchEvent(new Event('gametok:resume')); } catch (e) {}
-    forEachFrame(window, unmuteWindow);
-    try {
-      if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
-    } catch (e) {}
-  };
-
-  // Install the Audio / AudioContext / <media>.play guards into a window realm.
-  // Each same-origin frame has its own constructors and prototypes, so the
-  // guard has to be installed per realm (top frame + nested frames).
-  var installInWindow = function(win) {
-    try {
-      if (win.__gametokRealmGuarded) return;
-      win.__gametokRealmGuarded = true;
-      win._audioContexts = win._audioContexts || [];
-
-      var NativeAudio = win.Audio;
-      if (NativeAudio && !NativeAudio.__gametokWrapped) {
-        var WrappedAudio = function(src) {
-          var audio = new NativeAudio(src);
-          try { audio.muted = true; audio.volume = 0; } catch (e) {}
-          var nativePlay = audio.play ? audio.play.bind(audio) : null;
-          if (nativePlay) {
-            audio.play = function() {
-              if (!window._gametokActive || window._gametokMuted) {
-                try { audio.muted = true; audio.volume = 0; } catch (e) {}
-                return Promise.resolve();
-              }
-              return nativePlay();
-            };
-          }
-          return audio;
-        };
-        WrappedAudio.prototype = NativeAudio.prototype;
-        WrappedAudio.__gametokWrapped = true;
-        win.Audio = WrappedAudio;
-      }
-
-      var NativeAudioContext = win.AudioContext || win.webkitAudioContext;
-      if (NativeAudioContext && !NativeAudioContext.__gametokWrapped) {
-        var WrappedAudioContext = function() {
-          var ctx = new NativeAudioContext();
-          try { win._audioContexts.push(ctx); } catch (e) {}
-          if (!window._gametokActive || window._gametokMuted) {
-            try { ctx.suspend(); } catch (e) {}
-          }
-          return ctx;
-        };
-        WrappedAudioContext.prototype = NativeAudioContext.prototype;
-        WrappedAudioContext.__gametokWrapped = true;
-        win.AudioContext = WrappedAudioContext;
-        win.webkitAudioContext = WrappedAudioContext;
-      }
-
-      if (win.HTMLMediaElement && win.HTMLMediaElement.prototype && !win.HTMLMediaElement.prototype.__gametokPlayWrapped) {
-        var nativeMediaPlay = win.HTMLMediaElement.prototype.play;
-        win.HTMLMediaElement.prototype.play = function() {
-          if (!window._gametokActive || window._gametokMuted) {
-            try { this.muted = true; this.volume = 0; this.pause(); } catch (e) {}
-            return Promise.resolve();
-          }
-          return nativeMediaPlay.apply(this, arguments);
-        };
-        win.HTMLMediaElement.prototype.__gametokPlayWrapped = true;
-      }
-    } catch (e) {}
-  };
-
-  try {
-    if (navigator.mediaSession) {
-      navigator.mediaSession.metadata = null;
-      navigator.mediaSession.playbackState = 'none';
-    }
-  } catch (e) {}
-
-  installInWindow(window);
-
-  // Guard nested same-origin frames as they appear and keep them silent while
-  // this WebView is the inactive/background game.
-  var sweepFrames = function() {
-    forEachFrame(window, function(win) {
-      if (win === window) return;
-      installInWindow(win);
-      if (!window._gametokActive || window._gametokMuted) muteWindow(win);
-    });
-  };
-
-  var installObserver = function() {
-    if (!window._gametokActive || window._gametokMuted) window.__gametokMuteAll();
-    sweepFrames();
-    if (!window._gametokMediaObserver && document.body) {
-      window._gametokMediaObserver = new MutationObserver(function() {
-        if (!window._gametokActive || window._gametokMuted) {
-          window.__gametokMuteAll();
-          sweepFrames();
-        }
-      });
-      window._gametokMediaObserver.observe(document.body, { childList: true, subtree: true });
-    }
-    if (!window._gametokFrameSweep) {
-      window._gametokFrameSweep = setInterval(sweepFrames, 1000);
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', installObserver, { once: true });
-  } else {
-    installObserver();
-  }
-
-  var handleHostMessage = function(event) {
-    try {
-      var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-      if (!data || !data.type) return;
-      if (data.type === 'GAMETOK_PAUSE') window.__gametokMuteAll();
-      if (data.type === 'GAMETOK_RESUME') window.__gametokUnmuteAll();
-    } catch (e) {}
-  };
-  window.addEventListener('message', handleHostMessage);
-  document.addEventListener('message', handleHostMessage);
-})();
-true;
-`;
-
-
-// Script to pause/freeze a game
-const PAUSE_SCRIPT = `
-(function() {
-  if (window.__gametokMuteAll) {
-    try { window.__gametokMuteAll(); } catch(e) {}
-  }
-
-  // Immediately mute everything
-  window._gamePaused = true;
-  window._gametokActive = false;
-  window._gametokMuted = true;
-  
-  // Clear ALL intervals to prevent memory leaks
-  if (window._muteInterval) {
-    clearInterval(window._muteInterval);
-    window._muteInterval = null;
-  }
-  if (window._adRemovalInterval) {
-    clearInterval(window._adRemovalInterval);
-    window._adRemovalInterval = null;
-  }
-  if (window._edgeBlockerInterval) {
-    clearInterval(window._edgeBlockerInterval);
-    window._edgeBlockerInterval = null;
-  }
-  if (window._gameReadyInterval) {
-    clearInterval(window._gameReadyInterval);
-    window._gameReadyInterval = null;
-  }
-  
-  // Function to mute everything
-  const muteAll = () => {
-    // 1. Mute ALL HTML5 audio/video elements
-    document.querySelectorAll('audio, video').forEach(el => { 
-      try { 
-        el.pause(); 
-        el.muted = true;
-        el.volume = 0;
-      } catch(e){} 
-    });
-    
-    // 2. Suspend ALL AudioContexts
-    if (window._audioContexts) {
-      window._audioContexts.forEach(ctx => { 
-        try { ctx.suspend(); } catch(e){} 
-      });
-    }
-    if (window._allGainNodes) {
-      window._allGainNodes.forEach(gain => {
-        try { 
-          gain.gain.setValueAtTime(0, gain.context.currentTime);
-        } catch(e) {}
-      });
-    }
-    
-    // 3. Mute Howler.js
-    if (window.Howler) {
-      try { window.Howler.mute(true); } catch(e) {}
-    }
-    
-    // 4. Mute Phaser
-    if (window.Phaser && window.Phaser.GAMES) {
-      window.Phaser.GAMES.forEach(g => {
-        try { 
-          if (g.sound) {
-            g.sound.mute = true;
-            g.sound.pauseAll && g.sound.pauseAll();
-          }
-        } catch(e) {}
-      });
-    }
-    
-    // 5. Mute CreateJS
-    if (window.createjs && window.createjs.Sound) {
-      try { window.createjs.Sound.muted = true; } catch(e) {}
-    }
-
-    // 6. Recurse through same-origin child frames (nested-iframe games)
-    if (window.__gametokMuteAll) { try { window.__gametokMuteAll(); } catch(e) {} }
-  };
-
-  // Mute immediately
-  muteAll();
-
-  // Keep inactive WebViews silent, but avoid hammering every parked game engine.
-  if (!window._muteInterval) {
-    window._muteInterval = setInterval(muteAll, 2500);
-  }
-  
-  // Unity
-  if (window.unityInstance) {
-    try { window.unityInstance.SendMessage('AudioManager', 'Mute'); } catch(e) {}
-    try { window.unityInstance.SendMessage('SoundManager', 'Mute'); } catch(e) {}
-    try { window.unityInstance.SendMessage('AudioListener', 'SetVolume', '0'); } catch(e) {}
-  }
-  
-  // CreateJS Ticker
-  if (window.createjs && window.createjs.Ticker) {
-    try { window.createjs.Ticker.paused = true; } catch(e) {}
-  }
-  
-  // Global master gain
-  if (window._masterGain) {
-    try { 
-      window._originalGainValue = window._masterGain.gain.value;
-      window._masterGain.gain.setValueAtTime(0, window._masterGain.context.currentTime);
-    } catch(e) {}
-  }
-  
-  // Stop requestAnimationFrame to freeze game
-  if (!window._origRAF) {
-    window._origRAF = window.requestAnimationFrame;
-    window._rafQueue = [];
-  }
-  window.requestAnimationFrame = function(cb) {
-    window._rafQueue.push(cb);
-    return window._rafQueue.length;
-  };
-})();
-true;
-`;
-
-// Script to resume/unfreeze a game
-const RESUME_SCRIPT = `
-(function() {
-  // Clear the mute interval first
-  window._gamePaused = false;
-  window._gametokActive = true;
-  window._gametokMuted = false;
-  if (window._muteInterval) {
-    clearInterval(window._muteInterval);
-    window._muteInterval = null;
-  }
-  
-  // Resume Web Audio API contexts first
-  if (window._audioContexts) {
-    window._audioContexts.forEach(ctx => { 
-      try { ctx.resume(); } catch(e){} 
-    });
-  }
-  
-  // Restore gain nodes
-  if (window._allGainNodes) {
-    window._allGainNodes.forEach(gain => {
-      try { 
-        if (gain._savedValue !== undefined) {
-          gain.gain.value = gain._savedValue;
-        } else {
-          gain.gain.value = 1;
-        }
-      } catch(e) {}
-    });
-  }
-  
-  // Restore master gain
-  if (window._masterGain && window._originalGainValue !== undefined) {
-    try { window._masterGain.gain.value = window._originalGainValue; } catch(e) {}
-  }
-  
-  // Unmute HTML5 audio/video
-  document.querySelectorAll('audio, video').forEach(el => { 
-    try { el.muted = false; } catch(e){} 
-  });
-  
-  // Unmute Unity
-  if (window.unityInstance) {
-    try { window.unityInstance.SendMessage('AudioManager', 'Unmute'); } catch(e) {}
-    try { window.unityInstance.SendMessage('SoundManager', 'Unmute'); } catch(e) {}
-  }
-  
-  // Unmute Howler.js
-  if (window.Howler) {
-    try { window.Howler.mute(false); } catch(e) {}
-  }
-  
-  // Restore requestAnimationFrame
-  if (window._origRAF) {
-    window.requestAnimationFrame = window._origRAF;
-    // Run queued frames
-    window._rafQueue && window._rafQueue.forEach(cb => window._origRAF(cb));
-    window._rafQueue = [];
-  }
-  
-  // Resume common game engines
-  if (window.Phaser && window.Phaser.GAMES) {
-    window.Phaser.GAMES.forEach(g => {
-      try { g.sound && g.sound.mute !== undefined && (g.sound.mute = false); } catch(e) {}
-      try { g.scene && g.scene.resume && g.scene.resume(); } catch(e) {}
-    });
-  }
-  if (window.createjs && window.createjs.Ticker) {
-    window.createjs.Ticker.paused = false;
-  }
-  if (window.createjs && window.createjs.Sound) {
-    try { window.createjs.Sound.muted = false; } catch(e) {}
-  }
-
-  // Resume same-origin child frames (nested-iframe games) too
-  if (window.__gametokUnmuteAll) { try { window.__gametokUnmuteAll(); } catch(e) {} }
-})();
-true;
-`;
+// Audio lifecycle and guard scripts are imported from ../runtime/web/GameAudioGuard
 
 // Edge blocking script - prevents WebView from capturing swipe gestures at screen edges
 // This is injected into ALL games (both internal and external)
@@ -676,6 +282,7 @@ const buildHudInteractionBridgeScript = (orientation: Orientation) => `
   let lastInteractionPing = 0;
   let swipeStartY = null;
   let swipeStartX = null;
+
   const notifyInteraction = (type) => {
     const now = Date.now();
     if (type === 'USER_SWIPE_INTENT') {
@@ -686,14 +293,17 @@ const buildHudInteractionBridgeScript = (orientation: Orientation) => `
       lastInteractionPing = now;
     }
     
-    window.ReactNativeWebView?.postMessage(JSON.stringify({
-      type,
-      ts: now
-    }));
+    try {
+      window.ReactNativeWebView?.postMessage(JSON.stringify({
+        type,
+        ts: now
+      }));
+    } catch (e) {}
   };
 
   const handleTouchStart = (event) => {
     notifyInteraction('USER_INTERACTION');
+
     const point = event.touches && event.touches[0];
     if (!point) return;
     swipeStartY = point.clientY;
@@ -701,10 +311,12 @@ const buildHudInteractionBridgeScript = (orientation: Orientation) => `
   };
 
   const handleTouchMove = (event) => {
+    if (swipeStartX === null || swipeStartY === null) return;
     const point = event.touches && event.touches[0];
-    if (!point || swipeStartY == null || swipeStartX == null) return;
-    const dy = point.clientY - swipeStartY;
+    if (!point) return;
     const dx = point.clientX - swipeStartX;
+    const dy = point.clientY - swipeStartY;
+
     // along = movement on the feed's paging axis, across = the perpendicular one.
     const along = SWIPE_AXIS === 'x' ? dx : dy;
     const across = SWIPE_AXIS === 'x' ? dy : dx;
@@ -718,20 +330,10 @@ const buildHudInteractionBridgeScript = (orientation: Orientation) => `
     swipeStartX = null;
   };
 
-  ['touchstart'].forEach((eventName) => {
-    window.addEventListener(eventName, handleTouchStart, { passive: true });
-    document.addEventListener(eventName, handleTouchStart, { passive: true });
-  });
-
-  ['touchmove'].forEach((eventName) => {
-    window.addEventListener(eventName, handleTouchMove, { passive: true });
-    document.addEventListener(eventName, handleTouchMove, { passive: true });
-  });
-
-  ['touchend', 'touchcancel'].forEach((eventName) => {
-    window.addEventListener(eventName, resetSwipe, { passive: true });
-    document.addEventListener(eventName, resetSwipe, { passive: true });
-  });
+  window.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+  window.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
+  window.addEventListener('touchend', resetSwipe, { passive: true, capture: true });
+  window.addEventListener('touchcancel', resetSwipe, { passive: true, capture: true });
 })();
 true;
 `;
@@ -890,11 +492,10 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 
 // Create feed of games
 const createFeed = (games: Game[], cycle: number = 0): FeedItem[] => {
-  // Shuffle games for variety
-  const shuffledGames = shuffleArray(games);
+  const orderedGames = shuffleArray(games);
   const result: FeedItem[] = [];
 
-  shuffledGames.forEach((game, index) => {
+  orderedGames.forEach((game, index) => {
     result.push({
       game,
       id: `${game.id}-cycle${cycle}-${index}`,
@@ -1232,7 +833,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const { setActiveTab: setRootActiveTab, setPendingDraftId, setSearchModalVisible, setIsGameDeckActive, isGameDeckActive, isHudHidden, setIsHudHidden, gameRestartTrigger, gameSkipCounter } = useNavigation();
   const { user } = useAuth();
   const { setMyStatus } = useSocket();
-  const isFocused = isActive; // Use the prop instead of navigation hook
+  const isFocused = isActive;
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [interactedGameId, setInteractedGameId] = useState<string | null>(null);
@@ -1252,6 +853,54 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   useEffect(() => {
     interactedGameIdRef.current = interactedGameId;
   }, [interactedGameId]);
+
+  const lastExitTimeRef = useRef(0);
+  const exitHintOpacity = useRef(new Animated.Value(0)).current;
+  const exitHintTranslateY = useRef(new Animated.Value(-10)).current;
+
+  useEffect(() => {
+    if (isGameDeckActive) {
+      exitHintOpacity.stopAnimation();
+      exitHintTranslateY.stopAnimation();
+      exitHintOpacity.setValue(0);
+      exitHintTranslateY.setValue(-10);
+
+      Animated.parallel([
+        Animated.timing(exitHintOpacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(exitHintTranslateY, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      const timer = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(exitHintOpacity, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(exitHintTranslateY, {
+            toValue: -8,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }, 2500);
+
+      return () => clearTimeout(timer);
+    } else {
+      exitHintOpacity.stopAnimation();
+      exitHintTranslateY.stopAnimation();
+      exitHintOpacity.setValue(0);
+      exitHintTranslateY.setValue(-10);
+    }
+  }, [isGameDeckActive, exitHintOpacity, exitHintTranslateY]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -1450,14 +1099,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   useEffect(() => {
     if (gameRestartTrigger > 0 && currentIndex >= 0 && feed[currentIndex]) {
       const activeGameId = feed[currentIndex].id;
-      // Inject a script to restart the game
-      webViewRefs.current[activeGameId]?.injectJavaScript(`
-        if (typeof window !== 'undefined') {
-          // Hard reload the iframe/window
-          window.location.reload();
-        }
-        true;
-      `);
+      // Restart is an explicit user action. Ordinary feed movement only pauses.
+      setWebViewResetKeys((prev) => ({
+        ...prev,
+        [activeGameId]: (prev[activeGameId] || 0) + 1,
+      }));
     }
   }, [gameRestartTrigger]);
 
@@ -1476,9 +1122,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const [loading, setLoading] = useState(true);
 
   const [scrollEnabled, setScrollEnabled] = useState(false);
-  const [gestureKey, setGestureKey] = useState(0);
   const hudHintOpacity = useRef(new Animated.Value(0.82)).current;
-  const hideHintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hideHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Animated opacity for the "For You" top bar and game info (bottom left)
   const overlayInfoOpacity = useRef(new Animated.Value(1)).current;
@@ -1504,27 +1149,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     }).start();
   }, [isHudHidden, actionButtonsTranslateY]);
 
-  // Track which games have finished loading (ready to play)
-  const [readyGames, setReadyGames] = useState<Set<string>>(new Set());
-
-  // Hard safety net: if onLoadEnd never fires, force-dismiss after 15s
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    if (feed.length > 0 && currentIndex >= 0 && currentIndex < feed.length) {
-      const activeItem = feed[currentIndex];
-      if (activeItem && !readyGames.has(activeItem.id)) {
-        timeout = setTimeout(() => {
-          setReadyGames(prev => {
-            if (prev.has(activeItem.id)) return prev;
-            const next = new Set(prev);
-            next.add(activeItem.id);
-            return next;
-          });
-        }, 15000);
-      }
-    }
-    return () => clearTimeout(timeout);
-  }, [currentIndex, feed, readyGames]);
+  // Track which games have finished loading (ready to play) without causing re-renders
+  const readyGamesRef = useRef<Set<string>>(new Set());
 
 
 
@@ -1550,12 +1176,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const gameStartTimeRef = useRef<number | null>(null);
   const lastTrackedGameRef = useRef<string | null>(null);
   const playRecordedForSessionRef = useRef<Set<string>>(new Set());
-  const playRecordTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const playRecordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Live session points counter (ticks up every 5 seconds)
   const [sessionPoints, setSessionPoints] = useState(0);
-  const sessionPointsIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const periodicSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionPointsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const periodicSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track session points per game so they persist when switching back
   const gameSessionPointsRef = useRef<{ [gameId: string]: number }>({});
 
@@ -1601,13 +1227,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     setShowLeaderboard(true);
   };
 
-  // Keep the playable surface inside the phone chrome boundaries.
-  // SCREEN_WIDTH/SCREEN_HEIGHT above are captured once at module load, which is fine on a
-  // portrait-locked phone. iPad is NOT locked (see ios/GameTOK/Info.plist), so read the live
-  // window too — the landscape-rotation decision below depends on the window's true shape.
+  // True edge-to-edge fullscreen layout across browse mode and active play.
   const windowDims = useWindowDimensions();
   const windowIsPortrait = windowDims.height >= windowDims.width;
-  const contentHeight = SCREEN_HEIGHT - insets.top - TAB_BAR_HEIGHT - insets.bottom;
+  const contentTop = 0;
+  const contentHeight = windowDims.height;
   const contentHeightRef = useRef(contentHeight);
   
   useEffect(() => {
@@ -1790,7 +1414,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
-    const sourceId = game.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    const sourceId = game.embedUrl?.includes('/api/ai/play/')
+      ? game.embedUrl.split('/api/ai/play/')[1]?.split(/[?#]/)[0]
+      : game.id;
     if (!sourceId) {
       Alert.alert('Cannot remix', "This game can't be remixed.");
       return;
@@ -1800,7 +1426,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
   const confirmRemix = async () => {
     if (!remixTarget || remixLoading) return;
-    const sourceId = remixTarget.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+    const sourceId = remixTarget.embedUrl?.includes('/api/ai/play/')
+      ? remixTarget.embedUrl.split('/api/ai/play/')[1]?.split(/[?#]/)[0]
+      : remixTarget.id;
     if (!sourceId) { setRemixTarget(null); return; }
     setRemixLoading(true);
     try {
@@ -1858,19 +1486,146 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   const translateY = useRef(new Animated.Value(0)).current;
   const isAnimating = useRef(false);
   const webViewRefs = useRef<{ [key: string]: WebViewType | null }>({});
+  const audioHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qualityStateRef = useRef<Record<string, {
+    quality: GameTokQualityTier;
+    history: number[];
+    slowSamples: number;
+    fastSamples: number;
+    lastChangeTime: number;
+  }>>({});
   const prevIndexRef = useRef(-1); // Start at -1 to match initial currentIndex
+
+  const handleRuntimeMessage = useCallback((itemId: string, message: GameTokRuntimeMessage) => {
+    if (message.type === 'GAMETOK_RUNTIME_READY') {
+      if (__DEV__) console.log(`[GameRuntime] ${itemId} host bridge ready`);
+      const currentItem = feedRef.current[currentIndexRef.current];
+      const isActiveGame = currentItem?.id === itemId
+        && currentItem.game?.id === interactedGameIdRef.current;
+      const isVisiblePreview = isFocused && currentItem?.id === itemId && !!currentItem.game?.id;
+      const webView = webViewRefs.current[itemId];
+      if (webView && isActiveGame) {
+        webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_UNMUTE' }));
+        webView.postMessage(createLifecycleMessage('GAMETOK_ACTIVATE', currentItem.game!.id));
+      } else if (webView && isVisiblePreview) {
+        webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_MUTE' }));
+        webView.postMessage(createLifecycleMessage('GAMETOK_ACTIVATE', currentItem.game!.id));
+      } else if (webView) {
+        webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_MUTE' }));
+        webView.postMessage(createLifecycleMessage('GAMETOK_PRELOAD'));
+      }
+      return;
+    }
+
+    if (message.type === 'GAMETOK_GAME_READY') {
+      if (__DEV__) console.log(`[GameRuntime] ${itemId} game ready`);
+      readyGamesRef.current.add(itemId);
+      return;
+    }
+
+    if (message.type === 'GAMETOK_FIRST_ACTIVE_FRAME') {
+      return;
+    }
+
+    if (message.type === 'GAMETOK_WEBGL_CONTEXT_LOST') {
+      console.warn(`[GameRuntime] ${itemId} WebGL context lost`);
+      return;
+    }
+
+    if (message.type === 'GAMETOK_WEBGL_CONTEXT_RESTORED') {
+      console.log(`[GameRuntime] ${itemId} WebGL context restored`);
+      return;
+    }
+
+    if (message.type === 'GAMETOK_GAME_METRICS') {
+      if (__DEV__) console.log(`[GameRuntime] ${itemId} metrics`, message.metrics);
+      return;
+    }
+
+    if (message.type !== 'GAMETOK_HOST_TELEMETRY' || typeof message.fps !== 'number') return;
+
+    const now = Date.now();
+    const sample = qualityStateRef.current[itemId] || {
+      quality: 'high' as GameTokQualityTier,
+      history: [] as number[],
+      slowSamples: 0,
+      fastSamples: 0,
+      lastChangeTime: 0,
+    };
+
+    sample.history.push(message.fps);
+    if (sample.history.length > 10) sample.history.shift();
+
+    // Enforce minimum 10-second cooldown between adaptive quality tier changes
+    const timeSinceChange = now - sample.lastChangeTime;
+    const cooldownPassed = sample.lastChangeTime === 0 || timeSinceChange >= 10000;
+
+    sample.slowSamples = message.fps < 42 ? sample.slowSamples + 1 : 0;
+    sample.fastSamples = message.fps >= 56 ? sample.fastSamples + 1 : 0;
+
+    let nextQuality = sample.quality;
+    if (cooldownPassed && sample.slowSamples >= 5) {
+      nextQuality = sample.quality === 'high' ? 'medium' : 'low';
+    } else if (cooldownPassed && sample.fastSamples >= 12) {
+      nextQuality = sample.quality === 'low' ? 'medium' : 'high';
+    }
+
+    if (nextQuality !== sample.quality) {
+      sample.quality = nextQuality;
+      sample.slowSamples = 0;
+      sample.fastSamples = 0;
+      sample.history = [];
+      sample.lastChangeTime = now;
+      webViewRefs.current[itemId]?.postMessage(
+        createQualityMessage(nextQuality, `host-fps-${message.fps}`),
+      );
+      console.log(`[GameRuntime] ${itemId} quality -> ${nextQuality} (${message.fps} FPS, cooldown 10s)`);
+    }
+    qualityStateRef.current[itemId] = sample;
+  }, [isFocused]);
 
   const pauseWebView = useCallback((webView?: WebViewType | null) => {
     if (!webView) return;
-    webView.postMessage(JSON.stringify({ type: 'GAMETOK_PAUSE' }));
-    webView.injectJavaScript(PAUSE_SCRIPT);
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_MUTE' }));
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RENDER_PAUSE' }));
+    webView.postMessage(createLifecycleMessage('GAMETOK_PAUSE'));
+    webView.injectJavaScript(COOPERATIVE_PAUSE_SCRIPT);
   }, []);
 
   const resumeWebView = useCallback((webView?: WebViewType | null) => {
     if (!webView) return;
-    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RESUME' }));
-    webView.injectJavaScript(RESUME_SCRIPT);
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_UNMUTE' }));
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RENDER_RESUME' }));
+    webView.postMessage(createLifecycleMessage('GAMETOK_RESUME'));
+    webView.injectJavaScript(COOPERATIVE_RESUME_SCRIPT);
   }, []);
+
+  const activateWebView = useCallback((webView?: WebViewType | null, gameId?: string) => {
+    if (!webView) return;
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_UNMUTE' }));
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RENDER_RESUME' }));
+    webView.postMessage(createLifecycleMessage('GAMETOK_ACTIVATE', gameId));
+    webView.injectJavaScript(COOPERATIVE_RESUME_SCRIPT);
+  }, []);
+
+  const warmPreviewWebView = useCallback((webView?: WebViewType | null, gameId?: string) => {
+    if (!webView) return;
+    // Browse previews are allowed to render, but never to produce audio. This lets the visible
+    // card reach a genuine game frame while its offscreen neighbours remain fully paused.
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_AUDIO_MUTE' }));
+    webView.postMessage(JSON.stringify({ type: 'GAMETOK_RENDER_RESUME' }));
+    webView.postMessage(createLifecycleMessage('GAMETOK_ACTIVATE', gameId));
+    webView.injectJavaScript(COOPERATIVE_WARM_SCRIPT);
+  }, []);
+
+  const preloadWebView = useCallback((webView?: WebViewType | null) => {
+    if (!webView) return;
+    pauseWebView(webView);
+    webView.postMessage(createLifecycleMessage('GAMETOK_PRELOAD'));
+    try {
+      webView.injectJavaScript(HARD_MUTE_CLEANUP_SCRIPT);
+    } catch {}
+  }, [pauseWebView]);
 
   const pauseAllWebViews = useCallback(() => {
     Object.values(webViewRefs.current).forEach(pauseWebView);
@@ -1888,15 +1643,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     if (!webView) return;
     pauseWebView(webView);
     try {
-      webView.injectJavaScript(`
-        try {
-          if (window.__gametokMuteAll) window.__gametokMuteAll();
-          document.querySelectorAll('audio, video').forEach(function(el) {
-            try { el.pause(); } catch(e) {}
-          });
-        } catch(e) {}
-        true;
-      `);
+      webView.injectJavaScript(HARD_MUTE_CLEANUP_SCRIPT);
     } catch {}
   }, [pauseWebView]);
 
@@ -1904,6 +1651,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     if (!itemId) return;
     const webView = webViewRefs.current[itemId];
     if (webView) {
+      webView.postMessage(createLifecycleMessage('GAMETOK_DESTROY'));
       pauseWebView(webView);
       try {
         webView.stopLoading?.();
@@ -1911,10 +1659,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       try {
         webView.injectJavaScript(`
           try {
-            if (window.__gametokMuteAll) window.__gametokMuteAll();
-            document.querySelectorAll('audio, video').forEach(function(el) {
-              try { el.pause(); el.src = ''; el.load && el.load(); } catch(e) {}
-            });
+            ${HARD_MUTE_CLEANUP_SCRIPT}
             window.location.replace('about:blank');
           } catch(e) {}
           true;
@@ -1922,12 +1667,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       } catch {}
     }
     delete webViewRefs.current[itemId];
-    setReadyGames(prev => {
-      if (!prev.has(itemId)) return prev;
-      const next = new Set(prev);
-      next.delete(itemId);
-      return next;
-    });
+    readyGamesRef.current.delete(itemId);
     setWebViewResetKeys(prev => ({
       ...prev,
       [itemId]: (prev[itemId] || 0) + 1,
@@ -1942,14 +1682,64 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     Object.keys(webViewRefs.current).forEach(suspendWebView);
   }, [suspendWebView]);
 
+  const handleExitActiveGame = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    translateY.stopAnimation();
+    translateY.setValue(-currentIndexRef.current * contentHeight);
+    setInteractedGameId(null);
+    interactedGameIdRef.current = null;
+    setIsGameDeckActive(false);
+    isGameDeckActiveRef.current = false;
+    setIsHudHidden(false);
+    const activeItem = feed[currentIndex];
+    if (activeItem) {
+      suspendWebView(activeItem.id);
+    }
+  }, [contentHeight, currentIndex, feed, setIsGameDeckActive, setIsHudHidden, suspendWebView, translateY]);
+
+  const handleRestartActiveGame = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const activeItem = feed[currentIndex];
+    if (activeItem) {
+      const ref = webViewRefs.current[activeItem.id];
+      if (ref?.reload) {
+        ref.reload();
+      } else {
+        setWebViewResetKeys((prev) => ({
+          ...prev,
+          [activeItem.id]: (prev[activeItem.id] || 0) + 1,
+        }));
+      }
+    }
+  }, [currentIndex, feed]);
+
+  // Native message queues are independent per WebView. Give every mounted game time to receive
+  // its mute command before the selected game resumes, preventing a brief overlap on feed swaps.
+  const handoffToWebView = useCallback((webView?: WebViewType | null, gameId?: string) => {
+    if (audioHandoffTimerRef.current) {
+      clearTimeout(audioHandoffTimerRef.current);
+      audioHandoffTimerRef.current = null;
+    }
+    Object.values(webViewRefs.current).forEach(pauseWebView);
+    if (!webView) return;
+    audioHandoffTimerRef.current = setTimeout(() => {
+      resumeWebView(webView);
+      activateWebView(webView, gameId);
+      audioHandoffTimerRef.current = null;
+    }, 80);
+  }, [activateWebView, pauseWebView, resumeWebView]);
+
+  useEffect(() => () => {
+    if (audioHandoffTimerRef.current) clearTimeout(audioHandoffTimerRef.current);
+  }, []);
+
   // Leaving the game deck suspends rather than hard-resets. It used to reset — but this effect
   // fires on the thumbnail tap too (that handler sets isGameDeckActive false), so a hard reset
   // here destroyed the WebView the tap had just suspended, which is the other half of why no
   // paused frame ever showed behind the poster.
   //
-  // The hard reset existed because some games keep audio alive through a soft pause. suspend
-  // still mutes and pauses all media, and the genuinely destructive exits — app backgrounded,
-  // feed unfocused — still call resetAllWebViews below, so a leaking game is still caught there.
+  // suspend still mutes and pauses all media. The OS may reclaim a background
+  // renderer when it needs memory, but GameTok does not intentionally reload it.
   useEffect(() => {
     if (!isGameDeckActive) {
       setInteractedGameId(null);
@@ -1957,34 +1747,53 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     }
   }, [isGameDeckActive, suspendAllWebViews]);
 
-  // Listen for AppState changes to unlock broken gestures
+  const activeGameBeforeBackgroundRef = useRef<string | null>(null);
+
+  // Listen for AppState changes to suspend in background and seamlessly resume
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'background' || state === 'inactive') {
-        resetAllWebViews();
-        setInteractedGameId(null);
-        setIsGameDeckActive(false);
-        if (!isAnimating.current) {
-          translateY.setValue(0);
+        activeGameBeforeBackgroundRef.current = interactedGameIdRef.current;
+        suspendAllWebViews();
+        if (isAnimating.current) {
+          translateY.stopAnimation();
+          isAnimating.current = false;
         }
+        translateY.setValue(-currentIndexRef.current * contentHeight);
         setScrollEnabled(false);
       } else if (state === 'active' && isFocused) {
-        // Only resume if the game was already being played (interacted with)
+        // Ensure scroll position is firmly locked to the current card
+        isAnimating.current = false;
+        translateY.stopAnimation();
+        translateY.setValue(-currentIndexRef.current * contentHeight);
+        setScrollEnabled(false);
+
+        // Resume previous active game or warm preview
+        const previousActive = activeGameBeforeBackgroundRef.current;
         const currItem = currentIndexRef.current >= 0 ? feedRef.current[currentIndexRef.current] : null;
-        if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
-          resumeWebView(webViewRefs.current[currItem.id]);
+        if (currItem && webViewRefs.current[currItem.id]) {
+          if (previousActive && currItem.game?.id === previousActive) {
+            setInteractedGameId(previousActive);
+            setIsGameDeckActive(true);
+            resumeWebView(webViewRefs.current[currItem.id]);
+          } else if (currItem.game?.id) {
+            warmPreviewWebView(webViewRefs.current[currItem.id], currItem.game.id);
+          }
         }
+        activeGameBeforeBackgroundRef.current = null;
       }
     });
     return () => sub.remove();
-  }, [translateY, isFocused, interactedGameId, resetAllWebViews, resumeWebView, setIsGameDeckActive]);
+  }, [contentHeight, isFocused, resumeWebView, setIsGameDeckActive, suspendAllWebViews, translateY, warmPreviewWebView]);
 
   // Pause/resume WebViews when focus changes (navigating to/from other tabs)
   useEffect(() => {
     if (!isFocused) {
-      // Pause ALL games when leaving the tab
-      resetAllWebViews();
+      // Pause ALL games when leaving the tab without throwing their pages away.
+      suspendAllWebViews();
       setInteractedGameId(null);
+      setIsGameDeckActive(false);
+      setIsHudHidden(false);
 
       // Record play time when leaving tab
       if (lastTrackedGameRef.current && gameStartTimeRef.current && user) {
@@ -2004,16 +1813,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         sessionPointsIntervalRef.current = null;
       }
     } else {
+      // Always reset to standard feed navigation when returning to Home tab
+      setIsGameDeckActive(false);
+      setIsHudHidden(false);
+
       // CRITICAL: Reset scroll state when coming back to tab
       // This prevents the scroll overlay from being stuck in active state
       setScrollEnabled(false);
       isAnimating.current = false;
-      translateY.setValue(0); // Reset any partial swipe animation
+      translateY.setValue(-currentIndexRef.current * contentHeight); // Reset any partial swipe animation
 
       // Resume current game ONLY if it was already being played (interacted with)
-      const currItem = currentIndex >= 0 ? feed[currentIndex] : null;
-      if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameId) {
+      const currItem = currentIndexRef.current >= 0
+        ? feedRef.current[currentIndexRef.current]
+        : null;
+      if (currItem && webViewRefs.current[currItem.id] && currItem.game?.id === interactedGameIdRef.current) {
         resumeWebView(webViewRefs.current[currItem.id]);
+      } else if (currItem?.game?.id && webViewRefs.current[currItem.id]) {
+        warmPreviewWebView(webViewRefs.current[currItem.id], currItem.game.id);
       }
 
       // Restart play time tracking when coming back
@@ -2029,7 +1846,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         }
       }
     }
-  }, [isFocused, resetAllWebViews, resumeWebView, currentIndex, feed, interactedGameId, user]);
+  }, [contentHeight, isFocused, resumeWebView, suspendAllWebViews, user, setIsGameDeckActive, setIsHudHidden, translateY, warmPreviewWebView]);
 
   // Pause/resume WebViews when index changes
   useEffect(() => {
@@ -2043,11 +1860,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       const currItem = currIdx >= 0 ? feed[currIdx] : null;
       const currItemId = currItem?.id;
 
-      // Freeze old/offscreen games. Do not "preload by resuming" because games
-      // can start audio before the user taps them.
+      const prevItem = currIdx > 0 ? feed[currIdx - 1] : null;
+      const nextItem = currIdx + 1 < feed.length ? feed[currIdx + 1] : null;
+      const activeNeighborIds = new Set([prevItem?.id, currItemId, nextItem?.id].filter(Boolean));
+
+      // Clean up WebViews that have scrolled out of the 3-item window
       Object.entries(webViewRefs.current).forEach(([id, webView]) => {
-        if (webView && id !== currItemId) {
+        if (webView && !activeNeighborIds.has(id)) {
           resetWebView(id);
+        } else if (webView && id !== currItemId) {
+          preloadWebView(webView);
         }
       });
 
@@ -2056,26 +1878,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       if (wasInGameDeck && currItem?.game?.id) {
         setInteractedGameId(currItem.game.id);
+        interactedGameIdRef.current = currItem.game.id;
         setIsGameDeckActive(true);
+        isGameDeckActiveRef.current = true;
         if (webViewRefs.current[currItem.id]) {
-          resumeWebView(webViewRefs.current[currItem.id]);
+          handoffToWebView(webViewRefs.current[currItem.id], currItem.game.id);
         }
       } else {
         // When browsing feed thumbnails, reset interaction state
         setIsGameDeckActive(false);
+        isGameDeckActiveRef.current = false;
         setInteractedGameId(null);
-        if (currIdx >= 0 && currItem && webViewRefs.current[currItem.id]) {
-          resetWebView(currItem.id);
+        interactedGameIdRef.current = null;
+        if (currIdx >= 0 && currItem?.game?.id && webViewRefs.current[currItem.id]) {
+          warmPreviewWebView(webViewRefs.current[currItem.id], currItem.game.id);
         }
       }
 
       prevIndexRef.current = currIdx;
     }
-  }, [currentIndex, feed, isFocused, resetWebView, resumeWebView, setIsGameDeckActive]);
+  }, [currentIndex, feed, handoffToWebView, isFocused, setIsGameDeckActive, suspendWebView, warmPreviewWebView]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
+    if (!isAnimating.current) {
+      translateY.setValue(-currentIndex * contentHeight);
+    }
+  }, [currentIndex, contentHeight]);
 
   useEffect(() => {
     if (playRecordTimeoutRef.current) {
@@ -2252,47 +2081,45 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       try {
         const data = await gamesApi.list(50, 0, { sort: 'discover' });
         console.log('[HomeScreen] Games fetched:', data?.games?.length || 0);
+        let combinedGames: any[] = [];
         if (data.games?.length > 0) {
-          allGamesRef.current = data.games;
-          setFeed(createFeed(data.games));
-
-          // Store initial like and save counts from API
-          const likeCnts: { [id: string]: number } = {};
-          const saveCnts: { [id: string]: number } = {};
-          const shareCnts: { [id: string]: number } = {};
-          data.games.forEach((g: any) => {
-            likeCnts[g.id] = g.likes || 0;
-            saveCnts[g.id] = g.saves || 0;
-            shareCnts[g.id] = 0;
-          });
-          setLikeCounts(likeCnts);
-          setSaveCounts(saveCnts);
-          setShareCounts(shareCnts);
-
-          // Check which games user has liked (fire and forget)
-          const gameIds = data.games.map((g: Game) => g.id);
-          likesApi.check(gameIds).then(result => {
-            if (result.likedGameIds?.length > 0) {
-              setLikedGames(new Set(result.likedGameIds));
-            }
-          }).catch(() => { });
-
-          // Check which games user has saved (fire and forget)
-          savedGamesApi.check(gameIds).then(result => {
-            if (result.savedGameIds?.length > 0) {
-              setSavedGames(new Set(result.savedGameIds));
-            }
-          }).catch(() => { });
+          combinedGames = data.games;
         }
+
+        allGamesRef.current = combinedGames;
+        setFeed(createFeed(combinedGames));
+
+        // Store initial like and save counts
+        const likeCnts: { [id: string]: number } = {};
+        const saveCnts: { [id: string]: number } = {};
+        const shareCnts: { [id: string]: number } = {};
+        combinedGames.forEach((g: any) => {
+          likeCnts[g.id] = g.likes || 0;
+          saveCnts[g.id] = g.saves || 0;
+          shareCnts[g.id] = 0;
+        });
+        setLikeCounts(likeCnts);
+        setSaveCounts(saveCnts);
+        setShareCounts(shareCnts);
+
+        // Check which games user has liked (fire and forget)
+        const gameIds = combinedGames.map((g: any) => g.id);
+        likesApi.check(gameIds).then(result => {
+          if (result.likedGameIds?.length > 0) {
+            setLikedGames(new Set(result.likedGameIds));
+          }
+        }).catch(() => { });
+
+        // Check which games user has saved (fire and forget)
+        savedGamesApi.check(gameIds).then(result => {
+          if (result.savedGameIds?.length > 0) {
+            setSavedGames(new Set(result.savedGameIds));
+          }
+        }).catch(() => { });
       } catch (e: any) {
         console.log('[HomeScreen] Games fetch error:', e?.message || e);
-        const fallbackGames = [
-          { id: 'flappy-bird', name: 'Flappy Bird', likes: 0 },
-          { id: 'fruit-slicer', name: 'Fruit Slicer', likes: 0 },
-          { id: 'tetris', name: 'Tetris', likes: 0 },
-        ];
-        allGamesRef.current = fallbackGames;
-        setFeed(createFeed(fallbackGames));
+        allGamesRef.current = [];
+        setFeed([]);
       } finally {
         console.log('[HomeScreen] Init complete, setting loading false');
         setLoading(false);
@@ -2358,6 +2185,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   useEffect(() => {
     if (sharedGameId && feed.length > 0 && !loading) {
       console.log('[DeepLink] Looking for game:', sharedGameId);
+      resetAllWebViews();
 
       // Find the game in the feed
       const gameIndex = feed.findIndex(item =>
@@ -2367,28 +2195,72 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
       if (gameIndex !== -1) {
         console.log('[DeepLink] Found game at index:', gameIndex);
+        const targetItem = feed[gameIndex];
+        translateY.stopAnimation();
+        translateY.setValue(-gameIndex * contentHeight);
+        currentIndexRef.current = gameIndex;
         setCurrentIndex(gameIndex);
+
+        if (targetItem?.game) {
+          interactedGameIdRef.current = targetItem.game.id;
+          setInteractedGameId(targetItem.game.id);
+          isGameDeckActiveRef.current = true;
+          setIsGameDeckActive(true);
+          setIsHudHidden(true);
+          handoffToWebView(webViewRefs.current[targetItem.id], targetItem.game.id);
+        }
         clearSharedGame();
       } else {
-        // Game not in current feed - try to fetch it and add to front
-        console.log('[DeepLink] Game not in feed, fetching...');
-        gamesApi.list(100, 0, { sort: 'discover' }).then(data => {
-          const game = data.games?.find((g: Game) =>
-            g.id === sharedGameId || g.id?.toLowerCase() === sharedGameId.toLowerCase()
-          );
-          if (game) {
-            // Add the shared game to the front of the feed
-            const newItem: FeedItem = { game, id: `shared-${game.id}` };
-            setFeed(prev => [newItem, ...prev]);
+        // Game not in current feed - try to fetch directly by ID
+        console.log('[DeepLink] Game not in feed, fetching by ID...');
+        gamesApi.get(sharedGameId).then((data: any) => {
+          const game = data?.game || data;
+          if (game && game.id) {
+            console.log('[DeepLink] Fetched shared game by ID:', game.id, game.name);
+            const newItem: FeedItem = { game, id: `shared-${game.id}-${Date.now()}` };
+            setFeed(prev => [newItem, ...prev.filter(item => item.game?.id !== game.id)]);
+            translateY.stopAnimation();
+            translateY.setValue(0);
+            currentIndexRef.current = 0;
             setCurrentIndex(0);
+            interactedGameIdRef.current = game.id;
+            setInteractedGameId(game.id);
+            isGameDeckActiveRef.current = true;
+            setIsGameDeckActive(true);
+            setIsHudHidden(true);
+            handoffToWebView(webViewRefs.current[newItem.id], game.id);
+          } else {
+            console.warn('[DeepLink] Game not found in API response');
           }
           clearSharedGame();
-        }).catch(() => {
-          clearSharedGame();
+        }).catch((err) => {
+          console.warn('[DeepLink] Direct lookup failed, falling back to discover list:', err);
+          gamesApi.list(100, 0, { sort: 'discover' }).then((data: any) => {
+            const game = data.games?.find((g: Game) =>
+              g.id === sharedGameId || g.id?.toLowerCase() === sharedGameId.toLowerCase()
+            );
+            if (game) {
+              const newItem: FeedItem = { game, id: `shared-${game.id}-${Date.now()}` };
+              setFeed(prev => [newItem, ...prev.filter(item => item.game?.id !== game.id)]);
+              translateY.stopAnimation();
+              translateY.setValue(0);
+              currentIndexRef.current = 0;
+              setCurrentIndex(0);
+              interactedGameIdRef.current = game.id;
+              setInteractedGameId(game.id);
+              isGameDeckActiveRef.current = true;
+              setIsGameDeckActive(true);
+              setIsHudHidden(true);
+              handoffToWebView(webViewRefs.current[newItem.id], game.id);
+            }
+            clearSharedGame();
+          }).catch(() => {
+            clearSharedGame();
+          });
         });
       }
     }
-  }, [sharedGameId, feed.length, loading, clearSharedGame]);
+  }, [sharedGameId, feed.length, loading, contentHeight, clearSharedGame, resetAllWebViews, handoffToWebView, setIsGameDeckActive, setIsHudHidden]);
 
   // Extend feed when nearing the end (infinite scroll) - fetch NEW random games from server
   useEffect(() => {
@@ -2427,80 +2299,46 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     if (isAnimating.current) return;
     isAnimating.current = true;
 
-    const direction = newIndex > currentIndexRef.current ? -1 : 1;
+    const targetY = -newIndex * contentHeight;
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    // Safety timeout — if the animation callback or rAF never fires
-    // (e.g. JS thread blocked by heavy WebView mount on iPhone X),
-    // force-unlock gestures after 600ms so scrolling doesn't permanently freeze.
+    // Safety timeout — if the animation callback or rAF never fires,
+    // force-unlock gestures after 500ms so scrolling doesn't permanently freeze.
     const safetyTimer = setTimeout(() => {
       if (isAnimating.current) {
         console.log('[Feed] Safety timeout: force-unlocking isAnimating');
-        translateY.setValue(0);
+        translateY.stopAnimation();
+        translateY.setValue(targetY);
+        currentIndexRef.current = newIndex;
+        setCurrentIndex(newIndex);
         isAnimating.current = false;
-        setGestureKey(prev => prev + 1);
       }
-    }, 600);
+    }, 500);
 
     Animated.timing(translateY, {
-      toValue: direction * contentHeight,
-      duration: 200,
+      toValue: targetY,
+      duration: 220,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start(() => {
-      // Reset the animated offset before changing the rendered window.
-      // Updating currentIndex while translateY is still +/-height causes a
-      // one-frame flash where the next stack renders with the old offset.
+    }).start((result) => {
       clearTimeout(safetyTimer);
-      translateY.setValue(0);
-      setCurrentIndex(newIndex);
+      // Continuous coordinate system:
+      // translateY is ALREADY at targetY (-newIndex * contentHeight),
+      // which aligns perfectly with Card newIndex's absolute top (newIndex * contentHeight).
+      // We NEVER reset translateY to 0 — eliminating the 1-frame position snap/blink!
+      if (result && result.finished) {
+        currentIndexRef.current = newIndex;
+        setCurrentIndex(newIndex);
+      } else {
+        translateY.setValue(targetY);
+        currentIndexRef.current = newIndex;
+        setCurrentIndex(newIndex);
+      }
 
       requestAnimationFrame(() => {
         isAnimating.current = false;
-        setGestureKey(prev => prev + 1);
       });
     });
   };
-
-  // Helper function to update translateY value (for runOnJS)
-  const updateTranslateY = useCallback((value: number) => {
-    translateY.setValue(value);
-  }, [translateY]);
-
-  // Helper function to handle gesture end (for runOnJS)
-  // Uses both distance and velocity for snappy TikTok-like scrolling
-  const handleGestureEnd = useCallback((translationY: number, velocityY?: number) => {
-    setScrollEnabled(false);
-
-    if (isAnimating.current) return;
-
-    const idx = currentIndexRef.current;
-    const total = feedRef.current.length;
-    const vel = velocityY || 0;
-
-    // Trigger scroll if distance OR velocity exceeds threshold
-    const swipeUp = translationY < -SWIPE_THRESHOLD || vel < -800;
-    const swipeDown = translationY > SWIPE_THRESHOLD || vel > 800;
-
-    if (swipeUp && idx < total - 1) {
-      animateToIndex(idx + 1);
-    } else if (swipeDown && idx > 0) {
-      animateToIndex(idx - 1);
-    } else {
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 100,
-        friction: 10,
-      }).start();
-    }
-  }, [translateY]);
-
-  // Helper to handle gesture start (for runOnJS)
-  const handleGestureStart = useCallback(() => {
-    setScrollEnabled(true);
-  }, []);
 
   const touchStartY = useRef(0);
 
@@ -2514,8 +2352,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         return false; // Let taps pass through
       },
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        // Use EXACT mathematically precise boundaries based on the latest physical rendered height
-        // This flawlessly syncs the invisible PanResponder zone to the visible purple box overlay
         const isTopEdge = touchStartY.current < TOP_ZONE_HEIGHT; 
         const isEdge = isTopEdge;
         if (Math.abs(gesture.dy) > 6) restoreHud();
@@ -2534,7 +2370,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       },
       onPanResponderMove: (_, gesture) => {
         if (!isAnimating.current) {
-          translateY.setValue(gesture.dy);
+          const baseOffset = -currentIndexRef.current * contentHeight;
+          translateY.setValue(baseOffset + gesture.dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
@@ -2551,17 +2388,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         } else if (swipeDown && idx > 0) {
           animateToIndex(idx - 1);
         } else {
+          translateY.stopAnimation();
           Animated.spring(translateY, {
-            toValue: 0,
+            toValue: -idx * contentHeight,
             useNativeDriver: true,
+            bounciness: 0,
           }).start();
         }
       },
       onPanResponderTerminate: () => {
         if (isAnimating.current) return;
+        translateY.stopAnimation();
         Animated.spring(translateY, {
-          toValue: 0,
+          toValue: -currentIndexRef.current * contentHeight,
           useNativeDriver: true,
+          bounciness: 0,
         }).start();
       }
     })
@@ -2582,7 +2423,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
       },
       onPanResponderMove: (_, gesture) => {
         if (!isAnimating.current) {
-          translateY.setValue(gesture.dy);
+          const baseOffset = -currentIndexRef.current * contentHeight;
+          translateY.setValue(baseOffset + gesture.dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
@@ -2593,42 +2435,54 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
 
         if (gestureState.dy < -SWIPE_THRESHOLD && idx < total - 1) {
           animateToIndex(idx + 1);
-        } else if (gestureState.dy > SWIPE_THRESHOLD && idx > -1) {
+        } else if (gestureState.dy > SWIPE_THRESHOLD && idx > 0) {
           animateToIndex(idx - 1);
         } else {
+          translateY.stopAnimation();
           Animated.spring(translateY, {
-            toValue: 0,
+            toValue: -idx * contentHeight,
             useNativeDriver: true,
+            bounciness: 0,
           }).start();
         }
       },
       onPanResponderTerminate: () => {
         if (isAnimating.current) return;
+        translateY.stopAnimation();
         Animated.spring(translateY, {
-          toValue: 0,
+          toValue: -currentIndexRef.current * contentHeight,
           useNativeDriver: true,
+          bounciness: 0,
         }).start();
       }
     })
   ).current;
 
-  // Full-screen pan responder for Welcome and Ad screens
+  // Full-screen pan responder for feed browsing
   // Allows the entire screen to be scrollable but passes taps through
   const fullScreenPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => false, // Let taps pass through to buttons
       onMoveShouldSetPanResponderCapture: (_, gesture) => {
         if (Math.abs(gesture.dy) > 6) restoreHud();
-        return Math.abs(gesture.dy) > 15; // Take over aggressively in capture phase if vertical swipe
+        return Math.abs(gesture.dy) > 12; // Snappy vertical swipe detection
       },
       onStartShouldSetPanResponder: () => false, // Let taps pass through to buttons
       onMoveShouldSetPanResponder: (_, gesture) => {
         if (Math.abs(gesture.dy) > 6) restoreHud();
-        return Math.abs(gesture.dy) > 15; // Only take over if it's a clear vertical swipe
+        return Math.abs(gesture.dy) > 12;
       },
       onPanResponderMove: (_, gesture) => {
         if (!isAnimating.current) {
-          translateY.setValue(gesture.dy);
+          const baseOffset = -currentIndexRef.current * contentHeight;
+          let dy = gesture.dy;
+          const idx = currentIndexRef.current;
+          const total = feedRef.current.length;
+          // Rubber-band resistance at feed boundaries
+          if ((idx === 0 && dy > 0) || (idx === total - 1 && dy < 0)) {
+            dy = dy * 0.3;
+          }
+          translateY.setValue(baseOffset + dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
@@ -2645,17 +2499,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
         } else if (swipeDown && idx > 0) {
           animateToIndex(idx - 1);
         } else {
+          translateY.stopAnimation();
           Animated.spring(translateY, {
-            toValue: 0,
+            toValue: -idx * contentHeight,
             useNativeDriver: true,
+            bounciness: 0,
           }).start();
         }
       },
       onPanResponderTerminate: () => {
         if (isAnimating.current) return;
+        translateY.stopAnimation();
         Animated.spring(translateY, {
-          toValue: 0,
+          toValue: -currentIndexRef.current * contentHeight,
           useNativeDriver: true,
+          bounciness: 0,
         }).start();
       }
     })
@@ -2664,21 +2522,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
   // Keep only the swipe neighbors alive. Each item is a full game WebView,
   // so preloading too far ahead causes home-feed jank on real devices.
   const visibleItems = useMemo(() => {
-    const result: { item: FeedItem | null; position: number }[] = [];
+    const result: { item: FeedItem | null; index: number; position: number }[] = [];
 
     // Previous item (position -1)
     if (currentIndex > 0 && feed[currentIndex - 1]) {
-      result.push({ item: feed[currentIndex - 1], position: -1 });
+      result.push({ item: feed[currentIndex - 1], index: currentIndex - 1, position: -1 });
     }
 
     // Current item (position 0)
     if (feed[currentIndex]) {
-      result.push({ item: feed[currentIndex], position: 0 });
+      result.push({ item: feed[currentIndex], index: currentIndex, position: 0 });
     }
 
     // Next item (position +1)
     if (feed[currentIndex + 1]) {
-      result.push({ item: feed[currentIndex + 1], position: 1 });
+      result.push({ item: feed[currentIndex + 1], index: currentIndex + 1, position: 1 });
     }
 
     return result;
@@ -2688,20 +2546,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
     return <View style={styles.container} />;
   }
 
-  if (feed.length === 0) return null;
+  if (feed.length === 0) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: '#ffffff', fontSize: 20, fontWeight: '600' }}>No games yet</Text>
+      </View>
+    );
+  }
 
   const renderedItems = isFocused ? visibleItems : [];
 
   // The card box is known up front, so hand it to GameSurface rather than making it measure —
   // that way a landscape game is already rotated on its first paint. The rotation itself (and the
   // reasoning behind it) lives in GameSurface, shared with explore.
-  const cardBox = { width: windowDims.width, height: contentHeight };
+  const cardBox = { width: windowDims.width, height: windowDims.height };
 
   return (
     <View style={styles.container}>
       <View style={{ flex: 1 }}>
-      <View style={[styles.gameViewport, { top: insets.top, height: contentHeight }]}>
-        {renderedItems.map(({ item, position }) => {
+      <View
+        style={[
+          styles.gameViewport,
+          {
+            top: 0,
+            height: windowDims.height,
+          }
+        ]}
+      >
+        {renderedItems.map(({ item, index }) => {
+          const isCurrent = index === currentIndex;
           // Rotate only when the card box is actually portrait. On an iPad already held in
           // landscape the window IS the right shape, so a landscape game plays unrotated — and
           // rotating it there would turn it back into a portrait letterbox.
@@ -2712,21 +2585,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
             style={[
               styles.gameContainer,
               {
+                width: windowDims.width,
+                top: index * contentHeight,
                 height: contentHeight,
-                transform: [{
-                  translateY: Animated.add(translateY, position * contentHeight)
-                }],
-                zIndex: position === 0 ? 1 : 0,
+                transform: [{ translateY }],
+                zIndex: isCurrent ? 2 : 1,
               }
             ]}
+            pointerEvents={isCurrent ? 'auto' : 'none'}
           >
           {/* Game screen - conditionally allows swipe only if not interacted */}
-          <Animated.View {...((item!.game!.id !== interactedGameId || position !== 0) ? fullScreenPanResponder.panHandlers : {})} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
+          <Animated.View {...(((!isCurrent) || (item!.game!.id !== interactedGameId)) ? fullScreenPanResponder.panHandlers : {})} style={{ flex: 1, backgroundColor: getFeedBackdropColor() }} pointerEvents="box-none" collapsable={false}>
               <Animated.View style={{ flex: 1 }}>
                 <GameSurface
                   key={`${item!.id}-webview-${webViewResetKeys[item!.id] || 0}`}
                   orientation={cardIsLandscape ? 'landscape' : 'portrait'}
                   box={cardBox}
+                  opaque={false}
+                  backgroundColor="transparent"
                   ref={(ref) => {
                     if (ref) {
                       webViewRefs.current[item!.id] = ref;
@@ -2735,11 +2611,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                     }
                   }}
                   source={{ uri: getGameUrl(item!.game!) }}
-                  opaque={false} // Crucial for iOS transparent background
-                  backgroundColor="transparent" // Crucial for Android transparent background
                   javaScriptEnabled
                   domStorageEnabled
-                  cacheEnabled={true}
+                  cacheEnabled
                   allowsInlineMediaPlayback
                   mediaPlaybackRequiresUserAction={false}
                   allowsAirPlayForMediaPlayback={false}
@@ -2752,15 +2626,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                   injectedJavaScriptBeforeContentLoaded={
                     GAME_AUDIO_GUARD_SCRIPT
                     + MEDIA_SESSION_GUARD_SCRIPT
-                    // The edge-zone blocker is portrait-only — see EDGE_BLOCK_SCRIPT.
-                    + (cardIsLandscape ? '' : EDGE_BLOCK_SCRIPT)
                     + buildHudInteractionBridgeScript(cardIsLandscape ? 'landscape' : 'portrait')
                   }
                   onMessage={async (event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
                       if (data.type === 'USER_INTERACTION') {
+                        if (!isCurrent) return;
+                        if (Date.now() - lastExitTimeRef.current < 500) return;
+                        interactedGameIdRef.current = item!.game!.id;
+                        setInteractedGameId(item!.game!.id);
                         setIsGameDeckActive(true);
+                        isGameDeckActiveRef.current = true;
+                        setIsHudHidden(true);
                         return;
                       }
                       if (data.type === 'USER_SWIPE_INTENT') {
@@ -2776,31 +2654,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                         }
                       }
                     } catch (e) {
-                      // Ignore non-JSON messages
+                      // Ignore messages not owned by the GameTok bridge.
                     }
                   }}
                   javaScriptCanOpenWindowsAutomatically={false}
                   setSupportMultipleWindows={false}
                   onLoadEnd={async () => {
-                    // Only animate the visible game's loading state. Preloaded
-                    // neighbors should not run hidden loading animations.
-                    if (position === 0) {
-                      setTimeout(() => {
-                        setReadyGames(prev => {
-                          if (prev.has(item!.id)) return prev;
-                          const next = new Set(prev);
-                          next.add(item!.id);
-                          return next;
-                        });
-                      }, 3000);
-                    } else {
-                      setReadyGames(prev => {
-                        if (prev.has(item!.id)) return prev;
-                        const next = new Set(prev);
-                        next.add(item!.id);
-                        return next;
-                      });
-                    }
+                    readyGamesRef.current.add(item!.id);
 
                     if (isExternalGame(item!.game!) && user && item!.game?.id) {
                       try {
@@ -2815,94 +2675,99 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                       }
                     }
 
-                    // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
-                    // Otherwise, keep it paused so it doesn't play in the background
-                    const shouldResume = position === 0 && currentIndexRef.current >= 0 && isFocused && item!.game!.id === interactedGameId;
+                    const currentItem = feedRef.current[currentIndexRef.current];
+                    const shouldResume = currentItem?.id === item!.id
+                      && isFocused
+                      && item!.game!.id === interactedGameIdRef.current;
                     if (shouldResume) {
                       resumeWebView(webViewRefs.current[item!.id]);
+                      activateWebView(webViewRefs.current[item!.id], item!.game!.id);
+                    } else if (currentItem?.id === item!.id && isFocused) {
+                      warmPreviewWebView(webViewRefs.current[item!.id], item!.game!.id);
                     } else {
-                      pauseWebView(webViewRefs.current[item!.id]);
+                      preloadWebView(webViewRefs.current[item!.id]);
                     }
                   }}
                   onLoad={() => {
-                    // CRITICAL: Only resume if the game has been interacted with (thumbnail tapped)
-                    // Otherwise, keep it paused so it doesn't play in the background
-                    const shouldResume = position === 0 && currentIndex !== -1 && isFocused && item!.game!.id === interactedGameId;
-                    if (!shouldResume && webViewRefs.current[item!.id]) {
-                      pauseWebView(webViewRefs.current[item!.id]);
+                    const currentItem = feedRef.current[currentIndexRef.current];
+                    const shouldResume = currentItem?.id === item!.id
+                      && isFocused
+                      && item!.game!.id === interactedGameIdRef.current;
+                    if (shouldResume) {
+                      activateWebView(webViewRefs.current[item!.id], item!.game!.id);
+                    } else if (currentItem?.id === item!.id && isFocused) {
+                      warmPreviewWebView(webViewRefs.current[item!.id], item!.game!.id);
+                    } else if (webViewRefs.current[item!.id]) {
+                      preloadWebView(webViewRefs.current[item!.id]);
                     }
                   }}
-                  onShouldStartLoadWithRequest={(request) => {
-                    return true;
+                  onShouldStartLoadWithRequest={() => true}
+                  onContentProcessDidTerminate={() => {
+                    console.warn(`[HomeScreen] WebContent process terminated for ${item!.id}, reloading...`);
+                    webViewRefs.current[item!.id]?.reload();
                   }}
                 />
               </Animated.View>
 
               {/* Native gesture zones intercept handled earlier via Animated.View pointerEvents box-none */}
 
-                {/* Thumbnail Overlay - always rendered, opacity-controlled to prevent blink on skip */}
-                {item!.game && (
-                  <View 
-                    // Hold the poster until the game has actually finished loading, not merely
-                    // until it was tapped. `readyGames` was already being tracked (and given a 15s
-                    // safety net) but never read by anything, so the cover art dropped the instant
-                    // you tapped and you stared at an empty WebView until the game painted.
-                    // Deliberately the thumbnail and not explore's GameLoadingScreen: a branded
-                    // loading card has no place mid-scroll in the feed.
-                    style={[StyleSheet.absoluteFill, { zIndex: 5, justifyContent: 'center', alignItems: 'center', opacity: (item!.game!.id !== interactedGameId || position !== 0 || !readyGames.has(item!.id)) ? 1 : 0 }]}
-                    pointerEvents={(item!.game!.id !== interactedGameId || position !== 0) ? 'auto' : 'none'}
-                    onStartShouldSetResponder={() => (item!.game!.id !== interactedGameId || position !== 0)}
-                    onResponderRelease={() => {
-                      if (position === 0) {
-                        if (item!.game!.id === interactedGameId) {
-                          // Tapping the thumbnail while playing SUSPENDS the game — it stays
-                          // mounted and its last frame keeps rendering behind the poster. It used
-                          // to call resetWebView, which bumps the React key and destroys the
-                          // WebView, so the game restarted from the network every time and there
-                          // was nothing behind the thumbnail but the backdrop colour.
-                          setInteractedGameId(null);
-                          setIsGameDeckActive(false);
-                          suspendWebView(item!.id);
-                        } else {
+                {/* Thumbnail Overlay - visible in browse mode, unmounted during active gameplay */}
+                {item!.game && (() => {
+                  const isCurrentGameActive = isGameDeckActive && interactedGameId === item!.game!.id && isCurrent;
+                  if (isCurrentGameActive) return null;
+                  return (
+                    <View
+                      style={[
+                        StyleSheet.absoluteFill,
+                        {
+                          zIndex: 5,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        },
+                      ]}
+                      pointerEvents={isCurrent ? 'auto' : 'none'}
+                      onStartShouldSetResponder={() => isCurrent}
+                      onResponderRelease={() => {
+                        if (isCurrent) {
                           // Tapping thumbnail to start game
+                          translateY.stopAnimation();
+                          translateY.setValue(-currentIndexRef.current * contentHeight);
+                          interactedGameIdRef.current = item!.game!.id;
                           setInteractedGameId(item!.game!.id);
+                          isGameDeckActiveRef.current = true;
                           setIsGameDeckActive(true);
-                          // Resume the game
-                          resumeWebView(webViewRefs.current[item!.id]);
+                          setIsHudHidden(true);
+                          handoffToWebView(webViewRefs.current[item!.id], item!.game!.id);
                         }
-                      }
-                    }}
-                  >
-                    {/* The crisp thumbnail card floating on top. Deliberately NOT rotated for
-                        landscape games: this overlay is only ever shown in the browse state (the
-                        tap handler above resets the WebView rather than pausing it), and browsing
-                        happens with the phone upright. Only the game itself rotates — sideways
-                        content is its own instruction to turn the phone. */}
-                    <View style={styles.thumbnailCardContainer}>
-                      <View style={styles.thumbnailCardInner}>
-                        <Image 
-                          source={{ uri: getThumbnailUrl(item!.game) }} 
-                          style={styles.thumbnailCardImage} 
-                        />
-                        <View style={styles.thumbnailCardPlayPill}>
-                          <Ionicons
-                            name={item!.game!.id === interactedGameId && position === 0 ? "reload-circle" : "play"}
-                            size={12}
-                            color="#fff"
+                      }}
+                    >
+                      {/* The crisp thumbnail card floating on top */}
+                      <View style={styles.thumbnailCardContainer}>
+                        <View style={styles.thumbnailCardInner}>
+                          <Image 
+                            source={{ uri: getThumbnailUrl(item!.game) }} 
+                            style={styles.thumbnailCardImage} 
                           />
+                          <View style={styles.thumbnailCardPlayPill}>
+                            <Ionicons
+                              name="play"
+                              size={12}
+                              color="#fff"
+                            />
+                          </View>
                         </View>
                       </View>
                     </View>
-                  </View>
-                )}
+                  );
+                })()}
 
                 {/* TikTok-style action buttons - right side - animated slide.
-                    Hidden on landscape cards: this rail is positioned with portrait-relative
-                    safe-area insets, so rotating it would land it on the wrong physical edge, and
-                    leaving it un-rotated would print it sideways across the game. Like/comment/
-                    remix stay reachable from the (rotated) pause overlay above. */}
-                {!cardIsLandscape && (
-                  <Animated.View style={[styles.actionButtons, { bottom: 64, transform: [{ translateY: actionButtonsTranslateY }], opacity: actionButtonsTranslateY.interpolate({ inputRange: [0, 120], outputRange: [1, 0] }) }]}>
+                    Always shown in browse mode; hidden during gameplay. */}
+                {!isGameDeckActive && (
+                  <Animated.View
+                    style={[styles.actionButtons, { bottom: insets.bottom + TAB_BAR_HEIGHT + 14, transform: [{ translateY: actionButtonsTranslateY }], opacity: actionButtonsTranslateY.interpolate({ inputRange: [0, 120], outputRange: [1, 0] }) }]}
+                    pointerEvents={isHudHidden ? 'none' : 'auto'}
+                  >
                     <AnimatedLikeButton
                       isLiked={likedGames.has(item!.game!.id)}
                       onPress={(e) => {
@@ -2945,9 +2810,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
                 )}
 
                 {/* Game info - bottom left (V2 mockup-faithful) - animated fade.
-                    Hidden on landscape cards for the same inset reason as the action rail. */}
-                {!cardIsLandscape && (
-                  <Animated.View style={[styles.gameInfo, { opacity: overlayInfoOpacity }]} pointerEvents="box-none">
+                    Always shown in browse mode; hidden during gameplay. */}
+                {!isGameDeckActive && (
+                  <Animated.View style={[styles.gameInfo, { bottom: insets.bottom + TAB_BAR_HEIGHT + 14, opacity: overlayInfoOpacity }]} pointerEvents={isGameDeckActive ? 'none' : 'box-none'}>
                     <View style={styles.gameTitleRow}>
                       <Text style={styles.gameName} numberOfLines={2}>
                         {item!.game!.name}
@@ -3053,7 +2918,43 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ isActive = true, refresh
           </View>
         </Animated.View>
 
-      {/* Scroll overlay - only visible when scroll mode is active */}
+        {/* Active gameplay controls: Close (X) button at top-left, Restart at top-right */}
+        {isGameDeckActive && (() => {
+          const currentItem = feed[currentIndex];
+          const isGameLandscape = isLandscape(currentItem?.game?.orientation) && windowIsPortrait;
+
+          return (
+            <>
+              {/* Exit (X) Button */}
+              <Pressable
+                style={[
+                  styles.gameplayControlBtn,
+                  isGameLandscape
+                    ? { top: insets.top + 12, right: 16, transform: [{ rotate: '90deg' }] }
+                    : { top: insets.top + 10, left: 16 },
+                ]}
+                onPress={handleExitActiveGame}
+                hitSlop={14}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </Pressable>
+
+              {/* Restart Button */}
+              <Pressable
+                style={[
+                  styles.gameplayControlBtn,
+                  isGameLandscape
+                    ? { bottom: insets.bottom + TAB_BAR_HEIGHT + 20, right: 16, transform: [{ rotate: '90deg' }] }
+                    : { top: insets.top + 10, right: 16 },
+                ]}
+                onPress={handleRestartActiveGame}
+                hitSlop={14}
+              >
+                <Ionicons name="reload" size={22} color="#fff" />
+              </Pressable>
+            </>
+          );
+        })()}
       {scrollEnabled && (
         <View
           style={styles.scrollOverlay}
@@ -3273,13 +3174,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    overflow: 'hidden',
+    // On iOS, overflow:'hidden' on an ancestor of a rotated WKWebView forces CoreAnimation
+    // to rasterize at 1x instead of Retina resolution → foggy/blurry landscape games.
+    // Only apply on Android where it's needed to clip the rotated frame.
+    ...(Platform.OS === 'android' ? { overflow: 'hidden' } : {}),
     backgroundColor: getFeedBackdropColor(),
   },
   gameContainer: {
-    // Belt-and-braces for Android: the rotation math already lands the WebView exactly on the card
-    // box, but a hardware-layer child under a transform is not reliably clipped without this.
-    overflow: 'hidden',
+    ...(Platform.OS === 'android' ? { overflow: 'hidden' } : {}),
     position: 'absolute',
     top: 0,
     left: 0,
@@ -3542,28 +3444,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  thumbnailBgBlur: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    height: '100%',
-  },
-  thumbnailOverlayDarken: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10, 10, 25, 0.7)',
+  thumbnailBackdropShade: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'transparent',
   },
   thumbnailCardContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: '75%', // Narrower to match competitor
+    width: '75%',
     maxWidth: 360,
     zIndex: 10,
-    marginTop: 60, // Push down from center to match competitor positioning
+    marginTop: 60,
   },
   thumbnailCardInner: {
     width: '100%',
-    aspectRatio: 0.72, // Taller card like competitor
+    aspectRatio: 0.72,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#000',
@@ -3594,5 +3489,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 6,
+  },
+  gameplayControlBtn: {
+    position: 'absolute',
+    zIndex: 10000,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 10,
   },
 });

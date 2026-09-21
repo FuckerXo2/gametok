@@ -133,13 +133,9 @@ const MainApp = ({
     }
     
     setActiveTab(tab);
-    // Reset game deck when switching tabs manually
-    if (tab === 'home') {
-      setIsGameDeckActive(true);
-    } else {
-      setIsGameDeckActive(false);
-      setIsHudHidden(false); // Reset HUD when leaving home
-    }
+    // Reset to standard bottom navigation when switching tabs or entering Home
+    setIsGameDeckActive(false);
+    setIsHudHidden(false);
   };
 
   const triggerGameRestart = () => {
@@ -168,12 +164,20 @@ const MainApp = ({
     onNotifChatHandled?.();
   }, [notifChatUserId]);
 
-  // Follow / social notification tap → open the Connect tab's Activity feed.
+  // Follow / social notification tap → open Connect Activity feed
   useEffect(() => {
     if (!notifActivityNonce) return;
     setActiveTab('connect');
     setActivityRequestNonce((n) => n + 1);
   }, [notifActivityNonce]);
+
+  // Deep-link shared game received → switch to home tab to show it
+  const { sharedGameId } = useDeepLink();
+  useEffect(() => {
+    if (sharedGameId && activeTab !== 'home') {
+      setActiveTab('home');
+    }
+  }, [sharedGameId, activeTab]);
 
   // Keep all screens mounted, just hide/show them
   return (
@@ -196,25 +200,29 @@ const MainApp = ({
       setPendingDraftId,
       activityRequestNonce
     }}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <StatusBar
+        style={isDark ? 'light' : 'dark'}
+        hidden={activeTab === 'home' && isGameDeckActive}
+        animated
+      />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         {/* Home - always mounted */}
-        <View style={[styles.screenContainer, { opacity: activeTab === 'home' ? 1 : 0, zIndex: activeTab === 'home' ? 1 : 0 }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
+        <View style={[styles.screenContainer, { opacity: activeTab === 'home' ? 1 : 0, zIndex: activeTab === 'home' ? 1 : 0, display: activeTab === 'home' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
           <HomeScreen isActive={activeTab === 'home'} refreshTrigger={homeRefreshTrigger} />
         </View>
 
         {/* Explore (game discovery) - always mounted */}
-        <View style={[styles.screenContainer, { opacity: activeTab === 'explore' ? 1 : 0, zIndex: activeTab === 'explore' ? 1 : 0 }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
+        <View style={[styles.screenContainer, { opacity: activeTab === 'explore' ? 1 : 0, zIndex: activeTab === 'explore' ? 1 : 0, display: activeTab === 'explore' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
           <ExploreScreen />
         </View>
 
-        {/* Connect (social + messages) - always mounted */}
-        <View style={[styles.screenContainer, { opacity: activeTab === 'connect' ? 1 : 0, zIndex: activeTab === 'connect' ? 1 : 0 }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
+        {/* Connect (social + chat) - always mounted */}
+        <View style={[styles.screenContainer, { opacity: activeTab === 'connect' ? 1 : 0, zIndex: activeTab === 'connect' ? 1 : 0, display: activeTab === 'connect' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'connect' ? 'auto' : 'none'}>
           <ConnectScreen />
         </View>
 
         {/* Profile - always mounted */}
-        <View style={[styles.screenContainer, { opacity: activeTab === 'profile' ? 1 : 0, zIndex: activeTab === 'profile' ? 1 : 0 }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
+        <View style={[styles.screenContainer, { opacity: activeTab === 'profile' ? 1 : 0, zIndex: activeTab === 'profile' ? 1 : 0, display: activeTab === 'profile' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'profile' ? 'auto' : 'none'}>
           <ProfileScreen isActive={activeTab === 'profile'} />
         </View>
       </View>
@@ -248,7 +256,21 @@ const AppContent = () => {
 
   useEffect(() => {
     checkOnboarding();
-    handleDeepLink();
+    
+    // Check if app was opened via deep link on cold launch
+    Linking.getInitialURL().then((initialUrl) => {
+      if (initialUrl) {
+        console.log('[DeepLink] Cold start URL:', initialUrl);
+        parseDeepLink(initialUrl);
+      }
+    }).catch((e) => console.log('[DeepLink] getInitialURL error:', e));
+
+    // Listen for deep links while app is open / foregrounded
+    const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
+      console.log('[DeepLink] Foreground event URL:', url);
+      parseDeepLink(url);
+    });
+
     setupNotifications();
     
     // Start background download of multiplayer games immediately on native.
@@ -276,6 +298,7 @@ const AppContent = () => {
     }
 
     return () => {
+      linkingSubscription.remove();
       // Cleanup notification listeners
       if (notificationListener.current) {
         notificationListener.current.remove();
@@ -342,30 +365,42 @@ const AppContent = () => {
     setShowOnboarding(false);
   };
 
-  // Handle deep links
-  const handleDeepLink = async () => {
-    // Check if app was opened via deep link
-    const initialUrl = await Linking.getInitialURL();
-    if (initialUrl) {
-      parseDeepLink(initialUrl);
-    }
-
-    // Listen for deep links while app is open
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      parseDeepLink(url);
-    });
-
-    return () => subscription.remove();
-  };
-
   const parseDeepLink = (url: string) => {
     try {
-      // Handle gametok://game/flappy-bird or https://gametok.co/game.html?id=flappy-bird
-      const gameMatch = url.match(/game[\/=]([^\/\?&]+)/);
-      if (gameMatch) {
-        const gameId = gameMatch[1];
-        console.log('[DeepLink] Opening game:', gameId);
+      console.log('[DeepLink] Raw URL received:', url);
+      let gameId: string | null = null;
+
+      // 1. Query parameters (e.g. ?id=xyz or ?game=xyz or ?gameId=xyz from game.html?id=...)
+      const queryMatch = url.match(/[?&](?:id|game|gameId)=([^&#]+)/i);
+      if (queryMatch) {
+        gameId = decodeURIComponent(queryMatch[1]);
+      }
+
+      // 2. Path-based (e.g. /game/xyz or gametok://game/xyz)
+      if (!gameId) {
+        const pathMatch = url.match(/(?:^|\/|gametok:\/\/)game\/([^/?&#]+)/i);
+        if (pathMatch) {
+          gameId = decodeURIComponent(pathMatch[1]);
+        }
+      }
+
+      // 3. Fallback for custom scheme (e.g. gametok://xyz)
+      if (!gameId) {
+        const schemeMatch = url.match(/^gametok:\/\/([^/?&#]+)/i);
+        if (schemeMatch) {
+          const candidate = decodeURIComponent(schemeMatch[1]);
+          const reserved = ['home', 'explore', 'create', 'connect', 'profile', 'login', 'signup'];
+          if (!reserved.includes(candidate.toLowerCase())) {
+            gameId = candidate;
+          }
+        }
+      }
+
+      if (gameId) {
+        console.log('[DeepLink] Successfully parsed gameId:', gameId);
         setSharedGameId(gameId);
+      } else {
+        console.log('[DeepLink] No game ID found in URL:', url);
       }
     } catch (e) {
       console.log('[DeepLink] Parse error:', e);
@@ -475,7 +510,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   screenContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   loading: {
     flex: 1,
