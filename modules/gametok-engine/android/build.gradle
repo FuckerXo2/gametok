@@ -29,4 +29,9 @@ android {
 dependencies {
     implementation project(':expo-modules-core')
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.24"
+
+    // Google Filament PBR & glTF/GLB Mocap Engine
+    api "com.google.android.filament:filament-android:1.56.0"
+    api "com.google.android.filament:gltfio-android:1.56.0"
+    api "com.google.android.filament:filament-utils-android:1.56.0"
 }

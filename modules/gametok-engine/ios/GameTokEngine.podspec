@@ -9,6 +9,9 @@ Pod::Spec.new do |s|
   s.source         = { :git => '' }
 
   s.dependency 'ExpoModulesCore'
+  s.dependency 'Filament/filament'
+  s.dependency 'Filament/gltfio_core'
+  s.dependency 'Filament/camutils'
 
   s.source_files = [
     'ios/**/*.{h,m,mm,swift}',
