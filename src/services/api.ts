@@ -1065,10 +1065,10 @@ export const ai = {
 
     return { promise, cancel: () => controller.abort() };
   },
-  generateAsset: async (prompt: string) => {
+  generateAsset: async (prompt: string, styleModifier?: string) => {
     return request('/ai/generate-asset', {
       method: 'POST',
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt, styleModifier })
     });
   },
   generateImage: async (prompt: string, options: { width?: number; height?: number; steps?: number } = {}) => {

@@ -117,6 +117,7 @@ interface Props {
   onApplyAssets?: (assets: AssetItem[]) => void;
   onGenerate?: () => void;
   onUpload?: () => void;
+  styleModifier?: string;
 }
 
 export const AddToGameScreen: React.FC<Props> = ({
@@ -124,6 +125,7 @@ export const AddToGameScreen: React.FC<Props> = ({
   onApplyAssets,
   onGenerate,
   onUpload,
+  styleModifier,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -207,7 +209,7 @@ export const AddToGameScreen: React.FC<Props> = ({
     setIsGenerating(true);
 
     try {
-      const res = await ai.generateAsset(prompt);
+      const res = await ai.generateAsset(prompt, styleModifier);
       const imageUrl = (res as any)?.imageUrl || (res as any)?.base64;
       const cleanName = prompt.length > 22 ? prompt.slice(0, 20) + '...' : prompt;
 

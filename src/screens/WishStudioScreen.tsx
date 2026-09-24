@@ -20,10 +20,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { palette, spacing, radii, type as t } from '../theme/tokens';
-import { WishConversation } from '../components/wish/WishConversation';
 import { PreviewPane } from '../components/wish/PreviewPane';
-import { StudioTabBar } from '../components/wish/StudioTabBar';
 import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
+import { ForgeUnderstandingScreen } from '../components/forge/ForgeUnderstandingScreen';
+import {
+  VisualDirectionScreen,
+  type VisualDirection,
+} from '../components/forge/VisualDirectionScreen';
+import { ForgeBuildingScreen } from '../components/forge/ForgeBuildingScreen';
+import { GameReadyScreen } from '../components/forge/GameReadyScreen';
+import { GameCreatorScreen } from '../components/forge/GameCreatorScreen';
+import { AddToGameScreen, type AssetItem } from '../components/forge/AddToGameScreen';
 import { briefToPrompt } from '../services/planner';
 import { ai } from '../services/api';
 import type { WishMessage, StudioPhase, StudioTab, GameBrief } from '../components/wish/wishTypes';
@@ -87,9 +94,25 @@ const COOKING_STATUS_LINES = [
   'Teaching the zombies how to lose...',
   'Sanding the rough edges off the fun...',
 ];
+const UNDERSTANDING_STEPS = [
+  { icon: 'sparkles', text: 'Analyzing your request...' },
+  { icon: 'game-controller', text: 'Exploring game mechanics...' },
+  { icon: 'color-palette', text: 'Researching visual directions...' },
+  { icon: 'layers', text: 'Identifying assets...' },
+  { icon: 'cube', text: 'Preparing concepts...' },
+];
+const COMPANION_MESSAGES = [
+  "Ooh, I love this idea! Let's see what we can forge...",
+  "Thinking about what would make this super fun to play...",
+  "Exploring a few different directions for your game...",
+  "Picking out some vibrant colors and cool sounds...",
+  "Almost ready! Putting together the first looks for you...",
+];
 
 let idCounter = 0;
 const nextId = () => `w${++idCounter}`;
+
+type JourneyView = 'understanding' | 'directions' | 'building' | 'ready' | 'play' | 'creator' | 'assets';
 
 export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame = null, initialAttachments = [], initialOrientation = DEFAULT_ORIENTATION, onRequestPublish, reopenNonce = 0, reopenTab = 'wish', children }: Props) => {
   const orientation = normalizeOrientation(initialOrientation);
@@ -108,12 +131,20 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   const [genPhase, setGenPhase] = useState<string | null>(null);
   const [genStatusMessage, setGenStatusMessage] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
+  const [journeyView, setJourneyView] = useState<JourneyView>('understanding');
+  const [selectedDirectionId, setSelectedDirectionId] = useState<string | null>(null);
+  const [directionGeneration, setDirectionGeneration] = useState(0);
+  const [understandingStep, setUnderstandingStep] = useState(0);
+  const [briefReady, setBriefReady] = useState(false);
+  const [attachedGameAssets, setAttachedGameAssets] = useState<AssetItem[]>([]);
 
   const briefRef = useRef<GameBrief | null>(null);
   const refinementsRef = useRef<string[]>([]);
   const draftIdRef = useRef<string | null>(null);
   const seededForRef = useRef<string | null>(null);
   const cancelJobRef = useRef<(() => void) | null>(null);
+  const directionInstructionRef = useRef('');
+  const selectedStyleModifierRef = useRef('');
   // Planning conversation history for /refine-spec (role 'ai' | 'user').
   const specHistoryRef = useRef<Array<{ role: 'ai' | 'user'; content: string }>>([]);
 
@@ -152,6 +183,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
    * that isn't theirs. Their wish and assets are untouched, so retry is one tap.
    */
   const pushUnavailable = useCallback(() => {
+    setBuildError('I could not understand the idea this time. Your brief is still safe.');
     pushMessage({
       role: 'kimi',
       text: 'Something’s wrong on my end — I can’t shape your idea right now. It’s saved, so we can pick this up in a moment.',
@@ -161,6 +193,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   /** First pitch. Only a real model-written spec becomes a brief. */
   const proposeBrief = useCallback(() => {
+    setBuildError(null);
     setKimiThinking(true);
     ai.generateSpec(initialPrompt)
       .then((res: any) => {
@@ -182,8 +215,8 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
           { role: 'user', content: initialPrompt },
           { role: 'ai', content: briefAsText(brief) },
         ];
-        // No preamble — the pitch opens with the game's name and speaks for itself.
-        pushMessage({ role: 'kimi', text: '', brief });
+        setBuildError(null);
+        setBriefReady(true);
       })
       .catch((err: any) => {
         console.warn('[WishStudio] generate-spec failed:', err?.message);
@@ -234,7 +267,11 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   // Opening handoff from Dream Forge: their brief lands as the first turn and
   // Kimi immediately pitches back. No greeting, no re-asking.
   useEffect(() => {
-    if (!visible || initialGame || !initialPrompt.trim()) return;
+    if (!visible) {
+      seededForRef.current = null;
+      return;
+    }
+    if (initialGame || !initialPrompt.trim()) return;
     if (seededForRef.current === initialPrompt) return;
     seededForRef.current = initialPrompt;
 
@@ -254,6 +291,12 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
     setGenProgress(null);
     setGenPhase(null);
     setGenStatusMessage(null);
+    setJourneyView('understanding');
+    setSelectedDirectionId(null);
+    setDirectionGeneration(0);
+    setUnderstandingStep(0);
+    setBriefReady(false);
+    directionInstructionRef.current = '';
 
     const attachNote =
       initialAttachments.length > 0
@@ -292,6 +335,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
     setGenProgress(null);
     setGenPhase(null);
     setGenStatusMessage(null);
+    setJourneyView('creator');
     setMessages([
       {
         id: nextId(),
@@ -300,6 +344,45 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       },
     ]);
   }, [visible, initialGame]);
+
+  const transitionToDirections = useCallback(() => {
+    if (!briefRef.current) {
+      briefRef.current = {
+        name: initialPrompt.slice(0, 24).trim() || 'Your Game',
+        orientation,
+        pitch: initialPrompt,
+        structural: '',
+        spine: [],
+        flavor: [],
+      };
+    }
+    setJourneyView('directions');
+    setDirectionGeneration(0);
+    setSelectedDirectionId(null);
+    pushMessage({ role: 'kimi', text: '', brief: briefRef.current });
+  }, [initialPrompt, orientation, pushMessage]);
+
+  useEffect(() => {
+    if (!visible || journeyView !== 'understanding') return;
+
+    const interval = setInterval(() => {
+      setUnderstandingStep((step) => {
+        if (step < 4) return step + 1;
+        return step;
+      });
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [visible, journeyView]);
+
+  useEffect(() => {
+    if (!visible || journeyView !== 'understanding') return;
+    if (understandingStep < 4) return;
+
+    const timer = setTimeout(() => {
+      transitionToDirections();
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [visible, journeyView, understandingStep, transitionToDirections]);
 
   // Coming back from the Publish screen: land on the tab the parent asked for
   // rather than whatever was last open. Keyed on the nonce alone — the tab is
@@ -318,10 +401,12 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       job.promise
         .then((res: any) => {
           cancelJobRef.current = null;
+          const wasInitialBuild = !draftIdRef.current;
           draftIdRef.current = res?.draftId || res?.jobId || draftIdRef.current;
           if (res?.htmlPreview) setHtml(res.htmlPreview);
           if (res?.gameUrl) setGameUrl(res.gameUrl);
           setPhase('live');
+          setJourneyView(wasInitialBuild ? 'ready' : 'creator');
           setPreviewHasNews(true);
           pushMessage({ role: 'kimi', text: doneLine(briefRef.current?.name ?? 'Your game') });
         })
@@ -338,7 +423,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   const handleCreate = useCallback(() => {
     const brief = briefRef.current;
-    if (!brief || phase === 'building') return;
+    if (!brief || (phase === 'building' && !buildError)) return;
     setPhase('building');
     setHasCreated(true);
     setTab('preview'); // land in the forge — the wait is a game, go play it
@@ -348,19 +433,39 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
     setGenStatusMessage('Reading your idea...');
     pushMessage({ role: 'kimi', text: `Forging ${brief.name}. Hold tight — defend the forge while I work.` });
 
-    const prompt = briefToPrompt(brief, initialPrompt, refinementsRef.current);
+    const directionLine = directionInstructionRef.current
+      ? `\n\nSelected visual direction:\n${directionInstructionRef.current}`
+      : '';
+    const prompt = `${briefToPrompt(brief, initialPrompt, refinementsRef.current)}${directionLine}`;
     runBuild(
       // Orientation goes as a structured field, not just the prose line briefToPrompt adds — the
       // sandbox verifies at 844x390 vs 390x844 off this value.
       ai.dreamLabs(prompt, initialAttachments, { onStatus: onJobStatus, orientation }),
       (name) => `${name} is live — go play it. From here every wish changes the game: say it and I’ll make it so.`,
     );
-  }, [phase, initialPrompt, initialAttachments, orientation, pushMessage, onJobStatus, runBuild]);
+  }, [phase, buildError, initialPrompt, initialAttachments, orientation, pushMessage, onJobStatus, runBuild]);
+
+  const handleUseDirection = useCallback(
+    (direction: VisualDirection, refinement: string) => {
+      directionInstructionRef.current = [direction.instruction, refinement].filter(Boolean).join(' ');
+      selectedStyleModifierRef.current = (direction as any)?.modifier || direction.instruction || '';
+      setSelectedDirectionId(direction.id);
+      setJourneyView('building');
+      handleCreate();
+    },
+    [handleCreate],
+  );
+
+  const handleSkipDirections = useCallback(() => {
+    directionInstructionRef.current = '';
+    setJourneyView('building');
+    handleCreate();
+  }, [handleCreate]);
 
   // ── Live: every wish edits the game Kimi already built ─────────────────────
 
   const handleLiveWish = useCallback(
-    (wish: string) => {
+    (wish: string, attachments: any[] = []) => {
       const draftId = draftIdRef.current;
       if (!draftId) return;
       setPhase('building');
@@ -370,7 +475,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       setGenStatusMessage('Making your wish real...');
       pushMessage({ role: 'kimi', text: 'On it.' });
       runBuild(
-        ai.editGame(draftId, wish, [], { onStatus: onJobStatus }),
+        ai.editGame(draftId, wish, attachments, { onStatus: onJobStatus }),
         () => 'Done — take a look.',
       );
     },
@@ -388,18 +493,23 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       setPhase('planning');
       setHasCreated(false); // back to pure conversation
       setTab('wish');
+      setJourneyView('directions');
       pushMessage({ role: 'kimi', text: 'Stopped. The pitch is still here when you’re ready.' });
     }
   }, [pushMessage]);
 
   const handleRetryBuild = useCallback(() => {
     setBuildError(null);
+    if (journeyView === 'understanding') {
+      proposeBrief();
+      return;
+    }
     if (draftIdRef.current) setPhase('live');
     else {
       setPhase('planning');
       handleCreate();
     }
-  }, [handleCreate]);
+  }, [handleCreate, journeyView, proposeBrief]);
 
   // ── Publish: hand off to Dream Forge's Publish Game screen ─────────────────
 
@@ -423,18 +533,22 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   const handleSend = useCallback(() => {
     const wish = input.trim();
-    if (!wish) return;
+    if (!wish && attachedGameAssets.length === 0) return;
+    const finalWish =
+      wish || `Add these assets to the game: ${attachedGameAssets.map((a) => a.name).join(', ')}`;
     setInput('');
-    pushMessage({ role: 'user', text: wish });
+    const attachmentsToSend = [...attachedGameAssets];
+    setAttachedGameAssets([]);
+    pushMessage({ role: 'user', text: finalWish });
 
     if (draftIdRef.current) {
-      handleLiveWish(wish);
+      handleLiveWish(finalWish, attachmentsToSend);
       return;
     }
     // Still planning — fold the reaction into the pitch, never interrogate.
-    refinementsRef.current = [...refinementsRef.current, wish];
-    refineBrief(wish);
-  }, [input, pushMessage, handleLiveWish, refineBrief]);
+    refinementsRef.current = [...refinementsRef.current, finalWish];
+    refineBrief(finalWish);
+  }, [input, attachedGameAssets, pushMessage, handleLiveWish, refineBrief]);
 
   /**
    * Retry a failed planning turn. The user's wish and assets were never lost,
@@ -454,108 +568,170 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   const building = phase === 'building';
   // Publish is offered only once there's a real, playable game to ship.
   const canPublish = phase === 'live' && (!!html || !!gameUrl);
+  const showForgeChrome =
+    journeyView === 'understanding' ||
+    journeyView === 'directions' ||
+    (building && !draftIdRef.current);
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <SafeAreaView style={styles.safe}>
-          <View style={styles.header}>
-            <Pressable onPress={onClose} style={styles.headerBtn} hitSlop={8}>
-              <Ionicons name="chevron-back" size={26} color={palette.text} />
-            </Pressable>
-            <View style={styles.headerCenter}>
-              {/* Pre-create the pitch owns the title — don't echo it in the header. */}
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {hasCreated ? gameName ?? 'New Game' : 'New Game'}
-              </Text>
-              {building && <Text style={styles.headerSub}>forging…</Text>}
-            </View>
-            {canPublish ? (
-              <Pressable
-                onPress={handlePublish}
-                style={styles.publishPill}
-                hitSlop={6}
-              >
-                <Ionicons name="rocket" size={14} color={palette.black} />
-                <Text style={styles.publishPillText}>Publish</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.headerBtn} />
-            )}
-          </View>
+  if (visible && journeyView === 'understanding') {
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <ForgeUnderstandingScreen
+          prompt={initialPrompt}
+          activeStep={understandingStep}
+          steps={UNDERSTANDING_STEPS.map((s) => s.text)}
+          mascotMessage={
+            COMPANION_MESSAGES[understandingStep % COMPANION_MESSAGES.length] ||
+            'Exploring a few different directions for your game...'
+          }
+          onClose={onClose}
+          onRetry={handleRetryPlanning}
+          errorMessage={buildError}
+          onSelectStep={setUnderstandingStep}
+        />
+      </Modal>
+    );
+  }
 
-          <View style={styles.body}>
-            {tab === 'wish' ? (
-              <WishConversation
-                messages={messages}
-                phase={phase}
-                input={input}
-                onChangeInput={setInput}
-                onSend={handleSend}
-                onCreate={handleCreate}
-                onRetry={handleRetryPlanning}
-                isFirstGame={!hasCreated}
-                kimiThinking={kimiThinking}
-              />
-            ) : building || buildError ? (
-              // The forge lives INSIDE the preview card — same frame the game will
-              // occupy once it's ready, so it swaps in place rather than replacing
-              // a separate full-screen scene.
-              <View style={styles.forgeCard}>
-                <ForgeDefenseGame
-                  embedded
-                  prompt={initialPrompt}
-                  activeStep={activeStep}
-                  labsMode
-                  onCancel={handleCancelBuild}
-                  onMinimize={() => setTab('wish')}
-                  onRetry={handleRetryBuild}
-                  errorMessage={buildError}
-                  generationSteps={GENERATION_STEPS}
-                  cookingStatusLines={COOKING_STATUS_LINES}
-                  generationProgress={genProgress}
-                  generationPhase={genPhase}
-                  generationStatusMessage={genStatusMessage}
-                />
-              </View>
-            ) : (
-              <PreviewPane
-                state={html || gameUrl ? 'ready' : 'empty'}
-                gameName={gameName}
-                beats={[]}
-                html={html}
-                gameUrl={gameUrl}
-                orientation={orientation}
-              />
-            )}
-          </View>
+  if (visible && journeyView === 'directions') {
+    return (
+      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+        <VisualDirectionScreen
+          gameTitle={gameName ?? 'Your game'}
+          prompt={initialPrompt}
+          selectedId={selectedDirectionId}
+          generation={directionGeneration}
+          onSelect={(direction) => setSelectedDirectionId(direction.id)}
+          onUseDirection={handleUseDirection}
+          onSkip={handleSkipDirections}
+          onGenerateMore={() => {
+            setDirectionGeneration((value) => value + 1);
+          }}
+          onClose={onClose}
+        />
+      </Modal>
+    );
+  }
 
-          {/* The toggle exists only once there's something on the other side. */}
-          {hasCreated && (
-            <StudioTabBar
-              active={tab}
-              onSelect={(next) => {
-                setTab(next);
-                if (next === 'preview') setPreviewHasNews(false);
-              }}
-              onHistory={() => {}}
-              onSettings={() => {}}
-              previewHasNews={previewHasNews}
-            />
-          )}
-        </SafeAreaView>
+  if (visible && (journeyView === 'building' || (building && !draftIdRef.current))) {
+    return (
+      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+        <ForgeBuildingScreen
+          prompt={initialPrompt}
+          gameTitle={gameName ?? 'Your game'}
+          activeStep={activeStep >= 0 ? activeStep : 1}
+          onClose={onClose}
+          onCookInBackground={() => {
+            setJourneyView('creator');
+            setTab('wish');
+          }}
+        />
+      </Modal>
+    );
+  }
 
-        {/* Screens that present ON TOP of the studio (Publish). Nested here so
-            they slide over a studio that never goes anywhere — dismissing the
-            studio first would flash Dream Forge between the two animations. */}
+  // Keep Ready and Creator inside the same native modal. Swapping between two
+  // separate modal branches can dismiss the first modal before iOS presents
+  // the next one, briefly exposing Dream Forge underneath.
+  if (visible && (journeyView === 'ready' || journeyView === 'creator' || journeyView === 'assets')) {
+    return (
+      <Modal
+        visible={visible}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={
+          journeyView === 'assets'
+            ? () => setJourneyView('creator')
+            : journeyView === 'creator'
+              ? () => setJourneyView('ready')
+              : onClose
+        }
+      >
+        {journeyView === 'assets' ? (
+          <AddToGameScreen
+            styleModifier={selectedStyleModifierRef.current}
+            onClose={() => setJourneyView('creator')}
+            onApplyAssets={(applied) => {
+              setAttachedGameAssets(applied);
+              setJourneyView('creator');
+              if (applied.length > 0) {
+                const names = applied.map((a) => a.name).join(', ');
+                setInput((prev) =>
+                  prev.trim()
+                    ? `${prev} (Use: ${names})`
+                    : `Add ${names} to the game and make them interactive!`,
+                );
+              }
+            }}
+          />
+        ) : journeyView === 'creator' ? (
+          <GameCreatorScreen
+            gameName={gameName ?? 'Your game'}
+            html={html}
+            gameUrl={gameUrl}
+            orientation={orientation}
+            input={input}
+            onChangeInput={setInput}
+            onSend={handleSend}
+            onBack={() => setJourneyView('ready')}
+            onPlay={() => setJourneyView('play')}
+            onAdd={() => setJourneyView('assets')}
+            attachedAssets={attachedGameAssets}
+            onRemoveAsset={(id) =>
+              setAttachedGameAssets((prev) => prev.filter((a) => a.id !== id))
+            }
+            onGameSettings={() =>
+              Alert.alert('Game settings', 'AI-tailored settings for this game will open here.')
+            }
+            onUndo={() => Alert.alert('Undo', 'There is nothing to undo yet.')}
+            onMore={() => Alert.alert(gameName ?? 'Your game', 'More creator options will appear here.')}
+            isEditing={phase === 'building'}
+          />
+        ) : (
+          <GameReadyScreen
+            gameName={gameName ?? 'Your game'}
+            html={html}
+            gameUrl={gameUrl}
+            orientation={orientation}
+            onPlay={() => setJourneyView('play')}
+            onCreate={() => setJourneyView('creator')}
+            onPublish={handlePublish}
+            onClose={onClose}
+          />
+        )}
         {children}
-      </View>
-    </Modal>
-  );
+      </Modal>
+    );
+  }
+
+  if (visible && journeyView === 'play') {
+    return (
+      <Modal visible={visible} animationType="fade" onRequestClose={() => setJourneyView('ready')}>
+        <View style={styles.playWrap}>
+          <PreviewPane
+            state={html || gameUrl ? 'ready' : 'empty'}
+            gameName={gameName}
+            beats={[]}
+            html={html}
+            gameUrl={gameUrl}
+            orientation={orientation}
+            containerStyle={{ margin: 0, borderWidth: 0 }}
+          />
+          <Pressable style={styles.exitPlayButton} onPress={() => setJourneyView('ready')}>
+            <Ionicons name="close" size={17} color={palette.text} />
+            <Text style={styles.exitPlayText}>Exit Play</Text>
+          </Pressable>
+        </View>
+        {children}
+      </Modal>
+    );
+  }
+
+  return null;
 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: palette.ink900 },
+  root: { flex: 1, backgroundColor: '#01060E' },
   safe: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -564,6 +740,20 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  brandBack: {
+    minWidth: 112,
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  brandText: {
+    color: palette.text,
+    fontSize: t.size.body,
+    fontFamily: t.family.bold,
+    letterSpacing: t.letter.snug,
+  },
+  forgeHeaderSpacer: { width: 112, height: 40 },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: {
     color: palette.text,
@@ -579,6 +769,26 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   body: { flex: 1 },
+  playWrap: { flex: 1 },
+  exitPlayButton: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    height: 38,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(10,10,15,0.86)',
+    borderWidth: 1,
+    borderColor: palette.lineStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  exitPlayText: {
+    color: palette.text,
+    fontSize: t.size.small,
+    fontFamily: t.family.semibold,
+  },
   // Same frame the game occupies in PreviewPane's `gameCard`, so the forge → game
   // handoff happens in place with no visual jump.
   forgeCard: {
@@ -589,6 +799,13 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink900,
     borderWidth: 1,
     borderColor: palette.line,
+  },
+  understandingForge: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    borderRadius: 0,
+    borderWidth: 0,
   },
   publishPill: {
     flexDirection: 'row',
