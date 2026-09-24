@@ -9,7 +9,8 @@ import {
 } from './aiMock';
 import { normalizeOrientation, type Orientation } from '../constants/orientation';
 
-export const API_URL = 'https://gametok-backend-production.up.railway.app/api';
+export const API_URL = 'https://gametok-backend.onrender.com/api';
+
 
 // ── Wish-studio AI: auto-fallback to a local mock when the backend is down ────
 //
@@ -697,16 +698,7 @@ export const ai = {
     return request(`/ai/dream/cancel/${jobId}`, { method: 'POST' });
   },
 
-  retryDreamJob: async (jobId: string) => {
-    return request(`/ai/dream/retry/${jobId}`, { method: 'POST' });
-  },
 
-  narrativeChat: async (messages: { role: 'ai' | 'user'; text: string }[]) => {
-    return request('/ai/narrative/chat', {
-      method: 'POST',
-      body: JSON.stringify({ messages }),
-    }, 45000);
-  },
 
   generateSpec: async (prompt: string) => {
     if (AI_MODE === 'mock') return mockGenerateSpec(prompt);
@@ -1079,6 +1071,18 @@ export const ai = {
       body: JSON.stringify({ prompt })
     });
   },
+  generateImage: async (prompt: string, options: { width?: number; height?: number; steps?: number } = {}) => {
+    return request('/ai/generate-image', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, ...options }),
+    }, 60000);
+  },
+  generateVisualDirections: async (prompt: string, gameTitle?: string) => {
+    return request('/ai/generate-visual-directions', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, gameTitle }),
+    }, 120000);
+  },
   drafts: async () => {
     return request('/ai/drafts');
   },
@@ -1096,11 +1100,5 @@ export const ai = {
     if (mockBuilds()) return mockPublish(draftId, title);
     // Publishing uploads the full game HTML — allow longer than the default.
     return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) }, 60000);
-  },
-  reclassifyPublished: async (draftId?: string, limit = 20) => {
-    return request('/ai/reclassify-published', {
-      method: 'POST',
-      body: JSON.stringify({ draftId, limit }),
-    });
   },
 };
