@@ -1,0 +1,10 @@
+{
+  "name": "GameTokEngine",
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["GameTokEngineModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.gametokengine.GameTokEngineModule"]
+  }
+}

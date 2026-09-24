@@ -1,0 +1,23 @@
+{
+  "name": "@gametok/native-engine",
+  "version": "1.0.0",
+  "description": "GameTok Custom Native 3D Engine powered by Google Filament, Jolt Physics, and QuickJS",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {},
+  "keywords": [
+    "react-native",
+    "expo",
+    "gametok",
+    "filament",
+    "jolt",
+    "game-engine"
+  ],
+  "author": "GameTok",
+  "license": "MIT",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
