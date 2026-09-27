@@ -117,14 +117,20 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs: n
     // Get response text first to handle non-JSON responses
     const text = await response.text();
 
-    let data;
+    let data: any = null;
     try {
       // The backend sends whitespace heartbeats to keep connections alive.
       // Strip them before parsing JSON.
       data = JSON.parse(text.trim());
     } catch (e) {
-      console.error('[API] Invalid JSON response:', text.substring(0, 200));
-      const error: any = new Error(response.ok ? 'Server returned invalid response' : `Request failed with status ${response.status}`);
+      if (!response.ok) {
+        const error: any = new Error(`Request failed with status ${response.status}`);
+        error.status = response.status;
+        error.responseText = text;
+        throw error;
+      }
+      console.warn('[API] Non-JSON response received:', text.substring(0, 100));
+      const error: any = new Error('Server returned invalid response');
       error.status = response.status;
       error.responseText = text;
       throw error;
@@ -873,7 +879,7 @@ export const ai = {
   dream: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void; orientation?: Orientation },
+    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void; orientation?: Orientation; runtime?: 'web' | 'native' },
   ) => {
     const controller = new AbortController();
     let remoteJobId: string | null = null;
@@ -891,7 +897,12 @@ export const ai = {
         // Step 1: Tell backend to start generation process and return immediately
         const res = await request('/ai/dream', {
           method: 'POST',
-          body: JSON.stringify({ prompt, attachments, orientation: normalizeOrientation(options?.orientation) }),
+          body: JSON.stringify({
+            prompt,
+            attachments,
+            orientation: normalizeOrientation(options?.orientation),
+            runtime: options?.runtime || 'native',
+          }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial Dream job handshake
 
@@ -1083,6 +1094,12 @@ export const ai = {
       body: JSON.stringify({ prompt, gameTitle }),
     }, 120000);
   },
+  generatePerspectives: async (prompt: string, gameTitle?: string, selectedDirection?: any) => {
+    return request('/ai/generate-perspectives', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, gameTitle, selectedDirection }),
+    }, 120000);
+  },
   drafts: async () => {
     return request('/ai/drafts');
   },
@@ -1096,9 +1113,19 @@ export const ai = {
   deleteDraft: async (draftId: string) => {
     return request(`/ai/drafts/${draftId}`, { method: 'DELETE' });
   },
-  publish: async (draftId: string, title?: string, privacy?: string, html?: string) => {
+  publish: async (draftId: string, title?: string, privacy?: string, html?: string, options?: { runtime?: 'web' | 'native'; gameScript?: string; orientation?: string }) => {
     if (mockBuilds()) return mockPublish(draftId, title);
-    // Publishing uploads the full game HTML — allow longer than the default.
-    return request(`/ai/publish/${draftId}`, { method: 'POST', body: JSON.stringify({ title, privacy, html }) }, 60000);
+    // Publishing uploads the full game — allow longer than the default.
+    return request(`/ai/publish/${draftId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        privacy,
+        html,
+        runtime: options?.runtime,
+        gameScript: options?.gameScript,
+        orientation: options?.orientation,
+      })
+    }, 60000);
   },
 };

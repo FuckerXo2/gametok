@@ -27,6 +27,10 @@ import {
   VisualDirectionScreen,
   type VisualDirection,
 } from '../components/forge/VisualDirectionScreen';
+import {
+  PerspectiveSelectionScreen,
+  type CameraPerspective,
+} from '../components/forge/PerspectiveSelectionScreen';
 import { ForgeBuildingScreen } from '../components/forge/ForgeBuildingScreen';
 import { GameReadyScreen } from '../components/forge/GameReadyScreen';
 import { GameCreatorScreen } from '../components/forge/GameCreatorScreen';
@@ -112,7 +116,7 @@ const COMPANION_MESSAGES = [
 let idCounter = 0;
 const nextId = () => `w${++idCounter}`;
 
-type JourneyView = 'understanding' | 'directions' | 'building' | 'ready' | 'play' | 'creator' | 'assets';
+type JourneyView = 'understanding' | 'directions' | 'perspective' | 'building' | 'ready' | 'play' | 'creator' | 'assets';
 
 export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame = null, initialAttachments = [], initialOrientation = DEFAULT_ORIENTATION, onRequestPublish, reopenNonce = 0, reopenTab = 'wish', children }: Props) => {
   const orientation = normalizeOrientation(initialOrientation);
@@ -132,7 +136,13 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   const [genStatusMessage, setGenStatusMessage] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [journeyView, setJourneyView] = useState<JourneyView>('understanding');
+  const [visualDirections, setVisualDirections] = useState<VisualDirection[]>([]);
+  const [selectedDirection, setSelectedDirection] = useState<VisualDirection | null>(null);
   const [selectedDirectionId, setSelectedDirectionId] = useState<string | null>(null);
+  const [perspectives, setPerspectives] = useState<CameraPerspective[]>([]);
+  const [selectedPerspectiveId, setSelectedPerspectiveId] = useState<string | null>(null);
+  const [isPerspectivesLoading, setIsPerspectivesLoading] = useState(false);
+  const [isDirectionsLoading, setIsDirectionsLoading] = useState(false);
   const [directionGeneration, setDirectionGeneration] = useState(0);
   const [understandingStep, setUnderstandingStep] = useState(0);
   const [briefReady, setBriefReady] = useState(false);
@@ -362,27 +372,57 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
     pushMessage({ role: 'kimi', text: '', brief: briefRef.current });
   }, [initialPrompt, orientation, pushMessage]);
 
+  // Fetch visual directions dynamically while user is on ForgeUnderstandingScreen
+  useEffect(() => {
+    if (!visible || journeyView !== 'understanding' || !initialPrompt.trim()) return;
+
+    let isCancelled = false;
+    setIsDirectionsLoading(true);
+
+    ai.generateVisualDirections(initialPrompt, gameName || 'Your game')
+      .then((res: any) => {
+        if (!isCancelled && res?.directions && res.directions.length > 0) {
+          setVisualDirections(res.directions);
+          setSelectedDirection(res.directions[0]);
+          setSelectedDirectionId(res.directions[0].id);
+        }
+      })
+      .catch((err) => {
+        console.warn('[WishStudio] Visual direction fetch error:', err);
+      })
+      .finally(() => {
+        if (!isCancelled) setIsDirectionsLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [visible, journeyView, initialPrompt, gameName]);
+
+  // Advance understanding animation steadily
   useEffect(() => {
     if (!visible || journeyView !== 'understanding') return;
 
     const interval = setInterval(() => {
       setUnderstandingStep((step) => {
-        if (step < 4) return step + 1;
+        if (step < 3) return step + 1;
         return step;
       });
-    }, 1500);
+    }, 1200);
     return () => clearInterval(interval);
   }, [visible, journeyView]);
 
+  // Transition to directions ONLY when directions are actually loaded or brief is ready
   useEffect(() => {
     if (!visible || journeyView !== 'understanding') return;
-    if (understandingStep < 4) return;
-
-    const timer = setTimeout(() => {
-      transitionToDirections();
-    }, 1800);
-    return () => clearTimeout(timer);
-  }, [visible, journeyView, understandingStep, transitionToDirections]);
+    if (visualDirections.length > 0 && briefReady) {
+      setUnderstandingStep(4);
+      const timer = setTimeout(() => {
+        transitionToDirections();
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, journeyView, visualDirections.length, briefReady, transitionToDirections]);
 
   // Coming back from the Publish screen: land on the tab the parent asked for
   // rather than whatever was last open. Keyed on the nonce alone — the tab is
@@ -450,6 +490,33 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       directionInstructionRef.current = [direction.instruction, refinement].filter(Boolean).join(' ');
       selectedStyleModifierRef.current = (direction as any)?.modifier || direction.instruction || '';
       setSelectedDirectionId(direction.id);
+      setSelectedDirection(direction);
+
+      // Transition to Step 2: Camera Perspective
+      setJourneyView('perspective');
+      setIsPerspectivesLoading(true);
+      ai.generatePerspectives(initialPrompt, gameName || 'Your game', direction)
+        .then((res: any) => {
+          if (res?.perspectives && res.perspectives.length > 0) {
+            setPerspectives(res.perspectives);
+            setSelectedPerspectiveId(res.perspectives[0].id);
+          }
+        })
+        .catch((err) => {
+          console.warn('[WishStudio] Perspective fetch error:', err);
+        })
+        .finally(() => {
+          setIsPerspectivesLoading(false);
+        });
+    },
+    [initialPrompt, gameName],
+  );
+
+  const handleUsePerspective = useCallback(
+    (perspective: CameraPerspective) => {
+      setSelectedPerspectiveId(perspective.id);
+      const cameraLine = `\n\nSelected camera perspective:\n${perspective.name} (${perspective.dimension}). ${perspective.cameraInstruction}`;
+      directionInstructionRef.current = `${directionInstructionRef.current}${cameraLine}`;
       setJourneyView('building');
       handleCreate();
     },
@@ -599,14 +666,38 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
         <VisualDirectionScreen
           gameTitle={gameName ?? 'Your game'}
           prompt={initialPrompt}
+          directions={visualDirections}
+          isLoading={isDirectionsLoading}
           selectedId={selectedDirectionId}
           generation={directionGeneration}
-          onSelect={(direction) => setSelectedDirectionId(direction.id)}
+          onSelect={(direction) => {
+            setSelectedDirectionId(direction.id);
+            setSelectedDirection(direction);
+          }}
           onUseDirection={handleUseDirection}
           onSkip={handleSkipDirections}
           onGenerateMore={() => {
             setDirectionGeneration((value) => value + 1);
           }}
+          onClose={onClose}
+        />
+      </Modal>
+    );
+  }
+
+  if (visible && journeyView === 'perspective') {
+    return (
+      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+        <PerspectiveSelectionScreen
+          gameTitle={gameName ?? 'Your game'}
+          prompt={initialPrompt}
+          selectedDirection={selectedDirection || visualDirections[0]}
+          perspectives={perspectives}
+          isLoading={isPerspectivesLoading}
+          selectedId={selectedPerspectiveId}
+          onSelect={(p) => setSelectedPerspectiveId(p.id)}
+          onUsePerspective={handleUsePerspective}
+          onBack={() => setJourneyView('directions')}
           onClose={onClose}
         />
       </Modal>

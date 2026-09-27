@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Dimensions,
   Easing,
@@ -46,6 +47,8 @@ export interface VisualDirection {
 interface Props {
   gameTitle: string;
   prompt: string;
+  directions?: VisualDirection[];
+  isLoading?: boolean;
   selectedId: string | null;
   onSelect: (direction: VisualDirection) => void;
   onUseDirection: (direction: VisualDirection, refinement: string) => void;
@@ -67,200 +70,7 @@ const CARD_WIDTH = Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - GRID_GAP)
 const ARTWORK_HEIGHT = CARD_WIDTH; // 1:1 square aspect ratio matching AI image generators & mockup
 const CARD_HEIGHT = ARTWORK_HEIGHT + 58; // Total card height including title & tagline
 
-const DIRECTION_SETS: VisualDirection[][] = [
-  // Set 0: Main 4 cards matching mockup (Coral Kingdom, Deep Ocean, Cartoon Marine, Royal Atlantis)
-  [
-    {
-      id: 'coral-kingdom',
-      name: 'Coral Kingdom',
-      tagline: 'Bright & playful',
-      description: 'Vibrant coral reef palace with warm sunbeams and playful energy',
-      icon: 'sparkles',
-      colors: ['#1A0B2E', '#991B1B', '#E11D48', '#38BDF8'],
-      instruction:
-        'Use a bright and playful coral kingdom art direction with vibrant pink and teal tones, warm sunbeams, and charming underwater palace details.',
-      themeType: 'coral',
-      imageSource: CORAL_IMG,
-    },
-    {
-      id: 'deep-ocean',
-      name: 'Deep Ocean',
-      tagline: 'Mysterious & magical',
-      description: 'Deep sapphire ocean depths with glowing bioluminescent shrines',
-      icon: 'water',
-      colors: ['#030712', '#0A1931', '#185ADB', '#00FFF0'],
-      instruction:
-        'Use a mysterious and magical deep ocean art direction with deep sapphire blues, glowing bioluminescent runes, and ancient underwater shrines.',
-      themeType: 'ocean',
-      imageSource: OCEAN_IMG,
-    },
-    {
-      id: 'cartoon-marine',
-      name: 'Cartoon Marine',
-      tagline: 'Fun & whimsical',
-      description: 'Joyful cartoon sea creatures, turquoise waters, and bouncy animations',
-      icon: 'happy-outline',
-      colors: ['#042F2E', '#0F766E', '#14B8A6', '#FBBF24'],
-      instruction:
-        'Use a fun and whimsical cartoon marine art direction with vibrant turquoise water, friendly stylized sea creatures, and bold expressive shapes.',
-      themeType: 'marine',
-      imageSource: MARINE_IMG,
-    },
-    {
-      id: 'royal-atlantis',
-      name: 'Royal Atlantis',
-      tagline: 'Epic & detailed',
-      description: 'Grand sunken palace with majestic golden pillars and sunlit waters',
-      icon: 'shield-outline',
-      colors: ['#0F172A', '#1E1B4B', '#0369A1', '#F59E0B'],
-      instruction:
-        'Use an epic and detailed royal Atlantis art direction with grand sunken marble and gold architecture, luminous turquoise ocean depth, and majestic scale.',
-      themeType: 'atlantis',
-      imageSource: ATLANTIS_IMG,
-    },
-  ],
-  // Set 1: Sci-Fi / Cyber / Retro (Appended on 1st "Generate more")
-  [
-    {
-      id: 'neon-cyber',
-      name: 'Neon Cyber',
-      tagline: 'Fast & electric',
-      description: 'Luminous neon streets with holographic glow and high-voltage energy',
-      icon: 'flash',
-      colors: ['#0A0017', '#7928CA', '#FF0080', '#00DFD8'],
-      instruction:
-        'Use a fast, electric cyberpunk visual direction with hot pink, cyan neon highlights, and high-tech UI styling.',
-      themeType: 'cyber',
-    },
-    {
-      id: 'deep-void',
-      name: 'Deep Void',
-      tagline: 'Dark & atmospheric',
-      description: 'Mysterious cosmic expanse with stellar nebula clouds and starlight',
-      icon: 'planet-outline',
-      colors: ['#02040A', '#0B132B', '#1C2541', '#6FFFE9'],
-      instruction:
-        'Use a dark atmospheric deep space direction with obsidian voids, cold nebula luminescence, and stark contrast.',
-      themeType: 'void',
-    },
-    {
-      id: 'retro-arcade',
-      name: 'Retro Arcade',
-      tagline: 'Punchy & nostalgic',
-      description: 'Chunky pixel vibes, high contrast retro colors, and immediate readability',
-      icon: 'game-controller',
-      colors: ['#1A0B2E', '#9333EA', '#EC4899', '#FACC15'],
-      instruction:
-        'Use a punchy retro arcade art direction with saturated 16-bit colors, crisp silhouettes, and playful energy.',
-      themeType: 'arcade',
-    },
-    {
-      id: 'star-odyssey',
-      name: 'Star Odyssey',
-      tagline: 'Grand & cinematic',
-      description: 'Cinematic sci-fi scale with gleaming orbital stations and cinematic lighting',
-      icon: 'rocket-outline',
-      colors: ['#030712', '#1E293B', '#3B82F6', '#60A5FA'],
-      instruction:
-        'Use a grand cinematic sci-fi art direction with clean spacecraft surfaces, dramatic rim lighting, and vast scale.',
-      themeType: 'scifi',
-    },
-  ],
-  // Set 2: Fantasy / Mythic / Nature (Appended on 2nd "Generate more")
-  [
-    {
-      id: 'enchanted-grove',
-      name: 'Enchanted Grove',
-      tagline: 'Lush & magical',
-      description: 'Glowing flora, floating fae spores, and ancient mossy stone ruins',
-      icon: 'leaf-outline',
-      colors: ['#022C22', '#065F46', '#10B981', '#A7F3D0'],
-      instruction:
-        'Use an enchanted magical forest visual direction with bioluminescent plants, emerald moss, and soft glowing particles.',
-      themeType: 'nature',
-    },
-    {
-      id: 'mythic-citadel',
-      name: 'Mythic Citadel',
-      tagline: 'Grand & regal',
-      description: 'High fantasy stone citadels, royal banners, and golden sky illumination',
-      icon: 'trophy-outline',
-      colors: ['#1E1B4B', '#4338CA', '#818CF8', '#FCD34D'],
-      instruction:
-        'Use a grand mythic high fantasy art direction with majestic castle towers, golden light, and regal ornamentation.',
-      themeType: 'fantasy',
-    },
-    {
-      id: 'shadow-keep',
-      name: 'Shadow Keep',
-      tagline: 'Moody & intense',
-      description: 'Gothic spire silhouettes, crimson moon glow, and dramatic shadows',
-      icon: 'flame-outline',
-      colors: ['#090A0F', '#450A0A', '#991B1B', '#F87171'],
-      instruction:
-        'Use a dark gothic fantasy art direction with crimson atmospheric light, deep cast shadows, and sharp silhouettes.',
-      themeType: 'dark',
-    },
-    {
-      id: 'celestial-skies',
-      name: 'Celestial Skies',
-      tagline: 'Ethereal & radiant',
-      description: 'Floating sky islands, auroral clouds, and sun-kissed crystal shrines',
-      icon: 'sunny-outline',
-      colors: ['#1E1B4B', '#6366F1', '#A855F7', '#FDE047'],
-      instruction:
-        'Use an ethereal celestial art direction with floating cloud sanctuaries, radiant auroras, and crystalline glow.',
-      themeType: 'celestial',
-    },
-  ],
-  // Set 3: Indie / Anime / Hand-Crafted (Appended on 3rd "Generate more")
-  [
-    {
-      id: 'pixel-craft',
-      name: 'Pixel Craft',
-      tagline: 'Charming & 8-bit',
-      description: 'Nostalgic handcrafted 16-bit pixel art with bold colors and cozy charm',
-      icon: 'cube-outline',
-      colors: ['#1F2937', '#3B82F6', '#10B981', '#F59E0B'],
-      instruction:
-        'Use a charming 16-bit pixel art direction with crisp sprite readability, joyful color palettes, and retro arcade personality.',
-      themeType: 'arcade',
-    },
-    {
-      id: 'cozy-clay',
-      name: 'Cozy Clay',
-      tagline: 'Warm & tactile',
-      description: 'Stop-motion claymation texture with soft lighting and charming imperfections',
-      icon: 'color-palette-outline',
-      colors: ['#451A03', '#B45309', '#F59E0B', '#FDE68A'],
-      instruction:
-        'Use a tactile stop-motion claymation art direction with warm physical textures, soft studio rim lighting, and friendly forms.',
-      themeType: 'nature',
-    },
-    {
-      id: 'neon-synthwave',
-      name: 'Neon Synthwave',
-      tagline: '80s retro sunset',
-      description: 'Chrome wireframe horizons, gradient sunsets, and electric purple glow',
-      icon: 'musical-notes-outline',
-      colors: ['#180033', '#7928CA', '#F43F5E', '#FBBF24'],
-      instruction:
-        'Use an 80s outrun synthwave art direction with glowing neon wireframes, saturated gradient horizons, and high-energy contrast.',
-      themeType: 'cyber',
-    },
-    {
-      id: 'golden-steampunk',
-      name: 'Golden Steampunk',
-      tagline: 'Intricate & brass',
-      description: 'Polished brass clockwork, ornate copper gears, and misty warm steam',
-      icon: 'cog-outline',
-      colors: ['#1C1917', '#78350F', '#D97706', '#FCD34D'],
-      instruction:
-        'Use an intricate steampunk art direction with polished brass gears, antique copper dials, atmospheric steam haze, and Victorian elegance.',
-      themeType: 'atlantis',
-    },
-  ],
-];
+// Direction sets are now dynamically generated by Gemini 3.7 Flash
 
 /**
  * Procedural stylized visual artwork placeholder matching the mockup aesthetics.
@@ -655,6 +465,8 @@ const AnimatedDirectionCard = ({
 export const VisualDirectionScreen = ({
   gameTitle,
   prompt,
+  directions: propDirections,
+  isLoading = false,
   selectedId,
   onSelect,
   onUseDirection,
@@ -667,24 +479,22 @@ export const VisualDirectionScreen = ({
   const [refinement, setRefinement] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
-  // Candidate pool for appending 2 cards at a time
-  const CANDIDATE_PAIRS = useMemo(() => [
-    ...DIRECTION_SETS[1],
-    ...DIRECTION_SETS[2],
-    ...DIRECTION_SETS[3],
-  ], []);
-
   const [appendedCards, setAppendedCards] = useState<VisualDirection[]>([]);
   const [liveDirections, setLiveDirections] = useState<VisualDirection[]>([]);
   const [isGeneratingLive, setIsGeneratingLive] = useState(false);
   const [generatingMap, setGeneratingMap] = useState<Record<string, boolean>>({});
   const nextCandidateIndexRef = useRef(0);
 
-  // If prompt or gameTitle changes, reset and fetch live visual directions from backend
+  // If prompt or gameTitle changes and no propDirections passed, fetch live visual directions from backend
   useEffect(() => {
     setAppendedCards([]);
     setGeneratingMap({});
     nextCandidateIndexRef.current = 0;
+
+    if (propDirections && propDirections.length > 0) {
+      setLiveDirections(propDirections);
+      return;
+    }
 
     let isMounted = true;
     if (prompt && prompt.trim()) {
@@ -696,7 +506,7 @@ export const VisualDirectionScreen = ({
           }
         })
         .catch((err) => {
-          console.warn('[VisualDirectionScreen] Live direction generation fallback:', err?.message || err);
+          console.warn('[VisualDirectionScreen] Live direction generation error:', err?.message || err);
         })
         .finally(() => {
           if (isMounted) setIsGeneratingLive(false);
@@ -705,39 +515,29 @@ export const VisualDirectionScreen = ({
     return () => {
       isMounted = false;
     };
-  }, [prompt, gameTitle]);
+  }, [prompt, gameTitle, propDirections]);
 
   const directions = useMemo(() => {
-    const base = liveDirections.length > 0 ? liveDirections : DIRECTION_SETS[0];
+    const base = propDirections && propDirections.length > 0 ? propDirections : liveDirections;
     return [...base, ...appendedCards];
-  }, [liveDirections, appendedCards]);
+  }, [propDirections, liveDirections, appendedCards]);
 
-  const handleGenerateMore = () => {
-    // Add 2 more cards from candidates
-    const idx = nextCandidateIndexRef.current;
-    const card1 = CANDIDATE_PAIRS[idx % CANDIDATE_PAIRS.length];
-    const card2 = CANDIDATE_PAIRS[(idx + 1) % CANDIDATE_PAIRS.length];
-    nextCandidateIndexRef.current = idx + 2;
-
-    const round = Math.floor(idx / CANDIDATE_PAIRS.length);
-    const id1 = round > 0 ? `${card1.id}-v${round}` : `${card1.id}-more`;
-    const id2 = round > 0 ? `${card2.id}-v${round}` : `${card2.id}-more`;
-
-    const newCard1: VisualDirection = { ...card1, id: id1 };
-    const newCard2: VisualDirection = { ...card2, id: id2 };
-
-    setAppendedCards((prev) => [...prev, newCard1, newCard2]);
-    setGeneratingMap((prev) => ({ ...prev, [id1]: true, [id2]: true }));
-
-    // Realistically resolve image after 2.4s
-    setTimeout(() => {
-      setGeneratingMap((prev) => ({ ...prev, [id1]: false, [id2]: false }));
-    }, 2400);
-
-    onGenerateMore(refinement.trim() || undefined);
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 150);
+  const handleGenerateMore = async () => {
+    setIsGeneratingLive(true);
+    try {
+      const res = await ai.generateVisualDirections(prompt, gameTitle);
+      if (res?.directions && res.directions.length > 0) {
+        setAppendedCards((prev) => [...prev, ...res.directions]);
+      }
+    } catch (err) {
+      console.warn('[VisualDirectionScreen] Generate more error:', err);
+    } finally {
+      setIsGeneratingLive(false);
+      onGenerateMore(refinement.trim() || undefined);
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 150);
+    }
   };
 
   // Instant local active ID with prop syncing (null by default until user taps a card)
@@ -844,23 +644,32 @@ export const VisualDirectionScreen = ({
             </Text>
           </View>
 
-          {/* 2x2 Grid of Visual Direction Cards: Texts stay static, only images transition slowly left-to-right */}
-          <View style={styles.grid}>
-            {directions.map((direction, index) => {
-              const active = direction.id === activeId;
-              return (
-                <AnimatedDirectionCard
-                  key={direction.id}
-                  direction={direction}
-                  index={index}
-                  active={active}
-                  onPress={() => handleCardPress(direction)}
-                  isNew={index >= 4}
-                  isGenerating={!!generatingMap[direction.id]}
-                />
-              );
-            })}
-          </View>
+          {/* 2x2 Grid of Visual Direction Cards */}
+          {directions.length === 0 ? (
+            <View style={{ paddingVertical: 60, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+              <ActivityIndicator size="large" color="#a855f7" />
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600' }}>
+                Synthesizing game art directions...
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.grid}>
+              {directions.map((direction, index) => {
+                const active = direction.id === activeId;
+                return (
+                  <AnimatedDirectionCard
+                    key={direction.id}
+                    direction={direction}
+                    index={index}
+                    active={active}
+                    onPress={() => handleCardPress(direction)}
+                    isNew={index >= 4}
+                    isGenerating={!!generatingMap[direction.id]}
+                  />
+                );
+              })}
+            </View>
+          )}
 
           {/* "Generate more options" Button - Completely static, never transitions */}
           <View style={styles.generateMoreContainer}>
