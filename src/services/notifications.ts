@@ -3,8 +3,19 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://gametok-backend-production.up.railway.app';
+const API_URL = 'https://gametok-backend.onrender.com';
+
+// Get cached push token from storage
+export const getStoredPushToken = async (): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem('@gametok_push_token');
+  } catch {
+    return null;
+  }
+};
+
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -56,6 +67,10 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 'a8a4606e-1211-4011-ab35-08afb8194d9d';
     const token = await Notifications.getExpoPushTokenAsync({ projectId });
     console.log('[Notifications] Push token:', token.data);
+
+    if (token?.data) {
+      await AsyncStorage.setItem('@gametok_push_token', token.data);
+    }
 
     return token.data;
   } catch (error) {
@@ -176,5 +191,65 @@ export const cancelLocalNotification = async (notificationId: string | null): Pr
     await Notifications.dismissNotificationAsync(notificationId);
   } catch (error) {
     console.log('[Notifications] Failed to cancel local notification:', error);
+  }
+};
+
+export const scheduleVisualDirectionsReadyNotification = async (
+  prompt?: string,
+  sessionId?: string
+): Promise<string | null> => {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return null;
+
+    const shortPrompt = (prompt || 'your game').trim().slice(0, 48);
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Art styles ready! 🎨',
+        body: `Choose your visual direction for "${shortPrompt}"`,
+        data: {
+          type: 'creation',
+          action: 'visual_directions_ready',
+          journeyView: 'directions',
+          sessionId,
+          prompt,
+        },
+        sound: 'default',
+      },
+      trigger: Platform.OS === 'android' ? ({ seconds: 1, channelId: 'default' } as any) : null,
+    });
+  } catch (error) {
+    console.log('[Notifications] Failed to schedule visual directions notification:', error);
+    return null;
+  }
+};
+
+export const schedulePerspectivesReadyNotification = async (
+  prompt?: string,
+  sessionId?: string
+): Promise<string | null> => {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return null;
+
+    const shortPrompt = (prompt || 'your game').trim().slice(0, 48);
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Camera angles ready! 🎥',
+        body: `Choose your camera perspective for "${shortPrompt}"`,
+        data: {
+          type: 'creation',
+          action: 'perspectives_ready',
+          journeyView: 'perspective',
+          sessionId,
+          prompt,
+        },
+        sound: 'default',
+      },
+      trigger: Platform.OS === 'android' ? ({ seconds: 1, channelId: 'default' } as any) : null,
+    });
+  } catch (error) {
+    console.log('[Notifications] Failed to schedule perspectives notification:', error);
+    return null;
   }
 };

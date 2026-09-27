@@ -102,11 +102,15 @@ const MainApp = ({
   notifChatUserId = null,
   onNotifChatHandled,
   notifActivityNonce = 0,
+  pendingForgeNotification = null,
+  onForgeNotificationHandled,
 }: {
   openCreateNonce?: number;
   notifChatUserId?: string | null;
   onNotifChatHandled?: () => void;
   notifActivityNonce?: number;
+  pendingForgeNotification?: { journeyView: 'directions' | 'perspective'; sessionId?: string } | null;
+  onForgeNotificationHandled?: () => void;
 }) => {
   const [activeTab, setActiveTab] = useState<TabName>('home');
   const [previousTab, setPreviousTab] = useState<TabName>('home');
@@ -155,6 +159,17 @@ const MainApp = ({
     setIsHudHidden(false);
     setActiveTab('create');
   }, [openCreateNonce]);
+
+  // Push notification tap for forge directions or perspectives -> open Create tab immediately
+  useEffect(() => {
+    if (!pendingForgeNotification) return;
+    if (activeTab !== 'create') {
+      setPreviousTab(activeTab);
+    }
+    setIsGameDeckActive(false);
+    setIsHudHidden(false);
+    setActiveTab('create');
+  }, [pendingForgeNotification]);
 
   // Notification tap → open the Connect tab straight into the sender's DM.
   useEffect(() => {
@@ -235,6 +250,8 @@ const MainApp = ({
         onClose={() => setActiveTab(previousTab)}
         openDraftId={pendingDraftId}
         onDraftOpened={() => setPendingDraftId(null)}
+        openForgeNotification={pendingForgeNotification}
+        onForgeNotificationHandled={onForgeNotificationHandled}
       />
       
     </NavigationContext.Provider>
@@ -246,6 +263,7 @@ const AppContent = () => {
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
   const [creationNotificationNonce, setCreationNotificationNonce] = useState(0);
+  const [pendingForgeNotif, setPendingForgeNotif] = useState<{ journeyView: 'directions' | 'perspective'; sessionId?: string } | null>(null);
   // Notification deep-links handed down to MainApp (which owns tab state).
   const [pendingChatNotifUserId, setPendingChatNotifUserId] = useState<string | null>(null);
   const [activityNotifNonce, setActivityNotifNonce] = useState(0);
@@ -315,6 +333,12 @@ const AppContent = () => {
     if (data.type === 'game') {
       setSharedGameId(data.gameId as string);
     } else if (data.type === 'creation') {
+      if (data.action === 'visual_directions_ready' || data.action === 'perspectives_ready') {
+        setPendingForgeNotif({
+          journeyView: data.journeyView || (data.action === 'perspectives_ready' ? 'perspective' : 'directions'),
+          sessionId: data.sessionId,
+        });
+      }
       setCreationNotificationNonce((value) => value + 1);
     } else if (data.type === 'message') {
       // Open the Connect tab straight into the DM with the sender.
@@ -418,8 +442,16 @@ const AppContent = () => {
   // Still loading auth check
   if (showOnboarding === null || authLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#fff" />
+      <View style={{ flex: 1, backgroundColor: '#140e1d', justifyContent: 'center', alignItems: 'center' }}>
+        <View style={{
+          position: 'absolute',
+          width: 70,
+          height: 70,
+          borderRadius: 35,
+          backgroundColor: '#a855f7',
+          opacity: 0.15,
+        }} />
+        <ActivityIndicator size="large" color="#a855f7" />
       </View>
     );
   }
@@ -452,6 +484,8 @@ const AppContent = () => {
             notifChatUserId={pendingChatNotifUserId}
             onNotifChatHandled={() => setPendingChatNotifUserId(null)}
             notifActivityNonce={activityNotifNonce}
+            pendingForgeNotification={pendingForgeNotif}
+            onForgeNotificationHandled={() => setPendingForgeNotif(null)}
           />
         </View>
       </DeepLinkContext.Provider>
@@ -476,7 +510,7 @@ export default function App() {
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
+    <View style={{ flex: 1, backgroundColor: '#140e1d' }}>
       {fontsLoaded && (
         <ErrorBoundary>
           <SafeAreaProvider>

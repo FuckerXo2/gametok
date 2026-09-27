@@ -44,6 +44,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+import { GameTokEngineView } from "../../modules/gametok-engine";
 import { ai, API_URL, getToken } from "../services/api";
 import { WishStudioScreen } from "./WishStudioScreen";
 import {
@@ -51,13 +52,18 @@ import {
   scheduleCookingNotification,
   scheduleGameReadyNotification,
 } from "../services/notifications";
+import {
+  getActiveForgeSession,
+  clearActiveForgeSession,
+  type ActiveForgeSession,
+} from "../services/forgeSession";
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useAuthScreen } from "../../App";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { Audio, ResizeMode, Video } from "expo-av";
+import { Audio } from "expo-av";
 import { VideoThumb } from "../components/VideoThumb";
 import {
   palette as pal,
@@ -225,6 +231,8 @@ interface CreateScreenProps {
   onClose: () => void;
   openDraftId?: string | null;
   onDraftOpened?: () => void;
+  openForgeNotification?: { journeyView: 'directions' | 'perspective'; sessionId?: string } | null;
+  onForgeNotificationHandled?: () => void;
 }
 
 const PENDING_CREATE_JOB_KEY = "createScreenPendingDreamJob";
@@ -582,6 +590,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   onClose,
   openDraftId,
   onDraftOpened,
+  openForgeNotification,
+  onForgeNotificationHandled,
 }) => {
   const { colors, isDark } = useTheme();
   const { user, isAuthenticated } = useAuth();
@@ -593,15 +603,23 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const detachPendingDreamRef = useRef(false);
   const resumingPendingJobRef = useRef<string | null>(null);
   const cookingNotificationRef = useRef<string | null>(null);
+  const [restoredForgeSession, setRestoredForgeSession] = useState<ActiveForgeSession | null>(null);
+  const [targetForgeJourneyView, setTargetForgeJourneyView] = useState<'directions' | 'perspective' | null>(null);
   const completionDataRef = useRef<{
     htmlPreview: string;
     gameUrl?: string;
     draftId: string;
     title: string;
     orientation?: Orientation;
+    runtime?: 'web' | 'native';
+    gameScript?: string;
   } | null>(null);
   const webviewRef = useRef<WebView>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  // Dual-Runtime state (Native C++ Metal QuickJS vs Legacy Web)
+  const [activeRuntime, setActiveRuntime] = useState<'web' | 'native'>('native');
+  const [activeGameScript, setActiveGameScript] = useState<string | null>(null);
 
   // Game Config Bridge State (Rezona-style)
   const [gameConfig, setGameConfig] = useState<
@@ -1028,10 +1046,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       gameUrl: string | null;
       title: string;
       orientation?: Orientation | string | null;
+      runtime?: 'web' | 'native';
+      gameScript?: string | null;
     }) => {
       setActiveDraftId(game.draftId);
       setActiveHtml(game.html);
       setActiveGameUrl(game.gameUrl);
+      setActiveRuntime(game.runtime === 'native' ? 'native' : 'web');
+      setActiveGameScript(game.gameScript || null);
       setGameTitle(game.title);
       setErrorMsg(null);
       setPhase("idle");
@@ -1082,6 +1104,75 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       onDraftOpened?.();
     }
   }, [isActive, openDraftId, openDraftInEditor, onDraftOpened]);
+
+  // Notification tapped -> open WishStudio directly on that scene
+  useEffect(() => {
+    if (!openForgeNotification) return;
+
+    getActiveForgeSession().then((session) => {
+      const journeyView = openForgeNotification.journeyView;
+      if (session) {
+        setRestoredForgeSession(session);
+        setStudioPrompt(session.prompt || prompt);
+        if (session.orientation) {
+          setStudioOrientation(normalizeOrientation(session.orientation));
+        }
+        setTargetForgeJourneyView(journeyView);
+        setStudioOpen(true);
+      } else if (openForgeNotification.sessionId) {
+        ai.getForgeSession(openForgeNotification.sessionId)
+          .then((res: any) => {
+            if (res?.session) {
+              const s = res.session;
+              setRestoredForgeSession(s);
+              setStudioPrompt(s.prompt || prompt);
+              setTargetForgeJourneyView(journeyView);
+              setStudioOpen(true);
+            }
+          })
+          .catch(() => {});
+      }
+      onForgeNotificationHandled?.();
+    });
+  }, [openForgeNotification, prompt, orientation, onForgeNotificationHandled]);
+
+  // Normal app open -> user taps Create tab -> restore in-progress or ready forge session directly
+  useEffect(() => {
+    if (!isActive) return;
+    if (studioOpen) return;
+    if (openDraftId) return;
+
+    getActiveForgeSession().then((session) => {
+      if (!session) return;
+
+      const hasReadyContent =
+        session.isDirectionsReady ||
+        session.isPerspectivesReady ||
+        (session.visualDirections && session.visualDirections.length > 0) ||
+        (session.perspectives && session.perspectives.length > 0) ||
+        session.journeyView === 'directions' ||
+        session.journeyView === 'perspective' ||
+        session.journeyView === 'understanding' ||
+        session.journeyView === 'perspective-understanding';
+
+      if (hasReadyContent) {
+        console.log('[CreateScreen] Auto-restoring active forge session directly on Create tab:', session.sessionId, session.journeyView);
+        setRestoredForgeSession(session);
+        setStudioPrompt(session.prompt);
+        if (session.orientation) {
+          setStudioOrientation(normalizeOrientation(session.orientation));
+        }
+        setTargetForgeJourneyView(
+          session.perspectives && session.perspectives.length > 0
+            ? 'perspective'
+            : session.visualDirections && session.visualDirections.length > 0
+            ? 'directions'
+            : (session.journeyView as any) || 'directions'
+        );
+        setStudioOpen(true);
+      }
+    });
+  }, [isActive, studioOpen, openDraftId]);
 
   useEffect(() => {
     if (studioTab === "drafts" && isAuthenticated) {
@@ -1443,7 +1534,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     // Capture completion data so the watchdog can force-transition to preview
     if (
       status?.status === "complete" &&
-      (status?.htmlPreview || status?.gameUrl) &&
+      (status?.htmlPreview || status?.gameUrl || status?.gameScript) &&
       status?.draftId
     ) {
       completionDataRef.current = {
@@ -1452,6 +1543,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         draftId: status.draftId,
         title: status.title || "Untitled Dream",
         orientation: status.orientation ? normalizeOrientation(status.orientation) : undefined,
+        runtime: status.runtime === 'native' ? 'native' : 'web',
+        gameScript: status.gameScript,
       };
     }
   }, [pendingJobId, removePendingDreamJob, writePendingDreamJobs]);
@@ -1618,7 +1711,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         remoteCancelRef.current = null;
         resumingPendingJobRef.current = null;
 
-        if (res.success && (res.htmlPreview || res.gameUrl)) {
+        if (res.success && (res.htmlPreview || res.gameUrl || res.gameScript)) {
           await completePendingDreamJob(
             res.title || "Untitled Dream",
             res.draftId,
@@ -1626,12 +1719,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           setGameConfig({});
           setEditableSlots([]);
           setActiveDraftThumbnail(getDraftThumbnail(res));
+          setActiveRuntime(res.runtime === 'native' ? 'native' : 'web');
+          setActiveGameScript(res.gameScript || null);
           openGameInStudio({
             draftId: res.draftId,
             html: res.htmlPreview || null,
             gameUrl: res.gameUrl || null,
             title: res.title || "Untitled Dream",
             orientation: res.orientation,
+            runtime: res.runtime === 'native' ? 'native' : 'web',
+            gameScript: res.gameScript || null,
           });
           await fetchDrafts();
         } else {
@@ -1998,7 +2095,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       cancelRef.current = null;
       remoteCancelRef.current = null;
       detachPendingDreamRef.current = false;
-      if (res.success && (res.htmlPreview || res.gameUrl)) {
+      if (res.success && (res.htmlPreview || res.gameUrl || res.gameScript)) {
         await completePendingDreamJob(
           res.title || "Untitled Dream",
           res.draftId,
@@ -2006,11 +2103,16 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         setGameConfig({});
         setEditableSlots([]);
         setActiveDraftThumbnail(getDraftThumbnail(res));
+        setActiveRuntime(res.runtime === 'native' ? 'native' : 'web');
+        setActiveGameScript(res.gameScript || null);
         openGameInStudio({
           draftId: res.draftId,
           html: res.htmlPreview || null,
           gameUrl: res.gameUrl || null,
           title: res.title || "Untitled Dream",
+          orientation: res.orientation,
+          runtime: res.runtime === 'native' ? 'native' : 'web',
+          gameScript: res.gameScript || null,
         });
         await fetchDrafts();
       } else {
@@ -3131,6 +3233,11 @@ Description: ${gameSpec.description}
         gameTitle.trim(),
         privacySetting,
         activeHtml || undefined,
+        {
+          runtime: activeRuntime,
+          gameScript: activeGameScript || undefined,
+          orientation: studioOrientation,
+        }
       );
       if (res.success) {
         console.log("✅ LIVE! Game pushed to Feed:", res.gameId);
@@ -3235,17 +3342,26 @@ Description: ${gameSpec.description}
                 studioOrientation === "landscape" && styles.pubPreviewCardLandscape,
               ]}
             >
-              <WebView
-                source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
-                style={{ flex: 1, backgroundColor: pal.black }}
-                scrollEnabled={false}
-                javaScriptEnabled={true}
-                originWhitelist={["*"]}
-                allowsInlineMediaPlayback={true}
-                mediaPlaybackRequiresUserAction={true}
-                setSupportMultipleWindows={false}
-                injectedJavaScript={MUTE_WEBVIEW_JS}
-              />
+              {activeRuntime === "native" ? (
+                <GameTokEngineView
+                  style={{ flex: 1 }}
+                  gameScript={activeGameScript || undefined}
+                  cameraMode={studioOrientation === "landscape" ? "3D" : "2D"}
+                  showControls={true}
+                />
+              ) : (
+                <WebView
+                  source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
+                  style={{ flex: 1, backgroundColor: pal.black }}
+                  scrollEnabled={false}
+                  javaScriptEnabled={true}
+                  originWhitelist={["*"]}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={true}
+                  setSupportMultipleWindows={false}
+                  injectedJavaScript={MUTE_WEBVIEW_JS}
+                />
+              )}
             </View>
             <Pressable style={styles.pubEditBtn} onPress={() => leavePublish("wish")} hitSlop={8}>
               <Ionicons name="create-outline" size={15} color={pal.purpleSoft} />
@@ -3334,14 +3450,25 @@ Description: ${gameSpec.description}
       {/* Forge It → the Wish studio: Kimi pitches, user creates, game goes live. */}
       <WishStudioScreen
         visible={studioOpen}
-        onClose={() => setStudioOpen(false)}
+        onClose={() => {
+          setStudioOpen(false);
+          setRestoredForgeSession(null);
+          setTargetForgeJourneyView(null);
+        }}
         initialPrompt={studioPrompt}
         initialGame={studioGame}
         initialAttachments={attachedAssets}
         initialOrientation={studioOrientation}
         reopenNonce={studioReopenNonce}
         reopenTab={studioReopenTab}
+        restoredSession={restoredForgeSession}
+        targetJourneyView={targetForgeJourneyView as any}
+        onDiscardSession={() => {
+          setRestoredForgeSession(null);
+          setTargetForgeJourneyView(null);
+        }}
         onRequestPublish={({ draftId, html, gameUrl, title }) => {
+          clearActiveForgeSession();
           // Hand the studio's finished game to the original Publish Game screen
           // (live preview + privacy settings + Post Game). The studio stays open
           // underneath so Publish slides straight over it — one animation, and
@@ -3441,14 +3568,9 @@ Description: ${gameSpec.description}
                         backgroundColor: "#000",
                       }}
                     >
-                      <Video
-                        source={{ uri: pendingAssetIntent.url }}
-                        style={{ width: "100%", height: "100%" }}
-                        resizeMode={ResizeMode.COVER}
-                        shouldPlay
-                        isLooping
-                        isMuted={assetPreviewMuted}
-                        useNativeControls={false}
+                      <VideoThumb
+                        uri={pendingAssetIntent.url}
+                        poster={(pendingAssetIntent as any).thumb || (pendingAssetIntent as any).thumbnail}
                       />
                       <View
                         style={{
@@ -4536,36 +4658,11 @@ Description: ${gameSpec.description}
                     onPress={() => setSelectedVideo(item)}
                   >
                     {videoUrl ? (
-                      visibleVideoIds.has(item.id) ? (
-                        // On screen → animate. The cover is the poster, so the
-                        // tile shows the frame instantly and never flashes black.
-                        <Video
-                          source={{ uri: videoUrl }}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            opacity: isSelected ? 0.65 : 1,
-                          }}
-                          resizeMode={ResizeMode.COVER}
-                          shouldPlay
-                          isLooping
-                          isMuted
-                          usePoster
-                          posterSource={
-                            item.thumbnail || item.thumb
-                              ? { uri: item.thumbnail || item.thumb }
-                              : undefined
-                          }
-                          posterStyle={{ resizeMode: "cover" }}
-                          useNativeControls={false}
-                        />
-                      ) : (
-                        <VideoThumb
-                          uri={videoUrl}
-                          poster={item.thumbnail || item.thumb}
-                          dimmed={isSelected}
-                        />
-                      )
+                      <VideoThumb
+                        uri={videoUrl}
+                        poster={item.thumbnail || item.thumb}
+                        dimmed={isSelected}
+                      />
                     ) : (
                       <View
                         style={{

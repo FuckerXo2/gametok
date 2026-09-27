@@ -37,6 +37,17 @@ import { GameCreatorScreen } from '../components/forge/GameCreatorScreen';
 import { AddToGameScreen, type AssetItem } from '../components/forge/AddToGameScreen';
 import { briefToPrompt } from '../services/planner';
 import { ai } from '../services/api';
+import {
+  saveActiveForgeSession,
+  clearActiveForgeSession,
+  createForgeSessionId,
+  type ActiveForgeSession,
+} from '../services/forgeSession';
+import {
+  getStoredPushToken,
+  scheduleVisualDirectionsReadyNotification,
+  schedulePerspectivesReadyNotification,
+} from '../services/notifications';
 import type { WishMessage, StudioPhase, StudioTab, GameBrief } from '../components/wish/wishTypes';
 import { normalizeOrientation, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 
@@ -81,6 +92,10 @@ interface Props {
    */
   reopenNonce?: number;
   reopenTab?: StudioTab;
+  /** Restored session state from background or push notification */
+  restoredSession?: ActiveForgeSession | null;
+  targetJourneyView?: JourneyView | null;
+  onDiscardSession?: () => void;
   /** Rendered inside the studio's modal, above it — see the bottom of render. */
   children?: React.ReactNode;
 }
@@ -125,8 +140,29 @@ const nextId = () => `w${++idCounter}`;
 
 type JourneyView = 'understanding' | 'directions' | 'perspective-understanding' | 'perspective' | 'building' | 'ready' | 'play' | 'creator' | 'assets';
 
-export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame = null, initialAttachments = [], initialOrientation = DEFAULT_ORIENTATION, onRequestPublish, reopenNonce = 0, reopenTab = 'wish', children }: Props) => {
+export const WishStudioScreen = ({
+  visible,
+  onClose,
+  initialPrompt,
+  initialGame = null,
+  initialAttachments = [],
+  initialOrientation = DEFAULT_ORIENTATION,
+  onRequestPublish,
+  reopenNonce = 0,
+  reopenTab = 'wish',
+  restoredSession = null,
+  targetJourneyView = null,
+  onDiscardSession,
+  children,
+}: Props) => {
   const orientation = normalizeOrientation(initialOrientation);
+  const sessionIdRef = useRef<string>(restoredSession?.sessionId || createForgeSessionId());
+
+  useEffect(() => {
+    if (restoredSession?.sessionId) {
+      sessionIdRef.current = restoredSession.sessionId;
+    }
+  }, [restoredSession?.sessionId]);
   const [tab, setTab] = useState<StudioTab>('wish');
   const [phase, setPhase] = useState<StudioPhase>('planning');
   const [messages, setMessages] = useState<WishMessage[]>([]);
@@ -283,12 +319,47 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   );
 
   // Opening handoff from Dream Forge: their brief lands as the first turn and
-  // Kimi immediately pitches back. No greeting, no re-asking.
+  // Kimi immediately pitches back. If restoredSession is provided, hydrate it straight into the scene!
   useEffect(() => {
     if (!visible) {
       seededForRef.current = null;
       return;
     }
+
+    if (restoredSession) {
+      sessionIdRef.current = restoredSession.sessionId;
+      idCounter = 0;
+      briefRef.current = restoredSession.brief || {
+        name: restoredSession.gameName || 'Your game',
+        orientation,
+        pitch: restoredSession.prompt || initialPrompt,
+        structural: '',
+        spine: [],
+        flavor: [],
+      };
+      setBriefReady(true);
+      if (restoredSession.visualDirections?.length) {
+        setVisualDirections(restoredSession.visualDirections);
+        setSelectedDirection(restoredSession.selectedDirection || restoredSession.visualDirections[0]);
+        setSelectedDirectionId(restoredSession.selectedDirectionId || restoredSession.visualDirections[0].id);
+      }
+      if (restoredSession.perspectives?.length) {
+        setPerspectives(restoredSession.perspectives);
+        setSelectedPerspectiveId(restoredSession.selectedPerspectiveId || restoredSession.perspectives[0].id);
+      }
+
+      const viewToSet: JourneyView =
+        targetJourneyView ||
+        (restoredSession.perspectives?.length
+          ? 'perspective'
+          : restoredSession.visualDirections?.length
+          ? 'directions'
+          : (restoredSession.journeyView as JourneyView) || 'understanding');
+
+      setJourneyView(viewToSet);
+      return;
+    }
+
     if (initialGame || !initialPrompt.trim()) return;
     if (seededForRef.current === initialPrompt) return;
     seededForRef.current = initialPrompt;
@@ -322,7 +393,32 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
         : '';
     setMessages([{ id: nextId(), role: 'user', text: initialPrompt + attachNote }]);
     proposeBrief();
-  }, [visible, initialGame, initialPrompt, initialAttachments.length, proposeBrief]);
+  }, [visible, initialGame, initialPrompt, initialAttachments.length, proposeBrief, restoredSession, targetJourneyView, orientation]);
+
+  // Sync background forge generation if restored during generation
+  useEffect(() => {
+    if (!visible || !restoredSession?.sessionId) return;
+    if (journeyView === 'understanding' || journeyView === 'perspective-understanding') {
+      ai.getForgeSession(restoredSession.sessionId)
+        .then((res: any) => {
+          if (res?.session) {
+            const s = res.session;
+            if (s.perspectives && s.perspectives.length > 0) {
+              setPerspectives(s.perspectives);
+              setSelectedPerspectiveId(s.selectedPerspectiveId || s.perspectives[0].id);
+              if (s.selectedDirection) setSelectedDirection(s.selectedDirection);
+              setJourneyView('perspective');
+            } else if (s.visualDirections && s.visualDirections.length > 0) {
+              setVisualDirections(s.visualDirections);
+              setSelectedDirection(s.selectedDirection || s.visualDirections[0]);
+              setSelectedDirectionId(s.selectedDirectionId || s.visualDirections[0].id);
+              setJourneyView('directions');
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [visible, restoredSession?.sessionId, journeyView]);
 
   // Opening an existing game: no pitch, no planning — it is already built, so
   // the studio starts where the old draft editor used to, on the live game.
@@ -383,29 +479,51 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   // Fetch visual directions dynamically while user is on ForgeUnderstandingScreen
   useEffect(() => {
     if (!visible || journeyView !== 'understanding' || !initialPrompt.trim()) return;
+    if (visualDirections.length > 0) return;
 
     let isCancelled = false;
     setIsDirectionsLoading(true);
 
-    ai.generateVisualDirections(initialPrompt, gameName || 'Your game')
-      .then((res: any) => {
-        if (!isCancelled && res?.directions && res.directions.length > 0) {
-          setVisualDirections(res.directions);
-          setSelectedDirection(res.directions[0]);
-          setSelectedDirectionId(res.directions[0].id);
-        }
+    getStoredPushToken().then((pushToken) => {
+      if (isCancelled) return;
+      ai.generateVisualDirections(initialPrompt, gameName || 'Your game', {
+        sessionId: sessionIdRef.current,
+        pushToken: pushToken || undefined,
       })
-      .catch((err) => {
-        console.warn('[WishStudio] Visual direction fetch error:', err);
-      })
-      .finally(() => {
-        if (!isCancelled) setIsDirectionsLoading(false);
-      });
+        .then((res: any) => {
+          if (!isCancelled && res?.directions && res.directions.length > 0) {
+            setVisualDirections(res.directions);
+            setSelectedDirection(res.directions[0]);
+            setSelectedDirectionId(res.directions[0].id);
+
+            saveActiveForgeSession({
+              sessionId: sessionIdRef.current,
+              prompt: initialPrompt,
+              gameName: gameName || 'Your game',
+              orientation,
+              journeyView: 'directions',
+              visualDirections: res.directions,
+              selectedDirection: res.directions[0],
+              selectedDirectionId: res.directions[0].id,
+              isDirectionsReady: true,
+              brief: briefRef.current,
+            });
+
+            scheduleVisualDirectionsReadyNotification(initialPrompt, sessionIdRef.current);
+          }
+        })
+        .catch((err) => {
+          console.warn('[WishStudio] Visual direction fetch error:', err);
+        })
+        .finally(() => {
+          if (!isCancelled) setIsDirectionsLoading(false);
+        });
+    });
 
     return () => {
       isCancelled = true;
     };
-  }, [visible, journeyView, initialPrompt, gameName]);
+  }, [visible, journeyView, initialPrompt, gameName, visualDirections.length, orientation]);
 
   // Advance understanding animation steadily
   useEffect(() => {
@@ -505,34 +623,66 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       setPerspectiveUnderstandingStep(0);
       setIsPerspectivesLoading(true);
 
+      saveActiveForgeSession({
+        sessionId: sessionIdRef.current,
+        prompt: initialPrompt,
+        gameName: gameName || 'Your game',
+        orientation,
+        journeyView: 'perspective-understanding',
+        selectedDirection: direction,
+        selectedDirectionId: direction.id,
+        isPerspectivesReady: false,
+      });
+
       const stepTimer = setInterval(() => {
         setPerspectiveUnderstandingStep((prev) => (prev < 2 ? prev + 1 : prev));
       }, 1200);
 
-      ai.generatePerspectives(initialPrompt, gameName || 'Your game', direction)
-        .then((res: any) => {
-          clearInterval(stepTimer);
-          if (res?.perspectives && res.perspectives.length > 0) {
-            setPerspectives(res.perspectives);
-            setSelectedPerspectiveId(res.perspectives[0].id);
-            setPerspectiveUnderstandingStep(3);
-            setTimeout(() => {
+      getStoredPushToken().then((pushToken) => {
+        ai.generatePerspectives(initialPrompt, gameName || 'Your game', direction, {
+          sessionId: sessionIdRef.current,
+          pushToken: pushToken || undefined,
+        })
+          .then((res: any) => {
+            clearInterval(stepTimer);
+            if (res?.perspectives && res.perspectives.length > 0) {
+              setPerspectives(res.perspectives);
+              setSelectedPerspectiveId(res.perspectives[0].id);
+              setPerspectiveUnderstandingStep(3);
+
+              saveActiveForgeSession({
+                sessionId: sessionIdRef.current,
+                prompt: initialPrompt,
+                gameName: gameName || 'Your game',
+                orientation,
+                journeyView: 'perspective',
+                selectedDirection: direction,
+                selectedDirectionId: direction.id,
+                perspectives: res.perspectives,
+                selectedPerspectiveId: res.perspectives[0].id,
+                isPerspectivesReady: true,
+              });
+
+              schedulePerspectivesReadyNotification(initialPrompt, sessionIdRef.current);
+
+              setTimeout(() => {
+                setJourneyView('perspective');
+              }, 600);
+            } else {
               setJourneyView('perspective');
-            }, 600);
-          } else {
+            }
+          })
+          .catch((err) => {
+            clearInterval(stepTimer);
+            console.warn('[WishStudio] Perspective fetch error:', err);
             setJourneyView('perspective');
-          }
-        })
-        .catch((err) => {
-          clearInterval(stepTimer);
-          console.warn('[WishStudio] Perspective fetch error:', err);
-          setJourneyView('perspective');
-        })
-        .finally(() => {
-          setIsPerspectivesLoading(false);
-        });
+          })
+          .finally(() => {
+            setIsPerspectivesLoading(false);
+          });
+      });
     },
-    [initialPrompt, gameName],
+    [initialPrompt, gameName, orientation],
   );
 
   const handleUsePerspective = useCallback(
@@ -541,6 +691,13 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       const cameraLine = `\n\nSelected camera perspective:\n${perspective.name} (${perspective.dimension}). ${perspective.cameraInstruction}`;
       directionInstructionRef.current = `${directionInstructionRef.current}${cameraLine}`;
       setJourneyView('building');
+
+      saveActiveForgeSession({
+        sessionId: sessionIdRef.current,
+        journeyView: 'building',
+        selectedPerspectiveId: perspective.id,
+      });
+
       handleCreate();
     },
     [handleCreate],
@@ -551,6 +708,44 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
     setJourneyView('building');
     handleCreate();
   }, [handleCreate]);
+
+  const handleCloseRequest = useCallback(() => {
+    if (
+      journeyView === 'directions' ||
+      journeyView === 'perspective' ||
+      journeyView === 'understanding' ||
+      journeyView === 'perspective-understanding'
+    ) {
+      Alert.alert(
+        'Leave Dream Forge?',
+        'Your generation progress is saved. When you tap Create, you can pick up right here.',
+        [
+          {
+            text: 'Keep Draft',
+            style: 'default',
+            onPress: () => {
+              onClose();
+            },
+          },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              clearActiveForgeSession();
+              onDiscardSession?.();
+              onClose();
+            },
+          },
+          {
+            text: 'Stay',
+            style: 'cancel',
+          },
+        ]
+      );
+    } else {
+      onClose();
+    }
+  }, [journeyView, onClose, onDiscardSession]);
 
   // ── Live: every wish edits the game Kimi already built ─────────────────────
 
@@ -665,7 +860,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   if (visible && journeyView === 'understanding') {
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Modal visible={visible} animationType="slide" onRequestClose={handleCloseRequest}>
         <ForgeUnderstandingScreen
           prompt={initialPrompt}
           activeStep={understandingStep}
@@ -674,7 +869,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
             COMPANION_MESSAGES[understandingStep % COMPANION_MESSAGES.length] ||
             'Exploring a few different directions for your game...'
           }
-          onClose={onClose}
+          onClose={handleCloseRequest}
           onRetry={handleRetryPlanning}
           errorMessage={buildError}
           onSelectStep={setUnderstandingStep}
@@ -685,7 +880,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   if (visible && journeyView === 'directions') {
     return (
-      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
         <VisualDirectionScreen
           gameTitle={gameName ?? 'Your game'}
           prompt={initialPrompt}
@@ -702,7 +897,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
           onGenerateMore={() => {
             setDirectionGeneration((value) => value + 1);
           }}
-          onClose={onClose}
+          onClose={handleCloseRequest}
         />
       </Modal>
     );
@@ -710,13 +905,13 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   if (visible && journeyView === 'perspective-understanding') {
     return (
-      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
         <ForgeUnderstandingScreen
           prompt={initialPrompt}
           activeStep={perspectiveUnderstandingStep}
           steps={PERSPECTIVE_UNDERSTANDING_STEPS}
           mascotMessage={`Positioning camera perspectives for ${selectedDirection?.name || 'your game'}...`}
-          onClose={onClose}
+          onClose={handleCloseRequest}
           errorMessage={buildError}
           onSelectStep={setPerspectiveUnderstandingStep}
         />
@@ -726,7 +921,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   if (visible && journeyView === 'perspective') {
     return (
-      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
         <PerspectiveSelectionScreen
           gameTitle={gameName ?? 'Your game'}
           prompt={initialPrompt}
@@ -737,7 +932,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
           onSelect={(p) => setSelectedPerspectiveId(p.id)}
           onUsePerspective={handleUsePerspective}
           onBack={() => setJourneyView('directions')}
-          onClose={onClose}
+          onClose={handleCloseRequest}
         />
       </Modal>
     );
@@ -745,12 +940,12 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
 
   if (visible && (journeyView === 'building' || (building && !draftIdRef.current))) {
     return (
-      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
         <ForgeBuildingScreen
           prompt={initialPrompt}
           gameTitle={gameName ?? 'Your game'}
           activeStep={activeStep >= 0 ? activeStep : 1}
-          onClose={onClose}
+          onClose={handleCloseRequest}
           onCookInBackground={() => {
             setJourneyView('creator');
             setTab('wish');

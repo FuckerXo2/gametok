@@ -1088,17 +1088,29 @@ export const ai = {
       body: JSON.stringify({ prompt, ...options }),
     }, 60000);
   },
-  generateVisualDirections: async (prompt: string, gameTitle?: string) => {
+  generateVisualDirections: async (
+    prompt: string,
+    gameTitle?: string,
+    extra?: { sessionId?: string; pushToken?: string }
+  ) => {
     return request('/ai/generate-visual-directions', {
       method: 'POST',
-      body: JSON.stringify({ prompt, gameTitle }),
+      body: JSON.stringify({ prompt, gameTitle, ...extra }),
     }, 120000);
   },
-  generatePerspectives: async (prompt: string, gameTitle?: string, selectedDirection?: any) => {
+  generatePerspectives: async (
+    prompt: string,
+    gameTitle?: string,
+    selectedDirection?: any,
+    extra?: { sessionId?: string; pushToken?: string }
+  ) => {
     return request('/ai/generate-perspectives', {
       method: 'POST',
-      body: JSON.stringify({ prompt, gameTitle, selectedDirection }),
+      body: JSON.stringify({ prompt, gameTitle, selectedDirection, ...extra }),
     }, 120000);
+  },
+  getForgeSession: async (sessionId: string) => {
+    return request(`/ai/forge-session/${sessionId}`);
   },
   drafts: async () => {
     return request('/ai/drafts');
