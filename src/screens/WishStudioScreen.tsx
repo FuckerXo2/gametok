@@ -113,10 +113,17 @@ const COMPANION_MESSAGES = [
   "Almost ready! Putting together the first looks for you...",
 ];
 
+const PERSPECTIVE_UNDERSTANDING_STEPS = [
+  'Analyzing gameplay space & movement...',
+  'Styling camera rigs for chosen art direction...',
+  'Rendering in-game screenshot angles with GPT Image...',
+  'Camera perspectives ready!',
+];
+
 let idCounter = 0;
 const nextId = () => `w${++idCounter}`;
 
-type JourneyView = 'understanding' | 'directions' | 'perspective' | 'building' | 'ready' | 'play' | 'creator' | 'assets';
+type JourneyView = 'understanding' | 'directions' | 'perspective-understanding' | 'perspective' | 'building' | 'ready' | 'play' | 'creator' | 'assets';
 
 export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame = null, initialAttachments = [], initialOrientation = DEFAULT_ORIENTATION, onRequestPublish, reopenNonce = 0, reopenTab = 'wish', children }: Props) => {
   const orientation = normalizeOrientation(initialOrientation);
@@ -145,6 +152,7 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
   const [isDirectionsLoading, setIsDirectionsLoading] = useState(false);
   const [directionGeneration, setDirectionGeneration] = useState(0);
   const [understandingStep, setUnderstandingStep] = useState(0);
+  const [perspectiveUnderstandingStep, setPerspectiveUnderstandingStep] = useState(0);
   const [briefReady, setBriefReady] = useState(false);
   const [attachedGameAssets, setAttachedGameAssets] = useState<AssetItem[]>([]);
 
@@ -492,18 +500,33 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
       setSelectedDirectionId(direction.id);
       setSelectedDirection(direction);
 
-      // Transition to Step 2: Camera Perspective
-      setJourneyView('perspective');
+      // Transition to understanding screen for camera perspective styling!
+      setJourneyView('perspective-understanding');
+      setPerspectiveUnderstandingStep(0);
       setIsPerspectivesLoading(true);
+
+      const stepTimer = setInterval(() => {
+        setPerspectiveUnderstandingStep((prev) => (prev < 2 ? prev + 1 : prev));
+      }, 1200);
+
       ai.generatePerspectives(initialPrompt, gameName || 'Your game', direction)
         .then((res: any) => {
+          clearInterval(stepTimer);
           if (res?.perspectives && res.perspectives.length > 0) {
             setPerspectives(res.perspectives);
             setSelectedPerspectiveId(res.perspectives[0].id);
+            setPerspectiveUnderstandingStep(3);
+            setTimeout(() => {
+              setJourneyView('perspective');
+            }, 600);
+          } else {
+            setJourneyView('perspective');
           }
         })
         .catch((err) => {
+          clearInterval(stepTimer);
           console.warn('[WishStudio] Perspective fetch error:', err);
+          setJourneyView('perspective');
         })
         .finally(() => {
           setIsPerspectivesLoading(false);
@@ -680,6 +703,22 @@ export const WishStudioScreen = ({ visible, onClose, initialPrompt, initialGame 
             setDirectionGeneration((value) => value + 1);
           }}
           onClose={onClose}
+        />
+      </Modal>
+    );
+  }
+
+  if (visible && journeyView === 'perspective-understanding') {
+    return (
+      <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+        <ForgeUnderstandingScreen
+          prompt={initialPrompt}
+          activeStep={perspectiveUnderstandingStep}
+          steps={PERSPECTIVE_UNDERSTANDING_STEPS}
+          mascotMessage={`Positioning camera perspectives for ${selectedDirection?.name || 'your game'}...`}
+          onClose={onClose}
+          errorMessage={buildError}
+          onSelectStep={setPerspectiveUnderstandingStep}
         />
       </Modal>
     );
