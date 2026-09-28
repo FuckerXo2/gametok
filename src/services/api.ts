@@ -108,7 +108,10 @@ const request = async (endpoint: string, options: RequestInit = {}, timeoutMs: n
 
   try {
     const { signal: _, ...restOptions } = options;
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const cleanEndpoint = endpoint.startsWith('/api/')
+      ? endpoint.slice(4)
+      : (endpoint.startsWith('/') ? endpoint : `/${endpoint}`);
+    const response = await fetch(`${API_URL}${cleanEndpoint}`, {
       ...restOptions,
       headers: await headers(),
       signal: controller.signal,
@@ -795,7 +798,18 @@ export const ai = {
   dreamLabs: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void; orientation?: Orientation },
+    options?: {
+      onJobStarted?: (jobId: string) => void;
+      onStatus?: (status: any) => void;
+      orientation?: Orientation;
+      selectedDirection?: any;
+      selectedPerspective?: any;
+      dimension?: string;
+      selectedAudio?: any;
+      selectedVideo?: any;
+      selectedMeme?: any;
+      selected3DModel?: any;
+    },
   ) => {
     if (mockBuilds()) return mockDreamLabs(prompt, attachments, options);
     const controller = new AbortController();
@@ -816,7 +830,18 @@ export const ai = {
         // no separate /dream-labs route on the backend; this used to 404.)
         const res = await request('/ai/dream', {
           method: 'POST',
-          body: JSON.stringify({ prompt, attachments, orientation: normalizeOrientation(options?.orientation) }),
+          body: JSON.stringify({
+            prompt,
+            attachments,
+            orientation: normalizeOrientation(options?.orientation),
+            selectedDirection: options?.selectedDirection || null,
+            selectedPerspective: options?.selectedPerspective || null,
+            dimension: options?.dimension || null,
+            selectedAudio: options?.selectedAudio || null,
+            selectedVideo: options?.selectedVideo || null,
+            selectedMeme: options?.selectedMeme || null,
+            selected3DModel: options?.selected3DModel || null,
+          }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial job handshake
 
@@ -879,7 +904,19 @@ export const ai = {
   dream: (
     prompt: string,
     attachments: any[] = [],
-    options?: { onJobStarted?: (jobId: string) => void; onStatus?: (status: any) => void; orientation?: Orientation; runtime?: 'web' | 'native' },
+    options?: {
+      onJobStarted?: (jobId: string) => void;
+      onStatus?: (status: any) => void;
+      orientation?: Orientation;
+      runtime?: 'web' | 'native';
+      selectedAudio?: any;
+      selectedVideo?: any;
+      selectedMeme?: any;
+      selected3DModel?: any;
+      selectedDirection?: any;
+      selectedPerspective?: any;
+      dimension?: string;
+    },
   ) => {
     const controller = new AbortController();
     let remoteJobId: string | null = null;
@@ -901,7 +938,14 @@ export const ai = {
             prompt,
             attachments,
             orientation: normalizeOrientation(options?.orientation),
-            runtime: options?.runtime || 'native',
+            runtime: options?.runtime || 'web',
+            selectedAudio: options?.selectedAudio || null,
+            selectedVideo: options?.selectedVideo || null,
+            selectedMeme: options?.selectedMeme || null,
+            selected3DModel: options?.selected3DModel || null,
+            selectedDirection: options?.selectedDirection || null,
+            selectedPerspective: options?.selectedPerspective || null,
+            dimension: options?.dimension || null,
           }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial Dream job handshake
@@ -1091,7 +1135,7 @@ export const ai = {
   generateVisualDirections: async (
     prompt: string,
     gameTitle?: string,
-    extra?: { sessionId?: string; pushToken?: string }
+    extra?: { sessionId?: string; pushToken?: string; attachments?: any[] }
   ) => {
     return request('/ai/generate-visual-directions', {
       method: 'POST',
@@ -1102,7 +1146,7 @@ export const ai = {
     prompt: string,
     gameTitle?: string,
     selectedDirection?: any,
-    extra?: { sessionId?: string; pushToken?: string }
+    extra?: { sessionId?: string; pushToken?: string; attachments?: any[] }
   ) => {
     return request('/ai/generate-perspectives', {
       method: 'POST',
@@ -1141,3 +1185,207 @@ export const ai = {
     }, 60000);
   },
 };
+
+export interface CommunityAsset {
+  id: string;
+  title: string;
+  category: string;
+  style: string;
+  tags: string[];
+  image_url: string;
+  thumbnail_url?: string;
+  uses_count: number;
+  is_transparent?: boolean;
+}
+
+export interface AssetCategory {
+  id: string;
+  label: string;
+  chips: string[];
+}
+
+export interface AssetPack {
+  id: string;
+  title: string;
+  genre?: string;
+  description: string;
+  coverUrl: string;
+  count: number;
+  tag?: string;
+  idsPrefix?: string;
+  category?: string;
+}
+
+export const assetsApi = {
+  getCategories: async (): Promise<AssetCategory[]> => {
+    const res = await request('/assets/categories');
+    return res.categories || [];
+  },
+  getPacks: async (params?: {
+    genre?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ packs: AssetPack[]; total: number; hasMore: boolean }> => {
+    const q = new URLSearchParams();
+    if (params?.genre) q.append('genre', params.genre);
+    if (params?.search) q.append('search', params.search);
+    if (params?.limit) q.append('limit', String(params.limit));
+    if (params?.offset) q.append('offset', String(params.offset));
+    const url = `/assets/packs${q.toString() ? `?${q.toString()}` : ''}`;
+    return request(url);
+  },
+  getAssets: async (params?: {
+    category?: string;
+    style?: string;
+    tag?: string;
+    search?: string;
+    idsPrefix?: string;
+    creator_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ assets: CommunityAsset[]; total: number; hasMore: boolean }> => {
+    const q = new URLSearchParams();
+    if (params?.category) q.append('category', params.category);
+    if (params?.style) q.append('style', params.style);
+    if (params?.tag) q.append('tag', params.tag);
+    if (params?.search) q.append('search', params.search);
+    if (params?.idsPrefix) q.append('idsPrefix', params.idsPrefix);
+    if (params?.creator_id) q.append('creator_id', params.creator_id);
+    if (params?.limit) q.append('limit', String(params.limit));
+    if (params?.offset) q.append('offset', String(params.offset));
+    const url = `/assets${q.toString() ? `?${q.toString()}` : ''}`;
+    return request(url);
+  },
+  recordUse: async (assetId: string) => {
+    return request('/assets/use', { method: 'POST', body: JSON.stringify({ assetId }) });
+  },
+  uploadAsset: async (formData: FormData) => {
+    const token = await getToken();
+    const clientId = await getClientId();
+    const res = await fetch(`${API_URL}/assets/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'X-Client-Id': clientId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.json();
+  },
+  generateAsset: async (prompt: string, category: string = 'objects', style: string = 'style:3d_render') => {
+    return request('/assets/generate', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, category, style }),
+    }, 60000);
+  },
+};
+
+export interface BackgroundVideo {
+  id: string;
+  title: string;
+  category: string;
+  tags: string[];
+  video_url: string;
+  thumbnail_url: string;
+  duration?: string;
+  aspect_ratio?: string;
+  uses_count: number;
+}
+
+export interface VideoCategory {
+  id: string;
+  label: string;
+  chips: string[];
+}
+
+export const videosApi = {
+  getCategories: async (): Promise<VideoCategory[]> => {
+    const res = await request('/assets/videos/categories');
+    return res.categories || [];
+  },
+  getVideos: async (params?: {
+    category?: string;
+    tag?: string;
+    search?: string;
+    creator_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ videos: BackgroundVideo[]; total: number; hasMore: boolean }> => {
+    const q = new URLSearchParams();
+    if (params?.category) q.append('category', params.category);
+    if (params?.tag) q.append('tag', params.tag);
+    if (params?.search) q.append('search', params.search);
+    if (params?.creator_id) q.append('creator_id', params.creator_id);
+    if (params?.limit) q.append('limit', String(params.limit));
+    if (params?.offset) q.append('offset', String(params.offset));
+    const url = `/assets/videos${q.toString() ? `?${q.toString()}` : ''}`;
+    return request(url);
+  },
+  recordUse: async (videoId: string) => {
+    return request('/assets/videos/use', { method: 'POST', body: JSON.stringify({ videoId }) });
+  },
+  uploadVideo: async (formData: FormData) => {
+    const token = await getToken();
+    const clientId = await getClientId();
+    const res = await fetch(`${API_URL}/assets/videos/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'X-Client-Id': clientId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.json();
+  },
+};
+
+export interface AudioTrack {
+  id: string;
+  title: string;
+  url: string;
+  cover_url: string;
+  category: string;
+  duration?: string;
+  uses_count: number;
+  tags?: string[];
+  type?: 'bgm' | 'sfx';
+  genre?: string;
+  creator?: string;
+}
+
+export interface AudioPack {
+  id: string;
+  title: string;
+  count: number;
+  description: string;
+  coverUrl: string;
+  genre?: string;
+  tag?: string;
+  tracks?: AudioTrack[];
+}
+
+export interface AudioCategory {
+  id: string;
+  label: string;
+  chips: string[];
+}
+
+export const audioApi = {
+  uploadAudio: async (formData: FormData) => {
+    const token = await getToken();
+    const clientId = await getClientId();
+    const res = await fetch(`${API_URL}/assets/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'X-Client-Id': clientId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.json();
+  },
+};
+
+
+

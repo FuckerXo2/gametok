@@ -489,6 +489,7 @@ export const WishStudioScreen = ({
       ai.generateVisualDirections(initialPrompt, gameName || 'Your game', {
         sessionId: sessionIdRef.current,
         pushToken: pushToken || undefined,
+        attachments: initialAttachments,
       })
         .then((res: any) => {
           if (!isCancelled && res?.directions && res.directions.length > 0) {
@@ -603,13 +604,32 @@ export const WishStudioScreen = ({
       ? `\n\nSelected visual direction:\n${directionInstructionRef.current}`
       : '';
     const prompt = `${briefToPrompt(brief, initialPrompt, refinementsRef.current)}${directionLine}`;
+    const activePerspective = perspectives.find((p) => p.id === selectedPerspectiveId) || null;
     runBuild(
       // Orientation goes as a structured field, not just the prose line briefToPrompt adds — the
       // sandbox verifies at 844x390 vs 390x844 off this value.
-      ai.dreamLabs(prompt, initialAttachments, { onStatus: onJobStatus, orientation }),
+      ai.dreamLabs(prompt, initialAttachments, {
+        onStatus: onJobStatus,
+        orientation,
+        selectedDirection,
+        selectedPerspective: activePerspective,
+        dimension: activePerspective?.dimension,
+      }),
       (name) => `${name} is live — go play it. From here every wish changes the game: say it and I’ll make it so.`,
     );
-  }, [phase, buildError, initialPrompt, initialAttachments, orientation, pushMessage, onJobStatus, runBuild]);
+  }, [
+    phase,
+    buildError,
+    initialPrompt,
+    initialAttachments,
+    orientation,
+    pushMessage,
+    onJobStatus,
+    runBuild,
+    selectedDirection,
+    perspectives,
+    selectedPerspectiveId,
+  ]);
 
   const handleUseDirection = useCallback(
     (direction: VisualDirection, refinement: string) => {
@@ -642,9 +662,37 @@ export const WishStudioScreen = ({
         ai.generatePerspectives(initialPrompt, gameName || 'Your game', direction, {
           sessionId: sessionIdRef.current,
           pushToken: pushToken || undefined,
+          attachments: initialAttachments,
         })
           .then((res: any) => {
             clearInterval(stepTimer);
+
+            // If the view was already specified by the user or is a fixed-view genre like Candy Crush:
+            if (res?.requiresSelection === false && res?.defaultPerspective) {
+              const p = res.defaultPerspective;
+              const cameraLine = `\n\nSelected camera perspective:\n${p.name} (${p.dimension}). ${p.cameraInstruction}`;
+              directionInstructionRef.current = `${directionInstructionRef.current}${cameraLine}`;
+              setPerspectives([p]);
+              setSelectedPerspectiveId(p.id);
+
+              saveActiveForgeSession({
+                sessionId: sessionIdRef.current,
+                prompt: initialPrompt,
+                gameName: gameName || 'Your game',
+                orientation,
+                journeyView: 'building',
+                selectedDirection: direction,
+                selectedDirectionId: direction.id,
+                perspectives: [p],
+                selectedPerspectiveId: p.id,
+                isPerspectivesReady: true,
+              });
+
+              setJourneyView('building');
+              handleCreate();
+              return;
+            }
+
             if (res?.perspectives && res.perspectives.length > 0) {
               setPerspectives(res.perspectives);
               setSelectedPerspectiveId(res.perspectives[0].id);
