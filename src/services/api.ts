@@ -23,26 +23,16 @@ export const API_URL = 'https://gametok-backend.onrender.com/api';
 // Auto-fallback only mocks in development, so a real user never gets a mock game:
 // production builds are forced to 'live' (backend-down shows the real error UI).
 export type AiMode = 'auto' | 'mock' | 'live';
-export const AI_MODE: AiMode = (__DEV__ ? 'auto' : 'live') as AiMode;
+export const AI_MODE: AiMode = 'live';
 
-// Auto mode learns whether the AI actually works from real call *results* — a
-// server that's up but whose model is down still fails, and a plain health ping
-// can't see that. So instead: try the real call, and on failure (a throw, a
-// non-success result, or a `fallback` flag) transparently use the mock, and
-// remember the AI is down so the follow-up build/edit/publish calls mock too.
-let aiHealthy: boolean | null = null; // null = unknown (no real call yet)
+let aiHealthy: boolean | null = true;
 const markAi = (ok: boolean) => { aiHealthy = ok; };
 
-// A spec response only counts as "the AI is working" if the model actually wrote
-// it — the endpoint returns success:true with a `fallback` flag for canned filler.
 const specSucceeded = (res: any): boolean =>
   !!res && res.success !== false && !!res.spec && !res.fallback;
 
-// Build/publish calls return { promise, cancel } synchronously, so they can't
-// try-then-fall-back. They lean on what the preceding spec call learned: by the
-// time the user taps Create, a generate/refine call has set aiHealthy.
-const mockBuilds = (): boolean =>
-  AI_MODE === 'mock' ? true : AI_MODE === 'live' ? false : aiHealthy === false;
+// STRICT LIVE PIPELINE: Never fall back to client mocks
+const mockBuilds = (): boolean => false;
 const CLIENT_ID_STORAGE_KEY = 'clientId';
 
 // Default per-request timeout. Without this, a fetch that never settles hangs
@@ -765,7 +755,6 @@ export const ai = {
     attachments: Array<{ type: string; role?: string; url: string; instruction: string; label?: string }> = [],
     options?: { onStatus?: (status: any) => void },
   ) => {
-    if (mockBuilds()) return mockEditGame(draftId, instructions, attachments, options);
     const controller = new AbortController();
     const promise = new Promise<any>(async (resolve, reject) => {
       try {
@@ -811,7 +800,7 @@ export const ai = {
       selected3DModel?: any;
     },
   ) => {
-    if (mockBuilds()) return mockDreamLabs(prompt, attachments, options);
+    console.log('🚀 [DreamLabs] Dispatching live game generation to:', API_URL, 'prompt:', prompt.slice(0, 100));
     const controller = new AbortController();
     let remoteJobId: string | null = null;
 
