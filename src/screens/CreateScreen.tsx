@@ -25,6 +25,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -45,7 +46,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { GameTokEngineView } from "../../modules/gametok-engine";
-import { ai, API_URL, getToken } from "../services/api";
+import { ai, API_URL, getToken, CommunityAsset } from "../services/api";
+import { AssetPickerSheet } from "../components/AssetPickerSheet";
 import { WishStudioScreen } from "./WishStudioScreen";
 import {
   cancelLocalNotification,
@@ -65,6 +67,8 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { Audio } from "expo-av";
 import { VideoThumb } from "../components/VideoThumb";
+import { VideoPickerSheet } from "../components/VideoPickerSheet";
+import { AudioPickerSheet } from "../components/AudioPickerSheet";
 import {
   palette as pal,
   spacing as sp,
@@ -617,8 +621,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const webviewRef = useRef<WebView>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  // Dual-Runtime state (Native C++ Metal QuickJS vs Legacy Web)
-  const [activeRuntime, setActiveRuntime] = useState<'web' | 'native'>('native');
+  // Dual-Runtime state (Native C++ Metal QuickJS vs Web)
+  const [activeRuntime, setActiveRuntime] = useState<'web' | 'native'>('web');
   const [activeGameScript, setActiveGameScript] = useState<string | null>(null);
 
   // Game Config Bridge State (Rezona-style)
@@ -712,9 +716,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // Wish studio handoff: Forge It opens the studio with this brief.
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioPrompt, setStudioPrompt] = useState("");
-  // Compulsory: no default. Forge It stays disabled until the creator picks a shape, because
-  // orientation cannot be changed after generation — the game is built and verified for one.
-  const [orientation, setOrientation] = useState<Orientation | null>(null);
+  // Orientation defaults to portrait so the creator is never blocked, but can freely toggle to landscape
+  const [orientation, setOrientation] = useState<Orientation | null>('portrait');
   const [studioOrientation, setStudioOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
   // Which draft is being fetched, so the spinner can sit on that tile instead of blanking the
   // whole Forge. Null when nothing is opening.
@@ -727,9 +730,36 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     gameUrl: string | null;
     title: string;
   } | null>(null);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showAssetIntentModal, setShowAssetIntentModal] = useState(false);
   const [pendingAssetIntent, setPendingAssetIntent] =
     useState<StructuredAttachment | null>(null);
+
+  const handleSelectAssetsFromPicker = (selectedAssets: CommunityAsset[]) => {
+    const newAttachments: StructuredAttachment[] = selectedAssets.map((asset) => {
+      let role: AttachmentRole = 'prop';
+      if (asset.category === 'characters') role = 'hero';
+      else if (asset.category === 'backgrounds') role = 'background';
+      else if (asset.category === 'icons' || asset.category === 'ui') role = 'overlay';
+
+      return {
+        type: asset.category === 'backgrounds' ? 'image/background' : 'image/sprite',
+        role,
+        url: asset.image_url,
+        thumb: asset.thumbnail_url || asset.image_url,
+        thumbnail: asset.thumbnail_url || asset.image_url,
+        title: asset.title,
+        label: asset.title,
+        instruction: `Use this ${asset.category} asset (${asset.title}) as a ${role}: ${asset.image_url}`,
+      };
+    });
+
+    setAttachedAssets((prev) => {
+      const existingUrls = new Set(prev.map((a) => a.url));
+      const filtered = newAttachments.filter((a) => !existingUrls.has(a.url));
+      return [...prev, ...filtered];
+    });
+  };
   const [assetIntentRole, setAssetIntentRole] =
     useState<AttachmentRole>("hero");
   const [assetIntentText, setAssetIntentText] = useState("");
@@ -2159,10 +2189,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
-    if (!orientation) {
-      setErrorMsg("Pick a screen shape — portrait or landscape.");
-      return;
-    }
+    const chosenOrientation = orientation || 'portrait';
     setErrorMsg(null);
     Keyboard.dismiss();
 
@@ -2175,7 +2202,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     // brief is a new game — drop any game the studio was last opened on.
     setStudioGame(null);
     setStudioPrompt(finalPrompt);
-    setStudioOrientation(orientation);
+    setStudioOrientation(chosenOrientation);
     setStudioOpen(true);
   };
 
@@ -3485,6 +3512,13 @@ Description: ${gameSpec.description}
         {publishCameFromStudio && renderPublishScreen()}
       </WishStudioScreen>
 
+      <AssetPickerSheet
+        visible={showAssetPicker}
+        onClose={() => setShowAssetPicker(false)}
+        onSelectAssets={handleSelectAssetsFromPicker}
+        userId={user?.id}
+      />
+
       <Modal
         visible={showAssetIntentModal}
         transparent
@@ -3570,7 +3604,7 @@ Description: ${gameSpec.description}
                     >
                       <VideoThumb
                         uri={pendingAssetIntent.url}
-                        poster={(pendingAssetIntent as any).thumb || (pendingAssetIntent as any).thumbnail}
+                        poster={(pendingAssetIntent as any).thumbnail_url || (pendingAssetIntent as any).thumb || (pendingAssetIntent as any).thumbnail}
                       />
                       <View
                         style={{
@@ -4189,635 +4223,55 @@ Description: ${gameSpec.description}
         </Pressable>
       </Modal>
 
-      {/* === AUDIO MODAL === */}
-      <Modal
+      {/* === MODERN AUDIO & MUSIC PICKER SHEET === */}
+      <AudioPickerSheet
         visible={showAudioModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setShowAudioModal(false);
           setSelectedAudio(null);
         }}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.85)",
-            justifyContent: "flex-end",
-          }}
-          onPress={() => {
-            setShowAudioModal(false);
-            setSelectedAudio(null);
-          }}
-        >
-          <Animated.View
-            entering={SlideInDown.duration(250)}
-            style={{
-              width: "100%",
-              height: "75%",
-              backgroundColor: "#1C1C1E",
-              borderTopLeftRadius: 28,
-              borderTopRightRadius: 28,
-            }}
-            onStartShouldSetResponder={() => true}
-          >
-            <View style={{ alignItems: "center", paddingTop: 12 }}>
-              <View
-                style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: "rgba(255,255,255,0.3)",
-                }}
-              />
-            </View>
+        selectedAudioUrl={selectedAudio?.url}
+        userId={user?.id || null}
+        initialTab={audioTab}
+        onSelectAudio={(track) => {
+          const instruction =
+            track.type === 'bgm' || audioTab === 'bgm'
+              ? `Inject this auto-looping background music: ${track.url}`
+              : `Add a sound effect: ${track.url}`;
+          handleAssetSelect(
+            {
+              id: track.id,
+              url: track.url,
+              name: track.title,
+              title: track.title,
+              label: track.title,
+              type: track.type || audioTab,
+              thumbnail: track.cover_url,
+              duration: track.duration,
+            },
+            instruction,
+          );
+          setSelectedAudio(null);
+        }}
+      />
 
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                paddingVertical: 16,
-                borderBottomWidth: 1,
-                borderBottomColor: "rgba(255,255,255,0.05)",
-              }}
-            >
-              {isAudioSearching ? (
-                <View
-                  style={{
-                    flex: 1,
-                    marginHorizontal: 20,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: "rgba(255,255,255,0.05)",
-                    borderRadius: 12,
-                    paddingHorizontal: 12,
-                  }}
-                >
-                  <Ionicons name="search" size={18} color="#888" />
-                  <TextInput
-                    style={{
-                      flex: 1,
-                      paddingVertical: 8,
-                      paddingHorizontal: 8,
-                      color: "#FFF",
-                      fontSize: 15,
-                    }}
-                    placeholder={`Search ${audioTab === "bgm" ? "Music" : "Sound Effects"}...`}
-                    placeholderTextColor="#888"
-                    autoFocus
-                    value={audioSearchQuery}
-                    onChangeText={setAudioSearchQuery}
-                    onSubmitEditing={() =>
-                      fetchFreesound(audioTab, audioSearchQuery)
-                    }
-                    returnKeyType="search"
-                  />
-                  <Pressable
-                    onPress={() => {
-                      setIsAudioSearching(false);
-                      setAudioSearchQuery("");
-                      fetchFreesound(audioTab, "");
-                    }}
-                  >
-                    <Text style={{ color: "#a855f7", fontWeight: "600" }}>
-                      Cancel
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <>
-                  <Text
-                    style={{ color: "#FFF", fontSize: 18, fontWeight: "700" }}
-                  >
-                    {audioTab === "bgm" ? "BGM" : "Sound effects"}
-                  </Text>
-                  <Pressable
-                    style={{
-                      position: "absolute",
-                      right: 20,
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                    onPress={() => setIsAudioSearching(true)}
-                  >
-                    <Ionicons name="search" size={18} color="#CCC" />
-                  </Pressable>
-                </>
-              )}
-            </View>
-
-            <FlatList
-              style={{ paddingHorizontal: 20, paddingTop: 16 }}
-              data={audioTab === "bgm" ? freesoundBgm : freesoundSfx}
-              keyExtractor={(item, index) => `${item.id}-${index}`}
-              showsVerticalScrollIndicator={false}
-              onEndReached={() => {
-                const currentLen =
-                  audioTab === "bgm"
-                    ? freesoundBgm.length
-                    : freesoundSfx.length;
-                const nextPage = Math.floor(currentLen / 20) + 1;
-                if (
-                  currentLen > 0 &&
-                  !isFreesoundLoadingMore &&
-                  !isFreesoundLoading
-                ) {
-                  fetchFreesound(audioTab, audioSearchQuery, nextPage);
-                }
-              }}
-              onEndReachedThreshold={0.5}
-              ListHeaderComponent={
-                <Pressable
-                  onPress={() => handleAssetUpload(audioTab)}
-                  style={{
-                    backgroundColor: "#444",
-                    paddingVertical: 12,
-                    paddingHorizontal: 24,
-                    borderRadius: 12,
-                    alignItems: "center",
-                    marginBottom: 16,
-                    alignSelf: "flex-start",
-                    flexDirection: "row",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Ionicons
-                    name="push-outline"
-                    size={18}
-                    color="#a855f7"
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text
-                    style={{ color: "#FFF", fontSize: 15, fontWeight: "700" }}
-                  >
-                    Upload
-                  </Text>
-                </Pressable>
-              }
-              renderItem={({ item }) => {
-                const isSelected =
-                  selectedAudio &&
-                  (selectedAudio.url
-                    ? selectedAudio.url === item.url
-                    : selectedAudio.instruction === item.instruction);
-                return (
-                  <Pressable
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingVertical: 16,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "rgba(255,255,255,0.05)",
-                    }}
-                    onPress={() => setSelectedAudio(item)}
-                  >
-                    <View style={{ flex: 1, paddingRight: 16 }}>
-                      <Text
-                        style={{
-                          color: "#FFF",
-                          fontSize: 15,
-                          fontWeight: "600",
-                          marginBottom: 4,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {item.label || item.title}
-                      </Text>
-                      <Text style={{ color: "#666", fontSize: 12 }}>
-                        {item.duration || "00:03"}
-                      </Text>
-                    </View>
-                    <Pressable
-                      onPress={() => playAudioPreview(item)}
-                      hitSlop={10}
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 22,
-                        backgroundColor:
-                          playingAudioUrl === item.url
-                            ? "rgba(168,85,247,0.32)"
-                            : "rgba(255,255,255,0.08)",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginHorizontal: 8,
-                      }}
-                    >
-                      <Ionicons
-                        name={playingAudioUrl === item.url ? "pause" : "play"}
-                        size={22}
-                        color="#FFF"
-                      />
-                    </Pressable>
-                    <View
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 12,
-                        borderWidth: 2,
-                        borderColor: isSelected ? "#a855f7" : "#777",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {isSelected && (
-                        <View
-                          style={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: 6,
-                            backgroundColor: "#a855f7",
-                          }}
-                        />
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              }}
-              ListEmptyComponent={
-                isFreesoundLoading ? (
-                  <View
-                    style={{
-                      width: "100%",
-                      height: 200,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <ActivityIndicator size="large" color="#a855f7" />
-                  </View>
-                ) : null
-              }
-              ListFooterComponent={
-                isFreesoundLoadingMore ? (
-                  <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                    <ActivityIndicator size="small" color="#a855f7" />
-                  </View>
-                ) : (
-                  <View style={{ height: 40 }} />
-                )
-              }
-            />
-
-            <View
-              style={{
-                flexDirection: "row",
-                paddingHorizontal: 20,
-                paddingTop: 16,
-                paddingBottom: Math.max(insets.bottom, 16),
-                backgroundColor: "#1C1C1E",
-                gap: 12,
-                borderTopWidth: 1,
-                borderTopColor: "rgba(255,255,255,0.05)",
-              }}
-            >
-              <Pressable
-                style={{
-                  flex: 1,
-                  paddingVertical: 16,
-                  borderRadius: 20,
-                  backgroundColor: "#555",
-                  alignItems: "center",
-                }}
-                onPress={() => {
-                  setSelectedAudio(null);
-                  setShowAudioModal(false);
-                }}
-              >
-                <Text
-                  style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
-                >
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                style={{
-                  flex: 1,
-                  paddingVertical: 16,
-                  borderRadius: 20,
-                  backgroundColor: "#a855f7",
-                  alignItems: "center",
-                  opacity: selectedAudio ? 1 : 0.5,
-                }}
-                disabled={!selectedAudio}
-                onPress={() => {
-                  setShowAudioModal(false);
-                  const fallback =
-                    audioTab === "bgm"
-                      ? "Inject this auto-looping background music: "
-                      : selectedAudio.instruction;
-                  const instruction =
-                    audioTab === "bgm"
-                      ? fallback + selectedAudio.url
-                      : fallback;
-                  handleAssetSelect(
-                    { ...selectedAudio, type: audioTab },
-                    instruction,
-                  );
-                  setSelectedAudio(null);
-                }}
-              >
-                <Text
-                  style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
-                >
-                  Select
-                </Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        </Pressable>
-      </Modal>
-
-      {/* === VIDEOS MODAL === */}
-      <Modal
+      {/* === MODERN VIDEO BACKGROUNDS PICKER SHEET === */}
+      <VideoPickerSheet
         visible={showVideosModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setShowVideosModal(false);
           setSelectedVideo(null);
         }}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.85)",
-            justifyContent: "flex-end",
-          }}
-          onPress={() => {
-            setShowVideosModal(false);
-            setSelectedVideo(null);
-          }}
-        >
-          <Animated.View
-            entering={SlideInDown.duration(250)}
-            style={{
-              width: "100%",
-              height: "75%",
-              backgroundColor: "#1C1C1E",
-              borderTopLeftRadius: 28,
-              borderTopRightRadius: 28,
-            }}
-            onStartShouldSetResponder={() => true}
-          >
-            <View
-              style={{
-                alignItems: "center",
-                paddingTop: 12,
-                paddingBottom: 16,
-              }}
-            >
-              <View
-                style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: "rgba(255,255,255,0.3)",
-                  marginBottom: 12,
-                }}
-              />
-              <Text style={{ color: "#FFF", fontSize: 18, fontWeight: "700" }}>
-                Video
-              </Text>
-            </View>
-            <FlatList
-              style={{ flex: 1 }}
-              data={[{ isUpload: true }, ...communityVideos]}
-              keyExtractor={(item: any, index) =>
-                item.isUpload ? "upload-btn" : `vid-${item.id || index}`
-              }
-              numColumns={3}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 4 }}
-              columnWrapperStyle={{ gap: 4, marginBottom: 4 }}
-              onEndReachedThreshold={0.6}
-              onEndReached={() => loadVideos(false)}
-              onViewableItemsChanged={onVideoViewRef.current}
-              viewabilityConfig={videoViewConfigRef.current}
-              renderItem={({ item }: any) => {
-                if (item.isUpload) {
-                  return (
-                    <Pressable
-                      onPress={() => handleAssetUpload("video")}
-                      style={{
-                        width: "32%",
-                        aspectRatio: 0.8,
-                        backgroundColor: "rgba(255,255,255,0.05)",
-                        borderRadius: 12,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {isUploadingAsset ? (
-                        <ActivityIndicator
-                          size="small"
-                          color="#a855f7"
-                          style={{ marginBottom: 8 }}
-                        />
-                      ) : (
-                        <Ionicons
-                          name="push-outline"
-                          size={24}
-                          color="#a855f7"
-                          style={{ marginBottom: 8 }}
-                        />
-                      )}
-                      <Text
-                        style={{
-                          color: "#FFF",
-                          fontSize: 14,
-                          fontWeight: "600",
-                        }}
-                      >
-                        Upload
-                      </Text>
-                      <Text
-                        style={{ color: "#666", fontSize: 11, marginTop: 4 }}
-                      >
-                        (Max 15s)
-                      </Text>
-                    </Pressable>
-                  );
-                }
-                const isSelected = selectedVideo?.url === item.url;
-                const videoUrl = item.url || item.videoUrl || item.src;
-                return (
-                  <Pressable
-                    style={{
-                      width: "32%",
-                      aspectRatio: 0.8,
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      backgroundColor: "#000",
-                    }}
-                    onPress={() => setSelectedVideo(item)}
-                  >
-                    {videoUrl ? (
-                      <VideoThumb
-                        uri={videoUrl}
-                        poster={item.thumbnail || item.thumb}
-                        dimmed={isSelected}
-                      />
-                    ) : (
-                      <View
-                        style={{
-                          flex: 1,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          backgroundColor: "rgba(255,255,255,0.04)",
-                        }}
-                      >
-                        <Ionicons name="film-outline" size={26} color="#777" />
-                      </View>
-                    )}
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: "absolute",
-                        top: 6,
-                        left: 6,
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        backgroundColor: "rgba(0,0,0,0.55)",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Ionicons name="play" size={14} color="#FFF" />
-                    </View>
-                    <View
-                      style={{
-                        position: "absolute",
-                        bottom: 6,
-                        right: 6,
-                        backgroundColor: "rgba(0,0,0,0.6)",
-                        paddingHorizontal: 6,
-                        paddingVertical: 2,
-                        borderRadius: 6,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: "#FFF",
-                          fontSize: 10,
-                          fontWeight: "700",
-                        }}
-                      >
-                        {item.duration || "00:15"}
-                      </Text>
-                    </View>
-                    {isSelected && (
-                      <View
-                        style={[
-                          StyleSheet.absoluteFill,
-                          {
-                            borderWidth: 4,
-                            borderColor: "#a855f7",
-                            borderRadius: 12,
-                          },
-                        ]}
-                      />
-                    )}
-                  </Pressable>
-                );
-              }}
-              ListFooterComponent={
-                <>
-                  {communityVideos.length === 0 && videosInitialLoading && (
-                    <View
-                      style={{
-                        width: "100%",
-                        height: 200,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <ActivityIndicator size="large" color="#a855f7" />
-                    </View>
-                  )}
-                  {communityVideos.length > 0 && videosLoadingMore && (
-                    <View
-                      style={{
-                        width: "100%",
-                        paddingVertical: 16,
-                        alignItems: "center",
-                      }}
-                    >
-                      <ActivityIndicator size="small" color="#a855f7" />
-                    </View>
-                  )}
-                  <View style={{ height: 40 }} />
-                </>
-              }
-            />
-            {/* Bottom Action Bar */}
-            <View
-              style={{
-                flexDirection: "row",
-                paddingHorizontal: 20,
-                paddingTop: 16,
-                paddingBottom: Math.max(insets.bottom, 16),
-                backgroundColor: "#1C1C1E",
-                gap: 12,
-                borderTopWidth: 1,
-                borderTopColor: "rgba(255,255,255,0.05)",
-              }}
-            >
-              <Pressable
-                style={{
-                  flex: 1,
-                  paddingVertical: 16,
-                  borderRadius: 20,
-                  backgroundColor: "#555",
-                  alignItems: "center",
-                }}
-                onPress={() => {
-                  setSelectedVideo(null);
-                  setShowVideosModal(false);
-                }}
-              >
-                <Text
-                  style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
-                >
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                style={{
-                  flex: 1,
-                  paddingVertical: 16,
-                  borderRadius: 20,
-                  backgroundColor: "#a855f7",
-                  alignItems: "center",
-                  opacity: selectedVideo ? 1 : 0.5,
-                }}
-                disabled={!selectedVideo}
-                onPress={() => {
-                  setShowVideosModal(false);
-                  handleAssetSelect(
-                    selectedVideo,
-                    "Add a full-screen looping background video, autoplaying and muted: " +
-                      (selectedVideo.url || ""),
-                  );
-                  setSelectedVideo(null);
-                }}
-              >
-                <Text
-                  style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}
-                >
-                  Select
-                </Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        </Pressable>
-      </Modal>
+        selectedVideoUrl={selectedVideo?.video_url || selectedVideo?.url}
+        userId={user?.id || null}
+        onSelectVideo={(video) => {
+          handleAssetSelect(
+            video,
+            "Add a full-screen looping background video, autoplaying and muted: " + (video.video_url || ""),
+          );
+          setSelectedVideo(null);
+        }}
+      />
 
       {/* === COMMUNITY IMAGES MODAL === */}
       <Modal
@@ -6911,39 +6365,41 @@ Description: ${gameSpec.description}
                     </View>
                   </View>
 
-                  {/* Bottom row inside input — surprise me + send */}
+                  {/* Bottom row inside input — surprise me + image + send */}
                   <View style={[styles.inputBottomRow, { zIndex: 99 }]}>
-                    <Pressable
-                      style={styles.surpriseBtn}
-                      onPressIn={() => {
-                        const surprises = [
-                          "A massive, completely unhinged physics simulation where you control a magnetic wrecking ball. You must swing through fully destructible voxel skyscrapers, causing absolute chaos and frame-dropping levels of particle explosions. The ground should shatter realistically, and the UI should keep a running tally of millions of dollars in property damage with a satisfying slot-machine counter animation.",
-                          "An intensely addictive tower defense hybrid set in a microscopic cell. You are defending the nucleus from evolving viruses. Place white blood cell turrets that automatically lock on to enemies. Crucially, the viruses mutate every wave, becoming immune to certain projectile colors, forcing the player to constantly upgrade and swap turret types. Include an incredible liquid-like UI with soft blobs and organic sounds.",
-                          "A deeply satisfying game focused purely on game feel and cutting things. Fruits and objects fly across the screen, and the player swipes their finger to slice them accurately in half like Fruit Ninja. However, implement extremely detailed hit-stop, heavy screen shake on critical hits, and physics where the two halves of the object actually fly apart based precisely on the angle of the swipe vector. Add combo tracking and announcer voice text.",
-                          "A hyper-stylized neon rhythm game where the map generates purely based on the beat. The player controls a glowing cube racing down an infinite track. Bass hits spawn massive obstacles you have to jump over, while synth notes create speed pads. The camera must pulse and FOV warp aggressively to the beat to make the player feel the music. Keep the neon colors vibrant against an absolute pitch-black background.",
-                        ];
-                        setPrompt(
-                          surprises[
-                            Math.floor(Math.random() * surprises.length)
-                          ],
-                        );
-                        setErrorMsg(null);
-                        requestAnimationFrame(() => inputRef.current?.focus());
-                      }}
-                    >
-                      <Ionicons
-                        name="sparkles"
-                        size={16}
-                        color="#C084FC"
-                        style={styles.surpriseEmoji as any}
-                      />
-                      <Text style={styles.surpriseText}>Surprise me</Text>
-                    </Pressable>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <Pressable
+                        style={styles.surpriseBtn}
+                        onPressIn={() => {
+                          const surprises = [
+                            "A massive, completely unhinged physics simulation where you control a magnetic wrecking ball. You must swing through fully destructible voxel skyscrapers, causing absolute chaos and frame-dropping levels of particle explosions. The ground should shatter realistically, and the UI should keep a running tally of millions of dollars in property damage with a satisfying slot-machine counter animation.",
+                            "An intensely addictive tower defense hybrid set in a microscopic cell. You are defending the nucleus from evolving viruses. Place white blood cell turrets that automatically lock on to enemies. Crucially, the viruses mutate every wave, becoming immune to certain projectile colors, forcing the player to constantly upgrade and swap turret types. Include an incredible liquid-like UI with soft blobs and organic sounds.",
+                            "A deeply satisfying game focused purely on game feel and cutting things. Fruits and objects fly across the screen, and the player swipes their finger to slice them accurately in half like Fruit Ninja. However, implement extremely detailed hit-stop, heavy screen shake on critical hits, and physics where the two halves of the object actually fly apart based precisely on the angle of the swipe vector. Add combo tracking and announcer voice text.",
+                            "A hyper-stylized neon rhythm game where the map generates purely based on the beat. The player controls a glowing cube racing down an infinite track. Bass hits spawn massive obstacles you have to jump over, while synth notes create speed pads. The camera must pulse and FOV warp aggressively to the beat to make the player feel the music. Keep the neon colors vibrant against an absolute pitch-black background.",
+                          ];
+                          setPrompt(
+                            surprises[
+                              Math.floor(Math.random() * surprises.length)
+                            ],
+                          );
+                          setErrorMsg(null);
+                          requestAnimationFrame(() => inputRef.current?.focus());
+                        }}
+                      >
+                        <Ionicons
+                          name="sparkles"
+                          size={16}
+                          color="#C084FC"
+                          style={styles.surpriseEmoji as any}
+                        />
+                        <Text style={styles.surpriseText}>Surprise me</Text>
+                      </Pressable>
+                    </View>
 
                     <Pressable
                       style={[
                         styles.sendBtn,
-                        (!prompt.trim() || !orientation) && styles.sendBtnIdle,
+                        !prompt.trim() && styles.sendBtnIdle,
                       ]}
                       onPressIn={handleDreamComposerPress}
                       hitSlop={14}
@@ -7113,9 +6569,12 @@ Description: ${gameSpec.description}
                 <Pressable
                   style={styles.mediaBtn}
                   onPress={() =>
-                    runCreateAction(() =>
-                      setShowPhotosModal(true),
-                    )
+                    runCreateAction(() => {
+                      try {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      } catch {}
+                      setShowAssetPicker(true);
+                    })
                   }
                 >
                   <View
@@ -7124,7 +6583,29 @@ Description: ${gameSpec.description}
                       { backgroundColor: "rgba(168,85,247,0.12)" },
                     ]}
                   >
-                    <Ionicons name="image-outline" size={24} color="#a855f7" />
+                    <Ionicons name="images-outline" size={24} color="#a855f7" />
+                    {attachedAssets.length > 0 && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          top: -4,
+                          right: -4,
+                          backgroundColor: "#a855f7",
+                          borderRadius: 10,
+                          minWidth: 18,
+                          height: 18,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          paddingHorizontal: 4,
+                          borderWidth: 1.5,
+                          borderColor: "#0D0D12",
+                        }}
+                      >
+                        <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "800" }}>
+                          {attachedAssets.length}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.mediaLabel}>Images</Text>
                 </Pressable>
@@ -8603,6 +8084,35 @@ const styles = StyleSheet.create({
     color: "#BBB",
     fontSize: 13,
     fontWeight: "600",
+  },
+  imagePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(192, 132, 252, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(192, 132, 252, 0.28)",
+    gap: 5,
+  },
+  imagePickerBtnText: {
+    color: "#E9D5FF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  assetCountBadge: {
+    backgroundColor: "#A855F7",
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  assetCountBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
   charCount: {
     color: "#555",

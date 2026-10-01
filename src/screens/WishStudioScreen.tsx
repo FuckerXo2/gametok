@@ -201,6 +201,7 @@ export const WishStudioScreen = ({
   const selectedStyleModifierRef = useRef('');
   // Planning conversation history for /refine-spec (role 'ai' | 'user').
   const specHistoryRef = useRef<Array<{ role: 'ai' | 'user'; content: string }>>([]);
+  const inFlightDirectionsPromptRef = useRef<string | null>(null);
 
   const gameName = briefRef.current?.name ?? null;
 
@@ -524,7 +525,7 @@ export const WishStudioScreen = ({
     return () => {
       isCancelled = true;
     };
-  }, [visible, journeyView, initialPrompt, gameName, visualDirections.length, orientation]);
+  }, [visible, journeyView, initialPrompt, visualDirections.length, orientation]);
 
   // Advance understanding animation steadily
   useEffect(() => {
@@ -589,8 +590,19 @@ export const WishStudioScreen = ({
   );
 
   const handleCreate = useCallback(() => {
-    const brief = briefRef.current;
-    if (!brief || (phase === 'building' && !buildError)) return;
+    let brief = briefRef.current;
+    if (!brief) {
+      brief = {
+        name: initialPrompt.slice(0, 24).trim() || 'Your Game',
+        orientation,
+        pitch: initialPrompt,
+        structural: '',
+        spine: [],
+        flavor: [],
+      };
+      briefRef.current = brief;
+    }
+    if (phase === 'building' && !buildError) return;
     setPhase('building');
     setHasCreated(true);
     setTab('preview'); // land in the forge — the wait is a game, go play it
