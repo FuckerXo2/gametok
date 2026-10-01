@@ -16,7 +16,7 @@ import React, { forwardRef, useState } from 'react';
 import { View, StyleSheet, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewProps } from 'react-native-webview';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
-import { GameTokEngineView } from '../../modules/gametok-engine';
+import { GameTokEngineView, isNativeEngineLinked } from '../../modules/gametok-engine';
 
 export const GAMES_HOST = 'https://games.gametok.co';
 
@@ -40,6 +40,8 @@ type Props = WebViewProps & {
   box?: { width: number; height: number } | null;
   runtime?: 'web' | 'native';
   gameScript?: string;
+  showControls?: boolean;
+  controlsConfig?: any;
 };
 
 // WebGL distance fog patch to prevent horizon washout in 3D games
@@ -160,7 +162,7 @@ function buildLandscapeCSS(lw: number, lh: number): string {
 }
 
 export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
-  { orientation = DEFAULT_ORIENTATION, containerStyle, box: boxProp = null, style, runtime = 'web', gameScript, ...webViewProps },
+  { orientation = DEFAULT_ORIENTATION, containerStyle, box: boxProp = null, style, runtime = 'web', gameScript, showControls, controlsConfig, ...webViewProps },
   ref,
 ) {
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
@@ -385,13 +387,15 @@ true;
 
   const finalInjectedJS = landscapeFixScript + '\n' + (webViewProps.injectedJavaScriptBeforeContentLoaded || '');
 
-  if (runtime === 'native' && Platform.OS !== 'web') {
+  if (runtime === 'native') {
     return (
       <View style={[styles.container, containerStyle]}>
         <GameTokEngineView
           style={[styles.webview, style]}
           gameScript={gameScript}
           cameraMode={isLandscape(orientation) ? '3D' : '2D'}
+          showControls={showControls ?? true}
+          controlsConfig={controlsConfig}
         />
       </View>
     );
