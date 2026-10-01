@@ -700,39 +700,17 @@ export const ai = {
 
 
   generateSpec: async (prompt: string) => {
-    if (AI_MODE === 'mock') return mockGenerateSpec(prompt);
-    const call = () => request('/ai/generate-spec', {
+    return request('/ai/generate-spec', {
       method: 'POST',
       body: JSON.stringify({ prompt }),
     }, 30000);
-    if (AI_MODE === 'live') return call();
-    try {
-      const res: any = await call();
-      if (specSucceeded(res)) { markAi(true); return res; }
-      markAi(false);
-      return mockGenerateSpec(prompt);
-    } catch {
-      markAi(false);
-      return mockGenerateSpec(prompt);
-    }
   },
 
   refineSpec: async (conversationHistory: Array<{ role: 'ai' | 'user'; content: string }>, userMessage: string) => {
-    if (AI_MODE === 'mock') return mockRefineSpec(conversationHistory, userMessage);
-    const call = () => request('/ai/refine-spec', {
+    return request('/ai/refine-spec', {
       method: 'POST',
       body: JSON.stringify({ conversationHistory, userMessage }),
     }, 30000);
-    if (AI_MODE === 'live') return call();
-    try {
-      const res: any = await call();
-      if (specSucceeded(res)) { markAi(true); return res; }
-      markAi(false);
-      return mockRefineSpec(conversationHistory, userMessage);
-    } catch {
-      markAi(false);
-      return mockRefineSpec(conversationHistory, userMessage);
-    }
   },
 
   interpretEdit: async (payload: {

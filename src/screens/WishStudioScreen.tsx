@@ -178,6 +178,7 @@ export const WishStudioScreen = ({
   const [genProgress, setGenProgress] = useState<number | null>(null);
   const [genPhase, setGenPhase] = useState<string | null>(null);
   const [genStatusMessage, setGenStatusMessage] = useState<string | null>(null);
+  const [backendStatusMessage, setBackendStatusMessage] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [journeyView, setJourneyView] = useState<JourneyView>('understanding');
   const [visualDirections, setVisualDirections] = useState<VisualDirection[]>([]);
@@ -531,25 +532,53 @@ export const WishStudioScreen = ({
     };
   }, [visible, journeyView, initialPrompt, visualDirections.length, orientation]);
 
-  // Advance understanding animation steadily aligned with real AI generation timeline
+  // Live telemetry polling: sync understanding and perspective steps directly with backend Hermes execution
   useEffect(() => {
-    if (!visible || journeyView !== 'understanding') return;
+    if (!visible || (journeyView !== 'understanding' && journeyView !== 'perspective-understanding')) return;
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) return;
 
-    // Realistic progression timings:
-    // Step 0: Analyzing request (0s)
-    // Step 1: Exploring mechanics (4.5s)
-    // Step 2: Researching visual directions (9.5s)
-    // Step 3: Synthesizing concept art & assets (16s)
-    const t1 = setTimeout(() => setUnderstandingStep(1), 4500);
-    const t2 = setTimeout(() => setUnderstandingStep(2), 9500);
-    const t3 = setTimeout(() => setUnderstandingStep(3), 16000);
+    let isPollingActive = true;
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await ai.getForgeSession(sessionId);
+        if (!isPollingActive || !res?.session) return;
+        const s = res.session;
+
+        if (journeyView === 'understanding') {
+          if (typeof s.step === 'number') {
+            setUnderstandingStep(s.step);
+          }
+          if (s.statusMessage) {
+            setBackendStatusMessage(s.statusMessage);
+          }
+          if (s.visualDirections && s.visualDirections.length > 0 && visualDirections.length === 0) {
+            setVisualDirections(s.visualDirections);
+            setSelectedDirection(s.visualDirections[0]);
+            setSelectedDirectionId(s.visualDirections[0].id);
+          }
+        } else if (journeyView === 'perspective-understanding') {
+          if (typeof s.step === 'number') {
+            setPerspectiveUnderstandingStep(s.step);
+          }
+          if (s.statusMessage) {
+            setBackendStatusMessage(s.statusMessage);
+          }
+          if (s.perspectives && s.perspectives.length > 0 && perspectives.length === 0) {
+            setPerspectives(s.perspectives);
+            setSelectedPerspectiveId(s.perspectives[0].id);
+          }
+        }
+      } catch (_) {
+        // Silently catch polling tick errors
+      }
+    }, 1000);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      isPollingActive = false;
+      clearInterval(pollInterval);
     };
-  }, [visible, journeyView]);
+  }, [visible, journeyView, visualDirections.length, perspectives.length]);
 
   // Transition to directions smoothly when directions are actually loaded
   useEffect(() => {
@@ -683,10 +712,6 @@ export const WishStudioScreen = ({
         isPerspectivesReady: false,
       });
 
-      const stepTimer = setInterval(() => {
-        setPerspectiveUnderstandingStep((prev) => (prev < 2 ? prev + 1 : prev));
-      }, 1200);
-
       getStoredPushToken().then((pushToken) => {
         ai.generatePerspectives(initialPrompt, gameName || 'Your game', direction, {
           sessionId: sessionIdRef.current,
@@ -694,8 +719,6 @@ export const WishStudioScreen = ({
           attachments: initialAttachments,
         })
           .then((res: any) => {
-            clearInterval(stepTimer);
-
             // If the view was already specified by the user or is a fixed-view genre like Candy Crush:
             if (res?.requiresSelection === false && res?.defaultPerspective) {
               const p = res.defaultPerspective;
@@ -750,7 +773,6 @@ export const WishStudioScreen = ({
             }
           })
           .catch((err) => {
-            clearInterval(stepTimer);
             console.warn('[WishStudio] Perspective fetch error:', err);
             setJourneyView('perspective');
           })
@@ -943,6 +965,7 @@ export const WishStudioScreen = ({
           activeStep={understandingStep}
           steps={UNDERSTANDING_STEPS.map((s) => s.text)}
           mascotMessage={
+            backendStatusMessage ||
             COMPANION_MESSAGES[understandingStep % COMPANION_MESSAGES.length] ||
             'Exploring a few different directions for your game...'
           }
@@ -987,7 +1010,10 @@ export const WishStudioScreen = ({
           prompt={initialPrompt}
           activeStep={perspectiveUnderstandingStep}
           steps={PERSPECTIVE_UNDERSTANDING_STEPS}
-          mascotMessage={`Positioning camera perspectives for ${selectedDirection?.name || 'your game'}...`}
+          mascotMessage={
+            backendStatusMessage ||
+            `Positioning camera perspectives for ${selectedDirection?.name || 'your game'}...`
+          }
           onClose={handleCloseRequest}
           errorMessage={buildError}
           onSelectStep={setPerspectiveUnderstandingStep}
