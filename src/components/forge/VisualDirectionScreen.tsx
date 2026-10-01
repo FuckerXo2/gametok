@@ -554,7 +554,11 @@ export const VisualDirectionScreen = ({
   const handleSubmit = () => {
     const request = refinement.trim();
     if (!request) {
-      // Do NOT advance to next screen on empty send! Only double-tapping a card advances!
+      // Clicking send without typing anything progresses directly with the selected style
+      const targetDirection = selected || directions[0];
+      if (targetDirection) {
+        onUseDirection(targetDirection, '');
+      }
       return;
     }
 

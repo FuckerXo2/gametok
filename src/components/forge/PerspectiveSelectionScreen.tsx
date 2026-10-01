@@ -223,25 +223,44 @@ export const PerspectiveSelectionScreen = ({
           )}
         </ScrollView>
 
-        {/* Bottom Bar: Action Button to Forge Game */}
+        {/* Bottom Refine Input Bar - Matching VisualDirectionScreen */}
         {chosen && (
-          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-            <Pressable
-              style={({ pressed }) => [styles.forgeBtn, pressed && styles.forgeBtnPressed]}
-              onPress={() => onUsePerspective(chosen, refinement.trim())}
-            >
-              <LinearGradient
-                colors={['#8B5CF6', '#7C3AED']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.forgeBtnGradient}
+          <View
+            style={[
+              styles.bottomBar,
+              {
+                paddingBottom: Math.max(insets.bottom, 14),
+              },
+            ]}
+          >
+            <View style={styles.inputCapsule}>
+              <TextInput
+                value={refinement}
+                onChangeText={setRefinement}
+                placeholder="Adjust camera angle..."
+                placeholderTextColor="#64748B"
+                style={styles.textInput}
+                returnKeyType="send"
+                onSubmitEditing={() => onUsePerspective(chosen, refinement.trim())}
+              />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  pressed && styles.submitBtnPressed,
+                ]}
+                onPress={() => onUsePerspective(chosen, refinement.trim())}
+                hitSlop={8}
               >
-                <Text style={styles.forgeBtnText}>
-                  Forge Game with {chosen.name}
-                </Text>
-                <Ionicons name="flash" size={17} color="#FFFFFF" style={{ marginLeft: 8 }} />
-              </LinearGradient>
-            </Pressable>
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.submitGradient}
+                >
+                  <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+                </LinearGradient>
+              </Pressable>
+            </View>
           </View>
         )}
       </KeyboardAvoidingView>
@@ -421,31 +440,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
-  /* Bottom Action Bar */
+  /* Bottom Refine Input Bar matching VisualDirectionScreen */
   bottomBar: {
     paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: 10,
+    paddingTop: 8,
     backgroundColor: 'transparent',
   },
-  forgeBtn: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  forgeBtnPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-  forgeBtnGradient: {
+  inputCapsule: {
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(11, 16, 32, 0.96)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 16,
+    paddingLeft: 20,
+    paddingRight: 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  forgeBtnText: {
+  textInput: {
+    flex: 1,
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 14.5,
+    paddingVertical: 0,
+  },
+  submitBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  submitBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.94 }],
+  },
+  submitGradient: {
+    flex: 1,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
