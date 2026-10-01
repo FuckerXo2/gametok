@@ -516,54 +516,6 @@ export const WishStudioScreen = ({
         })
         .catch((err) => {
           console.warn('[WishStudio] Visual direction fetch error:', err);
-          if (!isCancelled) {
-            const fallbackDirections: VisualDirection[] = [
-              {
-                id: `dir-1`,
-                name: 'Stylized 3D Arcade',
-                tagline: 'Vibrant & Punchy',
-                themeType: 'arcade',
-                description: `Fast-paced vibrant aesthetic with bold colors and clean physics.`,
-                colors: ['#7C3AED', '#25F4EE', '#EC4899', '#0F172A'],
-                icon: 'game-controller',
-                instruction: 'High saturation arcade lighting with neon accents and crisp game UI.',
-              },
-              {
-                id: `dir-2`,
-                name: 'Cyberpunk Neon',
-                tagline: 'High Voltage',
-                themeType: 'cyber',
-                description: `Dark sleek city styling illuminated by bright glowing neon.`,
-                colors: ['#00F5FF', '#FF007F', '#7928CA', '#0A0A10'],
-                icon: 'flash',
-                instruction: 'Dark contrast scene with bloom lighting, reflective surfaces, and neon emission.',
-              },
-              {
-                id: `dir-3`,
-                name: 'Moody Dark Fantasy',
-                tagline: 'Epic & Dramatic',
-                themeType: 'dark',
-                description: `Atmospheric shadows and high-stakes dramatic action.`,
-                colors: ['#6366F1', '#475569', '#1E293B', '#020617'],
-                icon: 'skull',
-                instruction: 'Deep volumetric shadows, dramatic rim lighting, and atmospheric smoke.',
-              },
-              {
-                id: `dir-4`,
-                name: 'Anime Cel-Shaded',
-                tagline: 'Fast & Expressive',
-                themeType: 'scifi',
-                description: `High energy anime combat aesthetic with sharp cel-shading.`,
-                colors: ['#EF4444', '#F97316', '#FBBF24', '#18181B'],
-                icon: 'flame',
-                instruction: 'Sharp comic outlines, saturated primary tones, and dynamic speed-line VFX.',
-              },
-            ];
-            setVisualDirections(fallbackDirections);
-            setSelectedDirection(fallbackDirections[0]);
-            setSelectedDirectionId(fallbackDirections[0].id);
-            setBriefReady(true);
-          }
         })
         .finally(() => {
           if (!isCancelled) setIsDirectionsLoading(false);
@@ -598,28 +550,6 @@ export const WishStudioScreen = ({
       }, 700);
       return () => clearTimeout(timer);
     }
-
-    // Safety timeout: transition after 4.5s so user is never stuck
-    const safetyTimer = setTimeout(() => {
-      if (journeyView === 'understanding') {
-        if (visualDirections.length === 0) {
-          const fallbackDirections: VisualDirection[] = [
-            { id: 'dir-1', name: 'Stylized 3D Arcade', tagline: 'Vibrant & Punchy', themeType: 'arcade', description: 'Fast-paced vibrant aesthetic with bold colors and clean physics.', colors: ['#7C3AED', '#25F4EE', '#EC4899', '#0F172A'], icon: 'game-controller', instruction: 'High saturation arcade lighting with neon accents and crisp game UI.' },
-            { id: 'dir-2', name: 'Cyberpunk Neon', tagline: 'High Voltage', themeType: 'cyber', description: 'Dark sleek city styling illuminated by bright glowing neon.', colors: ['#00F5FF', '#FF007F', '#7928CA', '#0A0A10'], icon: 'flash', instruction: 'Dark contrast scene with bloom lighting, reflective surfaces, and neon emission.' },
-            { id: 'dir-3', name: 'Moody Dark Fantasy', tagline: 'Epic & Dramatic', themeType: 'dark', description: 'Atmospheric shadows and high-stakes dramatic action.', colors: ['#6366F1', '#475569', '#1E293B', '#020617'], icon: 'skull', instruction: 'Deep volumetric shadows, dramatic rim lighting, and atmospheric smoke.' },
-            { id: 'dir-4', name: 'Anime Cel-Shaded', tagline: 'Fast & Expressive', themeType: 'scifi', description: 'High energy anime combat aesthetic with sharp cel-shading.', colors: ['#EF4444', '#F97316', '#FBBF24', '#18181B'], icon: 'flame', instruction: 'Sharp comic outlines, saturated primary tones, and dynamic speed-line VFX.' },
-          ];
-          setVisualDirections(fallbackDirections);
-          setSelectedDirection(fallbackDirections[0]);
-          setSelectedDirectionId(fallbackDirections[0].id);
-        }
-        setBriefReady(true);
-        setUnderstandingStep(4);
-        transitionToDirections();
-      }
-    }, 4500);
-
-    return () => clearTimeout(safetyTimer);
   }, [visible, journeyView, visualDirections.length, briefReady, transitionToDirections]);
 
   // Coming back from the Publish screen: land on the tab the parent asked for
