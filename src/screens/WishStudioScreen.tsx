@@ -121,11 +121,12 @@ const UNDERSTANDING_STEPS = [
   { icon: 'cube', text: 'Preparing concepts...' },
 ];
 const COMPANION_MESSAGES = [
-  "Ooh, I love this idea! Let's see what we can forge...",
-  "Thinking about what would make this super fun to play...",
-  "Exploring a few different directions for your game...",
-  "Picking out some vibrant colors and cool sounds...",
-  "Almost ready! Putting together the first looks for you...",
+  "Analyzing your game idea and core vision...",
+  "Mapping out game mechanics, controls, and physics...",
+  "Hermes is brainstorming 4 unique visual art directions...",
+  "Synthesizing concept art and visual assets...",
+  "Finishing up your style preview cards...",
+  "All set! Choose your visual direction to begin building.",
 ];
 
 const PERSPECTIVE_UNDERSTANDING_STEPS = [
@@ -530,30 +531,43 @@ export const WishStudioScreen = ({
     };
   }, [visible, journeyView, initialPrompt, visualDirections.length, orientation]);
 
-  // Advance understanding animation steadily
+  // Advance understanding animation steadily aligned with real AI generation timeline
   useEffect(() => {
     if (!visible || journeyView !== 'understanding') return;
 
-    const interval = setInterval(() => {
-      setUnderstandingStep((step) => {
-        if (step < 3) return step + 1;
-        return step;
-      });
-    }, 1200);
-    return () => clearInterval(interval);
+    // Realistic progression timings:
+    // Step 0: Analyzing request (0s)
+    // Step 1: Exploring mechanics (4.5s)
+    // Step 2: Researching visual directions (9.5s)
+    // Step 3: Synthesizing concept art & assets (16s)
+    const t1 = setTimeout(() => setUnderstandingStep(1), 4500);
+    const t2 = setTimeout(() => setUnderstandingStep(2), 9500);
+    const t3 = setTimeout(() => setUnderstandingStep(3), 16000);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [visible, journeyView]);
 
-  // Transition to directions ONLY when directions are actually loaded or brief is ready
+  // Transition to directions smoothly when directions are actually loaded
   useEffect(() => {
     if (!visible || journeyView !== 'understanding') return;
-    if (visualDirections.length > 0 && briefReady) {
+    if (visualDirections.length > 0) {
       setUnderstandingStep(4);
-      const timer = setTimeout(() => {
+      const timer1 = setTimeout(() => {
+        setUnderstandingStep(5); // All 5 steps completed
+      }, 400);
+      const timer2 = setTimeout(() => {
         transitionToDirections();
-      }, 700);
-      return () => clearTimeout(timer);
+      }, 1200);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
     }
-  }, [visible, journeyView, visualDirections.length, briefReady, transitionToDirections]);
+  }, [visible, journeyView, visualDirections.length, transitionToDirections]);
 
   // Coming back from the Publish screen: land on the tab the parent asked for
   // rather than whatever was last open. Keyed on the nonce alone — the tab is
