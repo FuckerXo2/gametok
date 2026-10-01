@@ -2190,6 +2190,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       return;
     }
     const chosenOrientation = orientation || 'portrait';
+    setOrientation(chosenOrientation);
     setErrorMsg(null);
     Keyboard.dismiss();
 
@@ -2197,13 +2198,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       stopLocalDreamPolling();
     }
 
-    // Forge It hands the brief (and any attached assets) to the Wish studio,
-    // where Kimi pitches the game and the user taps "Create it" to build. A new
-    // brief is a new game — drop any game the studio was last opened on.
-    setStudioGame(null);
-    setStudioPrompt(finalPrompt);
-    setStudioOrientation(chosenOrientation);
-    setStudioOpen(true);
+    // Directly launch the live Hermes game generation pipeline
+    requestAnimationFrame(() => handleDream(finalPrompt));
   };
 
   const interpretEditIntent = useCallback(

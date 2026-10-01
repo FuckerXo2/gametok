@@ -918,6 +918,7 @@ export const ai = {
       }
     };
     
+    console.log('🚀 [Dream] Dispatching live Hermes generation to:', API_URL, 'prompt:', prompt.slice(0, 100));
     const promise = new Promise(async (resolve, reject) => {
       try {
         // Step 1: Tell backend to start generation process and return immediately
