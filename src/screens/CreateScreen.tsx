@@ -716,8 +716,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // Wish studio handoff: Forge It opens the studio with this brief.
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioPrompt, setStudioPrompt] = useState("");
-  // Orientation defaults to portrait so the creator is never blocked, but can freely toggle to landscape
-  const [orientation, setOrientation] = useState<Orientation | null>('portrait');
+  // Compulsory: no default. Forge It stays disabled until the creator picks a shape, because
+  // orientation cannot be changed after generation — the game is built and verified for one.
+  const [orientation, setOrientation] = useState<Orientation | null>(null);
   const [studioOrientation, setStudioOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
   // Which draft is being fetched, so the spinner can sit on that tile instead of blanking the
   // whole Forge. Null when nothing is opening.
@@ -2189,8 +2190,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
-    const chosenOrientation = orientation || 'portrait';
-    setOrientation(chosenOrientation);
+    if (!orientation) {
+      setErrorMsg("Pick a screen shape — portrait or landscape.");
+      return;
+    }
     setErrorMsg(null);
     Keyboard.dismiss();
 
@@ -2201,7 +2204,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     // Launch the new Wish Studio screen
     setStudioGame(null);
     setStudioPrompt(finalPrompt);
-    setStudioOrientation(chosenOrientation);
+    setStudioOrientation(orientation);
     setStudioOpen(true);
   };
 
@@ -6398,7 +6401,7 @@ Description: ${gameSpec.description}
                     <Pressable
                       style={[
                         styles.sendBtn,
-                        !prompt.trim() && styles.sendBtnIdle,
+                        (!prompt.trim() || !orientation) && styles.sendBtnIdle,
                       ]}
                       onPressIn={handleDreamComposerPress}
                       hitSlop={14}
