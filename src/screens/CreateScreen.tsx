@@ -2198,8 +2198,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       stopLocalDreamPolling();
     }
 
-    // Directly launch the live Hermes game generation pipeline
-    requestAnimationFrame(() => handleDream(finalPrompt));
+    // Launch the new Wish Studio screen
+    setStudioGame(null);
+    setStudioPrompt(finalPrompt);
+    setStudioOrientation(chosenOrientation);
+    setStudioOpen(true);
   };
 
   const interpretEditIntent = useCallback(
