@@ -17,7 +17,7 @@
 // where the live Kimi planning session plugs in later.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert } from 'react-native';
+import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { palette, spacing, radii, type as t } from '../theme/tokens';
 import { PreviewPane } from '../components/wish/PreviewPane';
@@ -494,8 +494,16 @@ export const WishStudioScreen = ({
         pushToken: pushToken || undefined,
         attachments: initialAttachments,
       })
-        .then((res: any) => {
+        .then(async (res: any) => {
           if (!isCancelled && res?.directions && res.directions.length > 0) {
+            // Preload all 4 concept art cards before displaying so cards NEVER appear blank
+            await Promise.all(
+              res.directions.map((d: any) =>
+                d.imageUrl ? Image.prefetch(d.imageUrl).catch(() => {}) : Promise.resolve()
+              )
+            );
+            if (isCancelled) return;
+
             setVisualDirections(res.directions);
             setSelectedDirection(res.directions[0]);
             setSelectedDirectionId(res.directions[0].id);
@@ -718,34 +726,15 @@ export const WishStudioScreen = ({
           pushToken: pushToken || undefined,
           attachments: initialAttachments,
         })
-          .then((res: any) => {
-            // If the view was already specified by the user or is a fixed-view genre like Candy Crush:
-            if (res?.requiresSelection === false && res?.defaultPerspective) {
-              const p = res.defaultPerspective;
-              const cameraLine = `\n\nSelected camera perspective:\n${p.name} (${p.dimension}). ${p.cameraInstruction}`;
-              directionInstructionRef.current = `${directionInstructionRef.current}${cameraLine}`;
-              setPerspectives([p]);
-              setSelectedPerspectiveId(p.id);
-
-              saveActiveForgeSession({
-                sessionId: sessionIdRef.current,
-                prompt: initialPrompt,
-                gameName: gameName || 'Your game',
-                orientation,
-                journeyView: 'building',
-                selectedDirection: direction,
-                selectedDirectionId: direction.id,
-                perspectives: [p],
-                selectedPerspectiveId: p.id,
-                isPerspectivesReady: true,
-              });
-
-              setJourneyView('building');
-              handleCreate();
-              return;
-            }
-
+          .then(async (res: any) => {
             if (res?.perspectives && res.perspectives.length > 0) {
+              // Preload all 4 perspective preview images so cards appear with zero image lag
+              await Promise.all(
+                res.perspectives.map((p: any) =>
+                  p.imageUrl ? Image.prefetch(p.imageUrl).catch(() => {}) : Promise.resolve()
+                )
+              );
+
               setPerspectives(res.perspectives);
               setSelectedPerspectiveId(res.perspectives[0].id);
               setPerspectiveUnderstandingStep(3);
@@ -765,16 +754,14 @@ export const WishStudioScreen = ({
 
               schedulePerspectivesReadyNotification(initialPrompt, sessionIdRef.current);
 
-              setTimeout(() => {
-                setJourneyView('perspective');
-              }, 600);
-            } else {
               setJourneyView('perspective');
+            } else {
+              setBuildError('Failed to generate camera perspectives. Tap retry.');
             }
           })
           .catch((err) => {
             console.warn('[WishStudio] Perspective fetch error:', err);
-            setJourneyView('perspective');
+            setBuildError(err?.message || 'Failed to generate camera perspectives. Tap retry.');
           })
           .finally(() => {
             setIsPerspectivesLoading(false);
@@ -785,9 +772,10 @@ export const WishStudioScreen = ({
   );
 
   const handleUsePerspective = useCallback(
-    (perspective: CameraPerspective) => {
+    (perspective: CameraPerspective, refinement?: string) => {
       setSelectedPerspectiveId(perspective.id);
-      const cameraLine = `\n\nSelected camera perspective:\n${perspective.name} (${perspective.dimension}). ${perspective.cameraInstruction}`;
+      const refinementText = refinement ? ` Camera refinement: ${refinement}.` : '';
+      const cameraLine = `\n\nSelected camera perspective:\n${perspective.name} (${perspective.dimension}). ${perspective.cameraInstruction}.${refinementText}`;
       directionInstructionRef.current = `${directionInstructionRef.current}${cameraLine}`;
       setJourneyView('building');
 
