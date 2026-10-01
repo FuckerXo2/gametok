@@ -2191,7 +2191,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       return;
     }
     if (!orientation) {
+      Haptics.notificationAsync?.(Haptics.NotificationFeedbackType.Warning);
       setErrorMsg("Pick a screen shape — portrait or landscape.");
+      Alert.alert("Select Screen Shape", "Please choose either Portrait or Landscape before forging your game.");
       return;
     }
     setErrorMsg(null);
@@ -6403,7 +6405,7 @@ Description: ${gameSpec.description}
                         styles.sendBtn,
                         (!prompt.trim() || !orientation) && styles.sendBtnIdle,
                       ]}
-                      onPressIn={handleDreamComposerPress}
+                      onPress={handleDreamComposerPress}
                       hitSlop={14}
                     >
                       <Text style={styles.sendBtnText}>Forge It</Text>

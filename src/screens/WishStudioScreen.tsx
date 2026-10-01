@@ -516,6 +516,9 @@ export const WishStudioScreen = ({
         })
         .catch((err) => {
           console.warn('[WishStudio] Visual direction fetch error:', err);
+          if (!isCancelled) {
+            setBuildError(err?.message || 'Visual direction generation failed. Tap retry.');
+          }
         })
         .finally(() => {
           if (!isCancelled) setIsDirectionsLoading(false);
