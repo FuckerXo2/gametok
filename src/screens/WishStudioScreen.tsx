@@ -547,10 +547,20 @@ export const WishStudioScreen = ({
     if (!sessionId) return;
 
     let isPollingActive = true;
+    let consecutiveFails = 0;
     const pollInterval = setInterval(async () => {
       try {
         const res = await ai.getForgeSession(sessionId);
-        if (!isPollingActive || !res?.session) return;
+        if (!isPollingActive) return;
+        if (!res?.session) {
+          consecutiveFails++;
+          if (consecutiveFails >= 8) {
+            clearInterval(pollInterval);
+            setBuildError('Session disconnected. Tap retry to restart.');
+          }
+          return;
+        }
+        consecutiveFails = 0;
         const s = res.session;
 
         if (journeyView === 'understanding') {

@@ -1176,15 +1176,19 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     getActiveForgeSession().then((session) => {
       if (!session) return;
 
+      const isStale = Date.now() - (session.updatedAt || session.createdAt || 0) > 30 * 60 * 1000;
+      if (isStale) {
+        clearActiveForgeSession();
+        return;
+      }
+
       const hasReadyContent =
         session.isDirectionsReady ||
         session.isPerspectivesReady ||
         (session.visualDirections && session.visualDirections.length > 0) ||
         (session.perspectives && session.perspectives.length > 0) ||
         session.journeyView === 'directions' ||
-        session.journeyView === 'perspective' ||
-        session.journeyView === 'understanding' ||
-        session.journeyView === 'perspective-understanding';
+        session.journeyView === 'perspective';
 
       if (hasReadyContent) {
         console.log('[CreateScreen] Auto-restoring active forge session directly on Create tab:', session.sessionId, session.journeyView);
@@ -1201,6 +1205,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
             : (session.journeyView as any) || 'directions'
         );
         setStudioOpen(true);
+      } else {
+        // If the session was left halfway through understanding without ready directions/perspectives, clear it
+        clearActiveForgeSession();
       }
     });
   }, [isActive, studioOpen, openDraftId]);
