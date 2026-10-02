@@ -42,11 +42,11 @@ interface Props {
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HORIZONTAL_PADDING = 18;
+const HORIZONTAL_PADDING = 14;
 const GRID_GAP = 12;
 const CARD_WIDTH = Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - GRID_GAP) / 2);
-const ARTWORK_HEIGHT = CARD_WIDTH; // 1:1 square aspect ratio matching AI image generator & VisualDirectionScreen
-const CARD_HEIGHT = ARTWORK_HEIGHT + 58; // Total card height including title & tagline
+const ARTWORK_HEIGHT = Math.round(CARD_WIDTH * 1.14); // Expanded artwork viewport for bigger cards
+const CARD_HEIGHT = ARTWORK_HEIGHT + 54; // Total card height including title & tagline
 
 export const PerspectiveSelectionScreen = ({
   gameTitle,
@@ -122,13 +122,10 @@ export const PerspectiveSelectionScreen = ({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Main Title & Subtitle matching VisualDirectionScreen */}
+          {/* Main Title - Subtitle removed as requested to give more room for larger cards */}
           <View style={styles.titleSection}>
             <Text style={styles.title}>
               Here are a few camera perspectives{'\n'}for your game.
-            </Text>
-            <Text style={styles.subtitle}>
-              Rendered in <Text style={{ color: themeColors[2] || '#38BDF8', fontWeight: '800' }}>{selectedDirection?.name || 'Selected Style'}</Text>. Select your gameplay camera angle.
             </Text>
           </View>
 
@@ -316,21 +313,17 @@ const styles = StyleSheet.create({
 
   /* Title Section */
   titleSection: {
-    marginTop: 6,
-    marginBottom: 20,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: -0.4,
-    lineHeight: 30,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.65)',
-    marginTop: 6,
-    lineHeight: 18,
+    letterSpacing: -0.3,
+    lineHeight: 28,
+    textAlign: 'center',
   },
 
   /* Grid */
