@@ -776,6 +776,7 @@ export const ai = {
       selectedVideo?: any;
       selectedMeme?: any;
       selected3DModel?: any;
+      sessionId?: string;
     },
   ) => {
     console.log('🚀 [DreamLabs] Dispatching live game generation to:', API_URL, 'prompt:', prompt.slice(0, 100));
@@ -808,6 +809,7 @@ export const ai = {
             selectedVideo: options?.selectedVideo || null,
             selectedMeme: options?.selectedMeme || null,
             selected3DModel: options?.selected3DModel || null,
+            sessionId: options?.sessionId || null,
           }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial job handshake
@@ -883,6 +885,7 @@ export const ai = {
       selectedDirection?: any;
       selectedPerspective?: any;
       dimension?: string;
+      sessionId?: string;
     },
   ) => {
     const controller = new AbortController();
@@ -914,6 +917,7 @@ export const ai = {
             selectedDirection: options?.selectedDirection || null,
             selectedPerspective: options?.selectedPerspective || null,
             dimension: options?.dimension || null,
+            sessionId: options?.sessionId || null,
           }),
           signal: controller.signal,
         }, 300000); // Allow up to 5 minutes for the initial Dream job handshake

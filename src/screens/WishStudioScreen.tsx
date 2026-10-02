@@ -690,6 +690,7 @@ export const WishStudioScreen = ({
         selectedDirection,
         selectedPerspective: activePerspective,
         dimension: activePerspective?.dimension,
+        sessionId: sessionIdRef.current,
       }),
       (name) => `${name} is live — go play it. From here every wish changes the game: say it and I’ll make it so.`,
     );
