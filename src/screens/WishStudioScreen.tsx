@@ -204,6 +204,33 @@ export const WishStudioScreen = ({
   // Planning conversation history for /refine-spec (role 'ai' | 'user').
   const specHistoryRef = useRef<Array<{ role: 'ai' | 'user'; content: string }>>([]);
   const inFlightDirectionsPromptRef = useRef<string | null>(null);
+  const isTransitioningDirectionsRef = useRef(false);
+  const isTransitioningPerspectivesRef = useRef(false);
+
+  const verifyAndPrefetchCards = useCallback(async (cards: any[]): Promise<boolean> => {
+    if (!Array.isArray(cards) || cards.length < 4) return false;
+    const fourCards = cards.slice(0, 4);
+    const allHaveUrls = fourCards.every(
+      (c) => c && typeof c.imageUrl === 'string' && c.imageUrl.startsWith('http')
+    );
+    if (!allHaveUrls) return false;
+
+    try {
+      const results = await Promise.all(
+        fourCards.map((c) =>
+          Image.prefetch(c.imageUrl)
+            .then(() => true)
+            .catch((err) => {
+              console.warn('[Prefetch] Failed for card:', c.name, err);
+              return false;
+            })
+        )
+      );
+      return results.every(Boolean);
+    } catch {
+      return false;
+    }
+  }, []);
 
   const gameName = briefRef.current?.name ?? null;
 
@@ -495,18 +522,21 @@ export const WishStudioScreen = ({
         attachments: initialAttachments,
       })
         .then(async (res: any) => {
-          if (!isCancelled && res?.directions && res.directions.length > 0) {
-            // Preload all 4 concept art cards before displaying so cards NEVER appear blank
-            await Promise.all(
-              res.directions.map((d: any) =>
-                d.imageUrl ? Image.prefetch(d.imageUrl).catch(() => {}) : Promise.resolve()
-              )
-            );
-            if (isCancelled) return;
+          if (isCancelled || isTransitioningDirectionsRef.current) return;
+          if (res?.directions && res.directions.length >= 4) {
+            setBackendStatusMessage('Downloading visual direction cards...');
+            setUnderstandingStep(4);
+            const allReady = await verifyAndPrefetchCards(res.directions);
+            if (!allReady || isCancelled || isTransitioningDirectionsRef.current) {
+              console.log('[WishStudio] Still awaiting images or cancelled');
+              return;
+            }
 
-            setVisualDirections(res.directions);
+            isTransitioningDirectionsRef.current = true;
+            setVisualDirections(res.directions.slice(0, 4));
             setSelectedDirection(res.directions[0]);
             setSelectedDirectionId(res.directions[0].id);
+            setUnderstandingStep(5);
 
             saveActiveForgeSession({
               sessionId: sessionIdRef.current,
@@ -514,7 +544,7 @@ export const WishStudioScreen = ({
               gameName: gameName || 'Your game',
               orientation,
               journeyView: 'directions',
-              visualDirections: res.directions,
+              visualDirections: res.directions.slice(0, 4),
               selectedDirection: res.directions[0],
               selectedDirectionId: res.directions[0].id,
               isDirectionsReady: true,
@@ -522,6 +552,11 @@ export const WishStudioScreen = ({
             });
 
             scheduleVisualDirectionsReadyNotification(initialPrompt, sessionIdRef.current);
+
+            setTimeout(() => {
+              transitionToDirections();
+              isTransitioningDirectionsRef.current = false;
+            }, 300);
           }
         })
         .catch((err) => {
@@ -538,7 +573,7 @@ export const WishStudioScreen = ({
     return () => {
       isCancelled = true;
     };
-  }, [visible, journeyView, initialPrompt, visualDirections.length, orientation]);
+  }, [visible, journeyView, initialPrompt, visualDirections.length, orientation, transitionToDirections, verifyAndPrefetchCards]);
 
   // Live telemetry polling: sync understanding and perspective steps directly with backend Hermes execution
   useEffect(() => {
@@ -570,10 +605,25 @@ export const WishStudioScreen = ({
           if (s.statusMessage) {
             setBackendStatusMessage(s.statusMessage);
           }
-          if (s.visualDirections && s.visualDirections.length > 0 && visualDirections.length === 0) {
-            setVisualDirections(s.visualDirections);
-            setSelectedDirection(s.visualDirections[0]);
-            setSelectedDirectionId(s.visualDirections[0].id);
+          // ONLY transition when backend marks isDirectionsReady AND all 4 images are prefetched!
+          if (
+            s.isDirectionsReady &&
+            Array.isArray(s.visualDirections) &&
+            s.visualDirections.length >= 4 &&
+            !isTransitioningDirectionsRef.current
+          ) {
+            const allReady = await verifyAndPrefetchCards(s.visualDirections);
+            if (allReady && !isTransitioningDirectionsRef.current) {
+              isTransitioningDirectionsRef.current = true;
+              setVisualDirections(s.visualDirections.slice(0, 4));
+              setSelectedDirection(s.visualDirections[0]);
+              setSelectedDirectionId(s.visualDirections[0].id);
+              setUnderstandingStep(5);
+              setTimeout(() => {
+                transitionToDirections();
+                isTransitioningDirectionsRef.current = false;
+              }, 300);
+            }
           }
         } else if (journeyView === 'perspective-understanding') {
           if (typeof s.step === 'number') {
@@ -582,9 +632,24 @@ export const WishStudioScreen = ({
           if (s.statusMessage) {
             setBackendStatusMessage(s.statusMessage);
           }
-          if (s.perspectives && s.perspectives.length > 0 && perspectives.length === 0) {
-            setPerspectives(s.perspectives);
-            setSelectedPerspectiveId(s.perspectives[0].id);
+          // ONLY transition when backend marks isPerspectivesReady AND all 4 images are prefetched!
+          if (
+            s.isPerspectivesReady &&
+            Array.isArray(s.perspectives) &&
+            s.perspectives.length >= 4 &&
+            !isTransitioningPerspectivesRef.current
+          ) {
+            const allReady = await verifyAndPrefetchCards(s.perspectives);
+            if (allReady && !isTransitioningPerspectivesRef.current) {
+              isTransitioningPerspectivesRef.current = true;
+              setPerspectives(s.perspectives.slice(0, 4));
+              setSelectedPerspectiveId(s.perspectives[0].id);
+              setPerspectiveUnderstandingStep(3);
+              setTimeout(() => {
+                setJourneyView('perspective');
+                isTransitioningPerspectivesRef.current = false;
+              }, 300);
+            }
           }
         }
       } catch (_) {
@@ -596,25 +661,7 @@ export const WishStudioScreen = ({
       isPollingActive = false;
       clearInterval(pollInterval);
     };
-  }, [visible, journeyView, visualDirections.length, perspectives.length]);
-
-  // Transition to directions smoothly when directions are actually loaded
-  useEffect(() => {
-    if (!visible || journeyView !== 'understanding') return;
-    if (visualDirections.length > 0) {
-      setUnderstandingStep(4);
-      const timer1 = setTimeout(() => {
-        setUnderstandingStep(5); // All 5 steps completed
-      }, 400);
-      const timer2 = setTimeout(() => {
-        transitionToDirections();
-      }, 1200);
-      return () => {
-        clearTimeout(timer1);
-        clearTimeout(timer2);
-      };
-    }
-  }, [visible, journeyView, visualDirections.length, transitionToDirections]);
+  }, [visible, journeyView, visualDirections.length, perspectives.length, transitionToDirections, verifyAndPrefetchCards]);
 
   // Coming back from the Publish screen: land on the tab the parent asked for
   // rather than whatever was last open. Keyed on the nonce alone — the tab is
@@ -738,15 +785,15 @@ export const WishStudioScreen = ({
           attachments: initialAttachments,
         })
           .then(async (res: any) => {
-            if (res?.perspectives && res.perspectives.length > 0) {
-              // Preload all 4 perspective preview images so cards appear with zero image lag
-              await Promise.all(
-                res.perspectives.map((p: any) =>
-                  p.imageUrl ? Image.prefetch(p.imageUrl).catch(() => {}) : Promise.resolve()
-                )
-              );
+            if (isTransitioningPerspectivesRef.current) return;
+            if (res?.perspectives && res.perspectives.length >= 4) {
+              setBackendStatusMessage('Downloading camera perspective cards...');
+              setPerspectiveUnderstandingStep(2);
+              const allReady = await verifyAndPrefetchCards(res.perspectives);
+              if (!allReady || isTransitioningPerspectivesRef.current) return;
 
-              setPerspectives(res.perspectives);
+              isTransitioningPerspectivesRef.current = true;
+              setPerspectives(res.perspectives.slice(0, 4));
               setSelectedPerspectiveId(res.perspectives[0].id);
               setPerspectiveUnderstandingStep(3);
 
@@ -758,14 +805,17 @@ export const WishStudioScreen = ({
                 journeyView: 'perspective',
                 selectedDirection: direction,
                 selectedDirectionId: direction.id,
-                perspectives: res.perspectives,
+                perspectives: res.perspectives.slice(0, 4),
                 selectedPerspectiveId: res.perspectives[0].id,
                 isPerspectivesReady: true,
               });
 
               schedulePerspectivesReadyNotification(initialPrompt, sessionIdRef.current);
 
-              setJourneyView('perspective');
+              setTimeout(() => {
+                setJourneyView('perspective');
+                isTransitioningPerspectivesRef.current = false;
+              }, 300);
             } else {
               setBuildError('Failed to generate camera perspectives. Tap retry.');
             }
@@ -779,7 +829,7 @@ export const WishStudioScreen = ({
           });
       });
     },
-    [initialPrompt, gameName, orientation],
+    [initialPrompt, gameName, orientation, verifyAndPrefetchCards],
   );
 
   const handleUsePerspective = useCallback(

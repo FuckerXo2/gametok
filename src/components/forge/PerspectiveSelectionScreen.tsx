@@ -48,6 +48,76 @@ const CARD_WIDTH = Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - GRID_GAP)
 const ARTWORK_HEIGHT = Math.round(CARD_WIDTH * 1.14); // Expanded artwork viewport for bigger cards
 const CARD_HEIGHT = ARTWORK_HEIGHT + 54; // Total card height including title & tagline
 
+const PerspectiveArtwork = ({
+  perspective,
+  themeColors,
+  active,
+}: {
+  perspective: CameraPerspective;
+  themeColors: readonly string[] | string[];
+  active: boolean;
+}) => {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  const bgColors = (themeColors && themeColors.length >= 2
+    ? [themeColors[0], themeColors[1], '#07090E']
+    : ['#0F172A', '#1E1B4B', '#07090E']) as [string, string, ...string[]];
+
+  if (perspective.imageUrl && !imageError) {
+    return (
+      <>
+        {/* Themed background under image - NEVER black while image renders */}
+        <LinearGradient
+          colors={bgColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {!imageLoaded && (
+          <View style={styles.artworkLoadingOverlay}>
+            <ActivityIndicator size="small" color="#C084FC" />
+          </View>
+        )}
+        <Image
+          source={{ uri: perspective.imageUrl }}
+          style={styles.cardImage}
+          resizeMode="cover"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageError(true)}
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(13, 17, 29, 0.35)', '#0D111D']}
+          locations={[0, 0.75, 1]}
+          style={styles.cardImageOverlay}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <LinearGradient
+        colors={bgColors}
+        style={StyleSheet.absoluteFill}
+      >
+        <View style={styles.placeholderIconWrap}>
+          <Ionicons
+            name={(perspective.icon as any) || 'videocam'}
+            size={36}
+            color={active ? '#C084FC' : 'rgba(255,255,255,0.7)'}
+          />
+        </View>
+      </LinearGradient>
+      <LinearGradient
+        colors={['transparent', 'rgba(13, 17, 29, 0.35)', '#0D111D']}
+        locations={[0, 0.75, 1]}
+        style={styles.cardImageOverlay}
+      />
+    </>
+  );
+};
+
 export const PerspectiveSelectionScreen = ({
   gameTitle,
   prompt,
@@ -162,31 +232,10 @@ export const PerspectiveSelectionScreen = ({
                   >
                     {/* Artwork Viewport */}
                     <View style={styles.artworkContainer}>
-                      {perspective.imageUrl ? (
-                        <Image
-                          source={{ uri: perspective.imageUrl }}
-                          style={styles.cardImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <LinearGradient
-                          colors={[themeColors[0] || '#0F172A', themeColors[1] || '#1E1B4B', '#07090E']}
-                          style={StyleSheet.absoluteFill}
-                        >
-                          <View style={styles.placeholderIconWrap}>
-                            <Ionicons
-                              name={(perspective.icon as any) || 'videocam'}
-                              size={36}
-                              color={active ? '#C084FC' : 'rgba(255,255,255,0.7)'}
-                            />
-                          </View>
-                        </LinearGradient>
-                      )}
-
-                      <LinearGradient
-                        colors={['transparent', 'rgba(13, 17, 29, 0.35)', '#0D111D']}
-                        locations={[0, 0.75, 1]}
-                        style={styles.cardImageOverlay}
+                      <PerspectiveArtwork
+                        perspective={perspective}
+                        themeColors={themeColors}
+                        active={active}
                       />
 
                       {/* Dimension Badge & Active Checkmark */}
@@ -365,6 +414,12 @@ const styles = StyleSheet.create({
   },
   cardImageOverlay: {
     ...StyleSheet.absoluteFill,
+  },
+  artworkLoadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
   },
   placeholderIconWrap: {
     flex: 1,

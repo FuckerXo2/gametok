@@ -83,7 +83,11 @@ const DirectionArtwork = ({
   direction: VisualDirection;
   isGenerating?: boolean;
 }) => {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
   const imageSource = direction.imageSource || (direction.imageUrl ? { uri: direction.imageUrl } : null);
+  const gradientColors = [...(direction.colors || ['#0F172A', '#1E1B4B', '#38BDF8'])] as [string, string, ...string[]];
 
   if (isGenerating) {
     return (
@@ -95,20 +99,34 @@ const DirectionArtwork = ({
           style={StyleSheet.absoluteFill}
         />
         <View style={styles.generatingSpinner}>
-          <Ionicons name="sparkles" size={24} color="#F0ABFC" />
+          <ActivityIndicator size="small" color="#F0ABFC" />
         </View>
-        <Text style={styles.generatingText}>Generating image...</Text>
+        <Text style={styles.generatingText}>Generating preview...</Text>
       </View>
     );
   }
 
-  if (imageSource) {
+  if (imageSource && !imageError) {
     return (
       <View style={styles.artContainer}>
+        {/* Themed background under image - NEVER black while image renders */}
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {!imageLoaded && (
+          <View style={styles.artworkLoadingOverlay}>
+            <ActivityIndicator size="small" color="#C084FC" />
+          </View>
+        )}
         <Image
           source={imageSource}
           style={styles.cardImage}
           resizeMode="cover"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageError(true)}
         />
         <LinearGradient
           colors={['transparent', 'rgba(13, 17, 29, 0.25)', '#0D111D']}
@@ -118,8 +136,6 @@ const DirectionArtwork = ({
       </View>
     );
   }
-
-  const gradientColors = [...direction.colors] as [string, string, ...string[]];
 
   return (
     <View style={styles.artContainer}>
@@ -893,6 +909,12 @@ const styles = StyleSheet.create({
   },
   cardImageOverlay: {
     ...StyleSheet.absoluteFill,
+  },
+  artworkLoadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
   },
   generatingContainer: {
     alignItems: 'center',
