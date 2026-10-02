@@ -1006,9 +1006,28 @@ export const WishStudioScreen = ({
     journeyView === 'directions' ||
     (building && !draftIdRef.current);
 
-  if (visible && journeyView === 'understanding') {
-    return (
-      <Modal visible={visible} animationType="slide" onRequestClose={handleCloseRequest}>
+  if (!visible) return null;
+
+  const handleModalClose = () => {
+    if (journeyView === 'assets') {
+      setJourneyView('creator');
+    } else if (journeyView === 'creator') {
+      setJourneyView('ready');
+    } else if (journeyView === 'play') {
+      setJourneyView('ready');
+    } else {
+      handleCloseRequest();
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={handleModalClose}
+    >
+      {journeyView === 'understanding' && (
         <ForgeUnderstandingScreen
           prompt={initialPrompt}
           activeStep={understandingStep}
@@ -1023,13 +1042,9 @@ export const WishStudioScreen = ({
           errorMessage={buildError}
           onSelectStep={setUnderstandingStep}
         />
-      </Modal>
-    );
-  }
+      )}
 
-  if (visible && journeyView === 'directions') {
-    return (
-      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
+      {journeyView === 'directions' && (
         <VisualDirectionScreen
           gameTitle={gameName ?? 'Your game'}
           prompt={initialPrompt}
@@ -1048,13 +1063,9 @@ export const WishStudioScreen = ({
           }}
           onClose={handleCloseRequest}
         />
-      </Modal>
-    );
-  }
+      )}
 
-  if (visible && journeyView === 'perspective-understanding') {
-    return (
-      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
+      {journeyView === 'perspective-understanding' && (
         <ForgeUnderstandingScreen
           prompt={initialPrompt}
           activeStep={perspectiveUnderstandingStep}
@@ -1067,13 +1078,9 @@ export const WishStudioScreen = ({
           errorMessage={buildError}
           onSelectStep={setPerspectiveUnderstandingStep}
         />
-      </Modal>
-    );
-  }
+      )}
 
-  if (visible && journeyView === 'perspective') {
-    return (
-      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
+      {journeyView === 'perspective' && (
         <PerspectiveSelectionScreen
           gameTitle={gameName ?? 'Your game'}
           prompt={initialPrompt}
@@ -1086,13 +1093,9 @@ export const WishStudioScreen = ({
           onBack={() => setJourneyView('directions')}
           onClose={handleCloseRequest}
         />
-      </Modal>
-    );
-  }
+      )}
 
-  if (visible && (journeyView === 'building' || (building && !draftIdRef.current))) {
-    return (
-      <Modal visible={visible} animationType="fade" onRequestClose={handleCloseRequest}>
+      {(journeyView === 'building' || (building && !draftIdRef.current)) && (
         <ForgeBuildingScreen
           prompt={initialPrompt}
           gameTitle={gameName ?? 'Your game'}
@@ -1103,87 +1106,66 @@ export const WishStudioScreen = ({
             setTab('wish');
           }}
         />
-      </Modal>
-    );
-  }
+      )}
 
-  // Keep Ready and Creator inside the same native modal. Swapping between two
-  // separate modal branches can dismiss the first modal before iOS presents
-  // the next one, briefly exposing Dream Forge underneath.
-  if (visible && (journeyView === 'ready' || journeyView === 'creator' || journeyView === 'assets')) {
-    return (
-      <Modal
-        visible={visible}
-        animationType="fade"
-        presentationStyle="fullScreen"
-        onRequestClose={
-          journeyView === 'assets'
-            ? () => setJourneyView('creator')
-            : journeyView === 'creator'
-              ? () => setJourneyView('ready')
-              : onClose
-        }
-      >
-        {journeyView === 'assets' ? (
-          <AddToGameScreen
-            styleModifier={selectedStyleModifierRef.current}
-            onClose={() => setJourneyView('creator')}
-            onApplyAssets={(applied) => {
-              setAttachedGameAssets(applied);
-              setJourneyView('creator');
-              if (applied.length > 0) {
-                const names = applied.map((a) => a.name).join(', ');
-                setInput((prev) =>
-                  prev.trim()
-                    ? `${prev} (Use: ${names})`
-                    : `Add ${names} to the game and make them interactive!`,
-                );
-              }
-            }}
-          />
-        ) : journeyView === 'creator' ? (
-          <GameCreatorScreen
-            gameName={gameName ?? 'Your game'}
-            html={html}
-            gameUrl={gameUrl}
-            orientation={orientation}
-            input={input}
-            onChangeInput={setInput}
-            onSend={handleSend}
-            onBack={() => setJourneyView('ready')}
-            onPlay={() => setJourneyView('play')}
-            onAdd={() => setJourneyView('assets')}
-            attachedAssets={attachedGameAssets}
-            onRemoveAsset={(id) =>
-              setAttachedGameAssets((prev) => prev.filter((a) => a.id !== id))
+      {journeyView === 'assets' && (
+        <AddToGameScreen
+          styleModifier={selectedStyleModifierRef.current}
+          onClose={() => setJourneyView('creator')}
+          onApplyAssets={(applied) => {
+            setAttachedGameAssets(applied);
+            setJourneyView('creator');
+            if (applied.length > 0) {
+              const names = applied.map((a) => a.name).join(', ');
+              setInput((prev) =>
+                prev.trim()
+                  ? `${prev} (Use: ${names})`
+                  : `Add ${names} to the game and make them interactive!`,
+              );
             }
-            onGameSettings={() =>
-              Alert.alert('Game settings', 'AI-tailored settings for this game will open here.')
-            }
-            onUndo={() => Alert.alert('Undo', 'There is nothing to undo yet.')}
-            onMore={() => Alert.alert(gameName ?? 'Your game', 'More creator options will appear here.')}
-            isEditing={phase === 'building'}
-          />
-        ) : (
-          <GameReadyScreen
-            gameName={gameName ?? 'Your game'}
-            html={html}
-            gameUrl={gameUrl}
-            orientation={orientation}
-            onPlay={() => setJourneyView('play')}
-            onCreate={() => setJourneyView('creator')}
-            onPublish={handlePublish}
-            onClose={onClose}
-          />
-        )}
-        {children}
-      </Modal>
-    );
-  }
+          }}
+        />
+      )}
 
-  if (visible && journeyView === 'play') {
-    return (
-      <Modal visible={visible} animationType="fade" onRequestClose={() => setJourneyView('ready')}>
+      {journeyView === 'creator' && (
+        <GameCreatorScreen
+          gameName={gameName ?? 'Your game'}
+          html={html}
+          gameUrl={gameUrl}
+          orientation={orientation}
+          input={input}
+          onChangeInput={setInput}
+          onSend={handleSend}
+          onBack={() => setJourneyView('ready')}
+          onPlay={() => setJourneyView('play')}
+          onAdd={() => setJourneyView('assets')}
+          attachedAssets={attachedGameAssets}
+          onRemoveAsset={(id) =>
+            setAttachedGameAssets((prev) => prev.filter((a) => a.id !== id))
+          }
+          onGameSettings={() =>
+            Alert.alert('Game settings', 'AI-tailored settings for this game will open here.')
+          }
+          onUndo={() => Alert.alert('Undo', 'There is nothing to undo yet.')}
+          onMore={() => Alert.alert(gameName ?? 'Your game', 'More creator options will appear here.')}
+          isEditing={phase === 'building'}
+        />
+      )}
+
+      {journeyView === 'ready' && (
+        <GameReadyScreen
+          gameName={gameName ?? 'Your game'}
+          html={html}
+          gameUrl={gameUrl}
+          orientation={orientation}
+          onPlay={() => setJourneyView('play')}
+          onCreate={() => setJourneyView('creator')}
+          onPublish={handlePublish}
+          onClose={onClose}
+        />
+      )}
+
+      {journeyView === 'play' && (
         <View style={styles.playWrap}>
           <PreviewPane
             state={html || gameUrl ? 'ready' : 'empty'}
@@ -1199,12 +1181,11 @@ export const WishStudioScreen = ({
             <Text style={styles.exitPlayText}>Exit Play</Text>
           </Pressable>
         </View>
-        {children}
-      </Modal>
-    );
-  }
+      )}
 
-  return null;
+      {children}
+    </Modal>
+  );
 };
 
 const styles = StyleSheet.create({
