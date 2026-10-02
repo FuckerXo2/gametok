@@ -744,7 +744,7 @@ export const WishStudioScreen = ({
       ai.dreamLabs(prompt, initialAttachments, {
         onStatus: onJobStatus,
         orientation,
-        runtime: 'web',
+        runtime: 'native',
         selectedDirection,
         selectedPerspective: activePerspective,
         dimension: activePerspective?.dimension,

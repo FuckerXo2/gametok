@@ -803,7 +803,7 @@ export const ai = {
             prompt,
             attachments,
             orientation: normalizeOrientation(options?.orientation),
-            runtime: options?.runtime || 'web',
+            runtime: options?.runtime || 'native',
             selectedDirection: options?.selectedDirection || null,
             selectedPerspective: options?.selectedPerspective || null,
             dimension: options?.dimension || null,

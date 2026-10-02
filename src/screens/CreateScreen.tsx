@@ -1111,14 +1111,17 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       setOpeningDraftId(draftId);
       try {
         const res = (await ai.getDraft(draftId)) as any;
-        if (res?.draft?.html_payload || res?.draft?.game_url) {
-          setActiveDraftThumbnail(getDraftThumbnail(res.draft));
+        const draft = res?.draft;
+        if (draft?.html_payload || draft?.game_url || draft?.script_payload || draft?.raw_code) {
+          setActiveDraftThumbnail(getDraftThumbnail(draft));
           openGameInStudio({
-            draftId: res.draft.id,
-            html: res.draft.html_payload || null,
-            gameUrl: res.draft.game_url || null,
-            title: res.draft.title || "Untitled Game",
-            orientation: res.draft.orientation,
+            draftId: draft.id,
+            html: draft.html_payload || null,
+            gameUrl: draft.game_url || null,
+            title: draft.title || "Untitled Game",
+            orientation: draft.orientation,
+            runtime: draft.runtime === 'native' || draft.script_payload ? 'native' : (draft.runtime || 'web'),
+            gameScript: draft.script_payload || draft.raw_code || null,
           });
         }
       } catch (e) {
