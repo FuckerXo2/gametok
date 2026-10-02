@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { palette, spacing, radii, type as t } from '../theme/tokens';
 import { PreviewPane } from '../components/wish/PreviewPane';
 import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
@@ -66,6 +67,8 @@ interface Props {
     html: string | null;
     gameUrl: string | null;
     title: string;
+    runtime?: 'web' | 'native';
+    gameScript?: string | null;
   } | null;
   /** Images/Videos/Sounds/BGM they attached for the game to use. */
   initialAttachments?: any[];
@@ -156,6 +159,7 @@ export const WishStudioScreen = ({
   onDiscardSession,
   children,
 }: Props) => {
+  const insets = useSafeAreaInsets();
   const orientation = normalizeOrientation(initialOrientation);
   const sessionIdRef = useRef<string>(restoredSession?.sessionId || createForgeSessionId());
 
@@ -171,6 +175,8 @@ export const WishStudioScreen = ({
   const [kimiThinking, setKimiThinking] = useState(false);
   const [html, setHtml] = useState<string | null>(null);
   const [gameUrl, setGameUrl] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<'web' | 'native'>(initialGame?.runtime || 'web');
+  const [gameScript, setGameScript] = useState<string | null>(initialGame?.gameScript || null);
   const [previewHasNews, setPreviewHasNews] = useState(false);
   // The toggle exists only after the first Create. Before that: pure conversation.
   const [hasCreated, setHasCreated] = useState(false);
@@ -470,6 +476,8 @@ export const WishStudioScreen = ({
     cancelJobRef.current = null;
     setHtml(initialGame.html);
     setGameUrl(initialGame.gameUrl);
+    setRuntime(initialGame.runtime || 'web');
+    setGameScript(initialGame.gameScript || null);
     setHasCreated(true);
     setPhase('live');
     setTab('preview');
@@ -684,6 +692,8 @@ export const WishStudioScreen = ({
           draftIdRef.current = res?.draftId || res?.jobId || draftIdRef.current;
           if (res?.htmlPreview) setHtml(res.htmlPreview);
           if (res?.gameUrl) setGameUrl(res.gameUrl);
+          if (res?.runtime) setRuntime(res.runtime);
+          if (res?.gameScript) setGameScript(res.gameScript);
           setPhase('live');
           setJourneyView(wasInitialBuild ? 'ready' : 'creator');
           setPreviewHasNews(true);
@@ -734,6 +744,7 @@ export const WishStudioScreen = ({
       ai.dreamLabs(prompt, initialAttachments, {
         onStatus: onJobStatus,
         orientation,
+        runtime: 'web',
         selectedDirection,
         selectedPerspective: activePerspective,
         dimension: activePerspective?.dimension,
@@ -1133,6 +1144,8 @@ export const WishStudioScreen = ({
           html={html}
           gameUrl={gameUrl}
           orientation={orientation}
+          runtime={runtime}
+          gameScript={gameScript}
           input={input}
           onChangeInput={setInput}
           onSend={handleSend}
@@ -1158,6 +1171,8 @@ export const WishStudioScreen = ({
           html={html}
           gameUrl={gameUrl}
           orientation={orientation}
+          runtime={runtime}
+          gameScript={gameScript}
           onPlay={() => setJourneyView('play')}
           onCreate={() => setJourneyView('creator')}
           onPublish={handlePublish}
@@ -1168,17 +1183,26 @@ export const WishStudioScreen = ({
       {journeyView === 'play' && (
         <View style={styles.playWrap}>
           <PreviewPane
-            state={html || gameUrl ? 'ready' : 'empty'}
+            state={html || gameUrl || gameScript ? 'ready' : 'empty'}
             gameName={gameName}
             beats={[]}
             html={html}
             gameUrl={gameUrl}
             orientation={orientation}
+            runtime={runtime}
+            gameScript={gameScript}
             containerStyle={{ margin: 0, borderWidth: 0 }}
           />
-          <Pressable style={styles.exitPlayButton} onPress={() => setJourneyView('ready')}>
-            <Ionicons name="close" size={17} color={palette.text} />
-            <Text style={styles.exitPlayText}>Exit Play</Text>
+          <Pressable
+            style={[
+              styles.backPlayButton,
+              { top: Math.max(insets.top, 16) + 6 },
+            ]}
+            onPress={() => setJourneyView('ready')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="arrow-back" size={18} color={palette.text} />
+            <Text style={styles.backPlayText}>Back</Text>
           </Pressable>
         </View>
       )}
@@ -1228,6 +1252,30 @@ const styles = StyleSheet.create({
   },
   body: { flex: 1 },
   playWrap: { flex: 1 },
+  backPlayButton: {
+    position: 'absolute',
+    left: spacing.md,
+    height: 38,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(10,10,15,0.88)',
+    borderWidth: 1,
+    borderColor: palette.lineStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  backPlayText: {
+    color: palette.text,
+    fontSize: t.size.small,
+    fontFamily: t.family.semibold,
+  },
   exitPlayButton: {
     position: 'absolute',
     top: spacing.md,

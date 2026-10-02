@@ -26,6 +26,8 @@ interface Props {
   html: string | null;
   gameUrl: string | null;
   orientation?: Orientation;
+  runtime?: 'web' | 'native';
+  gameScript?: string | null;
   input: string;
   onChangeInput: (value: string) => void;
   onSend: () => void;
@@ -45,6 +47,8 @@ export const GameCreatorScreen: React.FC<Props> = ({
   html,
   gameUrl,
   orientation = DEFAULT_ORIENTATION,
+  runtime = 'web',
+  gameScript = null,
   input,
   onChangeInput,
   onSend,
@@ -104,12 +108,14 @@ export const GameCreatorScreen: React.FC<Props> = ({
 
           <View style={styles.previewFrame}>
             <PreviewPane
-              state={html || gameUrl ? 'ready' : 'empty'}
+              state={html || gameUrl || gameScript ? 'ready' : 'empty'}
               gameName={gameName}
               beats={[]}
               html={html}
               gameUrl={gameUrl}
               orientation={orientation}
+              runtime={runtime}
+              gameScript={gameScript}
               containerStyle={styles.preview}
             />
           </View>

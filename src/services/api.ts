@@ -772,6 +772,7 @@ export const ai = {
       selectedDirection?: any;
       selectedPerspective?: any;
       dimension?: string;
+      runtime?: 'web' | 'native';
       selectedAudio?: any;
       selectedVideo?: any;
       selectedMeme?: any;
@@ -802,6 +803,7 @@ export const ai = {
             prompt,
             attachments,
             orientation: normalizeOrientation(options?.orientation),
+            runtime: options?.runtime || 'web',
             selectedDirection: options?.selectedDirection || null,
             selectedPerspective: options?.selectedPerspective || null,
             dimension: options?.dimension || null,

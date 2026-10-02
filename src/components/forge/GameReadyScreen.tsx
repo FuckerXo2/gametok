@@ -39,6 +39,8 @@ interface Props {
   html: string | null;
   gameUrl: string | null;
   orientation?: Orientation;
+  runtime?: 'web' | 'native';
+  gameScript?: string | null;
   onPlay: () => void;
   onCreate?: () => void;
   onPublish: () => void;
@@ -52,6 +54,8 @@ export const GameReadyScreen: React.FC<Props> = ({
   html,
   gameUrl,
   orientation = DEFAULT_ORIENTATION,
+  runtime = 'web',
+  gameScript = null,
   onPlay,
   onCreate,
   onPublish,
@@ -144,7 +148,7 @@ export const GameReadyScreen: React.FC<Props> = ({
         <View style={styles.cardContainer}>
           <View style={styles.gameCard}>
             <View style={styles.previewInner} pointerEvents="none">
-              {html || gameUrl ? (
+              {html || gameUrl || gameScript ? (
                 <PreviewPane
                   state="ready"
                   gameName={gameName}
@@ -152,6 +156,8 @@ export const GameReadyScreen: React.FC<Props> = ({
                   html={html}
                   gameUrl={gameUrl}
                   orientation={orientation}
+                  runtime={runtime}
+                  gameScript={gameScript}
                   containerStyle={styles.previewPaneOverride}
                 />
               ) : (

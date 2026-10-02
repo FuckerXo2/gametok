@@ -730,6 +730,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     html: string | null;
     gameUrl: string | null;
     title: string;
+    runtime?: 'web' | 'native';
+    gameScript?: string | null;
   } | null>(null);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showAssetIntentModal, setShowAssetIntentModal] = useState(false);
