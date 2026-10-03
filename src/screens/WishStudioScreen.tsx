@@ -161,13 +161,27 @@ export const WishStudioScreen = ({
 }: Props) => {
   const insets = useSafeAreaInsets();
   const orientation = normalizeOrientation(initialOrientation);
-  const sessionIdRef = useRef<string>(restoredSession?.sessionId || createForgeSessionId());
+  const isRestoredMatching =
+    restoredSession &&
+    (!initialPrompt.trim() ||
+      restoredSession.prompt?.trim().toLowerCase() === initialPrompt.trim().toLowerCase());
+  const sessionIdRef = useRef<string>(
+    isRestoredMatching ? restoredSession!.sessionId : createForgeSessionId()
+  );
+  const lastPromptRef = useRef<string>(initialPrompt);
+
+  if (lastPromptRef.current !== initialPrompt) {
+    lastPromptRef.current = initialPrompt;
+    if (!isRestoredMatching) {
+      sessionIdRef.current = createForgeSessionId();
+    }
+  }
 
   useEffect(() => {
-    if (restoredSession?.sessionId) {
+    if (isRestoredMatching && restoredSession?.sessionId) {
       sessionIdRef.current = restoredSession.sessionId;
     }
-  }, [restoredSession?.sessionId]);
+  }, [restoredSession?.sessionId, isRestoredMatching]);
   const [tab, setTab] = useState<StudioTab>('wish');
   const [phase, setPhase] = useState<StudioPhase>('planning');
   const [messages, setMessages] = useState<WishMessage[]>([]);
@@ -194,6 +208,7 @@ export const WishStudioScreen = ({
   const [selectedPerspectiveId, setSelectedPerspectiveId] = useState<string | null>(null);
   const [isPerspectivesLoading, setIsPerspectivesLoading] = useState(false);
   const [isDirectionsLoading, setIsDirectionsLoading] = useState(false);
+  const [directionsRetryNonce, setDirectionsRetryNonce] = useState(0);
   const [directionGeneration, setDirectionGeneration] = useState(0);
   const [understandingStep, setUnderstandingStep] = useState(0);
   const [perspectiveUnderstandingStep, setPerspectiveUnderstandingStep] = useState(0);
@@ -205,13 +220,16 @@ export const WishStudioScreen = ({
   const draftIdRef = useRef<string | null>(null);
   const seededForRef = useRef<string | null>(null);
   const cancelJobRef = useRef<(() => void) | null>(null);
-  const directionInstructionRef = useRef('');
+  const visualDirectionInstructionRef = useRef('');
+  const cameraPerspectiveInstructionRef = useRef('');
   const selectedStyleModifierRef = useRef('');
   // Planning conversation history for /refine-spec (role 'ai' | 'user').
   const specHistoryRef = useRef<Array<{ role: 'ai' | 'user'; content: string }>>([]);
   const inFlightDirectionsPromptRef = useRef<string | null>(null);
   const isTransitioningDirectionsRef = useRef(false);
   const isTransitioningPerspectivesRef = useRef(false);
+  const requiresPerspectiveSelectionRef = useRef<boolean | null>(null);
+  const defaultPerspectiveRef = useRef<any>(null);
 
   const verifyAndPrefetchCards = useCallback(async (cards: any[]): Promise<boolean> => {
     if (!Array.isArray(cards) || cards.length < 4) return false;
@@ -222,19 +240,20 @@ export const WishStudioScreen = ({
     if (!allHaveUrls) return false;
 
     try {
-      const results = await Promise.all(
+      await Promise.all(
         fourCards.map((c) =>
-          Image.prefetch(c.imageUrl)
-            .then(() => true)
-            .catch((err) => {
-              console.warn('[Prefetch] Failed for card:', c.name, err);
-              return false;
-            })
+          Promise.race([
+            Image.prefetch(c.imageUrl),
+            new Promise((resolve) => setTimeout(resolve, 2500)),
+          ]).catch((err) => {
+            console.warn('[Prefetch] Best-effort warning for card:', c.name, err);
+            return true;
+          })
         )
       );
-      return results.every(Boolean);
+      return true;
     } catch {
-      return false;
+      return true;
     }
   }, []);
 
@@ -358,11 +377,27 @@ export const WishStudioScreen = ({
   // Kimi immediately pitches back. If restoredSession is provided, hydrate it straight into the scene!
   useEffect(() => {
     if (!visible) {
-      seededForRef.current = null;
+      setVisualDirections([]);
+      setSelectedDirection(null);
+      setSelectedDirectionId(null);
+      setPerspectives([]);
+      setSelectedPerspectiveId(null);
+      setJourneyView('understanding');
+      setBackendStatusMessage(null);
+      setBuildError(null);
+      setIsDirectionsLoading(false);
+      setIsPerspectivesLoading(false);
+      isTransitioningDirectionsRef.current = false;
+      isTransitioningPerspectivesRef.current = false;
       return;
     }
 
-    if (restoredSession) {
+    const isRestoredValid =
+      restoredSession &&
+      (!initialPrompt.trim() ||
+        restoredSession.prompt?.trim().toLowerCase() === initialPrompt.trim().toLowerCase());
+
+    if (isRestoredValid && restoredSession) {
       sessionIdRef.current = restoredSession.sessionId;
       idCounter = 0;
       briefRef.current = restoredSession.brief || {
@@ -397,8 +432,10 @@ export const WishStudioScreen = ({
     }
 
     if (initialGame || !initialPrompt.trim()) return;
-    if (seededForRef.current === initialPrompt) return;
-    seededForRef.current = initialPrompt;
+
+    // Fresh forge session for this prompt:
+    sessionIdRef.current = createForgeSessionId();
+    clearActiveForgeSession();
 
     idCounter = 0;
     briefRef.current = null;
@@ -416,12 +453,25 @@ export const WishStudioScreen = ({
     setGenProgress(null);
     setGenPhase(null);
     setGenStatusMessage(null);
+    setBackendStatusMessage(null);
     setJourneyView('understanding');
+    setVisualDirections([]);
+    setSelectedDirection(null);
     setSelectedDirectionId(null);
+    setPerspectives([]);
+    setSelectedPerspectiveId(null);
+    setIsDirectionsLoading(false);
+    setIsPerspectivesLoading(false);
     setDirectionGeneration(0);
     setUnderstandingStep(0);
+    setPerspectiveUnderstandingStep(0);
     setBriefReady(false);
-    directionInstructionRef.current = '';
+    visualDirectionInstructionRef.current = '';
+    cameraPerspectiveInstructionRef.current = '';
+    requiresPerspectiveSelectionRef.current = null;
+    defaultPerspectiveRef.current = null;
+    isTransitioningDirectionsRef.current = false;
+    isTransitioningPerspectivesRef.current = false;
 
     const attachNote =
       initialAttachments.length > 0
@@ -522,10 +572,13 @@ export const WishStudioScreen = ({
     let isCancelled = false;
     setIsDirectionsLoading(true);
 
+    const activeSessionId = sessionIdRef.current;
+    console.log('[WishStudio] Firing visual directions for prompt:', initialPrompt, 'Session ID:', activeSessionId);
+
     getStoredPushToken().then((pushToken) => {
       if (isCancelled) return;
       ai.generateVisualDirections(initialPrompt, gameName || 'Your game', {
-        sessionId: sessionIdRef.current,
+        sessionId: activeSessionId,
         pushToken: pushToken || undefined,
         attachments: initialAttachments,
       })
@@ -534,10 +587,14 @@ export const WishStudioScreen = ({
           if (res?.directions && res.directions.length >= 4) {
             setBackendStatusMessage('Downloading visual direction cards...');
             setUnderstandingStep(4);
-            const allReady = await verifyAndPrefetchCards(res.directions);
-            if (!allReady || isCancelled || isTransitioningDirectionsRef.current) {
-              console.log('[WishStudio] Still awaiting images or cancelled');
-              return;
+            await verifyAndPrefetchCards(res.directions);
+            if (isCancelled || isTransitioningDirectionsRef.current) return;
+
+            if (res?.requiresPerspectiveSelection !== undefined) {
+              requiresPerspectiveSelectionRef.current = Boolean(res.requiresPerspectiveSelection);
+            }
+            if (res?.defaultPerspective) {
+              defaultPerspectiveRef.current = res.defaultPerspective;
             }
 
             isTransitioningDirectionsRef.current = true;
@@ -547,7 +604,7 @@ export const WishStudioScreen = ({
             setUnderstandingStep(5);
 
             saveActiveForgeSession({
-              sessionId: sessionIdRef.current,
+              sessionId: activeSessionId,
               prompt: initialPrompt,
               gameName: gameName || 'Your game',
               orientation,
@@ -556,10 +613,12 @@ export const WishStudioScreen = ({
               selectedDirection: res.directions[0],
               selectedDirectionId: res.directions[0].id,
               isDirectionsReady: true,
+              requiresPerspectiveSelection: res?.requiresPerspectiveSelection,
+              defaultPerspective: res?.defaultPerspective,
               brief: briefRef.current,
             });
 
-            scheduleVisualDirectionsReadyNotification(initialPrompt, sessionIdRef.current);
+            scheduleVisualDirectionsReadyNotification(initialPrompt, activeSessionId);
 
             setTimeout(() => {
               transitionToDirections();
@@ -574,14 +633,14 @@ export const WishStudioScreen = ({
           }
         })
         .finally(() => {
-          if (!isCancelled) setIsDirectionsLoading(false);
+          setIsDirectionsLoading(false);
         });
     });
 
     return () => {
       isCancelled = true;
     };
-  }, [visible, journeyView, initialPrompt, visualDirections.length, orientation, transitionToDirections, verifyAndPrefetchCards]);
+  }, [visible, journeyView, initialPrompt, visualDirections.length, orientation, transitionToDirections, verifyAndPrefetchCards, directionsRetryNonce]);
 
   // Live telemetry polling: sync understanding and perspective steps directly with backend Hermes execution
   useEffect(() => {
@@ -591,13 +650,23 @@ export const WishStudioScreen = ({
 
     let isPollingActive = true;
     let consecutiveFails = 0;
+    let pollCount = 0;
+    const maxPolls = 180; // 180s max polling limit to allow full Hermes + 4 OpenAI card generation
     const pollInterval = setInterval(async () => {
       try {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          clearInterval(pollInterval);
+          console.warn('[WishStudio] Telemetry polling timed out after 180s for session:', sessionId);
+          setBuildError('Generation took longer than expected. Tap retry to restart.');
+          return;
+        }
+
         const res = await ai.getForgeSession(sessionId);
         if (!isPollingActive) return;
         if (!res?.session) {
           consecutiveFails++;
-          if (consecutiveFails >= 8) {
+          if (consecutiveFails >= 12) {
             clearInterval(pollInterval);
             setBuildError('Session disconnected. Tap retry to restart.');
           }
@@ -606,6 +675,20 @@ export const WishStudioScreen = ({
         consecutiveFails = 0;
         const s = res.session;
 
+        // If the backend marked the session failed, halt polling and show the error immediately
+        if (s.phase === 'failed' || s.error) {
+          clearInterval(pollInterval);
+          console.warn('[WishStudio] Backend reported session failure:', s.error || s.statusMessage);
+          setBuildError(s.error || s.statusMessage || 'Generation failed. Tap retry to restart.');
+          return;
+        }
+
+        // Ignore polled data if it belongs to an old session with a different prompt
+        if (s.prompt && initialPrompt && s.prompt.trim().toLowerCase() !== initialPrompt.trim().toLowerCase()) {
+          console.log('[WishStudio] Ignoring polled session belonging to different prompt:', s.prompt, 'vs active:', initialPrompt);
+          return;
+        }
+
         if (journeyView === 'understanding') {
           if (typeof s.step === 'number') {
             setUnderstandingStep(s.step);
@@ -613,25 +696,34 @@ export const WishStudioScreen = ({
           if (s.statusMessage) {
             setBackendStatusMessage(s.statusMessage);
           }
-          // ONLY transition when backend marks isDirectionsReady AND all 4 images are prefetched!
-          if (
-            s.isDirectionsReady &&
+          if (typeof s.requiresPerspectiveSelection === 'boolean') {
+            requiresPerspectiveSelectionRef.current = s.requiresPerspectiveSelection;
+          }
+          if (s.defaultPerspective) {
+            defaultPerspectiveRef.current = s.defaultPerspective;
+          }
+
+          const has4VisualCards =
             Array.isArray(s.visualDirections) &&
             s.visualDirections.length >= 4 &&
+            s.visualDirections.every((d: any) => Boolean(d?.imageUrl));
+
+          // Transition when either backend flags ready OR all 4 cards with URLs are present!
+          if (
+            (s.isDirectionsReady || has4VisualCards) &&
+            has4VisualCards &&
             !isTransitioningDirectionsRef.current
           ) {
-            const allReady = await verifyAndPrefetchCards(s.visualDirections);
-            if (allReady && !isTransitioningDirectionsRef.current) {
-              isTransitioningDirectionsRef.current = true;
-              setVisualDirections(s.visualDirections.slice(0, 4));
-              setSelectedDirection(s.visualDirections[0]);
-              setSelectedDirectionId(s.visualDirections[0].id);
-              setUnderstandingStep(5);
-              setTimeout(() => {
-                transitionToDirections();
-                isTransitioningDirectionsRef.current = false;
-              }, 300);
-            }
+            isTransitioningDirectionsRef.current = true;
+            await verifyAndPrefetchCards(s.visualDirections);
+            setVisualDirections(s.visualDirections.slice(0, 4));
+            setSelectedDirection(s.visualDirections[0]);
+            setSelectedDirectionId(s.visualDirections[0].id);
+            setUnderstandingStep(5);
+            setTimeout(() => {
+              transitionToDirections();
+              isTransitioningDirectionsRef.current = false;
+            }, 300);
           }
         } else if (journeyView === 'perspective-understanding') {
           if (typeof s.step === 'number') {
@@ -640,24 +732,37 @@ export const WishStudioScreen = ({
           if (s.statusMessage) {
             setBackendStatusMessage(s.statusMessage);
           }
-          // ONLY transition when backend marks isPerspectivesReady AND all 4 images are prefetched!
-          if (
-            s.isPerspectivesReady &&
+          if (s.requiresPerspectiveSelection === false && !isTransitioningPerspectivesRef.current) {
+            isTransitioningPerspectivesRef.current = true;
+            const defPerspective = s.selectedPerspective || s.perspectives?.[0];
+            if (defPerspective) {
+              cameraPerspectiveInstructionRef.current = `${defPerspective.name} (${defPerspective.dimension}). ${defPerspective.cameraInstruction}.`;
+              setSelectedPerspectiveId(defPerspective.id);
+            }
+            setJourneyView('building');
+            handleCreate();
+            return;
+          }
+
+          const has4Perspectives =
             Array.isArray(s.perspectives) &&
             s.perspectives.length >= 4 &&
+            s.perspectives.every((p: any) => Boolean(p?.imageUrl));
+
+          if (
+            (s.isPerspectivesReady || has4Perspectives) &&
+            has4Perspectives &&
             !isTransitioningPerspectivesRef.current
           ) {
-            const allReady = await verifyAndPrefetchCards(s.perspectives);
-            if (allReady && !isTransitioningPerspectivesRef.current) {
-              isTransitioningPerspectivesRef.current = true;
-              setPerspectives(s.perspectives.slice(0, 4));
-              setSelectedPerspectiveId(s.perspectives[0].id);
-              setPerspectiveUnderstandingStep(3);
-              setTimeout(() => {
-                setJourneyView('perspective');
-                isTransitioningPerspectivesRef.current = false;
-              }, 300);
-            }
+            isTransitioningPerspectivesRef.current = true;
+            await verifyAndPrefetchCards(s.perspectives);
+            setPerspectives(s.perspectives.slice(0, 4));
+            setSelectedPerspectiveId(s.perspectives[0].id);
+            setPerspectiveUnderstandingStep(3);
+            setTimeout(() => {
+              setJourneyView('perspective');
+              isTransitioningPerspectivesRef.current = false;
+            }, 300);
           }
         }
       } catch (_) {
@@ -733,11 +838,21 @@ export const WishStudioScreen = ({
     setGenStatusMessage('Reading your idea...');
     pushMessage({ role: 'kimi', text: `Forging ${brief.name}. Hold tight — defend the forge while I work.` });
 
-    const directionLine = directionInstructionRef.current
-      ? `\n\nSelected visual direction:\n${directionInstructionRef.current}`
-      : '';
-    const prompt = `${briefToPrompt(brief, initialPrompt, refinementsRef.current)}${directionLine}`;
     const activePerspective = perspectives.find((p) => p.id === selectedPerspectiveId) || null;
+
+    const directionBlock = visualDirectionInstructionRef.current
+      ? `\n\nSelected visual direction:\n${visualDirectionInstructionRef.current}`
+      : selectedDirection
+      ? `\n\nSelected visual direction:\n${selectedDirection.name}. ${selectedDirection.instruction || selectedDirection.description || ''}`
+      : '';
+
+    const perspectiveBlock = cameraPerspectiveInstructionRef.current
+      ? `\n\nSelected camera perspective:\n${cameraPerspectiveInstructionRef.current}`
+      : activePerspective
+      ? `\n\nSelected camera perspective:\n${activePerspective.name} (${activePerspective.dimension}). ${activePerspective.cameraInstruction}.`
+      : '';
+
+    const prompt = `${briefToPrompt(brief, initialPrompt, refinementsRef.current)}${directionBlock}${perspectiveBlock}`;
     runBuild(
       // Orientation goes as a structured field, not just the prose line briefToPrompt adds — the
       // sandbox verifies at 844x390 vs 390x844 off this value.
@@ -768,10 +883,38 @@ export const WishStudioScreen = ({
 
   const handleUseDirection = useCallback(
     (direction: VisualDirection, refinement: string) => {
-      directionInstructionRef.current = [direction.instruction, refinement].filter(Boolean).join(' ');
+      visualDirectionInstructionRef.current = [direction.instruction, refinement].filter(Boolean).join(' ');
       selectedStyleModifierRef.current = (direction as any)?.modifier || direction.instruction || '';
       setSelectedDirectionId(direction.id);
       setSelectedDirection(direction);
+
+      // AUTONOMOUS HERMES CAMERA BYPASS:
+      // If Hermes determined camera selection is not needed, lock optimal 2D viewport & build immediately!
+      if (requiresPerspectiveSelectionRef.current === false) {
+        const defPerspective = defaultPerspectiveRef.current || {
+          id: 'fixed-2d-viewport',
+          name: 'Top-Down 2D Grid',
+          dimension: '2D',
+          cameraInstruction: 'Fixed 2D top-down camera with centered viewport',
+        };
+        cameraPerspectiveInstructionRef.current = `${defPerspective.name} (${defPerspective.dimension}). ${defPerspective.cameraInstruction}.`;
+        setSelectedPerspectiveId(defPerspective.id);
+        saveActiveForgeSession({
+          sessionId: sessionIdRef.current,
+          prompt: initialPrompt,
+          gameName: gameName || 'Your game',
+          orientation,
+          journeyView: 'building',
+          selectedDirection: direction,
+          selectedDirectionId: direction.id,
+          selectedPerspectiveId: defPerspective.id,
+          isPerspectivesReady: true,
+          requiresPerspectiveSelection: false,
+        });
+        setJourneyView('building');
+        handleCreate();
+        return;
+      }
 
       // Transition to understanding screen for camera perspective styling!
       setJourneyView('perspective-understanding');
@@ -794,9 +937,38 @@ export const WishStudioScreen = ({
           sessionId: sessionIdRef.current,
           pushToken: pushToken || undefined,
           attachments: initialAttachments,
+          requiresPerspectiveSelection: requiresPerspectiveSelectionRef.current,
         })
           .then(async (res: any) => {
             if (isTransitioningPerspectivesRef.current) return;
+
+            // AUTONOMOUS HERMES CAMERA BYPASS (from perspective endpoint response):
+            if (res?.requiresPerspectiveSelection === false) {
+              const defPerspective = res.defaultPerspective || res.perspectives?.[0] || {
+                id: 'fixed-2d-viewport',
+                name: 'Top-Down 2D Grid',
+                dimension: '2D',
+                cameraInstruction: 'Fixed 2D top-down camera with centered viewport',
+              };
+              cameraPerspectiveInstructionRef.current = `${defPerspective.name} (${defPerspective.dimension}). ${defPerspective.cameraInstruction}.`;
+              setSelectedPerspectiveId(defPerspective.id);
+              saveActiveForgeSession({
+                sessionId: sessionIdRef.current,
+                prompt: initialPrompt,
+                gameName: gameName || 'Your game',
+                orientation,
+                journeyView: 'building',
+                selectedDirection: direction,
+                selectedDirectionId: direction.id,
+                selectedPerspectiveId: defPerspective.id,
+                isPerspectivesReady: true,
+                requiresPerspectiveSelection: false,
+              });
+              setJourneyView('building');
+              handleCreate();
+              return;
+            }
+
             if (res?.perspectives && res.perspectives.length >= 4) {
               setBackendStatusMessage('Downloading camera perspective cards...');
               setPerspectiveUnderstandingStep(2);
@@ -840,15 +1012,14 @@ export const WishStudioScreen = ({
           });
       });
     },
-    [initialPrompt, gameName, orientation, verifyAndPrefetchCards],
+    [initialPrompt, gameName, orientation, verifyAndPrefetchCards, handleCreate],
   );
 
   const handleUsePerspective = useCallback(
     (perspective: CameraPerspective, refinement?: string) => {
       setSelectedPerspectiveId(perspective.id);
       const refinementText = refinement ? ` Camera refinement: ${refinement}.` : '';
-      const cameraLine = `\n\nSelected camera perspective:\n${perspective.name} (${perspective.dimension}). ${perspective.cameraInstruction}.${refinementText}`;
-      directionInstructionRef.current = `${directionInstructionRef.current}${cameraLine}`;
+      cameraPerspectiveInstructionRef.current = `${perspective.name} (${perspective.dimension}). ${perspective.cameraInstruction}.${refinementText}`;
       setJourneyView('building');
 
       saveActiveForgeSession({
@@ -863,7 +1034,8 @@ export const WishStudioScreen = ({
   );
 
   const handleSkipDirections = useCallback(() => {
-    directionInstructionRef.current = '';
+    visualDirectionInstructionRef.current = '';
+    cameraPerspectiveInstructionRef.current = '';
     setJourneyView('building');
     handleCreate();
   }, [handleCreate]);
@@ -891,6 +1063,14 @@ export const WishStudioScreen = ({
             style: 'destructive',
             onPress: () => {
               clearActiveForgeSession();
+              setVisualDirections([]);
+              setSelectedDirection(null);
+              setSelectedDirectionId(null);
+              setPerspectives([]);
+              setSelectedPerspectiveId(null);
+              setJourneyView('understanding');
+              seededForRef.current = null;
+              sessionIdRef.current = createForgeSessionId();
               onDiscardSession?.();
               onClose();
             },
@@ -1000,10 +1180,21 @@ export const WishStudioScreen = ({
    * If a pitch already exists we re-run the last revision; otherwise the first pitch.
    */
   const handleRetryPlanning = useCallback(() => {
+    if (journeyView === 'understanding') {
+      setBuildError(null);
+      setVisualDirections([]);
+      setSelectedDirection(null);
+      setSelectedDirectionId(null);
+      setUnderstandingStep(0);
+      setBackendStatusMessage('Starting fresh generation...');
+      sessionIdRef.current = createForgeSessionId();
+      setDirectionsRetryNonce((n) => n + 1);
+      return;
+    }
     const lastWish = refinementsRef.current[refinementsRef.current.length - 1];
     if (briefRef.current && lastWish) refineBrief(lastWish);
     else proposeBrief();
-  }, [refineBrief, proposeBrief]);
+  }, [journeyView, refineBrief, proposeBrief]);
 
   // Derive the forge scene's step from job progress.
   const activeStep =
