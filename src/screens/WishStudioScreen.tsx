@@ -49,6 +49,7 @@ import {
   scheduleVisualDirectionsReadyNotification,
   schedulePerspectivesReadyNotification,
 } from '../services/notifications';
+import { useForgeDirector } from '../hooks/useForgeDirector';
 import type { WishMessage, StudioPhase, StudioTab, GameBrief } from '../components/wish/wishTypes';
 import { normalizeOrientation, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 
@@ -642,78 +643,161 @@ export const WishStudioScreen = ({
     };
   }, [visible, journeyView, initialPrompt, visualDirections.length, orientation, transitionToDirections, verifyAndPrefetchCards, directionsRetryNonce]);
 
-  // Live telemetry polling: sync understanding and perspective steps directly with backend Hermes execution
+  // ── Hermes Agent-Driven Director: Real-time WebSocket Control ─────────────
+  useForgeDirector(
+    sessionIdRef.current,
+    {
+      onThought: (evt) => {
+        if (journeyView === 'understanding') {
+          if (typeof evt.step === 'number') setUnderstandingStep(evt.step);
+          if (evt.message) setBackendStatusMessage(evt.message);
+        } else if (journeyView === 'perspective-understanding') {
+          if (typeof evt.step === 'number') setPerspectiveUnderstandingStep(evt.step);
+          if (evt.message) setBackendStatusMessage(evt.message);
+        }
+      },
+      onCommand: (evt) => {
+        const { command, payload } = evt;
+        if (command === 'NAVIGATE_TO') {
+          if (payload?.view === 'directions' && Array.isArray(payload.visualDirections) && payload.visualDirections.length >= 4) {
+            if (isTransitioningDirectionsRef.current) return;
+            isTransitioningDirectionsRef.current = true;
+            if (payload.requiresPerspectiveSelection !== undefined) {
+              requiresPerspectiveSelectionRef.current = Boolean(payload.requiresPerspectiveSelection);
+            }
+            if (payload.defaultPerspective) {
+              defaultPerspectiveRef.current = payload.defaultPerspective;
+            }
+            setVisualDirections(payload.visualDirections.slice(0, 4));
+            setSelectedDirection(payload.visualDirections[0]);
+            setSelectedDirectionId(payload.visualDirections[0].id);
+            setUnderstandingStep(5);
+
+            saveActiveForgeSession({
+              sessionId: sessionIdRef.current,
+              prompt: initialPrompt,
+              gameName: gameName || 'Your game',
+              orientation,
+              journeyView: 'directions',
+              visualDirections: payload.visualDirections.slice(0, 4),
+              selectedDirection: payload.visualDirections[0],
+              selectedDirectionId: payload.visualDirections[0].id,
+              isDirectionsReady: true,
+              requiresPerspectiveSelection: payload.requiresPerspectiveSelection,
+              defaultPerspective: payload.defaultPerspective,
+              brief: briefRef.current,
+            });
+
+            setTimeout(() => {
+              transitionToDirections();
+              isTransitioningDirectionsRef.current = false;
+            }, 300);
+          } else if (payload?.view === 'perspective' && Array.isArray(payload.perspectives) && payload.perspectives.length >= 4) {
+            if (isTransitioningPerspectivesRef.current) return;
+            isTransitioningPerspectivesRef.current = true;
+            setPerspectives(payload.perspectives.slice(0, 4));
+            setSelectedPerspectiveId(payload.perspectives[0].id);
+            setPerspectiveUnderstandingStep(3);
+
+            saveActiveForgeSession({
+              sessionId: sessionIdRef.current,
+              prompt: initialPrompt,
+              gameName: gameName || 'Your game',
+              orientation,
+              journeyView: 'perspective',
+              selectedDirection: payload.selectedDirection,
+              selectedDirectionId: payload.selectedDirection?.id,
+              perspectives: payload.perspectives.slice(0, 4),
+              selectedPerspectiveId: payload.perspectives[0].id,
+              isPerspectivesReady: true,
+            });
+
+            setTimeout(() => {
+              setJourneyView('perspective');
+              isTransitioningPerspectivesRef.current = false;
+            }, 300);
+          } else if (payload?.view === 'building') {
+            if (payload.defaultPerspective) {
+              const def = payload.defaultPerspective;
+              cameraPerspectiveInstructionRef.current = `${def.name} (${def.dimension}). ${def.cameraInstruction}.`;
+              setSelectedPerspectiveId(def.id);
+            }
+            setJourneyView('building');
+            handleCreate();
+          }
+        }
+      },
+      onError: (evt) => {
+        setBuildError(evt.message || 'Generation failed. Tap retry to restart.');
+      },
+      onSync: (session) => {
+        if (!session) return;
+        if (
+          session.journeyView === 'directions' &&
+          Array.isArray(session.visualDirections) &&
+          session.visualDirections.length >= 4 &&
+          journeyView === 'understanding' &&
+          !isTransitioningDirectionsRef.current
+        ) {
+          isTransitioningDirectionsRef.current = true;
+          setVisualDirections(session.visualDirections.slice(0, 4));
+          setSelectedDirection(session.selectedDirection || session.visualDirections[0]);
+          setSelectedDirectionId(session.selectedDirectionId || session.visualDirections[0].id);
+          setUnderstandingStep(5);
+          setTimeout(() => {
+            transitionToDirections();
+            isTransitioningDirectionsRef.current = false;
+          }, 300);
+        } else if (
+          session.journeyView === 'perspective' &&
+          Array.isArray(session.perspectives) &&
+          session.perspectives.length >= 4 &&
+          journeyView === 'perspective-understanding' &&
+          !isTransitioningPerspectivesRef.current
+        ) {
+          isTransitioningPerspectivesRef.current = true;
+          setPerspectives(session.perspectives.slice(0, 4));
+          setSelectedPerspectiveId(session.selectedPerspectiveId || session.perspectives[0].id);
+          setPerspectiveUnderstandingStep(3);
+          setTimeout(() => {
+            setJourneyView('perspective');
+            isTransitioningPerspectivesRef.current = false;
+          }, 300);
+        }
+      },
+    },
+    visible && (journeyView === 'understanding' || journeyView === 'perspective-understanding')
+  );
+
+  // Resilient fallback sync: gentle polling every 3s with NO self-destruct timers
   useEffect(() => {
     if (!visible || (journeyView !== 'understanding' && journeyView !== 'perspective-understanding')) return;
     const sessionId = sessionIdRef.current;
     if (!sessionId) return;
 
     let isPollingActive = true;
-    let consecutiveFails = 0;
-    let pollCount = 0;
-    const maxPolls = 180; // 180s max polling limit to allow full Hermes + 4 OpenAI card generation
     const pollInterval = setInterval(async () => {
       try {
-        pollCount++;
-        if (pollCount > maxPolls) {
-          clearInterval(pollInterval);
-          console.warn('[WishStudio] Telemetry polling timed out after 180s for session:', sessionId);
-          setBuildError('Generation took longer than expected. Tap retry to restart.');
-          return;
-        }
-
         const res = await ai.getForgeSession(sessionId);
-        if (!isPollingActive) return;
-        if (!res?.session) {
-          consecutiveFails++;
-          if (consecutiveFails >= 12) {
-            clearInterval(pollInterval);
-            setBuildError('Session disconnected. Tap retry to restart.');
-          }
-          return;
-        }
-        consecutiveFails = 0;
+        if (!isPollingActive || !res?.session) return;
         const s = res.session;
 
-        // If the backend marked the session failed, halt polling and show the error immediately
         if (s.phase === 'failed' || s.error) {
           clearInterval(pollInterval);
-          console.warn('[WishStudio] Backend reported session failure:', s.error || s.statusMessage);
           setBuildError(s.error || s.statusMessage || 'Generation failed. Tap retry to restart.');
           return;
         }
 
-        // Ignore polled data if it belongs to an old session with a different prompt
-        if (s.prompt && initialPrompt && s.prompt.trim().toLowerCase() !== initialPrompt.trim().toLowerCase()) {
-          console.log('[WishStudio] Ignoring polled session belonging to different prompt:', s.prompt, 'vs active:', initialPrompt);
-          return;
-        }
-
         if (journeyView === 'understanding') {
-          if (typeof s.step === 'number') {
-            setUnderstandingStep(s.step);
-          }
-          if (s.statusMessage) {
-            setBackendStatusMessage(s.statusMessage);
-          }
-          if (typeof s.requiresPerspectiveSelection === 'boolean') {
-            requiresPerspectiveSelectionRef.current = s.requiresPerspectiveSelection;
-          }
-          if (s.defaultPerspective) {
-            defaultPerspectiveRef.current = s.defaultPerspective;
-          }
+          if (typeof s.step === 'number') setUnderstandingStep(s.step);
+          if (s.statusMessage) setBackendStatusMessage(s.statusMessage);
 
           const has4VisualCards =
             Array.isArray(s.visualDirections) &&
             s.visualDirections.length >= 4 &&
             s.visualDirections.every((d: any) => Boolean(d?.imageUrl));
 
-          // Transition when either backend flags ready OR all 4 cards with URLs are present!
-          if (
-            (s.isDirectionsReady || has4VisualCards) &&
-            has4VisualCards &&
-            !isTransitioningDirectionsRef.current
-          ) {
+          if ((s.isDirectionsReady || has4VisualCards) && has4VisualCards && !isTransitioningDirectionsRef.current) {
             isTransitioningDirectionsRef.current = true;
             await verifyAndPrefetchCards(s.visualDirections);
             setVisualDirections(s.visualDirections.slice(0, 4));
@@ -726,12 +810,9 @@ export const WishStudioScreen = ({
             }, 300);
           }
         } else if (journeyView === 'perspective-understanding') {
-          if (typeof s.step === 'number') {
-            setPerspectiveUnderstandingStep(s.step);
-          }
-          if (s.statusMessage) {
-            setBackendStatusMessage(s.statusMessage);
-          }
+          if (typeof s.step === 'number') setPerspectiveUnderstandingStep(s.step);
+          if (s.statusMessage) setBackendStatusMessage(s.statusMessage);
+
           if (s.requiresPerspectiveSelection === false && !isTransitioningPerspectivesRef.current) {
             isTransitioningPerspectivesRef.current = true;
             const defPerspective = s.selectedPerspective || s.perspectives?.[0];
@@ -749,11 +830,7 @@ export const WishStudioScreen = ({
             s.perspectives.length >= 4 &&
             s.perspectives.every((p: any) => Boolean(p?.imageUrl));
 
-          if (
-            (s.isPerspectivesReady || has4Perspectives) &&
-            has4Perspectives &&
-            !isTransitioningPerspectivesRef.current
-          ) {
+          if ((s.isPerspectivesReady || has4Perspectives) && has4Perspectives && !isTransitioningPerspectivesRef.current) {
             isTransitioningPerspectivesRef.current = true;
             await verifyAndPrefetchCards(s.perspectives);
             setPerspectives(s.perspectives.slice(0, 4));
@@ -766,9 +843,9 @@ export const WishStudioScreen = ({
           }
         }
       } catch (_) {
-        // Silently catch polling tick errors
+        // Non-blocking fallback
       }
-    }, 1000);
+    }, 3000);
 
     return () => {
       isPollingActive = false;
