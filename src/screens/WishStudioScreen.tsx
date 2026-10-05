@@ -711,7 +711,27 @@ export const WishStudioScreen = ({
         }
       },
       onError: (evt) => {
-        setBuildError(evt.message || 'Generation failed. Tap retry to restart.');
+        console.warn('[WishStudio] Hermes error received:', evt.message);
+        
+        // Auto-dismiss on generation failure and send notification
+        if (evt.canRetry !== false) {
+          // Temporary/retryable error (503, 429, etc.)
+          Alert.alert(
+            'High Demand',
+            'Our AI servers are experiencing high traffic. Please try again in a moment.',
+            [{ text: 'OK', onPress: () => onClose() }]
+          );
+        } else {
+          // Permanent error
+          Alert.alert(
+            'Generation Failed',
+            evt.message || 'Something went wrong. Please try again.',
+            [{ text: 'OK', onPress: () => onClose() }]
+          );
+        }
+        
+        // Return to Create screen
+        onClose();
       },
       onSync: (session) => {
         if (!session) return;
