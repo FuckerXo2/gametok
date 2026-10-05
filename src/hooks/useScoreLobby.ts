@@ -10,7 +10,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 
-const SOCKET_URL = 'https://gametok-backend-production.up.railway.app';
+const SOCKET_URL = 'https://gametok-backend-580726430039.us-central1.run.app';
+
 
 export interface ScoreLobbyPlayer {
     userId: string;

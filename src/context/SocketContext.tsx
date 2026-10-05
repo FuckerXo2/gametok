@@ -44,7 +44,8 @@ const SocketContext = createContext<SocketContextType>({
 
 export const useSocket = () => useContext(SocketContext);
 
-const SOCKET_URL = 'https://gametok-backend-production.up.railway.app';
+const SOCKET_URL = 'https://gametok-backend-580726430039.us-central1.run.app';
+
 const HEARTBEAT_INTERVAL_MS = 25_000;
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://gametok-backend.onrender.com';
+const API_URL = 'https://gametok-backend-580726430039.us-central1.run.app';
 
 // Get cached push token from storage
 export const getStoredPushToken = async (): Promise<string | null> => {

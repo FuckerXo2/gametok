@@ -103,7 +103,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             // Not logged in — register as anonymous so backend can send re-engagement
             try {
-              await fetch('https://gametok-backend-production.up.railway.app/api/notifications/register-anonymous', {
+              await fetch('https://gametok-backend-580726430039.us-central1.run.app/api/notifications/register-anonymous', {
+
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pushToken }),

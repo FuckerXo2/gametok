@@ -9,7 +9,7 @@ import {
 } from './aiMock';
 import { normalizeOrientation, type Orientation } from '../constants/orientation';
 
-export const API_URL = 'https://gametok-backend.onrender.com/api';
+export const API_URL = 'https://gametok-backend-580726430039.us-central1.run.app/api';
 
 
 // ── Wish-studio AI: auto-fallback to a local mock when the backend is down ────
@@ -1120,7 +1120,7 @@ export const ai = {
     prompt: string,
     gameTitle?: string,
     selectedDirection?: any,
-    extra?: { sessionId?: string; pushToken?: string; attachments?: any[] }
+    extra?: { sessionId?: string; pushToken?: string; attachments?: any[]; requiresPerspectiveSelection?: boolean | null }
   ) => {
     return request('/ai/generate-perspectives', {
       method: 'POST',

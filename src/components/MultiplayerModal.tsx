@@ -90,7 +90,8 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   }, [findAnyone]);
 
   // Use a predictable thumbnail URL for the game background
-  const gameThumbnailUrl = `https://gametok-backend-production.up.railway.app/games/thumbnails/${gameId}.png`;
+  const gameThumbnailUrl = `https://gametok-backend-580726430039.us-central1.run.app/games/thumbnails/${gameId}.png`;
+
 
   // Render a player card in the lobby
   const renderPlayer = useCallback(({ item, index }: { item: LobbyPlayer; index: number }) => {
@@ -101,7 +102,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
         entering={FadeInDown.delay(index * 50).springify().damping(15)}
         style={styles.playerCard}
       >
-        <BlurView intensity={25} tint="light" style={StyleSheet.absoluteFillObject} />
+        <BlurView intensity={25} tint="light" style={StyleSheet.absoluteFill} />
         <View style={styles.playerCardInner}>
           <View style={styles.playerCardLeft}>
             <View style={styles.playerAvatarWrap}>
@@ -158,14 +159,14 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
         {/* Immersive Dark Background */}
         <ImageBackground
           source={{ uri: gameThumbnailUrl }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           imageStyle={{ opacity: 0.4 }}
           blurRadius={40}
         />
         <View style={styles.darkGradientOverlay}>
           <LinearGradient
             colors={['rgba(9, 9, 11, 0.7)', 'rgba(9, 9, 11, 0.95)', '#09090b']}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
           />
         </View>
 
@@ -271,11 +272,11 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
             exiting={FadeOut.duration(300)}
             style={styles.challengeOverlay}
           >
-            <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFillObject} />
+            <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFill} />
             <Animated.View entering={SlideInDown.springify().damping(14)} style={styles.challengeCard}>
               <LinearGradient
                 colors={['rgba(168, 85, 247, 0.1)', 'rgba(30, 30, 40, 0.95)']}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
               />
               <View style={styles.challengeGlow} />
 
@@ -332,7 +333,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
           >
             <LinearGradient
               colors={['#09090b', '#18181b', '#09090b']}
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
             />
             <Animated.View entering={ZoomIn.delay(200).springify().damping(12)} style={styles.matchCard}>
 
@@ -383,7 +384,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
         {/* Error Toast */}
         {error && (
           <Animated.View entering={SlideInDown} exiting={FadeOut} style={styles.errorToast}>
-            <LinearGradient colors={['#ef4444', '#b91c1c']} style={StyleSheet.absoluteFillObject} />
+            <LinearGradient colors={['#ef4444', '#b91c1c']} style={StyleSheet.absoluteFill} />
             <Text style={styles.errorText}>{error.toUpperCase()}</Text>
           </Animated.View>
         )}
@@ -398,7 +399,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#09090b',
   },
   darkGradientOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   content: {
     flex: 1,
@@ -639,7 +640,7 @@ const styles = StyleSheet.create({
 
   // Incoming Challenge Overlay
   challengeOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -683,7 +684,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   avatarGlowBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 50,
     opacity: 0.5,
   },
@@ -742,7 +743,7 @@ const styles = StyleSheet.create({
 
   // Match Ready Overlay
   matchOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
