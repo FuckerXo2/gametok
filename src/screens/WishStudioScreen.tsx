@@ -51,7 +51,7 @@ import {
 } from '../services/notifications';
 import { useForgeDirector } from '../hooks/useForgeDirector';
 import type { WishMessage, StudioPhase, StudioTab, GameBrief } from '../components/wish/wishTypes';
-import { normalizeOrientation, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
+import { normalizeOrientation, DEFAULT_ORIENTATION, isLandscape, type Orientation } from '../constants/orientation';
 
 interface Props {
   visible: boolean;
@@ -161,7 +161,7 @@ export const WishStudioScreen = ({
   children,
 }: Props) => {
   const insets = useSafeAreaInsets();
-  const orientation = normalizeOrientation(initialOrientation);
+  const orientation: Orientation = isLandscape(initialOrientation) || /landscape/i.test(initialPrompt) ? 'landscape' : normalizeOrientation(initialOrientation);
   const isRestoredMatching =
     restoredSession &&
     (!initialPrompt.trim() ||

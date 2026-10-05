@@ -132,7 +132,7 @@ export const PerspectiveSelectionScreen = ({
   const [activeId, setActiveId] = useState<string | null>(selectedId || perspectives[0]?.id || null);
   const [refinement, setRefinement] = useState('');
 
-  const isLand = isLandscape(orientation);
+  const isLand = isLandscape(orientation) || (typeof prompt === 'string' && /landscape/i.test(prompt));
   const cardWidth = isLand
     ? SCREEN_WIDTH - HORIZONTAL_PADDING * 2
     : Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - GRID_GAP) / 2);
