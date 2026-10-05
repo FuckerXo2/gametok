@@ -102,9 +102,9 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
 
       {/* Content layout with safe insets */}
       <View style={[styles.inner, { paddingTop: insets.top + 6, paddingBottom: Math.max(insets.bottom, 14) }]}>
-        {/* Top Header: gametok brand & actions */}
+        {/* Top Header: close action */}
         <View style={styles.header}>
-          <Text style={styles.logoText}>gametok</Text>
+          <View style={{ flex: 1 }} />
 
           <View style={styles.headerActions}>
             {/* Close button */}
@@ -145,9 +145,11 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
           </View>
 
           {/* Error Message banner if something went wrong */}
-          {errorMessage ? (
+          {errorMessage && !/network connection was lost|unexpectedexception/i.test(errorMessage) ? (
             <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
+              <Text style={styles.errorText}>
+                {errorMessage.replace(/(\s*\(at\s+ExpoModulesCore\/Promise\.swift:\d+\)|\s*TypeError:\s*fetch failed:\s*)/gi, '').trim()}
+              </Text>
               {onRetry && (
                 <Pressable style={styles.retryBtn} onPress={onRetry}>
                   <Text style={styles.retryBtnText}>Retry</Text>

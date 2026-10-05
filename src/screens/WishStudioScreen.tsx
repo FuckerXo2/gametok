@@ -687,8 +687,13 @@ export const WishStudioScreen = ({
         })
         .catch((err) => {
           console.warn('[WishStudio] Visual direction fetch error:', err);
+          const isNetworkDrop = /network connection was lost|network request failed|failed to fetch|timeout|timed out|socket/i.test(err?.message || '');
           if (!isCancelled) {
-            setBuildError(err?.message || 'Visual direction generation failed. Tap retry.');
+            if (isNetworkDrop) {
+              console.log('[WishStudio] Direct HTTP connection dropped, seamlessly falling back to real-time WebSocket & session polling...');
+            } else {
+              setBuildError(err?.message || 'Visual direction generation failed. Tap retry.');
+            }
           }
         })
         .finally(() => {
@@ -706,6 +711,7 @@ export const WishStudioScreen = ({
     activeSessionId,
     {
       onThought: (evt) => {
+        setBuildError(null);
         if (journeyView === 'understanding') {
           if (typeof evt.step === 'number') setUnderstandingStep(evt.step);
           if (evt.message) setBackendStatusMessage(evt.message);
@@ -717,6 +723,7 @@ export const WishStudioScreen = ({
       onCommand: (evt) => {
         const { command, payload } = evt;
         if (command === 'NAVIGATE_TO') {
+          setBuildError(null);
           if (payload?.view === 'directions' && Array.isArray(payload.visualDirections) && payload.visualDirections.length >= 4) {
             if (isTransitioningDirectionsRef.current) return;
             isTransitioningDirectionsRef.current = true;
@@ -799,6 +806,7 @@ export const WishStudioScreen = ({
           journeyView === 'understanding' &&
           !isTransitioningDirectionsRef.current
         ) {
+          setBuildError(null);
           isTransitioningDirectionsRef.current = true;
           setVisualDirections(session.visualDirections.slice(0, 4));
           setSelectedDirection(session.selectedDirection || session.visualDirections[0]);
@@ -815,6 +823,7 @@ export const WishStudioScreen = ({
           journeyView === 'perspective-understanding' &&
           !isTransitioningPerspectivesRef.current
         ) {
+          setBuildError(null);
           isTransitioningPerspectivesRef.current = true;
           setPerspectives(session.perspectives.slice(0, 4));
           setSelectedPerspectiveId(session.selectedPerspectiveId || session.perspectives[0].id);
@@ -848,6 +857,11 @@ export const WishStudioScreen = ({
           clearInterval(pollInterval);
           setBuildError(s.error || s.statusMessage || 'Generation failed. Tap retry to restart.');
           return;
+        }
+
+        // Active session making progress clears any transient network drop error
+        if (s.phase && s.phase !== 'failed') {
+          setBuildError(null);
         }
 
         if (journeyView === 'understanding') {
@@ -1157,7 +1171,12 @@ export const WishStudioScreen = ({
           })
           .catch((err) => {
             console.warn('[WishStudio] Perspective fetch error:', err);
-            setBuildError(err?.message || 'Failed to generate camera perspectives. Tap retry.');
+            const isNetworkDrop = /network connection was lost|network request failed|failed to fetch|timeout|timed out|socket/i.test(err?.message || '');
+            if (isNetworkDrop) {
+              console.log('[WishStudio] Direct HTTP connection dropped for perspectives, seamlessly falling back to real-time WebSocket & session polling...');
+            } else {
+              setBuildError(err?.message || 'Failed to generate camera perspectives. Tap retry.');
+            }
           })
           .finally(() => {
             setIsPerspectivesLoading(false);
