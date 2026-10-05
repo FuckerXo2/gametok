@@ -1116,17 +1116,6 @@ export const ai = {
       body: JSON.stringify({ prompt, gameTitle, ...extra }),
     }, 180000);
   },
-  generatePerspectives: async (
-    prompt: string,
-    gameTitle?: string,
-    selectedDirection?: any,
-    extra?: { sessionId?: string; pushToken?: string; attachments?: any[]; requiresPerspectiveSelection?: boolean | null; orientation?: string }
-  ) => {
-    return request('/ai/generate-perspectives', {
-      method: 'POST',
-      body: JSON.stringify({ prompt, gameTitle, selectedDirection, ...extra }),
-    }, 180000);
-  },
   getForgeSession: async (sessionId: string) => {
     return request(`/ai/forge-session/${sessionId}`, {}, 30000);
   },

@@ -17,7 +17,7 @@ export interface HermesCommandEvent {
   sessionId: string;
   command: 'NAVIGATE_TO';
   payload: {
-    view: 'understanding' | 'directions' | 'perspective-understanding' | 'perspective' | 'building' | 'ready';
+    view: 'understanding' | 'directions' | 'building' | 'ready';
     visualDirections?: any[];
     perspectives?: any[];
     requiresPerspectiveSelection?: boolean;
@@ -90,18 +90,24 @@ export function useForgeDirector(
       console.warn(`[ForgeDirector] Socket connection error:`, err?.message);
     });
 
+    const isSessionMatch = (incomingId?: string) => {
+      if (!incomingId || !sessionId) return true;
+      if (incomingId === sessionId) return true;
+      return incomingId.replace(/^forge_/, '') === sessionId.replace(/^forge_/, '');
+    };
+
     socket.on('hermes:thought', (event: HermesThoughtEvent) => {
-      if (event?.sessionId && event.sessionId !== sessionId) return;
+      if (event?.sessionId && !isSessionMatch(event.sessionId)) return;
       handlersRef.current.onThought?.(event);
     });
 
     socket.on('hermes:command', (event: HermesCommandEvent) => {
-      if (event?.sessionId && event.sessionId !== sessionId) return;
+      if (event?.sessionId && !isSessionMatch(event.sessionId)) return;
       handlersRef.current.onCommand?.(event);
     });
 
     socket.on('hermes:error', (event: HermesErrorEvent) => {
-      if (event?.sessionId && event.sessionId !== sessionId) return;
+      if (event?.sessionId && !isSessionMatch(event.sessionId)) return;
       handlersRef.current.onError?.(event);
     });
 
