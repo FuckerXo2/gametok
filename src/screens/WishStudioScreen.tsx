@@ -638,6 +638,7 @@ export const WishStudioScreen = ({
         sessionId: currentSessionId,
         pushToken: pushToken || undefined,
         attachments: initialAttachments,
+        orientation,
       })
         .then(async (res: any) => {
           if (isCancelled || isTransitioningDirectionsRef.current) return;
@@ -1088,6 +1089,7 @@ export const WishStudioScreen = ({
           pushToken: pushToken || undefined,
           attachments: initialAttachments,
           requiresPerspectiveSelection: requiresPerspectiveSelectionRef.current,
+          orientation,
         })
           .then(async (res: any) => {
             if (isTransitioningPerspectivesRef.current) return;
@@ -1414,6 +1416,7 @@ export const WishStudioScreen = ({
           isLoading={isDirectionsLoading}
           selectedId={selectedDirectionId}
           generation={directionGeneration}
+          orientation={orientation}
           onSelect={(direction) => {
             setSelectedDirectionId(direction.id);
             setSelectedDirection(direction);
@@ -1450,6 +1453,7 @@ export const WishStudioScreen = ({
           perspectives={perspectives}
           isLoading={isPerspectivesLoading}
           selectedId={selectedPerspectiveId}
+          orientation={orientation}
           onSelect={(p) => setSelectedPerspectiveId(p.id)}
           onUsePerspective={handleUsePerspective}
           onBack={() => setJourneyView('directions')}

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VisualDirection } from './VisualDirectionScreen';
+import { isLandscape, type Orientation } from '../../constants/orientation';
 
 export interface CameraPerspective {
   id: string;
@@ -39,14 +40,15 @@ interface Props {
   onUsePerspective: (perspective: CameraPerspective, refinement?: string) => void;
   onBack?: () => void;
   onClose?: () => void;
+  orientation?: string | Orientation;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HORIZONTAL_PADDING = 14;
 const GRID_GAP = 12;
 const CARD_WIDTH = Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - GRID_GAP) / 2);
-const ARTWORK_HEIGHT = Math.round(CARD_WIDTH * 1.14); // Expanded artwork viewport for bigger cards
-const CARD_HEIGHT = ARTWORK_HEIGHT + 54; // Total card height including title & tagline
+const ARTWORK_HEIGHT = Math.round(CARD_WIDTH * 1.42); // Substantially taller, hero-sized cards
+const CARD_HEIGHT = ARTWORK_HEIGHT + 56; // Total card height including title & tagline
 
 const PerspectiveArtwork = ({
   perspective,
@@ -74,11 +76,6 @@ const PerspectiveArtwork = ({
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        {!imageLoaded && (
-          <View style={styles.artworkLoadingOverlay}>
-            <ActivityIndicator size="small" color="#C084FC" />
-          </View>
-        )}
         <Image
           source={{ uri: perspective.imageUrl }}
           style={styles.cardImage}
@@ -129,10 +126,20 @@ export const PerspectiveSelectionScreen = ({
   onUsePerspective,
   onBack,
   onClose,
+  orientation,
 }: Props) => {
   const insets = useSafeAreaInsets();
   const [activeId, setActiveId] = useState<string | null>(selectedId || perspectives[0]?.id || null);
   const [refinement, setRefinement] = useState('');
+
+  const isLand = isLandscape(orientation);
+  const cardWidth = isLand
+    ? SCREEN_WIDTH - HORIZONTAL_PADDING * 2
+    : Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - GRID_GAP) / 2);
+  const artworkHeight = isLand
+    ? Math.round(cardWidth * (9 / 16))
+    : Math.round(cardWidth * 1.42);
+  const cardHeight = artworkHeight + (isLand ? 58 : 56);
 
   const chosen = perspectives.find((p) => p.id === (activeId || selectedId)) || perspectives[0];
   const themeColors = selectedDirection?.colors || ['#1E1B4B', '#6366F1', '#38BDF8', '#F43F5E'];
@@ -169,7 +176,6 @@ export const PerspectiveSelectionScreen = ({
               <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
             </Pressable>
           )}
-          <Text style={styles.logoText}>gametok</Text>
         </View>
 
         {onClose && (
@@ -199,7 +205,7 @@ export const PerspectiveSelectionScreen = ({
             </Text>
           </View>
 
-          {/* 2x2 Grid of Camera Perspective Cards */}
+          {/* Grid of Camera Perspective Cards: 1-col widescreen for landscape, 2x2 for portrait */}
           {isLoading || perspectives.length === 0 ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#a855f7" />
@@ -208,57 +214,40 @@ export const PerspectiveSelectionScreen = ({
               </Text>
             </View>
           ) : (
-            <View style={styles.grid}>
+            <View style={[styles.grid, isLand && { flexDirection: 'column', gap: 16 }]}>
               {perspectives.map((perspective, index) => {
                 const active = perspective.id === (activeId || chosen?.id);
-                const badgeBg =
-                  perspective.dimension === '3D'
-                    ? 'rgba(168, 85, 247, 0.4)'
-                    : perspective.dimension === '2.5D'
-                    ? 'rgba(56, 189, 248, 0.4)'
-                    : 'rgba(52, 211, 153, 0.4)';
-                const badgeColor =
-                  perspective.dimension === '3D'
-                    ? '#E9D5FF'
-                    : perspective.dimension === '2.5D'
-                    ? '#BAE6FD'
-                    : '#A7F3D0';
 
                 return (
                   <Pressable
                     key={perspective.id || index}
                     onPress={() => handleCardPress(perspective)}
-                    style={[styles.card, active && styles.cardActive]}
+                    style={[styles.card, { width: cardWidth, height: cardHeight }, active && styles.cardActive]}
                   >
                     {/* Artwork Viewport */}
-                    <View style={styles.artworkContainer}>
+                    <View style={[styles.artworkContainer, { height: artworkHeight }]}>
                       <PerspectiveArtwork
                         perspective={perspective}
                         themeColors={themeColors}
                         active={active}
                       />
 
-                      {/* Dimension Badge & Active Checkmark */}
-                      <View style={styles.artworkTopRow} pointerEvents="none">
-                        <View style={[styles.dimensionBadge, { backgroundColor: badgeBg }]}>
-                          <Text style={[styles.dimensionText, { color: badgeColor }]}>
-                            {perspective.dimension}
-                          </Text>
-                        </View>
-                        {active && (
+                      {/* Active Checkmark */}
+                      {active && (
+                        <View style={styles.artworkTopRow} pointerEvents="none">
                           <View style={styles.activeCheckmark}>
                             <Ionicons name="checkmark-circle" size={20} color="#a855f7" />
                           </View>
-                        )}
-                      </View>
+                        </View>
+                      )}
                     </View>
 
                     {/* Card Meta Info */}
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.perspectiveName} numberOfLines={1}>
+                    <View style={[styles.cardInfo, isLand && { height: 56, paddingVertical: 10 }]}>
+                      <Text style={[styles.perspectiveName, isLand && { fontSize: 15 }]} numberOfLines={1}>
                         {perspective.name}
                       </Text>
-                      <Text style={styles.perspectiveTagline} numberOfLines={1}>
+                      <Text style={[styles.perspectiveTagline, isLand && { fontSize: 12.5 }]} numberOfLines={1}>
                         {perspective.tagline}
                       </Text>
                     </View>

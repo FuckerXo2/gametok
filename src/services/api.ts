@@ -39,7 +39,7 @@ const CLIENT_ID_STORAGE_KEY = 'clientId';
 // the caller forever (the inbox spinner never clearing was exactly this).
 // Long-running endpoints (AI generation, publish) pass their own larger value;
 // pass 0 to disable the timeout entirely.
-const DEFAULT_TIMEOUT_MS = 20000;
+const DEFAULT_TIMEOUT_MS = 45000;
 
 const createClientId = () => `gtk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 
@@ -1109,26 +1109,26 @@ export const ai = {
   generateVisualDirections: async (
     prompt: string,
     gameTitle?: string,
-    extra?: { sessionId?: string; pushToken?: string; attachments?: any[] }
+    extra?: { sessionId?: string; pushToken?: string; attachments?: any[]; orientation?: string }
   ) => {
     return request('/ai/generate-visual-directions', {
       method: 'POST',
       body: JSON.stringify({ prompt, gameTitle, ...extra }),
-    }, 120000);
+    }, 180000);
   },
   generatePerspectives: async (
     prompt: string,
     gameTitle?: string,
     selectedDirection?: any,
-    extra?: { sessionId?: string; pushToken?: string; attachments?: any[]; requiresPerspectiveSelection?: boolean | null }
+    extra?: { sessionId?: string; pushToken?: string; attachments?: any[]; requiresPerspectiveSelection?: boolean | null; orientation?: string }
   ) => {
     return request('/ai/generate-perspectives', {
       method: 'POST',
       body: JSON.stringify({ prompt, gameTitle, selectedDirection, ...extra }),
-    }, 120000);
+    }, 180000);
   },
   getForgeSession: async (sessionId: string) => {
-    return request(`/ai/forge-session/${sessionId}`);
+    return request(`/ai/forge-session/${sessionId}`, {}, 30000);
   },
   drafts: async () => {
     return request('/ai/drafts');
