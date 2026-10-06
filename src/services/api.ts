@@ -9,7 +9,7 @@ import {
 } from './aiMock';
 import { normalizeOrientation, type Orientation } from '../constants/orientation';
 
-export const API_URL = 'https://gametok-backend-580726430039.us-central1.run.app/api';
+export const API_URL = 'https://gametok-backend-267787411422.us-central1.run.app/api';
 
 
 // ── Wish-studio AI: auto-fallback to a local mock when the backend is down ────
