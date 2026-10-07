@@ -523,26 +523,6 @@ export const VisualDirectionScreen = ({
   const [generatingMap, setGeneratingMap] = useState<Record<string, boolean>>({});
   const nextCandidateIndexRef = useRef(0);
 
-  // Smart text questionnaire fallback (combat style, camera view, objective)
-  const [showQuestionnaireFallback, setShowQuestionnaireFallback] = useState(false);
-  const [selectedCombat, setSelectedCombat] = useState('Turn-Based Strategy');
-  const [selectedCamera, setSelectedCamera] = useState('First/Third Person');
-  const [selectedObjective, setSelectedObjective] = useState('Conquer Lagos Districts');
-
-  const handleConfirmQuestionnaire = () => {
-    const customDir: VisualDirection = {
-      id: `questionnaire-${Date.now()}`,
-      name: `${selectedCombat}`,
-      tagline: `${selectedCamera} • ${selectedObjective}`,
-      description: `3D game featuring ${selectedCombat}, ${selectedCamera}, and objective: ${selectedObjective}.`,
-      icon: 'game-controller',
-      colors: ['#00F0FF', '#8B5CF6', '#EC4899'],
-      instruction: `Combat: ${selectedCombat}. Camera: ${selectedCamera}. Objective: ${selectedObjective}.`,
-      themeType: 'cyber',
-    };
-    onUseDirection(customDir, refinement.trim());
-  };
-
   // If prompt or gameTitle changes and no propDirections passed, fetch live visual directions from backend
   useEffect(() => {
     setAppendedCards([]);
@@ -663,208 +643,17 @@ export const VisualDirectionScreen = ({
     return directions.some((d) => Boolean(d.imageUrl || d.imageSource));
   }, [directions]);
 
-  const isFallbackActive = showQuestionnaireFallback || (directions.length > 0 && !hasValidImages);
-
-  if (isFallbackActive) {
-    return (
-      <View style={styles.sekaiRoot}>
-        {/* Top Header Bar matching Sekai */}
-        <View style={[styles.sekaiTopNav, { paddingTop: insets.top + 6 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            {onClose ? (
-              <Pressable onPress={onClose} hitSlop={10}>
-                <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-              </Pressable>
-            ) : null}
-            <Pressable hitSlop={10}>
-              <Ionicons name="time-outline" size={20} color="rgba(255,255,255,0.7)" />
-            </Pressable>
-          </View>
-          <View style={styles.sekaiPillToggle}>
-            <View style={styles.sekaiPillActive}>
-              <Text style={styles.sekaiPillActiveText}>Chat</Text>
-            </View>
-            <View style={styles.sekaiPillInactive}>
-              <Text style={styles.sekaiPillInactiveText}>Preview</Text>
-            </View>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <Ionicons name="chatbubble-outline" size={18} color="rgba(255,255,255,0.7)" />
-            <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.7)" />
-          </View>
-        </View>
-
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView
-            ref={scrollRef}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.sekaiScrollContent}
-          >
-            {/* User Message Bubble on Right */}
-            <View style={styles.sekaiUserBubble}>
-              {attachedAssets && attachedAssets.length > 0 && (
-                <View style={styles.sekaiAssetCard}>
-                  {attachedAssets[0]?.source ? (
-                    <Image source={attachedAssets[0].source} style={styles.sekaiAssetThumb} resizeMode="cover" />
-                  ) : attachedAssets[0]?.thumbnail ? (
-                    <Image source={{ uri: attachedAssets[0].thumbnail }} style={styles.sekaiAssetThumb} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.sekaiAssetThumb, { backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center' }]}>
-                      <Ionicons name="cube-outline" size={20} color="#FFFFFF" />
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sekaiAssetTitle} numberOfLines={1}>
-                      {attachedAssets[0]?.name || '3D Characters'}
-                    </Text>
-                    <Text style={styles.sekaiAssetCount}>
-                      {attachedAssets.length > 1 ? `${attachedAssets.length} Models` : '1 Model · Rigged 3D'}
-                    </Text>
-                  </View>
-                </View>
-              )}
-              <Text style={styles.sekaiUserText}>{prompt || 'make a game'}</Text>
-            </View>
-
-            {/* AI Assistant Turn on Left */}
-            <View style={styles.sekaiAiRow}>
-              <View style={styles.sekaiAiAvatar}>
-                <Image source={FORGE_MASCOT} style={{ width: 18, height: 18 }} resizeMode="contain" />
-              </View>
-              <Text style={styles.sekaiAiName}>GameTok</Text>
-            </View>
-            <Text style={styles.sekaiAiSpeech}>
-              {attachedAssets && attachedAssets.length > 0
-                ? `Awesome! I'll add those ${attachedAssets.map((a: any) => a.name).join(', ')} characters to your game. To shape the war, how should it play?`
-                : `Awesome! I'll forge your game idea into a 3D playable world. To shape the war, how should it play?`}
-            </Text>
-
-            {/* Question 1: Combat Style Card */}
-            <View style={styles.sekaiQuestionCard}>
-              <Text style={styles.sekaiQuestionTitle}>What's the main combat style?</Text>
-              {[
-                { id: 'Turn-Based Strategy', sub: 'Take turns planning moves and attacks' },
-                { id: 'Real-Time Battle', sub: 'Fast-paced action where every second counts' },
-                { id: 'Open-World Driving & Heists', sub: 'Cruise Danfo buses and conquer street districts' },
-                { id: 'Card-Based Tactics', sub: 'Use cards to command units and cast spells' },
-                { id: 'Other', sub: 'Custom gameplay rules' },
-              ].map((opt) => {
-                const isSelected = selectedCombat === opt.id;
-                return (
-                  <Pressable
-                    key={opt.id}
-                    style={[styles.sekaiOptionRow, isSelected && styles.sekaiOptionRowActive]}
-                    onPress={() => setSelectedCombat(opt.id)}
-                  >
-                    <View style={[styles.sekaiRadioCircle, isSelected && styles.sekaiRadioCircleActive]}>
-                      {isSelected ? (
-                        <Ionicons name="checkmark" size={13} color="#000000" />
-                      ) : null}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sekaiOptionTitle}>{opt.id}</Text>
-                      <Text style={styles.sekaiOptionSub}>{opt.sub}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* Question 2: Camera View Card */}
-            <View style={styles.sekaiQuestionCard}>
-              <Text style={styles.sekaiQuestionTitle}>What's the camera view?</Text>
-              {[
-                { id: 'Top-Down', sub: 'Classic tactical view from above' },
-                { id: 'Side-Scroller', sub: 'Classic arcade-style movement' },
-                { id: 'First/Third Person', sub: "Immersive view from the character's perspective" },
-                { id: 'Isometric 3D', sub: 'Angled 3D view showcasing the city' },
-                { id: 'Other', sub: 'Custom camera perspective' },
-              ].map((opt) => {
-                const isSelected = selectedCamera === opt.id;
-                return (
-                  <Pressable
-                    key={opt.id}
-                    style={[styles.sekaiOptionRow, isSelected && styles.sekaiOptionRowActive]}
-                    onPress={() => setSelectedCamera(opt.id)}
-                  >
-                    <View style={[styles.sekaiRadioCircle, isSelected && styles.sekaiRadioCircleActive]}>
-                      {isSelected ? (
-                        <Ionicons name="checkmark" size={13} color="#000000" />
-                      ) : null}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.sekaiOptionTitle}>{opt.id}</Text>
-                      <Text style={styles.sekaiOptionSub}>{opt.sub}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* Build Button */}
-            <Pressable
-              style={({ pressed }) => [styles.sekaiBuildBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-              onPress={handleConfirmQuestionnaire}
-            >
-              <Text style={styles.sekaiBuildBtnText}>🤖 Build my idea now</Text>
-            </Pressable>
-
-            {directions.length > 0 && hasValidImages && (
-              <Pressable
-                style={styles.fallbackToggleBtn}
-                onPress={() => setShowQuestionnaireFallback(false)}
-              >
-                <Ionicons name="images-outline" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.fallbackToggleText}>Back to 4 visual cards</Text>
-              </Pressable>
-            )}
-          </ScrollView>
-
-          {/* Bottom Input Pill & Tool Bar */}
-          <View style={[styles.sekaiBottomArea, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            <View style={styles.sekaiInputPill}>
-              <TextInput
-                value={refinement}
-                onChangeText={setRefinement}
-                placeholder="Type your idea and start"
-                placeholderTextColor="#71717A"
-                style={styles.sekaiTextInput}
-                returnKeyType="send"
-                onSubmitEditing={handleConfirmQuestionnaire}
-              />
-              <Ionicons name="mic-outline" size={20} color="#A1A1AA" />
-            </View>
-            <View style={styles.sekaiToolbar}>
-              <View style={styles.sekaiToolItem}>
-                <Ionicons name="image-outline" size={18} color="#71717A" />
-                <Text style={styles.sekaiToolLabel}>Image</Text>
-              </View>
-              <View style={styles.sekaiToolItem}>
-                <Ionicons name="musical-notes-outline" size={18} color="#71717A" />
-                <Text style={styles.sekaiToolLabel}>Music</Text>
-              </View>
-              <View style={styles.sekaiToolItem}>
-                <Ionicons name="cube-outline" size={18} color="#71717A" />
-                <Text style={styles.sekaiToolLabel}>Toolbox</Text>
-              </View>
-              <View style={styles.sekaiToolItem}>
-                <Ionicons name="volume-high-outline" size={18} color="#71717A" />
-                <Text style={styles.sekaiToolLabel}>SFX</Text>
-              </View>
-              <View style={styles.sekaiToolItem}>
-                <Ionicons name="videocam-outline" size={18} color="#71717A" />
-                <Text style={styles.sekaiToolLabel}>Video</Text>
-              </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
-    );
-  }
+  // If no images are available, start making the game immediately!
+  useEffect(() => {
+    if (directions.length > 0 && !hasValidImages) {
+      console.log('[VisualDirectionScreen] No valid images available, starting build immediately!');
+      if (onSkip) {
+        onSkip();
+      } else if (directions[0]) {
+        onUseDirection(directions[0], refinement.trim());
+      }
+    }
+  }, [directions.length, hasValidImages, onSkip, onUseDirection, directions, refinement]);
 
   return (
     <View style={styles.root}>
@@ -914,44 +703,28 @@ export const VisualDirectionScreen = ({
               <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600' }}>
                 Synthesizing game art directions...
               </Text>
-              <Pressable
-                style={styles.fallbackPromptBtn}
-                onPress={() => setShowQuestionnaireFallback(true)}
-              >
-                <Ionicons name="options" size={16} color="#00F0FF" />
-                <Text style={styles.fallbackPromptBtnText}>Configure game rules directly with text</Text>
-              </Pressable>
             </View>
           ) : (
-            <>
-              <View style={[styles.grid, isLand && { flexDirection: 'column', gap: 16 }]}>
-                {directions.map((direction, index) => {
-                  const active = direction.id === activeId;
-                  return (
-                    <AnimatedDirectionCard
-                      key={direction.id}
-                      direction={direction}
-                      index={index}
-                      active={active}
-                      onPress={() => handleCardPress(direction)}
-                      isNew={index >= 4}
-                      isGenerating={!!generatingMap[direction.id]}
-                      cardWidth={cardWidth}
-                      cardHeight={cardHeight}
-                      artworkHeight={artworkHeight}
-                      isLand={isLand}
-                    />
-                  );
-                })}
-              </View>
-              <Pressable
-                style={styles.fallbackToggleBtn}
-                onPress={() => setShowQuestionnaireFallback(true)}
-              >
-                <Ionicons name="options-outline" size={14} color="rgba(255,255,255,0.5)" />
-                <Text style={styles.fallbackToggleText}>Or configure game rules with text options</Text>
-              </Pressable>
-            </>
+            <View style={[styles.grid, isLand && { flexDirection: 'column', gap: 16 }]}>
+              {directions.map((direction, index) => {
+                const active = direction.id === activeId;
+                return (
+                  <AnimatedDirectionCard
+                    key={direction.id}
+                    direction={direction}
+                    index={index}
+                    active={active}
+                    onPress={() => handleCardPress(direction)}
+                    isNew={index >= 4}
+                    isGenerating={!!generatingMap[direction.id]}
+                    cardWidth={cardWidth}
+                    cardHeight={cardHeight}
+                    artworkHeight={artworkHeight}
+                    isLand={isLand}
+                  />
+                );
+              })}
+            </View>
           )}
         </ScrollView>
 
@@ -1813,255 +1586,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.2,
-  },
-  fallbackToggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  fallbackToggleText: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 12.5,
-    fontWeight: '600',
-  },
-  fallbackPromptBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0, 240, 255, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 240, 255, 0.35)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  fallbackPromptBtnText: {
-    color: '#00F0FF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  /* Sekai Chat Mode Luxury Styles */
-  sekaiRoot: {
-    flex: 1,
-    backgroundColor: '#0B0B0E',
-  },
-  sekaiTopNav: {
-    height: 52,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0B0B0E',
-  },
-  sekaiPillToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#1E1E24',
-    borderRadius: 20,
-    padding: 3,
-  },
-  sekaiPillActive: {
-    backgroundColor: '#2E2E36',
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-  sekaiPillActiveText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  sekaiPillInactive: {
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-  },
-  sekaiPillInactiveText: {
-    color: '#71717A',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  sekaiScrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 24,
-  },
-  sekaiUserBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#1C1C22',
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    padding: 12,
-    maxWidth: '85%',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#292930',
-  },
-  sekaiAssetCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#131317',
-    borderRadius: 12,
-    padding: 8,
-    gap: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#25252E',
-  },
-  sekaiAssetThumb: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-  },
-  sekaiAssetTitle: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '700',
-  },
-  sekaiAssetCount: {
-    color: '#9CA3AF',
-    fontSize: 11.5,
-    marginTop: 2,
-  },
-  sekaiUserText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '500',
-    lineHeight: 20,
-  },
-  sekaiAiRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  sekaiAiAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#27272E',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sekaiAiName: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sekaiAiSpeech: {
-    color: '#E4E4E7',
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 16,
-    fontWeight: '400',
-  },
-  sekaiQuestionCard: {
-    backgroundColor: '#141418',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#222228',
-    padding: 16,
-    marginBottom: 16,
-  },
-  sekaiQuestionTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  sekaiOptionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#19191F',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#24242C',
-    padding: 14,
-    marginBottom: 8,
-    gap: 12,
-  },
-  sekaiOptionRowActive: {
-    backgroundColor: '#212128',
-    borderColor: '#FFFFFF',
-    borderWidth: 1.5,
-  },
-  sekaiRadioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.8,
-    borderColor: '#52525B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sekaiRadioCircleActive: {
-    borderColor: '#FFFFFF',
-    backgroundColor: '#FFFFFF',
-  },
-  sekaiOptionTitle: {
-    color: '#FFFFFF',
-    fontSize: 14.5,
-    fontWeight: '700',
-  },
-  sekaiOptionSub: {
-    color: '#9CA3AF',
-    fontSize: 12.5,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  sekaiBuildBtn: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  sekaiBuildBtnText: {
-    color: '#000000',
-    fontSize: 15.5,
-    fontWeight: '800',
-  },
-  sekaiBottomArea: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    backgroundColor: '#0B0B0E',
-    borderTopWidth: 1,
-    borderTopColor: '#17171C',
-  },
-  sekaiInputPill: {
-    backgroundColor: '#17171C',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#26262F',
-    height: 46,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sekaiTextInput: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 14.5,
-  },
-  sekaiToolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 10,
-    alignItems: 'center',
-  },
-  sekaiToolItem: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  sekaiToolLabel: {
-    color: '#71717A',
-    fontSize: 10.5,
-    fontWeight: '600',
   },
 });

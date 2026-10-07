@@ -640,7 +640,12 @@ export const WishStudioScreen = ({
       })
         .then(async (res: any) => {
           if (isCancelled || isTransitioningDirectionsRef.current) return;
-          if (res?.directions && res.directions.length >= 4) {
+          const hasImages =
+            res?.directions &&
+            res.directions.length >= 4 &&
+            res.directions.some((d: any) => Boolean(d.imageUrl || d.imageSource));
+
+          if (hasImages) {
             setBackendStatusMessage('Downloading visual direction cards...');
             setUnderstandingStep(4);
             // Non-blocking prefetch so UI immediately transitions
@@ -672,17 +677,18 @@ export const WishStudioScreen = ({
               transitionToDirections();
               isTransitioningDirectionsRef.current = false;
             }, 300);
+          } else {
+            // No images available — start making the game immediately!
+            console.log('[WishStudio] No images in visual directions, starting build immediately!');
+            setJourneyView('building');
+            handleCreateRef.current();
           }
         })
         .catch((err) => {
-          console.warn('[WishStudio] Visual direction fetch error:', err);
-          const isNetworkDrop = /network connection was lost|network request failed|failed to fetch|timeout|timed out|socket/i.test(err?.message || '');
+          console.warn('[WishStudio] Visual direction fetch error, starting build immediately:', err);
           if (!isCancelled) {
-            if (isNetworkDrop) {
-              console.log('[WishStudio] Direct HTTP connection dropped, seamlessly falling back to real-time WebSocket & session polling...');
-            } else {
-              setBuildError(err?.message || 'Visual direction generation failed. Tap retry.');
-            }
+            setJourneyView('building');
+            handleCreateRef.current();
           }
         })
         .finally(() => {
@@ -711,32 +717,38 @@ export const WishStudioScreen = ({
         if (command === 'NAVIGATE_TO') {
           setBuildError(null);
           if (payload?.view === 'directions' && Array.isArray(payload.visualDirections) && payload.visualDirections.length >= 4) {
-            if (isTransitioningDirectionsRef.current) return;
-            isTransitioningDirectionsRef.current = true;
-            // Non-blocking prefetch
-            verifyAndPrefetchCards(payload.visualDirections);
-            setVisualDirections(payload.visualDirections.slice(0, 4));
-            setSelectedDirection(payload.visualDirections[0]);
-            setSelectedDirectionId(payload.visualDirections[0].id);
-            setUnderstandingStep(5);
+            const hasImages = payload.visualDirections.some((d: any) => Boolean(d.imageUrl || d.imageSource));
+            if (hasImages) {
+              if (isTransitioningDirectionsRef.current) return;
+              isTransitioningDirectionsRef.current = true;
+              // Non-blocking prefetch
+              verifyAndPrefetchCards(payload.visualDirections);
+              setVisualDirections(payload.visualDirections.slice(0, 4));
+              setSelectedDirection(payload.visualDirections[0]);
+              setSelectedDirectionId(payload.visualDirections[0].id);
+              setUnderstandingStep(5);
 
-            saveActiveForgeSession({
-              sessionId: activeSessionId,
-              prompt: initialPrompt,
-              gameName: gameName || 'Your game',
-              orientation,
-              journeyView: 'directions',
-              visualDirections: payload.visualDirections.slice(0, 4),
-              selectedDirection: payload.visualDirections[0],
-              selectedDirectionId: payload.visualDirections[0].id,
-              isDirectionsReady: true,
-              brief: briefRef.current,
-            });
+              saveActiveForgeSession({
+                sessionId: activeSessionId,
+                prompt: initialPrompt,
+                gameName: gameName || 'Your game',
+                orientation,
+                journeyView: 'directions',
+                visualDirections: payload.visualDirections.slice(0, 4),
+                selectedDirection: payload.visualDirections[0],
+                selectedDirectionId: payload.visualDirections[0].id,
+                isDirectionsReady: true,
+                brief: briefRef.current,
+              });
 
-            setTimeout(() => {
-              transitionToDirections();
-              isTransitioningDirectionsRef.current = false;
-            }, 300);
+              setTimeout(() => {
+                transitionToDirections();
+                isTransitioningDirectionsRef.current = false;
+              }, 300);
+            } else {
+              setJourneyView('building');
+              handleCreateRef.current();
+            }
           } else if (payload?.view === 'building') {
             setJourneyView('building');
             handleCreateRef.current();
