@@ -17,11 +17,13 @@
 // where the live Kimi planning session plugs in later.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert, Image } from 'react-native';
+import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert, Image, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { palette, spacing, radii, type as t } from '../theme/tokens';
 import { PreviewPane } from '../components/wish/PreviewPane';
+import { GameSurface } from '../components/GameSurface';
+import { lockToLandscape, lockToPortrait } from '../utils/orientationHelper';
 import { ForgeDefenseGame } from '../components/ForgeDefenseGame';
 import { ForgeUnderstandingScreen } from '../components/forge/ForgeUnderstandingScreen';
 import {
@@ -46,7 +48,7 @@ import {
 } from '../services/notifications';
 import { useForgeDirector } from '../hooks/useForgeDirector';
 import type { WishMessage, StudioPhase, StudioTab, GameBrief } from '../components/wish/wishTypes';
-import { normalizeOrientation, DEFAULT_ORIENTATION, isLandscape, type Orientation } from '../constants/orientation';
+import { normalizeOrientation, DEFAULT_ORIENTATION, isLandscape, isGameLandscape, type Orientation } from '../constants/orientation';
 
 interface Props {
   visible: boolean;
@@ -65,6 +67,7 @@ interface Props {
     title: string;
     runtime?: 'web' | 'native';
     gameScript?: string | null;
+    orientation?: Orientation | string | null;
   } | null;
   /** Images/Videos/Sounds/BGM they attached for the game to use. */
   initialAttachments?: any[];
@@ -149,7 +152,18 @@ export const WishStudioScreen = ({
   children,
 }: Props) => {
   const insets = useSafeAreaInsets();
-  const orientation: Orientation = isLandscape(initialOrientation) || /landscape/i.test(initialPrompt) ? 'landscape' : normalizeOrientation(initialOrientation);
+  const windowDims = useWindowDimensions();
+  const isInitiallyLandscape =
+    isLandscape(initialOrientation) ||
+    isGameLandscape(initialGame) ||
+    isLandscape(restoredSession?.orientation) ||
+    /landscape/i.test(initialPrompt) ||
+    /gta|lagos|kart|racing|driver|downhill|descent|sunrise|flight|pilot|plane|drift|sidescroll|platformer/i.test(initialPrompt);
+
+  const [studioOrientation, setStudioOrientation] = useState<Orientation>(
+    isInitiallyLandscape ? 'landscape' : normalizeOrientation(initialOrientation)
+  );
+  const orientation: Orientation = studioOrientation;
   const isRestoredMatching =
     restoredSession &&
     (!initialPrompt.trim() ||
@@ -190,6 +204,25 @@ export const WishStudioScreen = ({
   const [html, setHtml] = useState<string | null>(initialGame?.html || null);
   const [gameUrl, setGameUrl] = useState<string | null>(initialGame?.gameUrl || null);
   const [runtime, setRuntime] = useState<'web' | 'native'>(initialGame?.runtime || 'web');
+
+  useEffect(() => {
+    const isHtmlLandscape =
+      (html && (
+        /@orientation:\s*landscape/i.test(html) ||
+        /orientation\s*:\s*['"]landscape['"]/i.test(html) ||
+        /<meta[^>]*name=["']viewport["'][^>]*landscape/i.test(html) ||
+        /GTA\s*LAGOS/i.test(html) ||
+        /Sunbreak/i.test(html) ||
+        /Downhill/i.test(html) ||
+        /Descent/i.test(html)
+      )) ||
+      isGameLandscape(initialGame) ||
+      Boolean(gameUrl && /gta|lagos|kart|racing|drift|sunbreak|descent/i.test(gameUrl));
+
+    if (isHtmlLandscape && studioOrientation !== 'landscape') {
+      setStudioOrientation('landscape');
+    }
+  }, [html, gameUrl, initialGame, studioOrientation]);
   const [gameScript, setGameScript] = useState<string | null>(initialGame?.gameScript || null);
   const [previewHasNews, setPreviewHasNews] = useState(false);
   // The toggle exists only after the first Create. Before that: pure conversation.
@@ -843,6 +876,11 @@ export const WishStudioScreen = ({
           cancelJobRef.current = null;
           const wasInitialBuild = !draftIdRef.current;
           draftIdRef.current = res?.draftId || res?.jobId || draftIdRef.current;
+          if (res?.orientation) {
+            setStudioOrientation(normalizeOrientation(res.orientation));
+          } else if (res?.htmlPreview && (/@orientation:\s*landscape/i.test(res.htmlPreview) || /GTA\s*LAGOS/i.test(res.htmlPreview))) {
+            setStudioOrientation('landscape');
+          }
           if (res?.htmlPreview) setHtml(res.htmlPreview);
           if (res?.gameUrl) setGameUrl(res.gameUrl);
           if (res?.runtime) setRuntime(res.runtime);
@@ -1079,8 +1117,20 @@ export const WishStudioScreen = ({
     if (!wish && attachedGameAssets.length === 0) return;
     const finalWish =
       wish || `Add these assets to the game: ${attachedGameAssets.map((a) => a.name).join(', ')}`;
-    setInput('');
-    const attachmentsToSend = [...attachedGameAssets];
+    const attachmentsToSend = attachedGameAssets.map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      label: a.name,
+      title: a.name,
+      url: a.url || a.uri || '',
+      type: a.category === '3D Models' || a.type === '3d' ? '3d' : (a.type || 'image/png'),
+      role: a.role || (a.category === '3D Models' ? 'character' : 'prop'),
+      is_rigged: a.is_rigged ?? (a.category === '3D Models'),
+      bone_count: a.bone_count ?? (a.category === '3D Models' ? 100 : undefined),
+      skeleton: a.skeleton ?? (a.category === '3D Models' ? 'UE5 Master Skeleton' : undefined),
+      format: a.format || (a.category === '3D Models' ? 'glb' : undefined),
+      instruction: a.instruction || (a.category === '3D Models' ? `Spawn this rigged 3D character (${a.name}) into the game scene: ${a.url || a.uri}` : `Use this asset: ${a.name}`),
+    }));
     setAttachedGameAssets([]);
     pushMessage({ role: 'user', text: finalWish });
 
@@ -1092,6 +1142,26 @@ export const WishStudioScreen = ({
     refinementsRef.current = [...refinementsRef.current, finalWish];
     refineBrief(finalWish);
   }, [input, attachedGameAssets, pushMessage, handleLiveWish, refineBrief]);
+
+  const handleUndo = useCallback(async () => {
+    const draftId = draftIdRef.current;
+    if (!draftId) {
+      Alert.alert('Undo', 'No previous version available to restore.');
+      return;
+    }
+    try {
+      const res = await ai.undoEdit(draftId);
+      if (res?.success && res?.htmlPreview) {
+        setHtml(res.htmlPreview);
+        pushMessage({ role: 'kimi', text: 'Reverted to previous version.' });
+        Alert.alert('Reverted', `Restored to previous version (${res.versionsRemaining || 0} older versions available).`);
+      } else {
+        Alert.alert('Undo', res?.error || 'No previous version to undo to.');
+      }
+    } catch (err: any) {
+      Alert.alert('Undo', err?.message || 'Could not revert to previous version.');
+    }
+  }, [pushMessage]);
 
   /**
    * Retry a failed planning turn. The user's wish and assets were never lost,
@@ -1130,6 +1200,17 @@ export const WishStudioScreen = ({
       ? 'creator'
       : journeyView;
 
+  useEffect(() => {
+    if (activeJourneyView === 'play' && isLandscape(orientation)) {
+      lockToLandscape();
+    } else {
+      lockToPortrait();
+    }
+    return () => {
+      lockToPortrait();
+    };
+  }, [activeJourneyView, orientation]);
+
   const showForgeChrome =
     activeJourneyView === 'understanding' ||
     activeJourneyView === 'directions' ||
@@ -1154,6 +1235,7 @@ export const WishStudioScreen = ({
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
+      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
       onRequestClose={handleModalClose}
     >
       {activeJourneyView === 'understanding' && (
@@ -1246,9 +1328,20 @@ export const WishStudioScreen = ({
             setAttachedGameAssets((prev) => prev.filter((a) => a.id !== id))
           }
           onGameSettings={() =>
-            Alert.alert('Game settings', 'AI-tailored settings for this game will open here.')
+            Alert.alert(
+              'Game Settings',
+              `Current display: ${studioOrientation === 'landscape' ? 'Landscape (16:9 Full Screen)' : 'Portrait (Vertical)'}`,
+              [
+                {
+                  text: `Switch to ${studioOrientation === 'landscape' ? 'Portrait' : 'Landscape'}`,
+                  onPress: () =>
+                    setStudioOrientation((prev) => (prev === 'landscape' ? 'portrait' : 'landscape')),
+                },
+                { text: 'Close', style: 'cancel' },
+              ],
+            )
           }
-          onUndo={() => Alert.alert('Undo', 'There is nothing to undo yet.')}
+          onUndo={handleUndo}
           onMore={() => Alert.alert(gameName ?? initialGame?.title ?? 'Your game', 'More creator options will appear here.')}
           isEditing={phase === 'building'}
         />
@@ -1271,23 +1364,29 @@ export const WishStudioScreen = ({
 
       {activeJourneyView === 'play' && (
         <View style={styles.playWrap}>
-          <PreviewPane
-            state={html || gameUrl || gameScript || initialGame?.html || initialGame?.gameUrl || initialGame?.gameScript ? 'ready' : 'empty'}
-            gameName={gameName ?? initialGame?.title ?? null}
-            beats={[]}
-            html={html ?? initialGame?.html ?? null}
-            gameUrl={gameUrl ?? initialGame?.gameUrl ?? null}
-            orientation={orientation}
+          <GameSurface
+            orientation={isGameLandscape(initialGame) ? 'landscape' : orientation}
+            box={{ width: windowDims.width, height: windowDims.height }}
+            source={html ? { html } : { uri: (gameUrl ?? initialGame?.gameUrl) as string }}
             runtime={runtime ?? initialGame?.runtime ?? 'web'}
-            gameScript={gameScript ?? initialGame?.gameScript ?? null}
-            containerStyle={{ margin: 0, borderWidth: 0 }}
+            gameScript={gameScript ?? initialGame?.gameScript ?? undefined}
+            scrollEnabled={false}
+            bounces={false}
+            overScrollMode="never"
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
           />
           <Pressable
             style={[
               styles.backPlayButton,
               { top: Math.max(insets.top, 16) + 6 },
             ]}
-            onPress={() => setJourneyView('ready')}
+            onPress={() => {
+              lockToPortrait();
+              setJourneyView('ready');
+            }}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Ionicons name="arrow-back" size={18} color={palette.text} />

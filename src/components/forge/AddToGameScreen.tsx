@@ -35,36 +35,106 @@ export interface AssetItem {
   tags: string[];
   color?: string;
   uri?: string;
+  url?: string;
+  is_rigged?: boolean;
+  bone_count?: number;
+  skeleton?: string;
+  format?: string;
+  file_size?: string;
+  role?: string;
+  description?: string;
 }
 
 const LIBRARY_ASSETS: AssetItem[] = [
   {
-    id: 'coral-kingdom',
-    name: 'Coral Kingdom',
-    source: require('../../../assets/forge/direction_coral.jpg'),
-    category: 'Images',
-    tags: ['coral', 'ocean', 'underwater', 'reef', 'environment', 'stage'],
-  },
-  {
-    id: 'atlantis',
-    name: 'Atlantis Citadel',
-    source: require('../../../assets/forge/direction_atlantis.jpg'),
+    id: 'gt-lagos-street-hustler',
+    name: 'Street Hustler',
+    source: require('../../../assets/models3d/thumbnails/street_hustler.png'),
     category: '3D Models',
-    tags: ['atlantis', 'temple', 'architecture', 'palace', '3d'],
+    tags: ['lagos', 'street_hustler', 'conductor', 'danfo', 'urban', 'character', 'hero', 'rigged', '3d'],
+    url: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/assets/3d/characters/gt_characters_07c99b16f29e.glb',
+    is_rigged: true,
+    bone_count: 100,
+    skeleton: 'UE5 Master Skeleton',
+    format: 'glb',
+    file_size: '2.4 MB',
+    role: 'character',
+    description: 'Lagos street conductor archetype. Rigged to UE5 Master Skeleton (100 bones).',
   },
   {
-    id: 'marine',
-    name: 'Reef Explorers',
-    source: require('../../../assets/forge/direction_marine.jpg'),
-    category: 'Videos',
-    tags: ['turtle', 'fish', 'creature', 'marine', 'video', 'character'],
-  },
-  {
-    id: 'deep-ocean',
-    name: 'Abyssal Portal',
-    source: require('../../../assets/forge/direction_ocean.jpg'),
+    id: 'gt-lagos-tech-bro',
+    name: 'Tech Bro',
+    source: require('../../../assets/models3d/thumbnails/tech_bro.png'),
     category: '3D Models',
-    tags: ['portal', 'glow', 'abyss', 'magic', '3d', 'particles'],
+    tags: ['lagos', 'tech_bro', 'lekki', 'developer', 'startup', 'character', 'hero', 'rigged', '3d'],
+    url: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/assets/3d/characters/gt_characters_7cc29526e7f7.glb',
+    is_rigged: true,
+    bone_count: 100,
+    skeleton: 'UE5 Master Skeleton',
+    format: 'glb',
+    file_size: '2.1 MB',
+    role: 'character',
+    description: 'Lekki Phase 1 tech founder archetype. Rigged to UE5 Master Skeleton (100 bones).',
+  },
+  {
+    id: 'gt-lagos-veteran',
+    name: 'Military Veteran',
+    source: require('../../../assets/models3d/thumbnails/veteran.png'),
+    category: '3D Models',
+    tags: ['lagos', 'veteran', 'soldier', 'military', 'fighter', 'tactical', 'character', 'hero', 'rigged', '3d'],
+    url: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/assets/3d/characters/gt_characters_67f3eac80f68.glb',
+    is_rigged: true,
+    bone_count: 100,
+    skeleton: 'UE5 Master Skeleton',
+    format: 'glb',
+    file_size: '3.1 MB',
+    role: 'character',
+    description: 'Tactical veteran character. Auto-compressed from 16.7MB to 3.1MB and rigged (100 bones).',
+  },
+  {
+    id: 'gt-liu-kang',
+    name: 'Liu Kang',
+    source: require('../../../assets/models3d/thumbnails/liu_kang.png'),
+    category: '3D Models',
+    tags: ['fighter', 'martial_arts', 'liu_kang', 'combat', 'warrior', 'character', 'hero', 'rigged', '3d'],
+    url: '/storage/models3d/rigged/liu_kang_rigged.glb',
+    is_rigged: true,
+    bone_count: 85,
+    skeleton: 'Humanoid Skeleton',
+    format: 'glb',
+    file_size: '0.99 MB',
+    role: 'character',
+    description: 'Shaolin martial artist warrior model rigged with full combat skeleton.',
+  },
+  {
+    id: 'gt-scorpion',
+    name: 'Scorpion',
+    source: require('../../../assets/models3d/thumbnails/scorpion.png'),
+    category: '3D Models',
+    tags: ['ninja', 'scorpion', 'fighter', 'warrior', 'assassin', 'character', 'hero', 'rigged', '3d'],
+    url: '/storage/models3d/rigged/scorpion_rigged.glb',
+    is_rigged: true,
+    bone_count: 85,
+    skeleton: 'Humanoid Skeleton',
+    format: 'glb',
+    file_size: '0.43 MB',
+    role: 'character',
+    description: 'Netherrealm ninja warrior rigged with martial arts skeleton.',
+  },
+  {
+    id: 'gt-green-lantern',
+    name: 'Green Lantern',
+    source: require('../../../assets/models3d/thumbnails/hal_jordan.png'),
+    category: '3D Models',
+    tags: ['superhero', 'green_lantern', 'hal_jordan', 'hero', 'character', 'rigged', '3d'],
+    url: '/storage/models3d/rigged/hal_jordan_green_lantern_rigged.glb',
+    is_rigged: true,
+    bone_count: 100,
+    skeleton: 'UE5 Master Skeleton',
+    format: 'glb',
+    file_size: '1.2 MB',
+    role: 'character',
+    description: 'DC Comics superhero Hal Jordan rigged with superhero flight skeleton.',
   },
 ];
 
@@ -90,8 +160,8 @@ const INITIAL_PERSONAL_ASSETS: AssetItem[] = [
     name: 'Pink Coral',
     source: require('../../../assets/forge/generated/coral.png'),
     color: '#13182C',
-    category: '3D Models',
-    tags: ['coral', 'nature', 'reef', 'obstacle', '3d'],
+    category: '2D Assets',
+    tags: ['coral', 'nature', 'reef', 'obstacle'],
   },
   {
     id: 'treasure-chest',
@@ -184,10 +254,10 @@ export const AddToGameScreen: React.FC<Props> = ({
         const picked = result.assets[0];
         const newAsset: AssetItem = {
           id: `upload-${Date.now()}`,
-          name: picked.fileName || 'Uploaded Sprite',
+          name: picked.fileName || 'Custom Asset',
           source: { uri: picked.uri },
           category: 'Images',
-          tags: ['upload', 'sprite', 'custom', 'user'],
+          tags: ['upload', 'asset', 'custom', 'user'],
           color: '#121F2D',
           uri: picked.uri,
         };
@@ -314,7 +384,8 @@ export const AddToGameScreen: React.FC<Props> = ({
                   resizeMode={
                     selectedAsset.color ||
                     selectedAsset.category === '2D Sprites' ||
-                    selectedAsset.category === 'UI'
+                    selectedAsset.category === 'UI' ||
+                    selectedAsset.category === '3D Models'
                       ? 'contain'
                       : 'cover'
                   }
@@ -327,7 +398,11 @@ export const AddToGameScreen: React.FC<Props> = ({
                     {selectedAsset.name}
                   </Text>
                   <View style={styles.previewBadge}>
-                    <Text style={styles.previewBadgeText}>{selectedAsset.category}</Text>
+                    <Text style={styles.previewBadgeText}>
+                      {selectedAsset.is_rigged
+                        ? `${selectedAsset.bone_count || 100} BONES • RIGGED 3D`
+                        : selectedAsset.category}
+                    </Text>
                   </View>
                 </View>
 
@@ -438,7 +513,23 @@ export const AddToGameScreen: React.FC<Props> = ({
                           pressed && styles.assetCardPressed,
                         ]}
                       >
-                        <Image source={asset.source} style={styles.assetImage} resizeMode="cover" />
+                        <Image
+                          source={asset.source}
+                          style={styles.assetImage}
+                          resizeMode={asset.category === '3D Models' ? 'contain' : 'cover'}
+                        />
+                        {asset.category === '3D Models' && (
+                          <View style={styles.badge3DOverlay}>
+                            <Text style={styles.badge3DText}>3D GLB</Text>
+                          </View>
+                        )}
+                        {asset.category === '3D Models' && (
+                          <View style={styles.cardNameFooter}>
+                            <Text style={styles.cardNameText} numberOfLines={1}>
+                              {asset.name}
+                            </Text>
+                          </View>
+                        )}
                         {isSelected && (
                           <View style={styles.cardCheckmark}>
                             <Ionicons name="checkmark" size={11} color="#FFFFFF" />
@@ -546,7 +637,7 @@ export const AddToGameScreen: React.FC<Props> = ({
               </View>
 
               <Text style={styles.aiModalSubtitle}>
-                Describe the sprite, item, or effect you want to add:
+                Describe the asset, item, or effect you want to add:
               </Text>
 
               {/* Text Input */}
@@ -915,6 +1006,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.2,
     borderColor: '#FFFFFF',
+    zIndex: 10,
+  },
+  badge3DOverlay: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(139, 92, 246, 0.9)',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    zIndex: 5,
+  },
+  badge3DText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontFamily: t.family.bold,
+    letterSpacing: 0.3,
+  },
+  cardNameFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 4, 11, 0.8)',
+    paddingVertical: 2,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  cardNameText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontFamily: t.family.semibold,
   },
   assetImage: {
     width: '100%',
