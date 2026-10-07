@@ -225,19 +225,21 @@ export const GameCreatorScreen: React.FC<Props> = ({
               />
               <Pressable
                 onPress={handleMainSend}
-                style={({ pressed }) => [styles.promptAction, pressed && styles.pressed]}
+                disabled={!input.trim() && attachedAssets.length === 0}
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  (input.trim() || attachedAssets.length > 0)
+                    ? styles.sendButtonActive
+                    : styles.sendButtonDisabled,
+                  pressed && styles.pressed,
+                ]}
+                hitSlop={8}
               >
-                {input.trim() ? (
-                  <View style={styles.activeSendIcon}>
-                    <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
-                  </View>
-                ) : (
-                  <View style={styles.waveform}>
-                    {[10, 18, 27, 19, 12].map((height, index) => (
-                      <View key={index} style={[styles.waveformBar, { height }]} />
-                    ))}
-                  </View>
-                )}
+                <Ionicons
+                  name="arrow-up"
+                  size={18}
+                  color={(input.trim() || attachedAssets.length > 0) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.35)'}
+                />
               </Pressable>
             </View>
 
@@ -546,39 +548,22 @@ const styles = StyleSheet.create({
     fontFamily: t.family.medium,
     paddingVertical: spacing.sm,
   },
-  promptAction: {
-    width: 42,
-    height: 42,
+  sendButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activeSendIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  sendButtonActive: {
     backgroundColor: '#0EA5E9',
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#0EA5E9',
     shadowOpacity: 0.5,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
   },
-  waveform: {
-    height: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  waveformBar: {
-    width: 3,
-    borderRadius: 3,
-    backgroundColor: palette.purpleSoft,
-    shadowColor: palette.purple,
-    shadowOpacity: 0.65,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 0 },
+  sendButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   bottomActions: {
     flexDirection: 'row',
