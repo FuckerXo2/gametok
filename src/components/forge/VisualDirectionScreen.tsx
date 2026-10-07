@@ -656,6 +656,12 @@ export const VisualDirectionScreen = ({
     onSelect(direction);
   };
 
+  const hasValidImages = useMemo(() => {
+    return directions.some((d) => Boolean(d.imageUrl || d.imageSource));
+  }, [directions]);
+
+  const isFallbackActive = showQuestionnaireFallback || (directions.length > 0 && !hasValidImages);
+
   return (
     <View style={styles.root}>
       {/* Deep obsidian midnight background matching mockup exactly */}
@@ -691,14 +697,16 @@ export const VisualDirectionScreen = ({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Main Title - Subtitle removed as requested to give more room for larger cards */}
+          {/* Main Title */}
           <View style={styles.titleSection}>
             <Text style={styles.title}>
-              Here are a few visual directions{'\n'}for your game.
+              {isFallbackActive
+                ? 'Choose your game setup'
+                : 'Here are a few visual directions\nfor your game.'}
             </Text>
           </View>
 
-          {showQuestionnaireFallback ? (
+          {isFallbackActive ? (
             <View style={styles.questionnaireCard}>
               <View style={styles.questionnaireHeader}>
                 <Ionicons name="options-outline" size={20} color="#00F0FF" />
@@ -797,7 +805,7 @@ export const VisualDirectionScreen = ({
                 </LinearGradient>
               </Pressable>
 
-              {directions.length > 0 && (
+              {directions.length > 0 && hasValidImages && (
                 <Pressable
                   style={styles.fallbackToggleBtn}
                   onPress={() => setShowQuestionnaireFallback(false)}
