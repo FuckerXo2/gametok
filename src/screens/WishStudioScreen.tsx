@@ -988,10 +988,19 @@ export const WishStudioScreen = ({
         selectedDirectionId: direction.id,
       });
 
+      pushMessage({
+        role: 'user',
+        text: `Visual style: ${direction.name}${refinement ? ` (${refinement})` : ''}`,
+      });
+      pushMessage({
+        role: 'kimi',
+        text: `Locked in ${direction.name}. Building ${gameName || 'your game'} now...`,
+      });
+
       setJourneyView('building');
       handleCreate();
     },
-    [initialPrompt, gameName, orientation, handleCreate],
+    [initialPrompt, gameName, orientation, handleCreate, pushMessage],
   );
 
   const handleSkipDirections = useCallback(() => {
@@ -1054,13 +1063,13 @@ export const WishStudioScreen = ({
       setBuildError(null);
       setGenProgress(5);
       setGenStatusMessage('Making your wish real...');
-      pushMessage({ role: 'kimi', text: 'On it.' });
+      pushMessage({ role: 'kimi', text: 'On it, modifying your game...' });
       runBuild(
-        ai.editGame(draftId, wish, attachments, { onStatus: onJobStatus }),
+        ai.editGame(draftId, wish, attachments, { onStatus: onJobStatus, messages }),
         () => 'Done — take a look.',
       );
     },
-    [pushMessage, onJobStatus, runBuild],
+    [pushMessage, onJobStatus, runBuild, messages],
   );
 
   const handleCancelBuild = useCallback(() => {
@@ -1282,6 +1291,11 @@ export const WishStudioScreen = ({
           prompt={initialPrompt}
           gameTitle={gameName ?? 'Your game'}
           activeStep={activeStep >= 0 ? activeStep : 1}
+          mascotMessage={
+            backendStatusMessage ||
+            genStatusMessage ||
+            "Everything's coming together!\nThis usually takes a few minutes."
+          }
           onClose={handleCloseRequest}
           onCookInBackground={() => {
             setJourneyView('creator');
@@ -1343,6 +1357,7 @@ export const WishStudioScreen = ({
           }
           onUndo={handleUndo}
           onMore={() => Alert.alert(gameName ?? initialGame?.title ?? 'Your game', 'More creator options will appear here.')}
+          messages={messages}
           isEditing={phase === 'building'}
         />
       )}

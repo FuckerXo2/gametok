@@ -731,16 +731,22 @@ export const ai = {
     draftId: string,
     instructions: string,
     attachments: Array<{ type: string; role?: string; url: string; instruction: string; label?: string }> = [],
-    options?: { onStatus?: (status: any) => void },
+    options?: { onStatus?: (status: any) => void; messages?: any[] },
   ) => {
     const controller = new AbortController();
     const promise = new Promise<any>(async (resolve, reject) => {
       try {
         const res = await request('/ai/edit', {
           method: 'POST',
-          body: JSON.stringify({ draftId, instructions, attachments }),
+          body: JSON.stringify({ draftId, instructions, attachments, messages: options?.messages || [] }),
           signal: controller.signal,
         }, 60000);
+
+        if (res?.htmlPreview) {
+          resolve(res);
+          return;
+        }
+
         const jobId = res.jobId;
         if (!jobId) { reject(new Error(res.error || 'Edit did not start')); return; }
         let errs = 0;
@@ -760,6 +766,13 @@ export const ai = {
       } catch (e) { reject(e); }
     });
     return { promise, cancel: () => controller.abort() };
+  },
+
+  undoEdit: async (draftId: string) => {
+    return request('/ai/undo', {
+      method: 'POST',
+      body: JSON.stringify({ draftId }),
+    });
   },
 
   dreamLabs: (
@@ -1349,6 +1362,91 @@ export const audioApi = {
     return res.json();
   },
 };
+
+// ─── 3D MODELS SYSTEM ───
+
+export interface Model3DAsset {
+  id: string;
+  name: string;
+  title: string;
+  category: string;
+  subcategory?: string;
+  tags: string[];
+  url: string;
+  cdn_url?: string;
+  thumbnail_url?: string;
+  thumb?: string;
+  is_rigged: boolean;
+  rig_type?: string;
+  bone_count?: number;
+  format?: string;
+  file_size?: string;
+  file_size_bytes?: number;
+  uses_count?: number;
+  description?: string;
+  creator_id?: string;
+}
+
+export interface Model3DCategory {
+  id: string;
+  label: string;
+  chips: string[];
+}
+
+export const models3dApi = {
+  getCategories: async (): Promise<Model3DCategory[]> => {
+    try {
+      const res = await request('/assets/3d/categories');
+      return res.categories || [];
+    } catch {
+      return [
+        { id: 'trending', label: 'Trending', chips: [] },
+        { id: 'lagos', label: '🇳🇬 Lagos & GTA', chips: ['street_hustler', 'tech_bro', 'veteran', 'danfo', 'lekki', 'third_mainland'] },
+        { id: 'characters', label: 'Characters', chips: ['rigged', 'ue5_bones', 'fighters', 'superheroes', 'street_citizens'] },
+        { id: 'vehicles', label: 'Vehicles', chips: ['danfo_bus', 'racing', 'gt_cars', 'sports'] },
+        { id: 'environments', label: 'Environments', chips: ['highways', 'bridges', 'stadium', 'modular_roads'] },
+        { id: 'props', label: 'Props', chips: ['barriers', 'billboards', 'streetlights'] },
+        { id: 'my_models', label: 'My Models', chips: [] },
+      ];
+    }
+  },
+  getModels: async (params?: {
+    category?: string;
+    tag?: string;
+    search?: string;
+    creator_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ models: Model3DAsset[]; total: number; hasMore: boolean }> => {
+    const q = new URLSearchParams();
+    if (params?.category) q.append('category', params.category);
+    if (params?.tag) q.append('tag', params.tag);
+    if (params?.search) q.append('search', params.search);
+    if (params?.creator_id) q.append('creator_id', params.creator_id);
+    if (params?.limit) q.append('limit', String(params.limit));
+    if (params?.offset) q.append('offset', String(params.offset));
+    const url = `/assets/3d${q.toString() ? `?${q.toString()}` : ''}`;
+    try {
+      return await request(url);
+    } catch {
+      return { models: [], total: 0, hasMore: false };
+    }
+  },
+  uploadModel: async (formData: FormData): Promise<any> => {
+    const token = await getToken();
+    const clientId = await getClientId();
+    const res = await fetch(`${API_URL}/assets/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'X-Client-Id': clientId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.json();
+  },
+};
+
 
 
 

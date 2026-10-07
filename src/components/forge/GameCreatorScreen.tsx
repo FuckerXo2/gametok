@@ -1,24 +1,28 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
+  FlatList,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PreviewPane } from '../wish/PreviewPane';
 import { DEFAULT_ORIENTATION, type Orientation } from '../../constants/orientation';
 import { palette, radii, spacing, type as t } from '../../theme/tokens';
+import type { WishMessage } from '../wish/wishTypes';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const PREVIEW_HEIGHT = Math.min(520, Math.max(360, Math.round(SCREEN_HEIGHT * 0.52)));
+const FULL_PREVIEW_HEIGHT = Math.min(520, Math.max(360, Math.round(SCREEN_HEIGHT * 0.52)));
+const SPLIT_PREVIEW_HEIGHT = Math.min(240, Math.max(180, Math.round(SCREEN_HEIGHT * 0.28)));
 const FORGE_MASCOT = require('../../../assets/forge/forge_mascot.png');
 
 interface Props {
@@ -38,6 +42,7 @@ interface Props {
   onUndo: () => void;
   onMore: () => void;
   isEditing?: boolean;
+  messages?: WishMessage[];
   attachedAssets?: any[];
   onRemoveAsset?: (id: string) => void;
 }
@@ -59,34 +64,134 @@ export const GameCreatorScreen: React.FC<Props> = ({
   onUndo,
   onMore,
   isEditing = false,
+  messages = [],
   attachedAssets = [],
   onRemoveAsset,
 }) => {
-  const mascotMessage = isEditing
-    ? 'Making that happen...'
-    : input.trim()
-      ? "I'm listening..."
-      : 'What should we change?';
+  const insets = useSafeAreaInsets();
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [inputHeight, setInputHeight] = useState(38);
+  const [viewMode, setViewMode] = useState<'split' | 'game' | 'chat'>('split');
+  const chatListRef = useRef<FlatList<WishMessage>>(null);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setIsKeyboardVisible(true);
+      const kh = e.endCoordinates ? e.endCoordinates.height : 336;
+      setKeyboardHeight(kh);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!input) {
+      setInputHeight(38);
+    }
+  }, [input]);
+
+  // Keep chat scrolled to newest message
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      chatListRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [messages.length, isEditing, viewMode]);
+
+  const promptBarHeight = Math.max(52, inputHeight + 14);
+  const controlsHeight = promptBarHeight + (attachedAssets.length > 0 ? 44 : 0) + 16;
+  const activeKeyboardHeight = isKeyboardVisible ? (keyboardHeight || 336) : 0;
+
+  // Determine preview height based on mode & keyboard state
+  const computedPreviewHeight = (() => {
+    if (viewMode === 'chat') return 0;
+    if (viewMode === 'game') {
+      return isKeyboardVisible
+        ? Math.max(120, Math.floor(SCREEN_HEIGHT - insets.top - 56 - activeKeyboardHeight - controlsHeight))
+        : FULL_PREVIEW_HEIGHT;
+    }
+    // 'split' mode
+    return isKeyboardVisible ? 120 : SPLIT_PREVIEW_HEIGHT;
+  })();
+
+  const renderMessageItem = ({ item }: { item: WishMessage }) => {
+    const isUser = item.role === 'user';
+    return (
+      <View style={[styles.chatRow, isUser ? styles.chatRowUser : styles.chatRowKimi]}>
+        {!isUser && (
+          <View style={styles.kimiAvatar}>
+            <Image source={FORGE_MASCOT} style={styles.kimiAvatarImg} resizeMode="contain" />
+          </View>
+        )}
+        <View style={[styles.chatBubble, isUser ? styles.chatBubbleUser : styles.chatBubbleKimi]}>
+          <Text style={[styles.chatBubbleText, isUser ? styles.chatTextUser : styles.chatTextKimi]}>
+            {item.text}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <LinearGradient colors={['#00050D', '#010814', '#00040A']} style={styles.root}>
-      <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView
-          style={styles.keyboardArea}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <View style={[styles.contentContainer, { paddingTop: insets.top }]}>
+        <View
+          style={[
+            styles.keyboardArea,
+            isKeyboardVisible && { paddingBottom: activeKeyboardHeight },
+          ]}
         >
+          {/* Header */}
           <View style={styles.header}>
             <Pressable
-              onPress={onBack}
+              onPress={() => {
+                Keyboard.dismiss();
+                onBack();
+              }}
               style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
               hitSlop={8}
             >
               <Ionicons name="chevron-back" size={22} color={palette.text} />
             </Pressable>
 
-            <Text style={styles.title} numberOfLines={1}>
-              {gameName || 'Your game'}
-            </Text>
+            {/* Title & View Selector */}
+            <View style={styles.titleWrap}>
+              <Text style={styles.title} numberOfLines={1}>
+                {gameName || 'Your game'}
+              </Text>
+              <View style={styles.modeTabs}>
+                <Pressable
+                  style={[styles.modeTab, viewMode === 'split' && styles.modeTabActive]}
+                  onPress={() => setViewMode('split')}
+                >
+                  <Ionicons name="git-compare-outline" size={12} color={viewMode === 'split' ? '#00F0FF' : 'rgba(255,255,255,0.45)'} />
+                  <Text style={[styles.modeTabText, viewMode === 'split' && styles.modeTabTextActive]}>Split</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modeTab, viewMode === 'game' && styles.modeTabActive]}
+                  onPress={() => setViewMode('game')}
+                >
+                  <Ionicons name="game-controller-outline" size={12} color={viewMode === 'game' ? '#00F0FF' : 'rgba(255,255,255,0.45)'} />
+                  <Text style={[styles.modeTabText, viewMode === 'game' && styles.modeTabTextActive]}>Game</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modeTab, viewMode === 'chat' && styles.modeTabActive]}
+                  onPress={() => setViewMode('chat')}
+                >
+                  <Ionicons name="chatbubbles-outline" size={12} color={viewMode === 'chat' ? '#00F0FF' : 'rgba(255,255,255,0.45)'} />
+                  <Text style={[styles.modeTabText, viewMode === 'chat' && styles.modeTabTextActive]}>Chat</Text>
+                </Pressable>
+              </View>
+            </View>
 
             <View style={styles.headerActions}>
               <Pressable
@@ -106,21 +211,82 @@ export const GameCreatorScreen: React.FC<Props> = ({
             </View>
           </View>
 
-          <View style={styles.previewFrame}>
-            <PreviewPane
-              state={html || gameUrl || gameScript ? 'ready' : 'empty'}
-              gameName={gameName}
-              beats={[]}
-              html={html}
-              gameUrl={gameUrl}
-              orientation={orientation}
-              runtime={runtime}
-              gameScript={gameScript}
-              containerStyle={styles.preview}
-            />
-          </View>
+          {/* Game Preview Pane (hidden in full chat mode) */}
+          {viewMode !== 'chat' && (
+            <Pressable
+              onPress={isKeyboardVisible ? Keyboard.dismiss : undefined}
+              style={[
+                styles.previewFrame,
+                { height: computedPreviewHeight },
+              ]}
+            >
+              <PreviewPane
+                state={html || gameUrl || gameScript ? 'ready' : 'empty'}
+                gameName={gameName}
+                beats={[]}
+                html={html}
+                gameUrl={gameUrl}
+                orientation={orientation}
+                runtime={runtime}
+                gameScript={gameScript}
+                containerStyle={styles.preview}
+              />
+              {isEditing && (
+                <View style={styles.editingBadge}>
+                  <ActivityIndicator size="small" color="#00F0FF" style={{ marginRight: 8 }} />
+                  <Text style={styles.editingBadgeText}>Applying changes...</Text>
+                </View>
+              )}
+            </Pressable>
+          )}
 
-          <View style={styles.creatorControls}>
+          {/* If preview is hidden in full chat mode, show compact pill to switch back */}
+          {viewMode === 'chat' && (
+            <Pressable style={styles.previewCollapsedBanner} onPress={() => setViewMode('split')}>
+              <Ionicons name="eye-outline" size={16} color="#00F0FF" />
+              <Text style={styles.previewCollapsedText}>Game Preview is live · Tap to view</Text>
+              <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.4)" />
+            </Pressable>
+          )}
+
+          {/* Continuous Chat Conversation Stream (visible in 'split' and 'chat' modes) */}
+          {viewMode !== 'game' ? (
+            <View style={styles.chatSection}>
+              <FlatList
+                ref={chatListRef}
+                data={messages}
+                keyExtractor={(item) => item.id}
+                renderItem={renderMessageItem}
+                contentContainerStyle={styles.chatListContent}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={
+                  <View style={styles.emptyChatWrap}>
+                    <Text style={styles.emptyChatText}>
+                      Every wish changes the game. Type any modification below to continue.
+                    </Text>
+                  </View>
+                }
+                ListFooterComponent={
+                  isEditing ? (
+                    <View style={[styles.chatRow, styles.chatRowKimi]}>
+                      <View style={styles.kimiAvatar}>
+                        <Image source={FORGE_MASCOT} style={styles.kimiAvatarImg} resizeMode="contain" />
+                      </View>
+                      <View style={[styles.chatBubble, styles.chatBubbleKimi, styles.chatBubbleEditing]}>
+                        <ActivityIndicator size="small" color="#00F0FF" style={{ marginRight: 8 }} />
+                        <Text style={styles.chatEditingText}>GameTok is applying code diff...</Text>
+                      </View>
+                    </View>
+                  ) : null
+                }
+              />
+            </View>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+
+          {/* Bottom Controls & Prompt Bar */}
+          <View style={[styles.creatorControls, isKeyboardVisible && styles.creatorControlsKeyboard]}>
             {attachedAssets.length > 0 && (
               <View style={styles.attachedRow}>
                 {attachedAssets.map((asset) => (
@@ -140,44 +306,72 @@ export const GameCreatorScreen: React.FC<Props> = ({
             )}
 
             <View style={styles.promptBar}>
-              <Ionicons name="mic-outline" size={20} color={palette.textMuted} />
+              <View style={styles.promptLeading}>
+                {isKeyboardVisible ? (
+                  <Pressable
+                    onPress={() => Keyboard.dismiss()}
+                    hitSlop={8}
+                    style={styles.leadingIconButton}
+                  >
+                    <Ionicons name="chevron-down" size={20} color={palette.textMuted} />
+                  </Pressable>
+                ) : (
+                  <Ionicons name="mic-outline" size={20} color={palette.textMuted} />
+                )}
+              </View>
               <TextInput
                 value={input}
                 onChangeText={onChangeInput}
-                onSubmitEditing={onSend}
-                placeholder="Ask GameTok..."
+                placeholder="Ask GameTok to change anything..."
                 placeholderTextColor={palette.textDim}
-                returnKeyType="send"
-                style={styles.promptInput}
+                multiline
+                scrollEnabled
+                style={[
+                  styles.promptInput,
+                  { height: Math.max(38, Math.min(100, inputHeight)) },
+                ]}
+                onContentSizeChange={(e) => {
+                  const h = e.nativeEvent?.contentSize?.height;
+                  if (h && h > 0) {
+                    setInputHeight(h);
+                  }
+                }}
               />
               <Pressable
-                onPress={onSend}
-                style={({ pressed }) => [styles.promptAction, pressed && styles.pressed]}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  onSend();
+                }}
+                disabled={!input.trim() || isEditing}
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  input.trim() && !isEditing ? styles.sendButtonActive : styles.sendButtonDisabled,
+                  pressed && styles.pressed,
+                ]}
+                hitSlop={8}
               >
-                <View style={styles.waveform}>
-                  {[10, 18, 27, 19, 12].map((height, index) => (
-                    <View key={index} style={[styles.waveformBar, { height }]} />
-                  ))}
-                </View>
+                {isEditing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons
+                    name="arrow-up"
+                    size={18}
+                    color={input.trim() ? '#FFFFFF' : 'rgba(255, 255, 255, 0.35)'}
+                  />
+                )}
               </Pressable>
             </View>
 
-            <View style={styles.bottomActions}>
-              <CreatorButton icon="add" label="Add" onPress={onAdd} />
-              <CreatorButton icon="cube-outline" label="Game" onPress={onGameSettings} />
-              <CreatorButton icon="play" label="Play" onPress={onPlay} />
-            </View>
+            {!isKeyboardVisible && (
+              <View style={styles.bottomActions}>
+                <CreatorButton icon="add" label="Add" onPress={onAdd} />
+                <CreatorButton icon="cube-outline" label="Game" onPress={onGameSettings} />
+                <CreatorButton icon="play" label="Play" onPress={onPlay} />
+              </View>
+            )}
           </View>
-
-          <View style={styles.mascotRow}>
-            <Image source={FORGE_MASCOT} style={styles.mascot} resizeMode="contain" />
-            <View style={styles.mascotBubble}>
-              <View style={styles.mascotBubbleTail} />
-              <Text style={styles.mascotMessage}>{mascotMessage}</Text>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </View>
+      </View>
     </LinearGradient>
   );
 };
@@ -195,37 +389,68 @@ const CreatorButton = ({
     onPress={onPress}
     style={({ pressed }) => [styles.creatorButton, pressed && styles.creatorButtonPressed]}
   >
-    <Ionicons name={icon} size={23} color={palette.text} />
+    <Ionicons name={icon} size={20} color={palette.text} />
     <Text style={styles.creatorButtonText}>{label}</Text>
   </Pressable>
 );
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  safeArea: { flex: 1 },
+  contentContainer: { flex: 1 },
   keyboardArea: { flex: 1 },
   header: {
-    height: 58,
+    height: 54,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: palette.glassWhite,
     borderWidth: 1,
     borderColor: palette.lineStrong,
   },
-  title: {
+  titleWrap: {
     flex: 1,
-    marginHorizontal: spacing.md,
+    marginHorizontal: spacing.sm,
+    justifyContent: 'center',
+  },
+  title: {
     color: palette.text,
-    fontSize: t.size.bodyLg,
+    fontSize: 15,
     fontFamily: t.family.bold,
+  },
+  modeTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  modeTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  modeTabActive: {
+    backgroundColor: 'rgba(0, 240, 255, 0.16)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 240, 255, 0.4)',
+  },
+  modeTabText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontFamily: t.family.semibold,
+  },
+  modeTabTextActive: {
+    color: '#00F0FF',
   },
   headerActions: {
     flexDirection: 'row',
@@ -233,15 +458,14 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   headerIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pressed: { opacity: 0.62, transform: [{ scale: 0.97 }] },
   previewFrame: {
-    height: PREVIEW_HEIGHT,
     marginHorizontal: spacing.md,
     marginTop: spacing.xs,
     borderRadius: radii.xl,
@@ -256,17 +480,153 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderRadius: 0,
   },
+  editingBadge: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(10, 18, 36, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 255, 0.45)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    shadowColor: '#00F0FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  editingBadgeText: {
+    color: '#E0F7FF',
+    fontSize: 13,
+    fontFamily: t.family.semibold,
+  },
+  previewCollapsedBanner: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radii.md,
+    backgroundColor: 'rgba(10, 20, 38, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 255, 0.25)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  previewCollapsedText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontFamily: t.family.semibold,
+    flex: 1,
+    marginLeft: 8,
+  },
+  chatSection: {
+    flex: 1,
+    marginHorizontal: spacing.md,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  chatListContent: {
+    paddingVertical: 6,
+    gap: 8,
+  },
+  chatRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    maxWidth: '100%',
+  },
+  chatRowUser: {
+    justifyContent: 'flex-end',
+  },
+  chatRowKimi: {
+    justifyContent: 'flex-start',
+  },
+  kimiAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10, 20, 38, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    overflow: 'hidden',
+  },
+  kimiAvatarImg: {
+    width: 22,
+    height: 22,
+  },
+  chatBubble: {
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: '82%',
+  },
+  chatBubbleUser: {
+    backgroundColor: 'rgba(14, 165, 233, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(14, 165, 233, 0.45)',
+    borderBottomRightRadius: 4,
+  },
+  chatBubbleKimi: {
+    backgroundColor: 'rgba(18, 26, 44, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderBottomLeftRadius: 4,
+  },
+  chatBubbleEditing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderColor: 'rgba(0, 240, 255, 0.4)',
+  },
+  chatBubbleText: {
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  chatTextUser: {
+    color: '#F0F9FF',
+    fontFamily: t.family.medium,
+  },
+  chatTextKimi: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontFamily: t.family.regular,
+  },
+  chatEditingText: {
+    color: '#00F0FF',
+    fontSize: 12.5,
+    fontFamily: t.family.semibold,
+  },
+  emptyChatWrap: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  emptyChatText: {
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   creatorControls: {
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
+    paddingTop: 4,
     paddingBottom: spacing.sm,
-    gap: spacing.sm,
+    gap: spacing.xs,
+  },
+  creatorControlsKeyboard: {
+    paddingTop: 2,
+    paddingBottom: 4,
+    gap: 6,
   },
   attachedRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   attachedChip: {
     flexDirection: 'row',
@@ -293,53 +653,65 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   promptBar: {
-    minHeight: 66,
-    paddingHorizontal: spacing.lg,
+    minHeight: 50,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: spacing.sm,
     borderRadius: radii.lg,
     backgroundColor: 'rgba(12, 19, 34, 0.96)',
     borderWidth: 1,
     borderColor: 'rgba(103, 232, 249, 0.22)',
   },
+  promptLeading: {
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  leadingIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   promptInput: {
     flex: 1,
-    minHeight: 62,
     color: palette.text,
     fontSize: t.size.bodyLg,
     fontFamily: t.family.medium,
-    paddingVertical: spacing.sm,
+    paddingTop: Platform.OS === 'ios' ? 8 : 4,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 4,
+    paddingHorizontal: 4,
+    textAlignVertical: 'center',
   },
-  promptAction: {
-    width: 42,
-    height: 42,
+  sendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 1,
   },
-  waveform: {
-    height: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  waveformBar: {
-    width: 3,
-    borderRadius: 3,
-    backgroundColor: palette.purpleSoft,
-    shadowColor: palette.purple,
-    shadowOpacity: 0.65,
-    shadowRadius: 5,
+  sendButtonActive: {
+    backgroundColor: '#0EA5E9',
+    shadowColor: '#0EA5E9',
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
+  },
+  sendButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   bottomActions: {
     flexDirection: 'row',
     gap: spacing.sm,
+    marginTop: 2,
   },
   creatorButton: {
     flex: 1,
-    height: 62,
+    height: 50,
     borderRadius: radii.lg,
     backgroundColor: 'rgba(12, 19, 34, 0.96)',
     borderWidth: 1,
@@ -356,47 +728,7 @@ const styles = StyleSheet.create({
   },
   creatorButtonText: {
     color: palette.text,
-    fontSize: t.size.bodyLg,
+    fontSize: 14,
     fontFamily: t.family.semibold,
-  },
-  mascotRow: {
-    flex: 1,
-    minHeight: 112,
-    paddingHorizontal: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  mascot: {
-    width: 92,
-    height: 104,
-  },
-  mascotBubble: {
-    flex: 1,
-    marginLeft: spacing.md,
-    borderRadius: radii.lg,
-    borderWidth: 1.2,
-    borderColor: 'rgba(103, 232, 249, 0.28)',
-    backgroundColor: 'rgba(14, 21, 38, 0.94)',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-  },
-  mascotBubbleTail: {
-    position: 'absolute',
-    left: -9,
-    top: 24,
-    width: 0,
-    height: 0,
-    borderTopWidth: 7,
-    borderTopColor: 'transparent',
-    borderBottomWidth: 7,
-    borderBottomColor: 'transparent',
-    borderRightWidth: 10,
-    borderRightColor: 'rgba(14, 21, 38, 0.94)',
-  },
-  mascotMessage: {
-    color: palette.text,
-    fontSize: t.size.bodyLg,
-    lineHeight: 24,
-    fontFamily: t.family.bold,
   },
 });

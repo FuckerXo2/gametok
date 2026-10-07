@@ -520,6 +520,26 @@ export const VisualDirectionScreen = ({
   const [generatingMap, setGeneratingMap] = useState<Record<string, boolean>>({});
   const nextCandidateIndexRef = useRef(0);
 
+  // Smart text questionnaire fallback (combat style, camera view, objective)
+  const [showQuestionnaireFallback, setShowQuestionnaireFallback] = useState(false);
+  const [selectedCombat, setSelectedCombat] = useState('Street Brawler (Melee)');
+  const [selectedCamera, setSelectedCamera] = useState('3rd Person Follow (Behind-Back)');
+  const [selectedObjective, setSelectedObjective] = useState('Conquer Lagos Districts');
+
+  const handleConfirmQuestionnaire = () => {
+    const customDir: VisualDirection = {
+      id: `questionnaire-${Date.now()}`,
+      name: `${selectedCombat}`,
+      tagline: `${selectedCamera} • ${selectedObjective}`,
+      description: `3D game featuring ${selectedCombat}, ${selectedCamera}, and objective: ${selectedObjective}.`,
+      icon: 'game-controller',
+      colors: ['#00F0FF', '#8B5CF6', '#EC4899'],
+      instruction: `Combat: ${selectedCombat}. Camera: ${selectedCamera}. Objective: ${selectedObjective}.`,
+      themeType: 'cyber',
+    };
+    onUseDirection(customDir, refinement.trim());
+  };
+
   // If prompt or gameTitle changes and no propDirections passed, fetch live visual directions from backend
   useEffect(() => {
     setAppendedCards([]);
@@ -678,35 +698,159 @@ export const VisualDirectionScreen = ({
             </Text>
           </View>
 
-          {/* Grid of Visual Direction Cards: 1-col widescreen for landscape, 2x2 for portrait */}
-          {directions.length === 0 ? (
-            <View style={{ paddingVertical: 60, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          {showQuestionnaireFallback ? (
+            <View style={styles.questionnaireCard}>
+              <View style={styles.questionnaireHeader}>
+                <Ionicons name="options-outline" size={20} color="#00F0FF" />
+                <Text style={styles.questionnaireTitle}>Game Architecture Setup</Text>
+              </View>
+              <Text style={styles.questionnaireSubtitle}>
+                Select core gameplay rules to forge your 3D open-world experience:
+              </Text>
+
+              {/* Combat Style */}
+              <Text style={styles.questionnaireSectionLabel}>Combat Style</Text>
+              <View style={styles.radioGroup}>
+                {[
+                  { id: 'Street Brawler (Melee)', icon: 'hand-left-outline' },
+                  { id: 'Guns & Weaponry', icon: 'flash-outline' },
+                  { id: 'Vehicles & Racing', icon: 'car-sport-outline' },
+                  { id: 'Stealth & Survival', icon: 'shield-checkmark-outline' },
+                ].map((opt) => (
+                  <Pressable
+                    key={opt.id}
+                    style={[styles.radioOption, selectedCombat === opt.id && styles.radioOptionActive]}
+                    onPress={() => setSelectedCombat(opt.id)}
+                  >
+                    <Ionicons
+                      name={opt.icon as any}
+                      size={15}
+                      color={selectedCombat === opt.id ? '#00F0FF' : 'rgba(255,255,255,0.5)'}
+                    />
+                    <Text style={[styles.radioText, selectedCombat === opt.id && styles.radioTextActive]}>
+                      {opt.id}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Camera Perspective */}
+              <Text style={styles.questionnaireSectionLabel}>Camera Perspective</Text>
+              <View style={styles.radioGroup}>
+                {[
+                  { id: '3rd Person Follow (Behind-Back)', icon: 'videocam-outline' },
+                  { id: 'Top-Down Tactical View', icon: 'grid-outline' },
+                  { id: 'Isometric 3D Camera', icon: 'cube-outline' },
+                ].map((opt) => (
+                  <Pressable
+                    key={opt.id}
+                    style={[styles.radioOption, selectedCamera === opt.id && styles.radioOptionActive]}
+                    onPress={() => setSelectedCamera(opt.id)}
+                  >
+                    <Ionicons
+                      name={opt.icon as any}
+                      size={15}
+                      color={selectedCamera === opt.id ? '#00F0FF' : 'rgba(255,255,255,0.5)'}
+                    />
+                    <Text style={[styles.radioText, selectedCamera === opt.id && styles.radioTextActive]}>
+                      {opt.id}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Objective */}
+              <Text style={styles.questionnaireSectionLabel}>Objective</Text>
+              <View style={styles.radioGroup}>
+                {[
+                  { id: 'Conquer Lagos Districts', icon: 'flag-outline' },
+                  { id: 'Survive Endless Waves', icon: 'skull-outline' },
+                  { id: 'Delivery & Speed Run', icon: 'timer-outline' },
+                ].map((opt) => (
+                  <Pressable
+                    key={opt.id}
+                    style={[styles.radioOption, selectedObjective === opt.id && styles.radioOptionActive]}
+                    onPress={() => setSelectedObjective(opt.id)}
+                  >
+                    <Ionicons
+                      name={opt.icon as any}
+                      size={15}
+                      color={selectedObjective === opt.id ? '#00F0FF' : 'rgba(255,255,255,0.5)'}
+                    />
+                    <Text style={[styles.radioText, selectedObjective === opt.id && styles.radioTextActive]}>
+                      {opt.id}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Big Build Button */}
+              <Pressable style={styles.buildNowBtn} onPress={handleConfirmQuestionnaire}>
+                <LinearGradient
+                  colors={['#06B6D4', '#3B82F6', '#8B5CF6']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.buildNowGradient}
+                >
+                  <Ionicons name="construct-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.buildNowBtnText}>🤖 Build my idea now</Text>
+                </LinearGradient>
+              </Pressable>
+
+              {directions.length > 0 && (
+                <Pressable
+                  style={styles.fallbackToggleBtn}
+                  onPress={() => setShowQuestionnaireFallback(false)}
+                >
+                  <Ionicons name="images-outline" size={14} color="rgba(255,255,255,0.6)" />
+                  <Text style={styles.fallbackToggleText}>Back to 4 visual cards</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : directions.length === 0 ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
               <ActivityIndicator size="large" color="#a855f7" />
               <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600' }}>
                 Synthesizing game art directions...
               </Text>
+              <Pressable
+                style={styles.fallbackPromptBtn}
+                onPress={() => setShowQuestionnaireFallback(true)}
+              >
+                <Ionicons name="options" size={16} color="#00F0FF" />
+                <Text style={styles.fallbackPromptBtnText}>Configure game rules directly with text</Text>
+              </Pressable>
             </View>
           ) : (
-            <View style={[styles.grid, isLand && { flexDirection: 'column', gap: 16 }]}>
-              {directions.map((direction, index) => {
-                const active = direction.id === activeId;
-                return (
-                  <AnimatedDirectionCard
-                    key={direction.id}
-                    direction={direction}
-                    index={index}
-                    active={active}
-                    onPress={() => handleCardPress(direction)}
-                    isNew={index >= 4}
-                    isGenerating={!!generatingMap[direction.id]}
-                    cardWidth={cardWidth}
-                    cardHeight={cardHeight}
-                    artworkHeight={artworkHeight}
-                    isLand={isLand}
-                  />
-                );
-              })}
-            </View>
+            <>
+              <View style={[styles.grid, isLand && { flexDirection: 'column', gap: 16 }]}>
+                {directions.map((direction, index) => {
+                  const active = direction.id === activeId;
+                  return (
+                    <AnimatedDirectionCard
+                      key={direction.id}
+                      direction={direction}
+                      index={index}
+                      active={active}
+                      onPress={() => handleCardPress(direction)}
+                      isNew={index >= 4}
+                      isGenerating={!!generatingMap[direction.id]}
+                      cardWidth={cardWidth}
+                      cardHeight={cardHeight}
+                      artworkHeight={artworkHeight}
+                      isLand={isLand}
+                    />
+                  );
+                })}
+              </View>
+              <Pressable
+                style={styles.fallbackToggleBtn}
+                onPress={() => setShowQuestionnaireFallback(true)}
+              >
+                <Ionicons name="options-outline" size={14} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.fallbackToggleText}>Or configure game rules with text options</Text>
+              </Pressable>
+            </>
           )}
         </ScrollView>
 
@@ -1488,5 +1632,115 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  questionnaireCard: {
+    backgroundColor: 'rgba(12, 19, 34, 0.96)',
+    borderRadius: 20,
+    borderWidth: 1.2,
+    borderColor: 'rgba(0, 240, 255, 0.3)',
+    padding: 18,
+    marginVertical: 12,
+  },
+  questionnaireHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  questionnaireTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  questionnaireSubtitle: {
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 12.5,
+    marginBottom: 14,
+    lineHeight: 17,
+  },
+  questionnaireSectionLabel: {
+    color: '#00F0FF',
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginTop: 10,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  radioGroup: {
+    gap: 6,
+    marginBottom: 8,
+  },
+  radioOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  radioOptionActive: {
+    backgroundColor: 'rgba(0, 240, 255, 0.12)',
+    borderColor: '#00F0FF',
+  },
+  radioText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  radioTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  buildNowBtn: {
+    marginTop: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  buildNowGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  buildNowBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  fallbackToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  fallbackToggleText: {
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  fallbackPromptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0, 240, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 255, 0.35)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  fallbackPromptBtnText: {
+    color: '#00F0FF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

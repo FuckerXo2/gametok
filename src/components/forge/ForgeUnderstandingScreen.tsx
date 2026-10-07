@@ -26,6 +26,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FORGE_MASCOT = require('../../../assets/forge/forge_mascot.png');
 
 interface Props {
+  title?: string;
   prompt?: string;
   activeStep?: number;
   steps?: string[];
@@ -37,6 +38,7 @@ interface Props {
 }
 
 export const ForgeUnderstandingScreen: React.FC<Props> = ({
+  title = 'Understanding your idea...',
   prompt = '',
   activeStep: controlledActiveStep = 2,
   steps = DEFAULT_FORGE_STEPS,
@@ -122,7 +124,7 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
 
         {/* Section Title */}
         <View style={styles.titleWrap}>
-          <Text style={styles.titleText}>Understanding your idea...</Text>
+          <Text style={styles.titleText}>{title}</Text>
         </View>
 
         {/* Main Content Area */}
