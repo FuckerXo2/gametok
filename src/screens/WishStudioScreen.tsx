@@ -1273,6 +1273,7 @@ export const WishStudioScreen = ({
           selectedId={selectedDirectionId}
           generation={directionGeneration}
           orientation={orientation}
+          attachedAssets={initialAttachments}
           onSelect={(direction) => {
             setSelectedDirectionId(direction.id);
             setSelectedDirection(direction);
