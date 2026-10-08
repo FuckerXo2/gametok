@@ -42,7 +42,7 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
   prompt = '',
   activeStep: controlledActiveStep = 2,
   steps = DEFAULT_FORGE_STEPS,
-  mascotMessage = 'Exploring a few different directions for your game...',
+  mascotMessage = 'Pixil is exploring a few different directions for your game...',
   onClose,
   onRetry,
   errorMessage,

@@ -20,11 +20,11 @@ interface Props {
 }
 
 export const BUILDING_MASCOT_MESSAGES = [
-  'Gathering high-poly 3D models, textures, and assets...',
-  'Constructing the 3D scene geometry, lighting, and world...',
-  'Programming gameplay logic, physics, and touch controls...',
-  'Synthesizing dynamic sound effects and particle polish...',
-  'Finalizing your game build and preparing for play!',
+  'Pixil is gathering high-poly 3D models, textures, and assets...',
+  'Pixil is constructing the 3D scene geometry, lighting, and world...',
+  'Pixil is programming gameplay logic, physics, and touch controls...',
+  'Pixil is synthesizing dynamic sound effects and particle polish...',
+  'Pixil is finalizing your game build and preparing for play!',
 ];
 
 export const ForgeBuildingScreen: React.FC<Props> = ({

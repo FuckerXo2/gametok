@@ -123,11 +123,11 @@ const UNDERSTANDING_STEPS = [
   { icon: 'cube', text: 'Preparing concepts...' },
 ];
 const COMPANION_MESSAGES = [
-  "Analyzing your game idea and core vision...",
-  "Mapping out game mechanics, controls, and physics...",
-  "Hermes is brainstorming 4 unique visual art directions...",
-  "Synthesizing concept art and visual assets...",
-  "Finishing up your style preview cards...",
+  "Pixil is analyzing your game idea and core vision...",
+  "Pixil is mapping out game mechanics, controls, and physics...",
+  "Pixil is brainstorming 4 unique visual art directions...",
+  "Pixil is synthesizing concept art and visual assets...",
+  "Pixil is finishing up your style preview cards...",
   "All set! Choose your visual direction to begin building.",
 ];
 
