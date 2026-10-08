@@ -19,20 +19,32 @@ interface Props {
   onCookInBackground?: () => void;
 }
 
+export const BUILDING_MASCOT_MESSAGES = [
+  'Gathering high-poly 3D models, textures, and assets...',
+  'Constructing the 3D scene geometry, lighting, and world...',
+  'Programming gameplay logic, physics, and touch controls...',
+  'Synthesizing dynamic sound effects and particle polish...',
+  'Finalizing your game build and preparing for play!',
+];
+
 export const ForgeBuildingScreen: React.FC<Props> = ({
   prompt = '',
-  activeStep = 1,
+  activeStep = 0,
   steps = BUILDING_STEPS,
-  mascotMessage = "Everything's coming together!\nThis usually takes a few minutes.",
+  mascotMessage,
   onClose,
 }) => {
+  const dynamicMessage = mascotMessage && !mascotMessage.includes("Everything's coming together")
+    ? mascotMessage
+    : (BUILDING_MASCOT_MESSAGES[Math.min(activeStep, BUILDING_MASCOT_MESSAGES.length - 1)] || "Everything's coming together!\nThis usually takes a few minutes.");
+
   return (
     <ForgeUnderstandingScreen
       title="Building your game..."
       prompt={prompt}
       activeStep={activeStep}
       steps={steps}
-      mascotMessage={mascotMessage}
+      mascotMessage={dynamicMessage}
       onClose={onClose}
     />
   );

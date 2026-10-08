@@ -1524,11 +1524,11 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       const nextProgress = Math.max(0, Math.min(100, status.progress));
       setGenerationProgress(nextProgress);
       setActiveStep(
-        nextProgress >= 88
+        nextProgress >= 80
           ? 3
-          : nextProgress >= 68
+          : nextProgress >= 55
             ? 2
-            : nextProgress >= 35
+            : nextProgress >= 25
               ? 1
               : 0,
       );
@@ -1849,16 +1849,14 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // Step progression during generation
   useEffect(() => {
     if (phase !== "generating") return;
-    if (generationProgress !== null) return;
-    setActiveStep(0);
     const interval = setInterval(() => {
       setActiveStep((prev) => {
         if (prev < GENERATION_STEPS.length - 1) return prev + 1;
         return prev;
       });
-    }, 3000);
+    }, 4500);
     return () => clearInterval(interval);
-  }, [phase, generationProgress]);
+  }, [phase]);
 
   useEffect(() => {
     if (!pendingJobId || !pendingBuildActive || phase === "generating") return;

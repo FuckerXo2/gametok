@@ -51,6 +51,12 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
   const insets = useSafeAreaInsets();
   const [internalStep, setInternalStep] = useState(controlledActiveStep);
 
+  useEffect(() => {
+    if (typeof controlledActiveStep === 'number') {
+      setInternalStep(controlledActiveStep);
+    }
+  }, [controlledActiveStep]);
+
   // Companion Idle Breathing & Hammer Glow Animations
   const mascotBob = useSharedValue(0);
   const hammerGlow = useSharedValue(0.7);
@@ -82,13 +88,12 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
     opacity: hammerGlow.value,
   }));
 
-  const activeStep = onSelectStep ? controlledActiveStep : internalStep;
+  const activeStep = typeof controlledActiveStep === 'number' ? controlledActiveStep : internalStep;
 
   const handleStepPress = (idx: number) => {
+    setInternalStep(idx);
     if (onSelectStep) {
       onSelectStep(idx);
-    } else {
-      setInternalStep(idx);
     }
   };
 
@@ -134,8 +139,8 @@ export const ForgeUnderstandingScreen: React.FC<Props> = ({
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* Central Holographic Core & 4 Satellites */}
-          <ForgeOrbView />
+          {/* Central Holographic Core & Satellites (building or understanding mode) */}
+          <ForgeOrbView mode={title?.toLowerCase().includes('building') ? 'building' : 'understanding'} />
 
           {/* Checklist Card */}
           <View style={styles.cardSection}>

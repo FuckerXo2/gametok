@@ -1228,9 +1228,52 @@ export const WishStudioScreen = ({
     else proposeBrief();
   }, [journeyView, refineBrief, proposeBrief]);
 
-  // Derive the forge scene's step from job progress.
-  const activeStep =
-    genProgress == null ? 0 : genProgress < 30 ? 0 : genProgress < 60 ? 1 : genProgress < 85 ? 2 : 3;
+  // Progressive step advance for understanding phase (0 -> 1 -> 2 -> 3 -> 4)
+  useEffect(() => {
+    if (!visible || activeJourneyView !== 'understanding') return;
+    const timer = setInterval(() => {
+      setUnderstandingStep((prev) => {
+        if (prev < 4) return prev + 1;
+        return prev;
+      });
+    }, 2800);
+    return () => clearInterval(timer);
+  }, [visible, activeJourneyView]);
+
+  // Timed simulated progressive advance for building phase (0 -> 1 -> 2 -> 3 -> 4)
+  const [buildingSimulatedStep, setBuildingSimulatedStep] = useState(0);
+
+  useEffect(() => {
+    const isBuilding = activeJourneyView === 'building' || (building && !draftIdRef.current);
+    if (!visible || !isBuilding) {
+      setBuildingSimulatedStep(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setBuildingSimulatedStep((prev) => {
+        // Step through 0 -> 1 -> 2 -> 3 smoothly over time, holding at 3 until finalizing/complete
+        if (prev < 3) return prev + 1;
+        return prev;
+      });
+    }, 5500);
+    return () => clearInterval(timer);
+  }, [visible, activeJourneyView, building]);
+
+  // Derive the forge scene's building step from backend progress & phase
+  const backendDerivedStep = useMemo(() => {
+    if (genPhase === 'complete' || (genProgress !== null && genProgress >= 92)) return 4;
+    if (genPhase === 'packaging' || genPhase === 'verifying' || (genProgress !== null && genProgress >= 72)) return 3;
+    if (genPhase === 'gameplay' || (genProgress !== null && genProgress >= 48)) return 2;
+    if (genPhase === 'world' || genPhase === 'generating' || (genProgress !== null && genProgress >= 24)) return 1;
+    if (genProgress !== null && genProgress > 0) return 0;
+    return null;
+  }, [genPhase, genProgress]);
+
+  // Combined activeStep: takes the maximum of backend-reported progress and progressive timing
+  const activeStep = Math.max(
+    backendDerivedStep !== null ? backendDerivedStep : 0,
+    buildingSimulatedStep
+  );
 
   const building = phase === 'building';
   // Publish is offered only once there's a real, playable game to ship.
@@ -1325,7 +1368,7 @@ export const WishStudioScreen = ({
         <ForgeBuildingScreen
           prompt={initialPrompt}
           gameTitle={gameName ?? 'Your game'}
-          activeStep={activeStep >= 0 ? activeStep : 1}
+          activeStep={activeStep}
           mascotMessage={
             backendStatusMessage ||
             genStatusMessage ||
