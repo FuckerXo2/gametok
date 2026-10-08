@@ -1762,8 +1762,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           setErrorMsg(message);
           await markPendingDreamJobFailed(message, pending?.jobId);
           if (phase === "generating") {
-            ensureFallbackSpec(pending?.prompt || prompt);
-            setPhase("refining");
+            setPendingJobId(null);
+            setGenerationProgress(null);
+            setGenerationPhase(null);
+            setPhase("idle");
           }
         }
       } catch (error: any) {
@@ -1788,8 +1790,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         setErrorMsg(friendlyMessage);
         await markPendingDreamJobFailed(friendlyMessage, pending?.jobId);
         if (phase === "generating") {
-          ensureFallbackSpec(failedPrompt || prompt);
-          setPhase("refining");
+          setPendingJobId(null);
+          setGenerationProgress(null);
+          setGenerationPhase(null);
+          setPhase("idle");
         }
       }
     };
@@ -1976,8 +1980,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           res.error || "Generation failed",
           retryJobId,
         );
-        ensureFallbackSpec(prompt);
-        setPhase("refining");
+        setPendingJobId(null);
+        setGenerationProgress(null);
+        setGenerationPhase(null);
+        setPhase("idle");
       }
     } catch (error: any) {
       cancelRef.current = null;
@@ -1989,8 +1995,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       await stopCookingNotificationOnly();
       setErrorMsg(friendlyMessage);
       await markPendingDreamJobFailed(friendlyMessage, retryJobId);
-      ensureFallbackSpec(prompt);
-      setPhase("refining");
+      setPendingJobId(null);
+      setGenerationProgress(null);
+      setGenerationPhase(null);
+      setPhase("idle");
     }
   };
 
@@ -2020,7 +2028,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   const handleReturnToForge = useCallback(() => {
     if (!pendingJobId) return;
     if (pendingBuildFailed) {
-      setPhase("refining");
+      setPhase("idle");
       return;
     }
     setErrorMsg(null);
@@ -2038,7 +2046,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       setPrompt((current) => current || job.prompt);
       if (job.status === "failed") {
         setErrorMsg(job.error || "Generation failed");
-        setPhase("refining");
+        setPendingJobId(null);
+        setGenerationProgress(null);
+        setGenerationPhase(null);
+        setPhase("idle");
         return;
       }
       if (job.status !== "canceled") {
@@ -2141,8 +2152,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
           res.error || "Generation failed",
           dreamJobId,
         );
-        ensureFallbackSpec(finalPrompt);
-        setPhase("refining");
+        setPendingJobId(null);
+        setGenerationProgress(null);
+        setGenerationPhase(null);
+        setPhase("idle");
       }
     } catch (error: any) {
       cancelRef.current = null;
@@ -2151,8 +2164,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       if (!friendlyMessage) {
         if (detachPendingDreamRef.current) {
           detachPendingDreamRef.current = false;
-          // If we have a spec, go back to refining; otherwise go to idle
-          setPhase(gameSpec ? "refining" : "idle");
+          setPhase("idle");
           return;
         }
         await stopCookingNotificationOnly();
@@ -2162,8 +2174,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       console.warn("AI Generation Warning:", error?.message || error);
       setErrorMsg(friendlyMessage);
       await markPendingDreamJobFailed(friendlyMessage, dreamJobId);
-      ensureFallbackSpec(finalPrompt);
-      setPhase("refining");
+      setPendingJobId(null);
+      setGenerationProgress(null);
+      setGenerationPhase(null);
+      setPhase("idle");
     }
   };
 
