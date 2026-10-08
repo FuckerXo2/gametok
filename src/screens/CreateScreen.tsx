@@ -1651,8 +1651,13 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     if (remoteCancelRef.current) {
       remoteCancelRef.current();
       remoteCancelRef.current = null;
-    } else if (jobId) {
-      await ai.cancelDreamJob(jobId);
+    }
+    if (jobId) {
+      try {
+        await ai.cancelDreamJob(jobId);
+      } catch (err: any) {
+        console.warn("[DreamStream] Direct cancelDreamJob call failed:", err?.message || err);
+      }
     }
   }, []);
 
@@ -1941,6 +1946,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
         orientation: retryOrientation,
         onJobStarted: (jobId: string) => {
           retryJobId = jobId;
+          setPendingJobId(jobId);
           persistPendingDreamJob({ jobId, prompt: retryPrompt, labsMode, orientation: retryOrientation });
         },
         onStatus: (status: any) =>
@@ -2106,6 +2112,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       const dreamOrientation = normalizeOrientation(orientation);
       const onJobStarted = (jobId: string) => {
         dreamJobId = jobId;
+        setPendingJobId(jobId);
         persistPendingDreamJob({ jobId, prompt: finalPrompt, labsMode, orientation: dreamOrientation });
       };
       const { promise, cancel, cancelRemote } = ai.dream(

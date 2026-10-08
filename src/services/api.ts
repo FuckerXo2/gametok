@@ -836,6 +836,15 @@ export const ai = {
 
         const jobId = res.jobId;
         remoteJobId = jobId || null;
+
+        if (controller.signal.aborted) {
+          if (jobId) {
+            request(`/ai/dream/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+          }
+          reject(new Error('aborted'));
+          return;
+        }
+
         if (jobId) {
           options?.onJobStarted?.(jobId);
         }
@@ -945,6 +954,15 @@ export const ai = {
 
         const jobId = res.jobId;
         remoteJobId = jobId || null;
+
+        if (controller.signal.aborted) {
+          if (jobId) {
+            request(`/ai/dream/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+          }
+          reject(new Error('aborted'));
+          return;
+        }
+
         if (jobId) {
           options?.onJobStarted?.(jobId);
         }
