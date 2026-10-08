@@ -223,6 +223,26 @@ export const WishStudioScreen = ({
       setStudioOrientation('landscape');
     }
   }, [html, gameUrl, initialGame, studioOrientation]);
+
+  // Keep studioOrientation in sync whenever the screen becomes visible or a new orientation is handed down.
+  // Because WishStudioScreen stays mounted in CreateScreen, useState only executes once on initial load.
+  useEffect(() => {
+    if (!visible) return;
+    const isExplicitLandscape =
+      isLandscape(initialOrientation) ||
+      isGameLandscape(initialGame) ||
+      (restoredSession && isLandscape(restoredSession.orientation)) ||
+      /landscape/i.test(initialPrompt) ||
+      /gta|lagos|kart|racing|driver|downhill|descent|sunrise|flight|pilot|plane|drift|sidescroll|platformer/i.test(initialPrompt);
+
+    const nextOrientation: Orientation = isExplicitLandscape
+      ? 'landscape'
+      : (initialOrientation ? normalizeOrientation(initialOrientation) : DEFAULT_ORIENTATION);
+
+    if (nextOrientation !== studioOrientation) {
+      setStudioOrientation(nextOrientation);
+    }
+  }, [visible, initialOrientation, initialGame, restoredSession?.orientation, initialPrompt, studioOrientation]);
   const [gameScript, setGameScript] = useState<string | null>(initialGame?.gameScript || null);
   const [previewHasNews, setPreviewHasNews] = useState(false);
   // The toggle exists only after the first Create. Before that: pure conversation.
@@ -925,6 +945,8 @@ export const WishStudioScreen = ({
         flavor: [],
       };
       briefRef.current = brief;
+    } else {
+      brief.orientation = orientation;
     }
     if (phase === 'building' && !buildError) return;
     setPhase('building');

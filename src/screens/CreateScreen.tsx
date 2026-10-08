@@ -45,7 +45,6 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { GameTokEngineView } from "../../modules/gametok-engine";
 import { ai, API_URL, getToken, CommunityAsset } from "../services/api";
 import { AssetPickerSheet } from "../components/AssetPickerSheet";
 import { WishStudioScreen } from "./WishStudioScreen";
@@ -69,6 +68,7 @@ import { Audio } from "expo-av";
 import { VideoThumb } from "../components/VideoThumb";
 import { VideoPickerSheet } from "../components/VideoPickerSheet";
 import { AudioPickerSheet } from "../components/AudioPickerSheet";
+import { Model3DPickerSheet } from "../components/Model3DPickerSheet";
 import {
   palette as pal,
   spacing as sp,
@@ -519,6 +519,20 @@ const ATTACHMENT_ROLE_OPTIONS: Record<
     { role: "sfx", label: "SFX" },
     { role: "reference", label: "Reference" },
   ],
+  "3d": [
+    { role: "hero", label: "Playable Hero" },
+    { role: "prop", label: "3D Prop" },
+    { role: "background", label: "Environment" },
+    { role: "overlay", label: "NPC / Vehicle" },
+    { role: "reference", label: "Reference" },
+  ],
+  model: [
+    { role: "hero", label: "Playable Hero" },
+    { role: "prop", label: "3D Prop" },
+    { role: "background", label: "Environment" },
+    { role: "overlay", label: "NPC / Vehicle" },
+    { role: "reference", label: "Reference" },
+  ],
 };
 
 // Plain-language one-liner for each role, shown under the chips so the labels
@@ -732,6 +746,7 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     title: string;
     runtime?: 'web' | 'native';
     gameScript?: string | null;
+    orientation?: Orientation | string | null;
   } | null>(null);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showAssetIntentModal, setShowAssetIntentModal] = useState(false);
@@ -1098,6 +1113,8 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
       setStudioOrientation((prev) =>
         game.orientation != null ? normalizeOrientation(game.orientation) : prev,
       );
+      setRestoredForgeSession(null);
+      setTargetForgeJourneyView(null);
       setStudioGame(game);
       setStudioOpen(true);
     },
@@ -1144,6 +1161,10 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
   // Notification tapped -> open WishStudio directly on that scene
   useEffect(() => {
     if (!openForgeNotification) return;
+    if (prompt.trim().length > 0) {
+      onForgeNotificationHandled?.();
+      return;
+    }
 
     getActiveForgeSession().then((session) => {
       const journeyView = openForgeNotification.journeyView;
@@ -1172,50 +1193,6 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     });
   }, [openForgeNotification, prompt, orientation, onForgeNotificationHandled]);
 
-  // Normal app open -> user taps Create tab -> restore in-progress or ready forge session directly
-  useEffect(() => {
-    if (!isActive) return;
-    if (studioOpen) return;
-    if (openDraftId) return;
-
-    getActiveForgeSession().then((session) => {
-      if (!session) return;
-
-      const isStale = Date.now() - (session.updatedAt || session.createdAt || 0) > 30 * 60 * 1000;
-      if (isStale) {
-        clearActiveForgeSession();
-        return;
-      }
-
-      const hasReadyContent =
-        session.isDirectionsReady ||
-        session.isPerspectivesReady ||
-        (session.visualDirections && session.visualDirections.length > 0) ||
-        (session.perspectives && session.perspectives.length > 0) ||
-        session.journeyView === 'directions' ||
-        session.journeyView === 'perspective';
-
-      if (hasReadyContent) {
-        console.log('[CreateScreen] Auto-restoring active forge session directly on Create tab:', session.sessionId, session.journeyView);
-        setRestoredForgeSession(session);
-        setStudioPrompt(session.prompt);
-        if (session.orientation) {
-          setStudioOrientation(normalizeOrientation(session.orientation));
-        }
-        setTargetForgeJourneyView(
-          session.perspectives && session.perspectives.length > 0
-            ? 'perspective'
-            : session.visualDirections && session.visualDirections.length > 0
-            ? 'directions'
-            : (session.journeyView as any) || 'directions'
-        );
-        setStudioOpen(true);
-      } else {
-        // If the session was left halfway through understanding without ready directions/perspectives, clear it
-        clearActiveForgeSession();
-      }
-    });
-  }, [isActive, studioOpen, openDraftId]);
 
   useEffect(() => {
     if (studioTab === "drafts" && isAuthenticated) {
@@ -2216,6 +2193,9 @@ export const CreateScreen: React.FC<CreateScreenProps> = ({
     }
 
     // Launch the new Wish Studio screen
+    await clearActiveForgeSession();
+    setRestoredForgeSession(null);
+    setTargetForgeJourneyView(null);
     setStudioGame(null);
     setStudioPrompt(finalPrompt);
     setStudioOrientation(orientation);
@@ -3385,26 +3365,17 @@ Description: ${gameSpec.description}
                 studioOrientation === "landscape" && styles.pubPreviewCardLandscape,
               ]}
             >
-              {activeRuntime === "native" ? (
-                <GameTokEngineView
-                  style={{ flex: 1 }}
-                  gameScript={activeGameScript || undefined}
-                  cameraMode={studioOrientation === "landscape" ? "3D" : "2D"}
-                  showControls={true}
-                />
-              ) : (
-                <WebView
-                  source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
-                  style={{ flex: 1, backgroundColor: pal.black }}
-                  scrollEnabled={false}
-                  javaScriptEnabled={true}
-                  originWhitelist={["*"]}
-                  allowsInlineMediaPlayback={true}
-                  mediaPlaybackRequiresUserAction={true}
-                  setSupportMultipleWindows={false}
-                  injectedJavaScript={MUTE_WEBVIEW_JS}
-                />
-              )}
+              <WebView
+                source={activeGameUrl ? { uri: activeGameUrl } : { html: activeHtml!, baseUrl: PREVIEW_BASE_URL }}
+                style={{ flex: 1, backgroundColor: pal.black }}
+                scrollEnabled={false}
+                javaScriptEnabled={true}
+                originWhitelist={["*"]}
+                allowsInlineMediaPlayback={true}
+                mediaPlaybackRequiresUserAction={true}
+                setSupportMultipleWindows={false}
+                injectedJavaScript={MUTE_WEBVIEW_JS}
+              />
             </View>
             <Pressable style={styles.pubEditBtn} onPress={() => leavePublish("wish")} hitSlop={8}>
               <Ionicons name="create-outline" size={15} color={pal.purpleSoft} />
@@ -3497,18 +3468,25 @@ Description: ${gameSpec.description}
           setStudioOpen(false);
           setRestoredForgeSession(null);
           setTargetForgeJourneyView(null);
+          setStudioGame(null);
         }}
         initialPrompt={studioPrompt}
         initialGame={studioGame}
         initialAttachments={attachedAssets}
-        initialOrientation={studioOrientation}
+        initialOrientation={
+          studioGame?.orientation
+            ? normalizeOrientation(studioGame.orientation)
+            : (orientation ? normalizeOrientation(orientation) : studioOrientation)
+        }
         reopenNonce={studioReopenNonce}
         reopenTab={studioReopenTab}
         restoredSession={restoredForgeSession}
         targetJourneyView={targetForgeJourneyView as any}
         onDiscardSession={() => {
+          clearActiveForgeSession();
           setRestoredForgeSession(null);
           setTargetForgeJourneyView(null);
+          setStudioPrompt("");
         }}
         onRequestPublish={({ draftId, html, gameUrl, title }) => {
           clearActiveForgeSession();
@@ -4508,235 +4486,42 @@ Description: ${gameSpec.description}
         </Pressable>
       </Modal>
 
-      {/* === 3D MODELS MODAL === */}
-      <Modal
+      {/* === MODERN 3D MODELS PICKER SHEET === */}
+      <Model3DPickerSheet
         visible={show3DModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setShow3DModal(false);
           setSelected3DModel(null);
         }}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.85)",
-            justifyContent: "flex-end",
-          }}
-          onPress={() => {
-            setShow3DModal(false);
-            setSelected3DModel(null);
-          }}
-        >
-          <Animated.View
-            entering={SlideInDown.duration(250)}
-            style={{
-              width: "100%",
-              height: "75%",
-              backgroundColor: "#1C1C1E",
-              borderTopLeftRadius: 28,
-              borderTopRightRadius: 28,
-            }}
-            onStartShouldSetResponder={() => true}
-          >
-            <View
-              style={{
-                alignItems: "center",
-                paddingTop: 12,
-                paddingBottom: 16,
-              }}
-            >
-              <View
-                style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: "rgba(255,255,255,0.3)",
-                  marginBottom: 12,
-                }}
-              />
-              <Text style={{ color: "#FFF", fontSize: 18, fontWeight: "700" }}>
-                3D Models
-              </Text>
-            </View>
-            <FlatList
-              style={{ flex: 1 }}
-              data={[
-                { isUpload: true },
-                ...(community3DModels.length > 0
-                  ? community3DModels
-                  : [
-                      {
-                        id: "3d-coral",
-                        title: "Pink Coral",
-                        url: "https://images.unsplash.com/photo-1546026423-cc4642628d2b?w=400&q=80",
-                        thumb: "https://images.unsplash.com/photo-1546026423-cc4642628d2b?w=400&q=80",
-                      },
-                      {
-                        id: "3d-chest",
-                        title: "Golden Chest",
-                        url: "https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?w=400&q=80",
-                        thumb: "https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?w=400&q=80",
-                      },
-                      {
-                        id: "3d-robot",
-                        title: "Cyber Mech",
-                        url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&q=80",
-                        thumb: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&q=80",
-                      },
-                      {
-                        id: "3d-portal",
-                        title: "Neon Portal",
-                        url: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=400&q=80",
-                        thumb: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=400&q=80",
-                      },
-                    ]),
-              ]}
-              keyExtractor={(item: any, index) =>
-                item.isUpload ? "upload-3d-btn" : `3d-${item.id || index}`
-              }
-              numColumns={3}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 4 }}
-              columnWrapperStyle={{ gap: 4, marginBottom: 4 }}
-              renderItem={({ item }: any) => {
-                if (item.isUpload) {
-                  return (
-                    <Pressable
-                      onPress={() => handleAssetUpload("3d")}
-                      style={{
-                        width: "32%",
-                        aspectRatio: 1,
-                        backgroundColor: "rgba(255,255,255,0.05)",
-                        borderRadius: 12,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {isUploadingAsset ? (
-                        <ActivityIndicator
-                          size="small"
-                          color="#38BDF8"
-                          style={{ marginBottom: 8 }}
-                        />
-                      ) : (
-                        <Ionicons
-                          name="push-outline"
-                          size={24}
-                          color="#38BDF8"
-                          style={{ marginBottom: 8 }}
-                        />
-                      )}
-                      <Text
-                        style={{
-                          color: "#FFF",
-                          fontSize: 14,
-                          fontWeight: "600",
-                        }}
-                      >
-                        Upload
-                      </Text>
-                    </Pressable>
-                  );
-                }
-                const isSelected = selected3DModel?.url === item.url;
-                return (
-                  <Pressable
-                    style={{
-                      width: "32%",
-                      aspectRatio: 1,
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      backgroundColor: "#000",
-                    }}
-                    onPress={() => setSelected3DModel(item)}
-                  >
-                    <Image
-                      source={{ uri: item.thumb || item.thumbnail || item.url }}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        opacity: isSelected ? 0.6 : 0.85,
-                      }}
-                      resizeMode="cover"
-                    />
-                    <View
-                      style={{
-                        position: "absolute",
-                        top: 6,
-                        right: 6,
-                        backgroundColor: "rgba(0,0,0,0.65)",
-                        paddingHorizontal: 5,
-                        paddingVertical: 2,
-                        borderRadius: 4,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: "#38BDF8",
-                          fontSize: 9,
-                          fontWeight: "800",
-                        }}
-                      >
-                        3D
-                      </Text>
-                    </View>
-                    {isSelected && (
-                      <View
-                        style={[
-                          StyleSheet.absoluteFill,
-                          {
-                            borderWidth: 4,
-                            borderColor: "#38BDF8",
-                            borderRadius: 12,
-                          },
-                        ]}
-                      />
-                    )}
-                  </Pressable>
-                );
-              }}
-            />
-            <View
-              style={{
-                padding: 16,
-                paddingBottom: 32,
-                backgroundColor: "#161618",
-                borderTopWidth: 1,
-                borderTopColor: "rgba(255,255,255,0.08)",
-              }}
-            >
-              <Pressable
-                style={{
-                  height: 48,
-                  borderRadius: 14,
-                  backgroundColor: "#38BDF8",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  opacity: selected3DModel ? 1 : 0.5,
-                }}
-                disabled={!selected3DModel}
-                onPress={() => {
-                  setShow3DModal(false);
-                  handleAssetSelect(
-                    selected3DModel,
-                    "Use this 3D model asset: " +
-                      (selected3DModel.url || selected3DModel.title || ""),
-                  );
-                  setSelected3DModel(null);
-                }}
-              >
-                <Text
-                  style={{ color: "#000", fontWeight: "800", fontSize: 15 }}
-                >
-                  Select 3D Model
-                </Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        </Pressable>
-      </Modal>
+        selectedModelUrl={selected3DModel?.url || selected3DModel?.cdn_url}
+        userId={user?.id || null}
+        onSelectModel={(model) => {
+          setSelected3DModel(model);
+          const finalUrl = model.cdn_url || model.url;
+          const instruction = model.is_rigged
+            ? `Spawn this rigged 3D character (${model.title || model.name}) as the playable hero with 3D controls and animations: ${finalUrl}`
+            : `Place this 3D model (${model.title || model.name}) in the 3D scene: ${finalUrl}`;
+          handleAssetSelect(
+            {
+              id: model.id,
+              url: finalUrl,
+              cdn_url: finalUrl,
+              name: model.title || model.name,
+              title: model.title || model.name,
+              label: model.title || model.name,
+              type: "3d",
+              thumbnail: model.thumbnail_url || model.thumb,
+              thumb: model.thumbnail_url || model.thumb,
+              is_rigged: model.is_rigged,
+              bone_count: model.bone_count,
+              format: model.format || "glb",
+              file_size: model.file_size,
+            },
+            instruction,
+          );
+          setSelected3DModel(null);
+        }}
+      />
 
       {/* === PHOTOS MODAL === */}
       <Modal
@@ -6322,6 +6107,10 @@ Description: ${gameSpec.description}
                     value={prompt}
                     onChangeText={(value) => {
                       setPrompt(value);
+                      if (restoredForgeSession) {
+                        setRestoredForgeSession(null);
+                        clearActiveForgeSession();
+                      }
                       if (errorMsg) {
                         setErrorMsg(null);
                       }
@@ -6693,7 +6482,12 @@ Description: ${gameSpec.description}
                 <Pressable
                   style={styles.mediaBtn}
                   onPress={() =>
-                    runCreateAction(() => setShow3DModal(true))
+                    runCreateAction(() => {
+                      try {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      } catch {}
+                      setShow3DModal(true);
+                    })
                   }
                 >
                   <View
@@ -6703,6 +6497,40 @@ Description: ${gameSpec.description}
                     ]}
                   >
                     <Ionicons name="cube-outline" size={24} color="#38BDF8" />
+                    {attachedAssets.filter(
+                      (a) => a.type === "3d" || a.type === "model",
+                    ).length > 0 && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          top: -4,
+                          right: -4,
+                          backgroundColor: "#38BDF8",
+                          borderRadius: 10,
+                          minWidth: 18,
+                          height: 18,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          paddingHorizontal: 4,
+                          borderWidth: 1.5,
+                          borderColor: "#0D0D12",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: "#000",
+                            fontSize: 10,
+                            fontWeight: "900",
+                          }}
+                        >
+                          {
+                            attachedAssets.filter(
+                              (a) => a.type === "3d" || a.type === "model",
+                            ).length
+                          }
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.mediaLabel}>3D</Text>
                 </Pressable>
