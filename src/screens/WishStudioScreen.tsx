@@ -16,7 +16,7 @@
 // Planning is composed locally today (src/services/planner.ts) — the seam
 // where the live Kimi planning session plugs in later.
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, SafeAreaView, Alert, Image, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
