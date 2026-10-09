@@ -4,8 +4,9 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from './api';
 
-const API_URL = 'https://gametok-backend-580726430039.us-central1.run.app';
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 // Get cached push token from storage
 export const getStoredPushToken = async (): Promise<string | null> => {
@@ -82,7 +83,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 // Save push token to backend
 export const savePushToken = async (token: string, authToken: string): Promise<void> => {
   try {
-    await fetch(`${API_URL}/api/notifications/register`, {
+    await fetch(`${API_ORIGIN}/api/notifications/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -99,7 +100,7 @@ export const savePushToken = async (token: string, authToken: string): Promise<v
 // Remove push token from backend (on logout)
 export const removePushToken = async (authToken: string, pushToken?: string): Promise<void> => {
   try {
-    await fetch(`${API_URL}/api/notifications/unregister`, {
+    await fetch(`${API_ORIGIN}/api/notifications/unregister`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

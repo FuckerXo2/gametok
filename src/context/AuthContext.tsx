@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, getToken } from '../services/api';
+import { auth, getToken, API_URL } from '../services/api';
 import { registerForPushNotifications, savePushToken, removePushToken } from '../services/notifications';
 
 interface User {
@@ -103,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             // Not logged in — register as anonymous so backend can send re-engagement
             try {
-              await fetch('https://gametok-backend-580726430039.us-central1.run.app/api/notifications/register-anonymous', {
+              await fetch(`${API_URL}/notifications/register-anonymous`, {
 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

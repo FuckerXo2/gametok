@@ -9,8 +9,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../services/api';
 
-const SOCKET_URL = 'https://gametok-backend-580726430039.us-central1.run.app';
+const SOCKET_URL = API_URL.replace(/\/api$/, '');
 
 
 export interface ScoreLobbyPlayer {

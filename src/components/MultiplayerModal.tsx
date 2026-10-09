@@ -21,8 +21,10 @@ import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOut, SlideInDown, ZoomIn } 
 import { useAuth } from '../context/AuthContext';
 import { useGameLobby, LobbyPlayer, IncomingChallenge, MatchReady } from '../services/lobby';
 import { Avatar } from './Avatar';
+import { API_URL } from '../services/api';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
 interface MultiplayerModalProps {
   visible: boolean;
@@ -90,7 +92,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   }, [findAnyone]);
 
   // Use a predictable thumbnail URL for the game background
-  const gameThumbnailUrl = `https://gametok-backend-580726430039.us-central1.run.app/games/thumbnails/${gameId}.png`;
+  const gameThumbnailUrl = `${API_ORIGIN}/games/thumbnails/${gameId}.png`;
 
 
   // Render a player card in the lobby

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState, AppStateStatus } from 'react-native';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
-import { getToken } from '../services/api';
+import { getToken, API_URL } from '../services/api';
 
 export type PresenceStatus = 'online' | 'in-game' | 'idle' | 'offline';
 
@@ -44,7 +44,7 @@ const SocketContext = createContext<SocketContextType>({
 
 export const useSocket = () => useContext(SocketContext);
 
-const SOCKET_URL = 'https://gametok-backend-580726430039.us-central1.run.app';
+const SOCKET_URL = API_URL.replace(/\/api$/, '');
 
 const HEARTBEAT_INTERVAL_MS = 25_000;
 
