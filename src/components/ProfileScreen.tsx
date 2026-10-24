@@ -113,14 +113,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const handlePrimaryAction = async () => {
     if (!selectedItem || !saved) return;
 
+    // on: take it off (owned or not); deselect too, or the stage would keep showing it as a try-on
+    if (isWorn(selectedItem)) {
+      if (selectedItem.takeOff) { commit(selectedItem.takeOff(saved)); setSelectedItem(null); }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      return;
+    }
     if (isOwned(selectedItem)) {
-      // wear it, or take it off if it's already on
-      if (isWorn(selectedItem)) {
-        // deselect too, or the stage would keep showing it as a try-on
-        if (selectedItem.takeOff) { commit(selectedItem.takeOff(saved)); setSelectedItem(null); }
-      } else if (selectedItem.wear) {
-        commit(selectedItem.wear(saved));
-      }
+      if (selectedItem.wear) commit(selectedItem.wear(saved));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return;
     }
