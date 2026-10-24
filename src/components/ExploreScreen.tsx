@@ -28,8 +28,7 @@ import { RemixModal } from './RemixModal';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GamesHome } from './GamesHome';
-import { ShopModal } from './ShopModal';
-import { MyAvatarModal } from './MyAvatarModal';
+import { TokBuxSheet } from './TokBuxSheet';
 
 const PURPLE = '#a855f7';
 const PURPLE_DEEP = '#7c3aed';
@@ -119,8 +118,7 @@ export const ExploreScreen: React.FC = () => {
   const [remixLoading, setRemixLoading] = useState(false);
   // Active discovery category, or null for "Home" (all games).
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [shopModalVisible, setShopModalVisible] = useState(false);
-  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+  const [tokbuxOpen, setTokbuxOpen] = useState(false);
   const [recentGameIds, setRecentGameIds] = useState<string[]>([]);
 
   // Games in the current category. Multi-label: a game shows under every category it carries.
@@ -335,26 +333,13 @@ export const ExploreScreen: React.FC = () => {
         onOpen={(g) => openGame(g.id)}
         onSearch={() => setSearchModalVisible(true)}
         onFriends={() => setActiveTab('connect')}
-        onOpenShop={() => setShopModalVisible(true)}
+        onOpenShop={() => setTokbuxOpen(true)}
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
 
-      {/* TokBux Shop Modal */}
-      <ShopModal
-        visible={shopModalVisible}
-        onClose={() => setShopModalVisible(false)}
-        onOpenAvatarPreview={() => {
-          setShopModalVisible(false);
-          setAvatarModalVisible(true);
-        }}
-      />
-
-      {/* 3D Avatar Modal */}
-      <MyAvatarModal
-        visible={avatarModalVisible}
-        onClose={() => setAvatarModalVisible(false)}
-      />
+      {/* tapping the TokBux balance */}
+      <TokBuxSheet visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} />
 
       {/* Search modal */}
       <Modal visible={searchModalVisible} animationType="slide" onRequestClose={() => setSearchModalVisible(false)}>

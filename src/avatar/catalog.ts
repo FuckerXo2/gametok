@@ -2,6 +2,7 @@
 // The 3D side lives in games/avatar-editor (js/avatar-core.js) and is shown through AvatarStage.
 // Item ids match the files there: hair/<Hair_*>.glb, parts/<Set>_<suffix>.glb.
 import type { Ionicons } from '@expo/vector-icons';
+import { AVATAR_HOST } from './host';
 
 export type Slot = 'head' | 'top' | 'arms' | 'legs' | 'feet' | 'acc';
 
@@ -31,6 +32,19 @@ export function normalizeAvatar(r: any): AvatarRecord {
 export type Category = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'accessories';
 export type Focus = 'body' | 'head' | 'torso' | 'legs';
 
+// Me screen tabs, like Roblox's: a tab, then sub-tabs inside it
+export type Tab = 'all' | 'body' | 'clothing' | 'shoes' | 'extras';
+export const TABS: { id: Tab; label: string; subs: string[] }[] = [
+  { id: 'all', label: 'All', subs: [] },
+  { id: 'body', label: 'Body', subs: ['Body type', 'Skin', 'Hair', 'Beards'] },
+  { id: 'clothing', label: 'Clothing', subs: ['Tops', 'Sleeves', 'Pants'] },
+  { id: 'shoes', label: 'Shoes', subs: [] },
+  { id: 'extras', label: 'Extras', subs: ['Hoods', 'Pauldrons'] },
+];
+
+// item pictures, rendered from the 3D files (games/avatar-editor/tools/thumbs.html), with the avatar stage
+export const thumbOf = (item: AvatarItem) => (item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}.webp`);
+
 export interface AvatarItem {
   id: string;
   name: string;
@@ -43,6 +57,8 @@ export interface AvatarItem {
   isWorn?: (r: AvatarRecord) => boolean;
   takeOff?: (r: AvatarRecord) => AvatarRecord;
   colorKey?: Slot | 'hair';            // what the colour swatches recolour
+  tab: Exclude<Tab, 'all'>;
+  sub: string;
 }
 
 const SKIN_SWATCHES = ['#f2cfb3', '#dcae8a', '#b98258', '#8a5536', '#6a3e26', '#46281a'];
@@ -58,13 +74,13 @@ const SETS: { set: string; name: string; price: number }[] = [
   { set: 'Female_Peasant', name: 'Peasant II', price: 25 },
   { set: 'Female_Ranger', name: 'Ranger II', price: 40 },
 ];
-const PIECES: { slot: Slot; suffix: string; category: AvatarItem['category']; icon: AvatarItem['icon']; focus: Focus; only?: string[] }[] = [
-  { slot: 'top', suffix: 'Top', category: 'clothing', icon: 'shirt-outline', focus: 'torso' },
-  { slot: 'arms', suffix: 'Sleeves', category: 'clothing', icon: 'hand-left-outline', focus: 'torso' },
-  { slot: 'legs', suffix: 'Pants', category: 'clothing', icon: 'walk-outline', focus: 'legs' },
-  { slot: 'feet', suffix: 'Boots', category: 'shoes', icon: 'footsteps-outline', focus: 'legs' },
-  { slot: 'head', suffix: 'Hood', category: 'accessories', icon: 'person-circle-outline', focus: 'head', only: ['Male_Ranger', 'Female_Ranger'] },
-  { slot: 'acc', suffix: 'Pauldron', category: 'accessories', icon: 'shield-outline', focus: 'torso', only: ['Male_Ranger', 'Female_Ranger'] },
+const PIECES: { slot: Slot; suffix: string; category: AvatarItem['category']; icon: AvatarItem['icon']; focus: Focus; only?: string[]; tab: AvatarItem['tab']; sub: string }[] = [
+  { slot: 'top', suffix: 'Top', category: 'clothing', icon: 'shirt-outline', focus: 'torso', tab: 'clothing', sub: 'Tops' },
+  { slot: 'arms', suffix: 'Sleeves', category: 'clothing', icon: 'hand-left-outline', focus: 'torso', tab: 'clothing', sub: 'Sleeves' },
+  { slot: 'legs', suffix: 'Pants', category: 'clothing', icon: 'walk-outline', focus: 'legs', tab: 'clothing', sub: 'Pants' },
+  { slot: 'feet', suffix: 'Boots', category: 'shoes', icon: 'footsteps-outline', focus: 'legs', tab: 'shoes', sub: 'Shoes' },
+  { slot: 'head', suffix: 'Hood', category: 'accessories', icon: 'person-circle-outline', focus: 'head', only: ['Male_Ranger', 'Female_Ranger'], tab: 'extras', sub: 'Hoods' },
+  { slot: 'acc', suffix: 'Pauldron', category: 'accessories', icon: 'shield-outline', focus: 'torso', only: ['Male_Ranger', 'Female_Ranger'], tab: 'extras', sub: 'Pauldrons' },
 ];
 
 const HAIRS: { id: string; name: string; price: number }[] = [
@@ -78,27 +94,27 @@ const HAIRS: { id: string; name: string; price: number }[] = [
 export const AVATAR_ITEMS: AvatarItem[] = [
   ...(['Male', 'Female'] as const).map((b): AvatarItem => ({
     id: `body-${b}`, name: b === 'Male' ? 'Body A' : 'Body B', category: 'body', price: 0,
-    icon: 'body-outline', tint: '#cbd5e1', focus: 'body',
+    icon: 'body-outline', tint: '#cbd5e1', focus: 'body', tab: 'body', sub: 'Body type',
     wear: (r) => ({ ...r, body: b }), isWorn: (r) => r.body === b,
   })),
   ...SKIN_SWATCHES.map((c, i): AvatarItem => ({
     id: `skin-${i}`, name: `Skin ${i + 1}`, category: 'body', price: 0,
-    icon: 'ellipse', tint: c, focus: 'head',
+    icon: 'ellipse', tint: c, focus: 'head', tab: 'body', sub: 'Skin',
     wear: (r) => ({ ...r, skin: i }), isWorn: (r) => r.skin === i,
   })),
   ...HAIRS.map((h): AvatarItem => ({
     id: `hair-${h.id}`, name: h.name, category: 'hair', price: h.price,
-    icon: 'cut-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair',
+    icon: 'cut-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Hair',
     wear: (r) => ({ ...r, hair: h.id }), isWorn: (r) => r.hair === h.id, takeOff: (r) => ({ ...r, hair: null }),
   })),
   {
     id: 'beard', name: 'Full Beard', category: 'hair', price: 20,
-    icon: 'man-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair',
+    icon: 'man-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Beards',
     wear: (r) => ({ ...r, beard: true }), isWorn: (r) => r.beard, takeOff: (r) => ({ ...r, beard: false }),
   },
   ...SETS.flatMap(({ set, name, price }) => PIECES.filter((p) => !p.only || p.only.includes(set)).map((p): AvatarItem => ({
     id: `${set}-${p.slot}`, name: `${name} ${p.suffix}`, category: p.category, price,
-    icon: p.icon, tint: '#e2e8f0', focus: p.focus, colorKey: p.slot,
+    icon: p.icon, tint: '#e2e8f0', focus: p.focus, colorKey: p.slot, tab: p.tab, sub: p.sub,
     wear: (r) => withPart(r, p.slot, set), isWorn: (r) => r.parts[p.slot] === set, takeOff: (r) => withPart(r, p.slot, null),
   }))),
 ];

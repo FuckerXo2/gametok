@@ -14,7 +14,7 @@ import { games as gamesApi, API_URL } from '../services/api';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GameLoadingScreen } from './GameLoadingScreen';
 import { GameSurface, buildGameUrl } from './GameSurface';
-import { ShopModal } from './ShopModal';
+import { TokBuxSheet } from './TokBuxSheet';
 import { GameActionRail } from './GameActionRail';
 import { isLandscape, type Orientation } from '../constants/orientation';
 
@@ -139,7 +139,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
         >
           <Ionicons name="close" size={24} color="#fff" />
         </Pressable>
-        <ShopModal visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} initialTab="tokbux" />
+        <TokBuxSheet visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} />
       </View>
     </Modal>
   );

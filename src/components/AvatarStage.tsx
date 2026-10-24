@@ -1,19 +1,14 @@
 // 3D avatar stage: the avatar-core page (games/avatar-editor/app-stage.html) in a WebView.
 // The app owns the record and draws all the UI; the page only renders what it's sent.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, ViewStyle, Platform, Text } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, ViewStyle, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { AvatarRecord, Focus } from '../avatar/catalog';
+import { AVATAR_HOST } from '../avatar/host';
 
-// The stage on R2 (games/avatar-editor/tools/publish_stage.mjs). LOCAL_STAGE: while editing the stage itself, load it
-// from the avatar-editor server on the Mac (launch config "avatar-editor") instead.
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 5;
-const LOCAL_STAGE = false;
-const DEV_HOST = Platform.OS === 'android' ? 'http://10.0.2.2:8980' : 'http://localhost:8980';
-export const AVATAR_STAGE_URL = (__DEV__ && LOCAL_STAGE
-  ? `${DEV_HOST}/app-stage.html`
-  : 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/avatar/app-stage.html') + `?v=${STAGE_V}`;
+const STAGE_V = 7;
+export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 interface AvatarStageProps {
   avatar: AvatarRecord | null;
@@ -24,10 +19,13 @@ interface AvatarStageProps {
   /** Take a headshot once this look is on the stage (the profile picture). */
   headshotOf?: AvatarRecord | null;
   onHeadshot?: (png: string, of: AvatarRecord) => void;
+  /** 'dark': a purple glow, no room (the Me screen) */
+  look?: 'dark';
 }
 
-export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot }) => {
+export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot, look }) => {
   const shotAsked = useRef<string | null>(null);
+  const bg = look === 'dark' ? '#0d0a16' : '#dce2e8';
   const ref = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -55,11 +53,11 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   }, [ready, loading, headshotOf, avatar]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, { backgroundColor: bg }, style]}>
       <WebView
         ref={ref}
-        source={{ uri: AVATAR_STAGE_URL }}
-        style={styles.webView}
+        source={{ uri: AVATAR_STAGE_URL + (look ? `&look=${look}` : '') }}
+        style={[styles.webView, { backgroundColor: bg }]}
         scrollEnabled={false}
         bounces={false}
         originWhitelist={['*']}
@@ -80,7 +78,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
         onError={(e) => setError(e.nativeEvent.description)}
       />
       {loading && (
-        <View style={styles.overlay} pointerEvents="none">
+        <View style={[styles.overlay, { backgroundColor: bg }]} pointerEvents="none">
           {error ? <Text style={styles.errorText}>Avatar couldn't load</Text> : <ActivityIndicator size="small" color="#A855F7" />}
         </View>
       )}

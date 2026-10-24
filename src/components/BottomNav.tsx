@@ -138,7 +138,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
   const tabs: TabSpec[] = [
     { name: 'home', icon: 'game-controller-outline', iconActive: 'game-controller', label: 'Games' },
     { name: 'connect', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', label: 'Connect' },
-    { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
+    { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Me' },
   ];
 
   // STANDARD TABS RENDER

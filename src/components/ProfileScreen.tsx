@@ -1,19 +1,8 @@
-// ProfileScreen — 3D Character Studio + Marketplace & Customization Sheet
-// Pixel-matched to modern avatar platforms (Roblox reference), tailored with GameTok aesthetic.
-
-import React, { useState, useEffect, useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Modal,
-  Switch,
-  Alert,
-  Linking,
-  Dimensions,
-  StyleSheet,
-  Pressable,
-} from 'react-native';
+// Me: the player's avatar and the avatar shop in one screen (like Roblox's Me tab).
+// Tap an item: it goes on the avatar straight away. Owned items are worn and saved; items not owned yet are tried on
+// and collect in the checkout, bought together with TokBux. "My items" shows only what they own.
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, Modal, Switch, Alert, Linking, Dimensions, StyleSheet, Pressable, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -22,62 +11,106 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AvatarStage } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
-import { MyAvatarModal } from './MyAvatarModal';
-import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Category, COLOR_SWATCHES, HAIR_SWATCHES } from '../avatar/catalog';
-import { buyItem, needsHeadshot, saveAvatar, syncAvatar, uploadHeadshot, useAvatarAccount } from '../avatar/store';
-import { hasHeadshot } from './Avatar';
-import { ShopModal } from './ShopModal';
 import { AddFriendsScreen } from './AddFriendsScreen';
-import { Avatar } from './Avatar';
+import { Avatar, hasHeadshot } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
+import { TokBuxSheet } from './TokBuxSheet';
+import { AVATAR_ITEMS, AvatarItem, AvatarRecord, COLOR_SWATCHES, HAIR_SWATCHES, TABS, Tab, thumbOf } from '../avatar/catalog';
+import { buyItem, needsHeadshot, saveAvatar, syncAvatar, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: W, height: H } = Dimensions.get('window');
+const CELL = (W - 16 * 2 - 10 * 2) / 3;
+const BG = '#0d0a16', PANEL = '#17121f', CARD = '#201a2b', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', GREEN = '#22c55e';
 
-
-const CATEGORIES: { id: Category; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'body', label: 'Body' },
-  { id: 'hair', label: 'Hair' },
-  { id: 'clothing', label: 'Clothing' },
-  { id: 'shoes', label: 'Shoes' },
-  { id: 'accessories', label: 'Accessories' },
-];
+type Draft = { look: AvatarRecord; cart: string[] };   // on the stage, and the items in it not owned yet
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const insets = useSafeAreaInsets();
   const { user, logout, refreshUser } = useAuth();
   const { isDark, toggleTheme } = useTheme();
-
-  const [stageMode, setStageMode] = useState<'marketplace' | 'customize'>('marketplace');
-  const [activeCategory, setActiveCategory] = useState<Category>('all');
-
-  // Avatar, owned items and TokBux: on the GameTok account (avatar/store.ts). Free items are everyone's.
   const account = useAvatarAccount();
   const saved = account?.avatar ?? null;
-  const tokbux = account?.tokbux ?? 0;
-  const priceOf = (item: AvatarItem) => account?.prices[item.id] ?? item.price;
-  const [selectedItem, setSelectedItem] = useState<AvatarItem | null>(null);
+
+  const [mode, setMode] = useState<'shop' | 'mine'>('shop');
+  const [tab, setTab] = useState<Tab>('all');
+  const [sub, setSub] = useState<string | null>(null);
+  const [selected, setSelected] = useState<AvatarItem | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [history, setHistory] = useState<{ undo: Draft[]; redo: Draft[] }>({ undo: [], redo: [] });
   const [buying, setBuying] = useState(false);
-  const [history, setHistory] = useState<{ undo: AvatarRecord[]; redo: AvatarRecord[] }>({ undo: [], redo: [] });
+  const [menu, setMenu] = useState(false);
+  const [tokbux, setTokbux] = useState(false);
+  const [editProfile, setEditProfile] = useState(false);
+  const [friends, setFriends] = useState(false);
 
-  const isOwned = (item: AvatarItem) => priceOf(item) === 0 || !!account?.owned.includes(item.id);
-  const isWorn = (item: AvatarItem) => !!saved && !!item.isWorn?.(saved);
-
-  // try-on: the stage shows the selected item on the player's own avatar before they buy or equip it
-  const shown = useMemo(
-    () => (saved && selectedItem?.wear && !isWorn(selectedItem) ? selectedItem.wear(saved) : saved),
-    [saved, selectedItem],
-  );
-
-  // Modals
-  const [showShop, setShowShop] = useState(false);
-  const [showMyAvatar, setShowMyAvatar] = useState(false);
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const [showAddFriends, setShowAddFriends] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const priceOf = (i: AvatarItem) => account?.prices[i.id] ?? i.price;
+  const owns = (i: AvatarItem) => priceOf(i) === 0 || !!account?.owned.includes(i.id);
+  const look = draft?.look ?? saved;
+  const cart = draft?.cart ?? [];
 
   // signing in or out switches whose avatar this is
   useEffect(() => { syncAvatar(); }, [user?.id]);
+  // the saved look changed elsewhere (another phone, a purchase): show it, unless they're mid try-on
+  useEffect(() => { if (saved && !draft?.cart.length) setDraft(null); }, [saved]);
+
+  // every change goes on the stage; with nothing unbought in it, it's also saved
+  const apply = (next: Draft) => {
+    next = { ...next, cart: next.cart.filter((id) => AVATAR_ITEMS.find((i) => i.id === id)?.isWorn?.(next.look)) };
+    setDraft(next);
+    if (!next.cart.length) saveAvatar(next.look);
+  };
+  const change = (next: Draft) => {
+    if (look) setHistory((h) => ({ undo: [...h.undo.slice(-30), { look, cart }], redo: [] }));
+    apply(next);
+  };
+  const undo = () => {
+    const prev = history.undo[history.undo.length - 1]; if (!prev || !look) return;
+    setHistory((h) => ({ undo: h.undo.slice(0, -1), redo: [...h.redo, { look, cart }] })); apply(prev);
+  };
+  const redo = () => {
+    const next = history.redo[history.redo.length - 1]; if (!next || !look) return;
+    setHistory((h) => ({ undo: [...h.undo, { look, cart }], redo: h.redo.slice(0, -1) })); apply(next);
+  };
+
+  const tap = (item: AvatarItem) => {
+    if (!look) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelected(item);
+    if (item.isWorn?.(look)) {
+      if (item.takeOff) change({ look: item.takeOff(look), cart: cart.filter((id) => id !== item.id) });
+      return;
+    }
+    if (!item.wear) return;
+    change({ look: item.wear(look), cart: owns(item) ? cart : [...cart, item.id] });
+  };
+
+  const recolor = (color: string) => {
+    if (!look || !selected?.colorKey) return;
+    const k = selected.colorKey;
+    change({ look: k === 'hair' ? { ...look, hairColor: color } : { ...look, colors: { ...look.colors, [k]: color } }, cart });
+  };
+
+  const cartItems = cart.map((id) => AVATAR_ITEMS.find((i) => i.id === id)!).filter(Boolean);
+  const total = cartItems.reduce((t, i) => t + priceOf(i), 0);
+  const checkout = async () => {
+    if (!look || buying) return;
+    if (!account?.signedIn) { Alert.alert('Sign in to buy'); return; }
+    if ((account.tokbux ?? 0) < total) {
+      Alert.alert('Not enough TokBux', `This costs ${total.toLocaleString()} TokBux. You have ${account.tokbux.toLocaleString()}.`, [
+        { text: 'Cancel', style: 'cancel' }, { text: 'Get TokBux', onPress: () => setTokbux(true) },
+      ]);
+      return;
+    }
+    setBuying(true);
+    for (const item of cartItems) {
+      const err = await buyItem(item.id);
+      if (err) { setBuying(false); Alert.alert('Not bought', `${item.name}: ${err}`); return; }
+    }
+    setBuying(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    apply({ look, cart: [] });   // all owned now: saved
+  };
+  const clearCart = () => { if (saved && look) { setHistory((h) => ({ undo: [...h.undo, { look, cart }], redo: [] })); setDraft(null); } };
 
   // the profile picture is a headshot of the saved look: retake it when the look changes
   const [shotOf, setShotOf] = useState<AvatarRecord | null>(null);
@@ -87,499 +120,131 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
     needsHeadshot(saved, hasHeadshot(user?.avatar)).then((n) => { if (live) setShotOf(n ? saved : null); });
     return () => { live = false; };
   }, [saved, user?.avatar, account?.signedIn]);
-  const onHeadshot = (png: string, of: AvatarRecord) => {
-    uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); });
-  };
+  const onHeadshot = (png: string, of: AvatarRecord) => { uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); }); };
 
-  const commit = (next: AvatarRecord) => {
-    if (!saved) return;
-    setHistory((h) => ({ undo: [...h.undo.slice(-30), saved], redo: [] }));
-    saveAvatar(next);
-  };
-  const undo = () => {
-    const prev = history.undo[history.undo.length - 1];
-    if (!prev || !saved) return;
-    setHistory((h) => ({ undo: h.undo.slice(0, -1), redo: [...h.redo, saved] }));
-    setSelectedItem(null);
-    saveAvatar(prev);
-  };
-  const redo = () => {
-    const next = history.redo[history.redo.length - 1];
-    if (!next || !saved) return;
-    setHistory((h) => ({ undo: [...h.undo, saved], redo: h.redo.slice(0, -1) }));
-    setSelectedItem(null);
-    saveAvatar(next);
-  };
-
-  const handleSelectItem = (item: AvatarItem) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedItem(selectedItem?.id === item.id ? null : item);
-  };
-
-  const recolor = (color: string) => {
-    if (!saved || !selectedItem?.colorKey) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const k = selectedItem.colorKey;
-    commit(k === 'hair' ? { ...saved, hairColor: color } : { ...saved, colors: { ...saved.colors, [k]: color } });
-  };
-
-  const handlePrimaryAction = async () => {
-    if (!selectedItem || !saved) return;
-
-    // on: take it off (owned or not); deselect too, or the stage would keep showing it as a try-on
-    if (isWorn(selectedItem)) {
-      if (selectedItem.takeOff) { commit(selectedItem.takeOff(saved)); setSelectedItem(null); }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return;
-    }
-    if (isOwned(selectedItem)) {
-      if (selectedItem.wear) commit(selectedItem.wear(saved));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return;
-    }
-
-    // Buy with TokBux (the account decides), then wear it
-    if (!account?.signedIn) {
-      Alert.alert('Sign in to buy', 'Items you buy are kept on your GameTok account, so they follow you to every game and phone.');
-      return;
-    }
-    if (tokbux < priceOf(selectedItem)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert('Not enough TokBux', `${selectedItem.name} costs ${priceOf(selectedItem).toLocaleString()} TokBux. You have ${tokbux.toLocaleString()}.`);
-      return;
-    }
-    if (buying) return;
-    setBuying(true);
-    const item = selectedItem, before = saved;
-    const err = await buyItem(item.id);
-    setBuying(false);
-    if (err) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Not bought', err);
-      return;
-    }
-    if (item.wear) commit(item.wear(before));
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
-  const filteredItems = useMemo(() => {
-    let pool = AVATAR_ITEMS;
-    if (stageMode === 'customize') pool = pool.filter(isOwned);
-    if (activeCategory === 'all') return pool;
-    return pool.filter((item) => item.category === activeCategory);
-  }, [stageMode, activeCategory, account]);
-
-  const isSelectedOwned = !!selectedItem && isOwned(selectedItem);
-  const isSelectedEquipped = !!selectedItem && isWorn(selectedItem);
+  const items = useMemo(() => AVATAR_ITEMS.filter((i) =>
+    (mode === 'shop' || owns(i)) && (tab === 'all' || i.tab === tab) && (!sub || i.sub === sub)), [mode, tab, sub, account]);
+  const subs = TABS.find((t) => t.id === tab)?.subs ?? [];
+  const swatches = selected?.colorKey && look && selected.isWorn?.(look) ? (selected.colorKey === 'hair' ? HAIR_SWATCHES : COLOR_SWATCHES) : null;
+  const swatchOn = swatches && look && selected?.colorKey ? (selected.colorKey === 'hair' ? look.hairColor : look.colors[selected.colorKey]) : null;
+  const bottomH = (cart.length ? 76 : 0) + (swatches ? 46 : 0);
 
   return (
     <View style={styles.root}>
-      {/* 1. TOP 46% 3D CHARACTER STUDIO STAGE */}
-      <View style={styles.stageWrap}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={shown} focus={selectedItem?.focus || 'body'} headshotOf={shotOf} onHeadshot={onHeadshot} />
-
-        {/* Floating Top Controls Header */}
-        <View style={[styles.stageTopBar, { paddingTop: insets.top + 6 }]}>
-          {/* Left: Menu & Profile Pill */}
-          <View style={styles.leftGroup}>
-            <Pressable
-              style={styles.iconBtn}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowSettings(true);
-              }}
-              hitSlop={8}
-            >
-              <Ionicons name="menu" size={20} color="#FFFFFF" />
-              <View style={styles.blueDot} />
-            </Pressable>
-
-            <Pressable
-              style={styles.profileBadgeCapsule}
-              onPress={() => setShowEditProfile(true)}
-              hitSlop={8}
-            >
-              <Avatar uri={user?.avatar} userId={user?.id} size={28} />
-              <View style={styles.profileBadgeGear}>
-                <Ionicons name="settings" size={9} color="#000000" />
-              </View>
-            </Pressable>
+      {/* top: who, Shop | My items, TokBux */}
+      <View style={[styles.top, { paddingTop: insets.top + 6 }]}>
+        <Pressable style={styles.who} onPress={() => setMenu(true)} hitSlop={6}>
+          <Avatar uri={user?.avatar} userId={user?.id} size={40} />
+          <View style={{ maxWidth: W * 0.3 }}>
+            <Text style={styles.name} numberOfLines={1}>{user?.displayName || user?.username || 'You'}</Text>
+            <Text style={styles.handle} numberOfLines={1}>@{user?.username || ''}</Text>
           </View>
-
-          {/* Center: Segmented Toggle [ Marketplace | Customize ] */}
-          <View style={styles.segmentedToggle}>
-            <Pressable
-              style={[
-                styles.segmentBtn,
-                stageMode === 'marketplace' && styles.segmentBtnActive,
-              ]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setStageMode('marketplace');
-              }}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  stageMode === 'marketplace' && styles.segmentTextActive,
-                ]}
-              >
-                Marketplace
-              </Text>
+        </Pressable>
+        <View style={styles.seg}>
+          {(['shop', 'mine'] as const).map((m) => (
+            <Pressable key={m} onPress={() => setMode(m)} style={[styles.segBtn, mode === m && styles.segOn]}>
+              <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === 'shop' ? 'Shop' : 'My items'}</Text>
             </Pressable>
-
-            <Pressable
-              style={[
-                styles.segmentBtn,
-                stageMode === 'customize' && styles.segmentBtnActive,
-              ]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setStageMode('customize');
-              }}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  stageMode === 'customize' && styles.segmentTextActive,
-                ]}
-              >
-                Customize
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Right: Search & TokBux Balance */}
-          <View style={styles.rightGroup}>
-            <Pressable
-              style={styles.iconBtn}
-              onPress={() => setShowShop(true)}
-              hitSlop={8}
-            >
-              <Ionicons name="search" size={20} color="#FFFFFF" />
-            </Pressable>
-
-            <Pressable
-              style={styles.tokbuxCapsule}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowShop(true);
-              }}
-              hitSlop={8}
-            >
-              <TokBuxIcon size={22} />
-              <Text style={styles.tokbuxAmount}>{tokbux.toLocaleString()}</Text>
-            </Pressable>
-          </View>
+          ))}
         </View>
+        <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
+          <TokBuxIcon size={22} />
+          <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
+        </Pressable>
+      </View>
 
-        {/* Floating Stage Controls (Bottom-Left: Undo/Redo pill matching Roblox) */}
-        <View style={styles.stageFloatingControls}>
-          <View style={styles.undoRedoPill}>
-            <Pressable
-              style={styles.undoBtn}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                undo();
-              }}
-              hitSlop={6}
-            >
-              <Ionicons name="arrow-undo" size={16} color={history.undo.length ? '#FFFFFF' : 'rgba(255,255,255,0.35)'} />
-            </Pressable>
-            <View style={styles.undoDivider} />
-            <Pressable
-              style={styles.undoBtn}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                redo();
-              }}
-              hitSlop={6}
-            >
-              <Ionicons name="arrow-redo" size={16} color={history.redo.length ? '#FFFFFF' : 'rgba(255,255,255,0.35)'} />
-            </Pressable>
-          </View>
+      {/* the avatar */}
+      <View style={styles.stage}>
+        <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={selected?.focus || 'body'} look="dark" headshotOf={shotOf} onHeadshot={onHeadshot} />
+        <View style={styles.undo}>
+          <Pressable style={styles.undoBtn} onPress={undo} hitSlop={6}><Ionicons name="arrow-undo" size={17} color={history.undo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
+          <Pressable style={styles.undoBtn} onPress={redo} hitSlop={6}><Ionicons name="arrow-redo" size={17} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
         </View>
       </View>
 
-      {/* 2. BOTTOM 54% MARKETPLACE & CUSTOMIZATION SHEET */}
-      <View style={styles.sheetContainer}>
-        {/* Grabber Handle */}
-        <View style={styles.grabberHandle} />
-
-        {/* Category Underline Tabs (matching Roblox: All, Avatars, Body, Clothing, etc.) */}
-        <View style={styles.categoryBarWrap}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryScroll}
-          >
-            {CATEGORIES.map((cat) => {
-              const isActive = activeCategory === cat.id;
-              return (
-                <Pressable
-                  key={cat.id}
-                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setActiveCategory(cat.id);
-                  }}
-                >
-                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive]}>
-                    {cat.label}
-                  </Text>
-                  {isActive && <View style={styles.categoryTabIndicator} />}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          {/* Filter Sliders Button on Right */}
-          <Pressable
-            style={styles.filterBtn}
-            onPress={() => setShowSettings(true)}
-            hitSlop={6}
-          >
-            <Ionicons name="options-outline" size={18} color="#FFFFFF" />
-          </Pressable>
+      {/* items */}
+      <View style={styles.sheet}>
+        <View style={styles.tabs}>
+          {TABS.map((t) => (
+            <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
+              <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
+            </Pressable>
+          ))}
         </View>
-
-        {/* Section Heading: "Recommended For You" */}
-        <View style={styles.sectionHeadingWrap}>
-          <Text style={styles.sectionHeadingText}>
-            {stageMode === 'marketplace' ? 'Recommended For You' : 'My Customizables'}
-          </Text>
-        </View>
-
-        {/* 3-Column Item Grid */}
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 110 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {filteredItems.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>No items found in this category.</Text>
-            </View>
-          ) : (
-            <View style={styles.itemsGrid}>
-              {filteredItems.map((item) => {
-                const isSelected = selectedItem?.id === item.id;
-                const owned = isOwned(item);
-                const isEquipped = isWorn(item);
-
-                return (
-                  <Pressable
-                    key={item.id}
-                    style={styles.gridCard}
-                    onPress={() => handleSelectItem(item)}
-                  >
-                    {/* Square Item Preview Box */}
-                    <View
-                      style={[
-                        styles.cardThumb,
-                        isSelected && styles.cardThumbSelected,
-                      ]}
-                    >
-                      <Ionicons name={item.icon} size={42} color={item.tint} />
-
-                      {isEquipped && (
-                        <View style={styles.cardEquippedTag}>
-                          <Text style={styles.cardEquippedText}>ON</Text>
-                        </View>
-                      )}
-
-                      {/* Details Badge on Selected Card */}
-                      {isSelected && (
-                        <View style={styles.detailsBadge}>
-                          <Text style={styles.detailsBadgeText}>Details</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Title */}
-                    <Text style={styles.cardName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-
-                    {/* Brand / Creator */}
-                    <Text style={styles.cardCreator} numberOfLines={1}>
-                      GameTok
-                    </Text>
-
-                    {/* Price Row with TokBux Token */}
-                    <View style={styles.cardPriceRow}>
-                      {owned ? (
-                        <Text style={styles.cardOwnedLabel}>
-                          {isEquipped ? '✓ Equipped' : priceOf(item) === 0 ? 'Free' : 'Owned'}
-                        </Text>
-                      ) : (
-                        <>
-                          <TokBuxIcon size={16} />
-                          <Text style={styles.cardPriceText}>{priceOf(item)}</Text>
-                        </>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
+        {subs.length ? (
+          <View style={styles.subs}>
+            {subs.map((s) => (
+              <Pressable key={s} onPress={() => setSub(sub === s ? null : s)} style={[styles.subChip, sub === s && styles.subOn]}>
+                <Text style={[styles.subText, sub === s && styles.subTextOn]}>{s}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        <ScrollView contentContainerStyle={[styles.grid, { paddingBottom: bottomH + 20 }]} showsVerticalScrollIndicator={false}>
+          {items.length ? items.map((i) => {
+            const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i);
+            return (
+              <Pressable key={i.id} onPress={() => tap(i)} style={[styles.item, selected?.id === i.id && styles.itemSel]}>
+                {on ? <Text style={styles.onTag}>ON</Text> : null}
+                <View style={styles.thumb}>
+                  {thumb ? <Image source={{ uri: thumb }} style={styles.thumbImg} resizeMode="contain" />
+                    : <View style={[styles.skinDot, { backgroundColor: i.tint }]} />}
+                </View>
+                <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
+                {owned && priceOf(i) > 0 ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
+                  : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
+                  : <View style={styles.priceRow}><TokBuxIcon size={14} /><Text style={[styles.price, { paddingHorizontal: 0, paddingBottom: 0, paddingTop: 0 }]}>{priceOf(i)}</Text></View>}
+              </Pressable>
+            );
+          }) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'Nothing here yet.'}</Text>}
         </ScrollView>
 
-        {/* Colour swatches for the selected item, once it's on */}
-        {selectedItem?.colorKey && isSelectedEquipped && saved && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.swatchBar, { bottom: (insets.bottom > 0 ? insets.bottom + 4 : 14) + 74 }]} contentContainerStyle={styles.swatchRow}>
-            {(selectedItem.colorKey === 'hair' ? HAIR_SWATCHES : COLOR_SWATCHES).map((c) => {
-              const k = selectedItem.colorKey!;
-              const on = (k === 'hair' ? saved.hairColor : saved.colors[k]) === c;
-              return (
-                <Pressable key={c} onPress={() => recolor(c)} style={[styles.swatch, { backgroundColor: c }, on && styles.swatchOn]} />
-              );
-            })}
-          </ScrollView>
-        )}
-
-        {/* Fixed Bottom Action Bar */}
-        <View style={[styles.bottomActionBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 4 : 14 }]}>
-          {/* Primary Action Button (Blue button matching Roblox) */}
-          <Pressable
-            style={[
-              styles.primaryBtn,
-              isSelectedEquipped && styles.primaryBtnEquipped,
-              !!selectedItem && !isSelectedOwned && styles.primaryBtnBuy,
-            ]}
-            onPress={handlePrimaryAction}
-          >
-            {!selectedItem ? (
-              <Text style={styles.primaryBtnText}>Pick an item to try on</Text>
-            ) : isSelectedEquipped ? (
-              <Text style={styles.primaryBtnText}>{selectedItem.takeOff ? 'Take Off' : '✓ Wearing'}</Text>
-            ) : isSelectedOwned ? (
-              <Text style={styles.primaryBtnText}>Wear</Text>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <TokBuxIcon size={22} />
-                <Text style={[styles.primaryBtnText, { fontSize: 18 }]}>
-                  {selectedItem && priceOf(selectedItem)}
-                </Text>
+        {/* colours for what's selected, and the checkout */}
+        <View style={styles.bottom} pointerEvents="box-none">
+          {swatches ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatches}>
+              {swatches.map((c) => (
+                <Pressable key={c} onPress={() => recolor(c)} style={[styles.swatch, { backgroundColor: c }, swatchOn === c && styles.swatchOn]} />
+              ))}
+            </ScrollView>
+          ) : null}
+          {cart.length ? (
+            <View style={styles.bar}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.barTitle}>Checkout ({cart.length})</Text>
+                <Text style={styles.barSub} numberOfLines={1}>{cartItems.map((i) => i.name).join(' · ')}</Text>
               </View>
-            )}
-          </Pressable>
-
-          {/* More Options Button [...] */}
-          <Pressable
-            style={styles.moreBtn}
-            onPress={() => setShowMyAvatar(true)}
-            hitSlop={8}
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color="#FFFFFF" />
-          </Pressable>
+              <Pressable style={styles.buy} onPress={checkout} disabled={buying}>
+                <TokBuxIcon size={20} />
+                <Text style={styles.buyText}>{buying ? '…' : `${total} · Buy`}</Text>
+              </Pressable>
+              <Pressable style={styles.bin} onPress={clearCart} hitSlop={6}><Ionicons name="trash-outline" size={19} color="#fff" /></Pressable>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      {/* MODALS */}
-      <ShopModal
-        visible={showShop}
-        onClose={() => setShowShop(false)}
-        onOpenAvatarPreview={() => {
-          setShowShop(false);
-          setShowMyAvatar(true);
-        }}
-      />
+      <TokBuxSheet visible={tokbux} onClose={() => setTokbux(false)} />
+      <EditProfileModal visible={editProfile} onClose={() => setEditProfile(false)} />
+      <AddFriendsScreen visible={friends} onClose={() => setFriends(false)} />
 
-      <MyAvatarModal
-        visible={showMyAvatar}
-        onClose={() => setShowMyAvatar(false)}
-      />
-
-      <EditProfileModal
-        visible={showEditProfile}
-        onClose={() => setShowEditProfile(false)}
-      />
-
-      <AddFriendsScreen
-        visible={showAddFriends}
-        onClose={() => setShowAddFriends(false)}
-      />
-
-      {/* Settings Sheet */}
-      <Modal
-        visible={showSettings}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowSettings(false)}
-      >
-        <View style={styles.sheetBackdrop}>
-          <Pressable style={{ flex: 1 }} onPress={() => setShowSettings(false)} />
-          <View style={styles.sheetCard}>
-            <View style={styles.sheetGrabber} />
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <SheetItem
-                icon="body-outline"
-                label="3D Avatar & Skeleton"
-                onPress={() => {
-                  setShowSettings(false);
-                  setShowMyAvatar(true);
-                }}
-              />
-              <SheetItem
-                icon="cart-outline"
-                label="TokBux & Coin Store"
-                onPress={() => {
-                  setShowSettings(false);
-                  setShowShop(true);
-                }}
-              />
-              <SheetItem
-                icon="person-outline"
-                label="Edit Profile"
-                onPress={() => {
-                  setShowSettings(false);
-                  setShowEditProfile(true);
-                }}
-              />
-              <SheetItem
-                icon="person-add-outline"
-                label="Find Friends"
-                onPress={() => {
-                  setShowSettings(false);
-                  setShowAddFriends(true);
-                }}
-              />
-              <View style={styles.sheetDivider} />
-              <View style={styles.sheetSwitchRow}>
-                <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={20} color="#FFFFFF" />
-                <Text style={styles.sheetItemLabel}>Dark Mode</Text>
-                <Switch
-                  value={isDark}
-                  onValueChange={toggleTheme}
-                  trackColor={{ false: '#ccc', true: '#7C3AED' }}
-                  thumbColor="#fff"
-                  style={{ marginLeft: 'auto' }}
-                />
-              </View>
-              <View style={styles.sheetDivider} />
-              <SheetItem
-                icon="mail-outline"
-                label="Contact Us"
-                onPress={() => Linking.openURL('mailto:info@gametok.com')}
-              />
-              <SheetItem
-                icon="shield-outline"
-                label="Privacy Policy"
-                onPress={() => Linking.openURL('https://gametok.co/privacy.html')}
-              />
-              <View style={styles.sheetDivider} />
-              <SheetItem
-                icon="log-out-outline"
-                label="Log Out"
-                danger
-                onPress={() => {
-                  setShowSettings(false);
-                  logout();
-                }}
-              />
-            </ScrollView>
+      {/* you: profile, friends, settings */}
+      <Modal visible={menu} animationType="slide" transparent onRequestClose={() => setMenu(false)}>
+        <View style={styles.menuBackdrop}>
+          <Pressable style={{ flex: 1 }} onPress={() => setMenu(false)} />
+          <View style={[styles.menu, { paddingBottom: insets.bottom + 12 }]}>
+            <View style={styles.grabber} />
+            <MenuItem icon="person-outline" label="Edit Profile" onPress={() => { setMenu(false); setEditProfile(true); }} />
+            <MenuItem icon="person-add-outline" label="Find Friends" onPress={() => { setMenu(false); setFriends(true); }} />
+            <MenuItem icon="wallet-outline" label="TokBux" onPress={() => { setMenu(false); setTokbux(true); }} />
+            <View style={styles.menuRow}>
+              <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={20} color="#fff" />
+              <Text style={styles.menuLabel}>Dark Mode</Text>
+              <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#ccc', true: '#7C3AED' }} thumbColor="#fff" style={{ marginLeft: 'auto' }} />
+            </View>
+            <MenuItem icon="mail-outline" label="Contact Us" onPress={() => Linking.openURL('mailto:info@gametok.com')} />
+            <MenuItem icon="shield-outline" label="Privacy Policy" onPress={() => Linking.openURL('https://gametok.co/privacy.html')} />
+            <MenuItem icon="log-out-outline" label="Log Out" danger onPress={() => { setMenu(false); logout(); }} />
           </View>
         </View>
       </Modal>
@@ -587,395 +252,64 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   );
 };
 
-const SheetItem: React.FC<{
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  danger?: boolean;
-  onPress: () => void;
-}> = ({ icon, label, danger, onPress }) => (
-  <Pressable style={styles.sheetItem} onPress={onPress}>
-    <Ionicons name={icon} size={20} color={danger ? '#ef4444' : '#FFFFFF'} style={{ width: 28 }} />
-    <Text style={[styles.sheetItemLabel, danger && { color: '#ef4444' }]}>{label}</Text>
-    <Ionicons name="chevron-forward" size={16} color="#6B6B78" style={{ marginLeft: 'auto' }} />
+const MenuItem: React.FC<{ icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; danger?: boolean }> = ({ icon, label, onPress, danger }) => (
+  <Pressable style={styles.menuRow} onPress={onPress}>
+    <Ionicons name={icon} size={20} color={danger ? '#ef4444' : '#fff'} />
+    <Text style={[styles.menuLabel, danger && { color: '#ef4444' }]}>{label}</Text>
   </Pressable>
 );
 
 const styles = StyleSheet.create({
-  swatchBar: { flexGrow: 0, position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(18,17,29,0.9)' },
-  swatchRow: { paddingHorizontal: 14, gap: 10, paddingVertical: 8 },
-  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)' },
-  swatchOn: { borderColor: '#FFFFFF', borderWidth: 3 },
-  root: {
-    flex: 1,
-    backgroundColor: '#16151f',
-  },
-  stageWrap: {
-    height: SCREEN_HEIGHT * 0.46,
-    width: '100%',
-    position: 'relative',
-    backgroundColor: '#16151f',
-  },
-  stageTopBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    zIndex: 10,
-  },
-  leftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  rightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  blueDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#3B82F6',
-  },
-  profileBadgeCapsule: {
-    position: 'relative',
-  },
-  profileBadgeGear: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
-    backgroundColor: '#FFD23F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentedToggle: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 22,
-    padding: 3,
-  },
-  segmentBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 18,
-  },
-  segmentBtnActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  segmentText: {
-    color: '#D4D0E8',
-    fontSize: 12,
-    fontFamily: 'Inter_700Bold',
-  },
-  segmentTextActive: {
-    color: '#000000',
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  tokbuxCapsule: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 18,
-    gap: 6,
-  },
-  tokbuxAmount: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  stageFloatingControls: {
-    position: 'absolute',
-    bottom: 14,
-    left: 14,
-    zIndex: 10,
-  },
-  undoRedoPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 18,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  undoBtn: {
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  undoDivider: {
-    width: 1,
-    height: 14,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    marginHorizontal: 4,
-  },
-  sheetContainer: {
-    flex: 1,
-    backgroundColor: '#12111D',
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    borderTopWidth: 1,
-    borderTopColor: '#25233A',
-    overflow: 'hidden',
-  },
-  grabberHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#3E3B5A',
-    alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 6,
-  },
-  categoryBarWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E1C2E',
-  },
-  categoryScroll: {
-    gap: 16,
-    paddingRight: 10,
-  },
-  categoryTab: {
-    paddingVertical: 10,
-    paddingHorizontal: 2,
-    position: 'relative',
-  },
-  categoryTabActive: {},
-  categoryTabText: {
-    color: '#8E8AAB',
-    fontSize: 14,
-    fontFamily: 'Inter_700Bold',
-  },
-  categoryTabTextActive: {
-    color: '#FFFFFF',
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  categoryTabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2.5,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 1.5,
-  },
-  filterBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 6,
-  },
-  sectionHeadingWrap: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  sectionHeadingText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: -0.3,
-  },
-  itemsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    paddingTop: 4,
-  },
-  gridCard: {
-    width: (SCREEN_WIDTH - 44) / 3,
-    marginBottom: 12,
-  },
-  cardThumb: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 14,
-    backgroundColor: '#1E1D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-    position: 'relative',
-  },
-  cardThumbSelected: {
-    borderColor: '#3B82F6',
-    backgroundColor: '#24223A',
-  },
-  cardEquippedTag: {
-    position: 'absolute',
-    top: 5,
-    left: 5,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  cardEquippedText: {
-    color: '#000000',
-    fontSize: 8,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  detailsBadge: {
-    position: 'absolute',
-    bottom: 6,
-    alignSelf: 'center',
-    backgroundColor: '#1E1D2D',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  detailsBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontFamily: 'Inter_700Bold',
-  },
-  cardName: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontFamily: 'Inter_700Bold',
-    marginTop: 6,
-  },
-  cardCreator: {
-    color: '#8A86A8',
-    fontSize: 10,
-    fontFamily: 'Inter_500Medium',
-    marginTop: 1,
-  },
-  cardPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  cardPriceText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  cardOwnedLabel: {
-    color: '#A855F7',
-    fontSize: 10,
-    fontFamily: 'Inter_700Bold',
-  },
-  bottomActionBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    backgroundColor: 'rgba(18,17,29,0.96)',
-    borderTopWidth: 1,
-    borderTopColor: '#26243A',
-  },
-  primaryBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnBuy: {
-    backgroundColor: '#2563EB',
-  },
-  primaryBtnEquipped: {
-    backgroundColor: '#26243A',
-  },
-  primaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  moreBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#1E1D2D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#34304E',
-  },
-  emptyWrap: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: '#8E8AAB',
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-  },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  sheetCard: {
-    backgroundColor: '#17142A',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '75%',
-  },
-  sheetGrabber: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#383256',
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  sheetItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
-  sheetItemLabel: {
-    fontSize: 15,
-    fontFamily: 'Inter_600SemiBold',
-    color: '#FFFFFF',
-  },
-  sheetDivider: {
-    height: 1,
-    backgroundColor: '#272242',
-    marginVertical: 6,
-  },
-  sheetSwitchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
+  root: { flex: 1, backgroundColor: BG },
+  top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
+  who: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  name: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  handle: { color: DIM, fontSize: 12, fontWeight: '600' },
+  seg: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 999, padding: 3 },
+  segBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
+  segOn: { backgroundColor: '#fff' },
+  segText: { color: DIM, fontSize: 12, fontWeight: '800' },
+  segTextOn: { color: '#111' },
+  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 11 },
+  tbText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  stage: { height: H * 0.4, backgroundColor: BG },
+  undo: { position: 'absolute', left: 14, bottom: 26, flexDirection: 'row', gap: 8 },
+  undoBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -16 },
+  tabs: { flexDirection: 'row', gap: 18, paddingHorizontal: 18, paddingTop: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  tab: { paddingBottom: 10, borderBottomWidth: 3, borderBottomColor: 'transparent' },
+  tabOn: { borderBottomColor: '#fff' },
+  tabText: { color: DIM, fontSize: 15, fontWeight: '800' },
+  tabTextOn: { color: '#fff' },
+  subs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12 },
+  subChip: { paddingVertical: 7, paddingHorizontal: 13, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
+  subOn: { backgroundColor: 'rgba(168,85,247,0.25)' },
+  subText: { color: DIM, fontSize: 13, fontWeight: '700' },
+  subTextOn: { color: '#e9d5ff' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 16 },
+  item: { width: CELL, height: CELL * 1.22, backgroundColor: CARD, borderRadius: 18, borderWidth: 2, borderColor: 'transparent', overflow: 'hidden' },
+  itemSel: { borderColor: ACCENT },
+  onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: GREEN, color: '#052e12', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  thumb: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  thumbImg: { width: '84%', height: '84%' },
+  skinDot: { width: CELL * 0.45, height: CELL * 0.45, borderRadius: CELL },
+  itemName: { color: '#fff', fontSize: 12, fontWeight: '700', paddingHorizontal: 9 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingTop: 2, paddingBottom: 9 },
+  price: { color: '#e9d5ff', fontSize: 12, fontWeight: '800', paddingHorizontal: 9, paddingTop: 2, paddingBottom: 9 },
+  empty: { color: DIM, fontWeight: '600', padding: 20 },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingBottom: 10 },
+  swatches: { gap: 10, paddingVertical: 8 },
+  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'rgba(255,255,255,0.15)' },
+  swatchOn: { borderColor: '#fff', borderWidth: 3 },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#0e0b16', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 10, paddingLeft: 16 },
+  barTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  barSub: { color: DIM, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  buy: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 15 },
+  buyText: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  bin: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
+  menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  menu: { backgroundColor: '#1b1526', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8, paddingHorizontal: 18 },
+  grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 8 },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 15 },
+  menuLabel: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
