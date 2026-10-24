@@ -6,14 +6,15 @@
 // being recorded, and the deliberate 1200ms hold after load so the game isn't revealed mid-boot.
 // Every one of those was missing from the ad-hoc players elsewhere in the app.
 
-import React, { useState } from 'react';
-import { View, Modal, Pressable, StatusBar, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Modal, Pressable, StatusBar, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { games as gamesApi, API_URL } from '../services/api';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GameLoadingScreen } from './GameLoadingScreen';
 import { GameSurface, buildGameUrl } from './GameSurface';
+import { ShopModal } from './ShopModal';
 import { GameActionRail } from './GameActionRail';
 import { isLandscape, type Orientation } from '../constants/orientation';
 
@@ -53,6 +54,12 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
   const insets = useSafeAreaInsets();
   const [loaded, setLoaded] = useState(false);
   const [progress, setProgress] = useState(0);
+  // a game's "get TokBux" opens the TokBux store over it
+  const [tokbuxOpen, setTokbuxOpen] = useState(false);
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('gametok:open-tokbux', () => setTokbuxOpen(true));
+    return () => sub.remove();
+  }, []);
 
   // Keyed on the game id so a second game opened from the same surface starts from the loading
   // screen again rather than flashing the previous game's finished state.
@@ -132,6 +139,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
         >
           <Ionicons name="close" size={24} color="#fff" />
         </Pressable>
+        <ShopModal visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} initialTab="tokbux" />
       </View>
     </Modal>
   );

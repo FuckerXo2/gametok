@@ -3,7 +3,7 @@
     "name": "GameTOK",
     "slug": "gametok",
     "scheme": "gametok",
-    "version": "2.1.5",
+    "version": "2.2.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

@@ -21,6 +21,8 @@ import { ConnectScreen } from './src/components/ConnectScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { ExploreScreen } from './src/components/ExploreScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
+import { UpdateRequired, useUpdateRequired } from './src/components/UpdateRequired';
+import { startPurchases } from './src/tokbux/purchases';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { CreateScreen } from './src/screens/CreateScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -254,7 +256,10 @@ const MainApp = ({
 };
 
 const AppContent = () => {
-  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const { isLoading: authLoading, isAuthenticated, user } = useAuth();
+  const updateStoreUrl = useUpdateRequired();
+  // TokBux purchases are credited to whoever is signed in
+  useEffect(() => { startPurchases(user?.id); }, [user?.id]);
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
   const [creationNotificationNonce, setCreationNotificationNonce] = useState(0);
@@ -453,6 +458,9 @@ const AppContent = () => {
       </View>
     );
   }
+
+  // Too old to keep working: update first
+  if (updateStoreUrl) return <UpdateRequired storeUrl={updateStoreUrl} />;
 
   // Signed out: the account comes first
   if (onboarding || !isAuthenticated) {

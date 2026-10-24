@@ -11,12 +11,13 @@
 // Retina resolution with hardware acceleration (-webkit-transform: translateZ(0)) and WebGL fog patching.
 
 import React, { forwardRef, useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, Platform, Alert, type StyleProp, type ViewStyle } from 'react-native';
+import { View, StyleSheet, Platform, Alert, DeviceEventEmitter, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewProps } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 import { buyItem, getAvatarAccount, syncAvatar, useAvatar } from '../avatar/store';
 import { playerSessions } from '../services/api';
+import { APP_VERSION } from './UpdateRequired';
 
 export const GAMES_HOST = 'https://games.gametok.co';
 
@@ -496,6 +497,8 @@ true;
     GAMETOK_HARDWARE_BRIDGE +
     '\n' +
     (avatar ? `window.GAMETOK_AVATAR = ${JSON.stringify(avatar)};\n` : '') +
+    // which app this is (a game can tell an app too old for it: no version = older than 2.2.0)
+    `window.GAMETOK_APP_VERSION = ${JSON.stringify(APP_VERSION)};\n` +
     (webViewProps.injectedJavaScriptBeforeContentLoaded || '');
 
   const handleMessage = useCallback((event: any) => {
@@ -543,6 +546,8 @@ true;
             } },
           ]);
         });
+      } else if (data.type === 'GAMETOK_OPEN_TOKBUX') {
+        DeviceEventEmitter.emit('gametok:open-tokbux');   // the game player opens the TokBux store over the game
       } else if (data.type === 'SCORE' && onScore) {
         onScore(data.score);
       } else if (data.type === 'GAME_OVER' && onGameOver) {

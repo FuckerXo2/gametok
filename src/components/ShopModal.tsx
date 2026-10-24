@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { TokBuxIcon } from './TokBuxIcon';
 import { useAvatarAccount } from '../avatar/store';
+import { TOKBUX_PACKS, TokbuxPack, buyPack, loadPacks } from '../tokbux/purchases';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -87,51 +88,12 @@ export const SKINS_CATALOG: SkinItem[] = [
   },
 ];
 
-export interface TokBuxPack {
-  id: string;
-  tokbux: number;
-  bonus?: number;
-  price: string;
-  tag?: string;
-  gradient: [string, string];
-  icon: string;
-}
-
-const TOKBUX_PACKS: TokBuxPack[] = [
-  {
-    id: 'pack-starter',
-    tokbux: 500,
-    price: '$4.99',
-    gradient: ['#1F192E', '#130E20'],
-    icon: '🪙',
-  },
-  {
-    id: 'pack-popular',
-    tokbux: 1200,
-    bonus: 200,
-    price: '$9.99',
-    tag: 'MOST POPULAR',
-    gradient: ['#2E164D', '#160B29'],
-    icon: '💰',
-  },
-  {
-    id: 'pack-best-value',
-    tokbux: 3000,
-    bonus: 600,
-    price: '$19.99',
-    tag: 'BEST VALUE',
-    gradient: ['#3D1E08', '#211003'],
-    icon: '🏆',
-  },
-  {
-    id: 'pack-titan',
-    tokbux: 8500,
-    bonus: 2000,
-    price: '$49.99',
-    tag: 'TITAN VAULT',
-    gradient: ['#380026', '#1A0012'],
-    icon: '👑',
-  },
+// How each TokBux pack looks; what it gives and its price come from the store (tokbux/purchases.ts)
+const PACK_LOOKS: { id: string; tag?: string; gradient: [string, string]; icon: string }[] = [
+  { id: 'tokbux_500', gradient: ['#1F192E', '#130E20'], icon: '🪙' },
+  { id: 'tokbux_1200', tag: 'MOST POPULAR', gradient: ['#2E164D', '#160B29'], icon: '💰' },
+  { id: 'tokbux_3000', tag: 'BEST VALUE', gradient: ['#3D1E08', '#211003'], icon: '🏆' },
+  { id: 'tokbux_8500', tag: 'TITAN VAULT', gradient: ['#380026', '#1A0012'], icon: '👑' },
 ];
 
 interface ShopModalProps {
@@ -139,21 +101,31 @@ interface ShopModalProps {
   onClose: () => void;
   onOpenAvatarPreview?: (skinId?: string) => void;
   onBalanceChange?: (newBalance: number) => void;
+  initialTab?: ShopTab;
 }
 
-type ShopTab = 'skins' | 'tokbux' | 'emotes' | 'battlepass';
+export type ShopTab = 'skins' | 'tokbux' | 'emotes' | 'battlepass';
 
 export const ShopModal: React.FC<ShopModalProps> = ({
   visible,
   onClose,
   onOpenAvatarPreview,
   onBalanceChange,
+  initialTab,
 }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<ShopTab>('skins');
   // TokBux live on the GameTok account (avatar/store.ts). Buying TokBux, skins and emotes needs real payments: not yet.
   const balance = useAvatarAccount()?.tokbux ?? 0;
   const comingSoon = () => Alert.alert('Coming soon', 'This opens once payments are live. Avatar items can already be bought with TokBux in your Profile.');
+  // TokBux packs on sale (the store's prices), and the one being bought
+  const [packs, setPacks] = useState<TokbuxPack[]>([]);
+  const [buying, setBuying] = useState<string | null>(null);
+  useEffect(() => {
+    if (!visible) return;
+    if (initialTab) setActiveTab(initialTab);
+    loadPacks().then(setPacks);
+  }, [visible]);
   const [ownedSkins, setOwnedSkins] = useState<string[]>(['lagos-striker']);
   const [activeSkin, setActiveSkin] = useState<string>('lagos-striker');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -185,7 +157,21 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     }, 2400);
   };
 
-  const handleBuyTokBux = (_pack: TokBuxPack) => comingSoon();
+  const handleBuyTokBux = async (id: string) => {
+    const pack = packs.find((p) => p.id === id);
+    if (!pack) {
+      Alert.alert('Coming soon', 'TokBux will be on sale here very soon.');
+      return;
+    }
+    if (buying) return;
+    setBuying(id);
+    const err = await buyPack(pack);
+    setBuying(null);
+    if (err === 'cancelled') return;
+    if (err) { Alert.alert('TokBux', err); return; }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    showToast(`+${pack.tokbux.toLocaleString()} TokBux added! 🪙`);
+  };
 
   const handleBuySkin = async (skin: SkinItem) => {
     const isOwned = ownedSkins.includes(skin.id);
@@ -388,12 +374,14 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                 <Text style={styles.sectionEyebrow}>INSTANT COINS</Text>
                 <Text style={styles.sectionTitle}>Get TokBux</Text>
                 <Text style={styles.sectionSubtitle}>
-                  Spend TokBux on legendary skins, tournament stakes, and victory celebrations.
+                  Spend TokBux on heroes, hair, outfits and more, in every GameTok game.
                 </Text>
               </View>
 
               <View style={styles.packsGrid}>
-                {TOKBUX_PACKS.map((pack) => (
+                {PACK_LOOKS.map((pack) => {
+                  const onSale = packs.find((p) => p.id === pack.id);
+                  return (
                   <View key={pack.id} style={styles.packCard}>
                     <LinearGradient
                       colors={pack.gradient}
@@ -407,25 +395,20 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                     )}
 
                     <Text style={styles.packIconEmoji}>{pack.icon}</Text>
-                    <Text style={styles.packTokbuxNum}>{pack.tokbux.toLocaleString()}</Text>
+                    <Text style={styles.packTokbuxNum}>{TOKBUX_PACKS[pack.id].toLocaleString()}</Text>
                     <Text style={styles.packTokbuxLabel}>TokBux</Text>
-
-                    {pack.bonus ? (
-                      <View style={styles.packBonusPill}>
-                        <Text style={styles.packBonusText}>+{pack.bonus} BONUS</Text>
-                      </View>
-                    ) : (
-                      <View style={{ height: 22 }} />
-                    )}
+                    <View style={{ height: 22 }} />
 
                     <Pressable
-                      style={styles.packBuyBtn}
-                      onPress={() => handleBuyTokBux(pack)}
+                      style={[styles.packBuyBtn, !onSale && { opacity: 0.5 }]}
+                      onPress={() => handleBuyTokBux(pack.id)}
+                      disabled={!!buying}
                     >
-                      <Text style={styles.packBuyPrice}>{pack.price}</Text>
+                      <Text style={styles.packBuyPrice}>{buying === pack.id ? '…' : onSale ? onSale.price : 'Soon'}</Text>
                     </Pressable>
                   </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
           )}
