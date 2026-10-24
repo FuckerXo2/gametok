@@ -7,7 +7,7 @@ import type { AvatarRecord, Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 7;
+const STAGE_V = 8;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 interface AvatarStageProps {

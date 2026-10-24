@@ -131,39 +131,36 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
 
   return (
     <View style={styles.root}>
-      {/* top: who, Shop | My items, TokBux */}
-      <View style={[styles.top, { paddingTop: insets.top + 6 }]}>
-        <Pressable style={styles.who} onPress={() => setMenu(true)} hitSlop={6}>
-          <Avatar uri={user?.avatar} userId={user?.id} size={40} />
-          <View style={{ maxWidth: W * 0.3 }}>
-            <Text style={styles.name} numberOfLines={1}>{user?.displayName || user?.username || 'You'}</Text>
-            <Text style={styles.handle} numberOfLines={1}>@{user?.username || ''}</Text>
-          </View>
-        </Pressable>
-        <View style={styles.seg}>
-          {(['shop', 'mine'] as const).map((m) => (
-            <Pressable key={m} onPress={() => setMode(m)} style={[styles.segBtn, mode === m && styles.segOn]}>
-              <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === 'shop' ? 'Shop' : 'My items'}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
-          <TokBuxIcon size={22} />
-          <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
-        </Pressable>
-      </View>
-
-      {/* the avatar */}
+      {/* the avatar, with the controls floating over it (like Roblox's Me) */}
       <View style={styles.stage}>
         <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={selected?.focus || 'body'} look="dark" headshotOf={shotOf} onHeadshot={onHeadshot} />
+        <View style={[styles.topRow, { top: insets.top + 6 }]}>
+          <Pressable style={styles.round} onPress={() => setMenu(true)} hitSlop={6}><Ionicons name="menu" size={22} color="#fff" /></Pressable>
+          <View style={styles.seg}>
+            {(['shop', 'mine'] as const).map((m) => (
+              <Pressable key={m} onPress={() => setMode(m)} style={[styles.segBtn, mode === m && styles.segOn]}>
+                <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === 'shop' ? 'Shop' : 'My items'}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
+            <TokBuxIcon size={22} />
+            <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
+          </Pressable>
+        </View>
+        <Pressable style={[styles.mePill, { top: insets.top + 62 }]} onPress={() => setEditProfile(true)} hitSlop={6}>
+          <Avatar uri={user?.avatar} userId={user?.id} size={44} />
+          <Ionicons name="pencil" size={15} color="#fff" style={{ marginTop: 8 }} />
+        </Pressable>
         <View style={styles.undo}>
-          <Pressable style={styles.undoBtn} onPress={undo} hitSlop={6}><Ionicons name="arrow-undo" size={17} color={history.undo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
-          <Pressable style={styles.undoBtn} onPress={redo} hitSlop={6}><Ionicons name="arrow-redo" size={17} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
+          <Pressable style={styles.undoBtn} onPress={undo} hitSlop={6}><Ionicons name="arrow-undo" size={19} color={history.undo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
+          <Pressable style={styles.undoBtn} onPress={redo} hitSlop={6}><Ionicons name="arrow-redo" size={19} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
         </View>
       </View>
 
       {/* items */}
       <View style={styles.sheet}>
+        <View style={styles.handle} />
         <View style={styles.tabs}>
           {TABS.map((t) => (
             <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
@@ -171,32 +168,36 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
             </Pressable>
           ))}
         </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: bottomH + 20 }} showsVerticalScrollIndicator={false}>
         {subs.length ? (
           <View style={styles.subs}>
             {subs.map((s) => (
-              <Pressable key={s} onPress={() => setSub(sub === s ? null : s)} style={[styles.subChip, sub === s && styles.subOn]}>
+              <Pressable key={s} onPress={() => setSub(sub === s ? null : s)} style={[styles.sub, sub === s && styles.subOn]}>
                 <Text style={[styles.subText, sub === s && styles.subTextOn]}>{s}</Text>
               </Pressable>
             ))}
           </View>
         ) : null}
-        <ScrollView contentContainerStyle={[styles.grid, { paddingBottom: bottomH + 20 }]} showsVerticalScrollIndicator={false}>
+        <Text style={styles.heading}>{mode === 'mine' ? 'My items' : sub || (tab === 'all' ? 'Recommended For You' : TABS.find((t) => t.id === tab)?.label)}</Text>
+        <View style={styles.grid}>
           {items.length ? items.map((i) => {
             const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i);
             return (
-              <Pressable key={i.id} onPress={() => tap(i)} style={[styles.item, selected?.id === i.id && styles.itemSel]}>
-                {on ? <Text style={styles.onTag}>ON</Text> : null}
-                <View style={styles.thumb}>
+              <Pressable key={i.id} onPress={() => tap(i)} style={styles.item}>
+                <View style={[styles.thumb, selected?.id === i.id && styles.thumbSel]}>
+                  {on ? <Text style={styles.onTag}>ON</Text> : null}
                   {thumb ? <Image source={{ uri: thumb }} style={styles.thumbImg} resizeMode="contain" />
                     : <View style={[styles.skinDot, { backgroundColor: i.tint }]} />}
                 </View>
                 <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
+                <Text style={styles.maker} numberOfLines={1}>GameTok</Text>
                 {owned && priceOf(i) > 0 ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
                   : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
-                  : <View style={styles.priceRow}><TokBuxIcon size={14} /><Text style={[styles.price, { paddingHorizontal: 0, paddingBottom: 0, paddingTop: 0 }]}>{priceOf(i)}</Text></View>}
+                  : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={styles.price}>{priceOf(i)}</Text></View>}
               </Pressable>
             );
           }) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'Nothing here yet.'}</Text>}
+        </View>
         </ScrollView>
 
         {/* colours for what's selected, and the checkout */}
@@ -261,41 +262,43 @@ const MenuItem: React.FC<{ icon: keyof typeof Ionicons.glyphMap; label: string; 
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
-  who: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  name: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  handle: { color: DIM, fontSize: 12, fontWeight: '600' },
-  seg: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 999, padding: 3 },
-  segBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
+  stage: { height: H * 0.47, backgroundColor: BG },
+  topRow: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  round: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  seg: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, padding: 4 },
+  segBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999 },
   segOn: { backgroundColor: '#fff' },
-  segText: { color: DIM, fontSize: 12, fontWeight: '800' },
+  segText: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' },
   segTextOn: { color: '#111' },
-  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 11 },
-  tbText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  stage: { height: H * 0.4, backgroundColor: BG },
-  undo: { position: 'absolute', left: 14, bottom: 26, flexDirection: 'row', gap: 8 },
-  undoBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
-  sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -16 },
-  tabs: { flexDirection: 'row', gap: 18, paddingHorizontal: 18, paddingTop: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 6, paddingLeft: 6, paddingRight: 12 },
+  tbText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  mePill: { position: 'absolute', left: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 30, paddingTop: 6, paddingBottom: 10, paddingHorizontal: 6 },
+  undo: { position: 'absolute', left: 16, bottom: 30, flexDirection: 'row', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 4 },
+  undoBtn: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center' },
+  sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -22 },
+  handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', marginTop: 8 },
+  tabs: { flexDirection: 'row', gap: 22, paddingHorizontal: 18, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   tab: { paddingBottom: 10, borderBottomWidth: 3, borderBottomColor: 'transparent' },
   tabOn: { borderBottomColor: '#fff' },
-  tabText: { color: DIM, fontSize: 15, fontWeight: '800' },
+  tabText: { color: DIM, fontSize: 16, fontWeight: '700' },
   tabTextOn: { color: '#fff' },
-  subs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12 },
-  subChip: { paddingVertical: 7, paddingHorizontal: 13, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
-  subOn: { backgroundColor: 'rgba(168,85,247,0.25)' },
-  subText: { color: DIM, fontSize: 13, fontWeight: '700' },
-  subTextOn: { color: '#e9d5ff' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 16 },
-  item: { width: CELL, height: CELL * 1.22, backgroundColor: CARD, borderRadius: 18, borderWidth: 2, borderColor: 'transparent', overflow: 'hidden' },
-  itemSel: { borderColor: ACCENT },
+  subs: { flexDirection: 'row', gap: 20, paddingHorizontal: 18, paddingTop: 12 },
+  sub: { paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  subOn: { borderBottomColor: '#fff' },
+  subText: { color: DIM, fontSize: 14, fontWeight: '700' },
+  subTextOn: { color: '#fff' },
+  heading: { color: '#fff', fontSize: 24, fontWeight: '800', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 4 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 18, padding: 16 },
+  item: { width: CELL },
   onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: GREEN, color: '#052e12', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
-  thumb: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  thumb: { width: CELL, height: CELL, backgroundColor: CARD, borderRadius: 14, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
+  thumbSel: { borderColor: ACCENT },
   thumbImg: { width: '84%', height: '84%' },
   skinDot: { width: CELL * 0.45, height: CELL * 0.45, borderRadius: CELL },
-  itemName: { color: '#fff', fontSize: 12, fontWeight: '700', paddingHorizontal: 9 },
-  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingTop: 2, paddingBottom: 9 },
-  price: { color: '#e9d5ff', fontSize: 12, fontWeight: '800', paddingHorizontal: 9, paddingTop: 2, paddingBottom: 9 },
+  itemName: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  maker: { color: DIM, fontSize: 13, fontWeight: '500', marginTop: 2 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  price: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 4 },
   empty: { color: DIM, fontWeight: '600', padding: 20 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingBottom: 10 },
   swatches: { gap: 10, paddingVertical: 8 },
