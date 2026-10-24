@@ -68,10 +68,11 @@ interface ChatMessage {
 const GAMES_HOST = 'https://games.gametok.co';
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
-const SUGGESTED_FRIENDS: any[] = [];
-const PROFILE_GRID_GAP = 2;
-const PROFILE_GRID_SIZE = (Dimensions.get('window').width - PROFILE_GRID_GAP * 4) / 3;
-const PROFILE_TILE_HEIGHT = PROFILE_GRID_SIZE * 1.34;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const PROFILE_GRID_PADDING = 8;
+const PROFILE_GRID_GAP = 4;
+const PROFILE_GRID_SIZE = Math.floor((SCREEN_WIDTH - PROFILE_GRID_PADDING * 2 - PROFILE_GRID_GAP * 2) / 3);
+const PROFILE_TILE_HEIGHT = Math.round(PROFILE_GRID_SIZE * 1.34);
 const PURPLE = '#a855f7';
 
 const formatCompactNumber = (value?: number | null) => {
@@ -153,30 +154,39 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
       }).catch(() => { }).finally(() => setLoadingFollow(false));
 
       setLoadingGames(true);
-      import('../services/api').then(({ likes, users: usersApi }) => {
-        Promise.allSettled([
-          likes.userLikes(activeUser.id),
-          usersApi.created(activeUser.id),
-          usersApi.played(activeUser.id),
-        ]).then(([likedRes, createdRes, playedRes]) => {
+      import('../services/api').then(async ({ likes, users: usersApi }) => {
+        try {
+          const [likedRes, createdRes, playedRes] = await Promise.allSettled([
+            likes.userLikes(activeUser.id),
+            usersApi.created(activeUser.id),
+            usersApi.played(activeUser.id),
+          ]);
+
           if (likedRes.status === 'fulfilled' && likedRes.value?.games) {
             setUserGames(likedRes.value.games);
           } else {
             setUserGames([]);
           }
 
-          if (createdRes.status === 'fulfilled' && createdRes.value?.games) {
-            setCreatedGames(createdRes.value.games);
-          } else {
-            setCreatedGames([]);
+          let gamesList = (createdRes.status === 'fulfilled' && createdRes.value?.games) ? createdRes.value.games : [];
+          if (gamesList.length === 0 && activeUser.username && activeUser.username !== activeUser.id) {
+            try {
+              const fallbackRes = await usersApi.created(activeUser.username);
+              if (fallbackRes?.games && fallbackRes.games.length > 0) {
+                gamesList = fallbackRes.games;
+              }
+            } catch {}
           }
+          setCreatedGames(gamesList);
 
           if (playedRes.status === 'fulfilled' && playedRes.value?.games) {
             setPlayedGames(playedRes.value.games);
           } else {
             setPlayedGames([]);
           }
-        }).catch(() => { }).finally(() => setLoadingGames(false));
+        } catch {} finally {
+          setLoadingGames(false);
+        }
       });
     }
   }, [visible, activeUser?.id]);
@@ -421,13 +431,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     );
   }
 
-  const activeProfileGames = profileTab === 'created'
+  const effectiveTab = (!isCurrentMe && profileTab === 'liked') ? 'created' : profileTab;
+  const activeProfileGames = effectiveTab === 'created'
     ? createdGames
-    : profileTab === 'played'
+    : effectiveTab === 'played'
       ? playedGames
       : userGames;
-  const activeProfileTitle = profileTab === 'created' ? 'Created' : profileTab === 'played' ? 'Played' : 'Liked';
-  const activeProfileIcon = profileTab === 'created' ? 'grid-outline' : profileTab === 'played' ? 'play-circle-outline' : 'heart-outline';
+  const activeProfileTitle = effectiveTab === 'created' ? 'Created' : effectiveTab === 'played' ? 'Played' : 'Liked';
+  const activeProfileIcon = effectiveTab === 'created' ? 'grid-outline' : effectiveTab === 'played' ? 'play-circle-outline' : 'heart-outline';
 
   return (
     <SlideRightModal visible={visible} onClose={onClose}>
@@ -554,32 +565,34 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
 
           <View style={[styles.tabsShell, { borderColor: colors.border, backgroundColor: colors.surface }]}>
             <TouchableOpacity
-              style={[styles.contentTab, profileTab === 'created' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              style={[styles.contentTab, effectiveTab === 'created' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               activeOpacity={0.9}
               onPress={() => setProfileTab('created')}
             >
-              <Ionicons name="grid-outline" size={22} color={profileTab === 'created' ? colors.text : colors.textSecondary} />
-              <Text style={[styles.contentTabText, { color: profileTab === 'created' ? colors.text : colors.textSecondary }]}>Created</Text>
-              {profileTab === 'created' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+              <Ionicons name="grid-outline" size={22} color={effectiveTab === 'created' ? colors.text : colors.textSecondary} />
+              <Text style={[styles.contentTabText, { color: effectiveTab === 'created' ? colors.text : colors.textSecondary }]}>Created</Text>
+              {effectiveTab === 'created' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.contentTab, profileTab === 'played' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              style={[styles.contentTab, effectiveTab === 'played' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               activeOpacity={0.9}
               onPress={() => setProfileTab('played')}
             >
-              <Ionicons name="play-circle-outline" size={22} color={profileTab === 'played' ? colors.text : colors.textSecondary} />
-              <Text style={[styles.contentTabText, { color: profileTab === 'played' ? colors.text : colors.textSecondary }]}>Played</Text>
-              {profileTab === 'played' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+              <Ionicons name="play-circle-outline" size={22} color={effectiveTab === 'played' ? colors.text : colors.textSecondary} />
+              <Text style={[styles.contentTabText, { color: effectiveTab === 'played' ? colors.text : colors.textSecondary }]}>Played</Text>
+              {effectiveTab === 'played' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.contentTab, profileTab === 'liked' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
-              activeOpacity={0.9}
-              onPress={() => setProfileTab('liked')}
-            >
-              <Ionicons name="heart-outline" size={22} color={profileTab === 'liked' ? colors.text : colors.textSecondary} />
-              <Text style={[styles.contentTabText, { color: profileTab === 'liked' ? colors.text : colors.textSecondary }]}>Liked</Text>
-              {profileTab === 'liked' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
-            </TouchableOpacity>
+            {isCurrentMe && (
+              <TouchableOpacity
+                style={[styles.contentTab, effectiveTab === 'liked' && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+                activeOpacity={0.9}
+                onPress={() => setProfileTab('liked')}
+              >
+                <Ionicons name="heart-outline" size={22} color={effectiveTab === 'liked' ? colors.text : colors.textSecondary} />
+                <Text style={[styles.contentTabText, { color: effectiveTab === 'liked' ? colors.text : colors.textSecondary }]}>Liked</Text>
+                {effectiveTab === 'liked' && <View style={[styles.activeTabBar, { backgroundColor: colors.text }]} />}
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.contentMetaRow}>
@@ -920,15 +933,15 @@ const styles = StyleSheet.create({
   gameGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 3,
+    gap: PROFILE_GRID_GAP,
+    paddingHorizontal: PROFILE_GRID_PADDING,
     paddingTop: 0,
-    paddingBottom: 14,
+    paddingBottom: 24,
   },
   gameTile: {
     width: PROFILE_GRID_SIZE,
     height: PROFILE_TILE_HEIGHT,
-    margin: PROFILE_GRID_GAP / 2,
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#111',
   },
@@ -941,7 +954,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gameTileOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'flex-end',
     paddingHorizontal: 10,
     paddingVertical: 10,

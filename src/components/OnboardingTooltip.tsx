@@ -177,7 +177,7 @@ export const OnboardingTooltip: React.FC<OnboardingTooltipProps> = ({
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.75)',
     zIndex: 1000,
   },

@@ -112,7 +112,7 @@ const MainApp = ({
   pendingForgeNotification?: { journeyView: 'directions' | 'perspective'; sessionId?: string } | null;
   onForgeNotificationHandled?: () => void;
 }) => {
-  const [activeTab, setActiveTab] = useState<TabName>('home');
+  const [activeTab, setActiveTab] = useState<TabName>('profile');
   const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
@@ -221,13 +221,8 @@ const MainApp = ({
         animated
       />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
-        {/* Home - always mounted */}
-        <View style={[styles.screenContainer, { opacity: activeTab === 'home' ? 1 : 0, zIndex: activeTab === 'home' ? 1 : 0, display: activeTab === 'home' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'home' ? 'auto' : 'none'}>
-          <HomeScreen isActive={activeTab === 'home'} refreshTrigger={homeRefreshTrigger} />
-        </View>
-
-        {/* Explore (game discovery) - always mounted */}
-        <View style={[styles.screenContainer, { opacity: activeTab === 'explore' ? 1 : 0, zIndex: activeTab === 'explore' ? 1 : 0, display: activeTab === 'explore' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'explore' ? 'auto' : 'none'}>
+        {/* Home is the games library (ExploreScreen) */}
+        <View style={[styles.screenContainer, { opacity: activeTab === 'home' || activeTab === 'explore' ? 1 : 0, zIndex: activeTab === 'home' || activeTab === 'explore' ? 1 : 0, display: activeTab === 'home' || activeTab === 'explore' ? 'flex' : 'none' }]} pointerEvents={activeTab === 'home' || activeTab === 'explore' ? 'auto' : 'none'}>
           <ExploreScreen />
         </View>
 

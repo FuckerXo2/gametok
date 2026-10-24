@@ -91,15 +91,11 @@ export const GameLoadingScreen: React.FC<GameLoadingScreenProps> = ({
           source={{ uri: gameThumbnail }}
           style={styles.backgroundImage}
           blurRadius={20}
+          resizeMode="cover"
         />
-      ) : (
-        <Image
-          source={require('../../assets/ui/loading/default_loading_bg.png')}
-          style={styles.backgroundImage}
-        />
-      )}
+      ) : null}
 
-      {/* Dark overlay */}
+      {/* Dark overlay - this ensures full coverage even if image fails */}
       <View style={styles.darkOverlay} />
 
       {/* Content */}
@@ -143,18 +139,18 @@ export const GameLoadingScreen: React.FC<GameLoadingScreenProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: LoopsColors.black,
   },
   backgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: SCREEN_WIDTH,
+    ...StyleSheet.absoluteFill,
+    width: '100%',
     height: '100%',
   },
   darkOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: LoopsColors.black70,
   },
   content: {

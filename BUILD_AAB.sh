@@ -6,7 +6,7 @@
 cd android
 
 echo "🔨 Building Android App Bundle (AAB) for Play Store..."
-echo "Version: 2.1.1 (Build 53)"
+echo "Version: 2.1.4 (Build 56)"
 echo ""
 
 ./gradlew bundleRelease

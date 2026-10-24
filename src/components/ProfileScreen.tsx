@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+// ProfileScreen — 3D Character Studio + Marketplace & Customization Sheet
+// Pixel-matched to modern avatar platforms (Roblox reference), tailored with GameTok aesthetic.
+
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,301 +10,499 @@ import {
   Switch,
   Alert,
   Linking,
-  Image,
   Dimensions,
-  RefreshControl,
   StyleSheet,
-  Share,
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
+
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useAuthScreen } from '../../App';
-import { auth, likes as likesApi, users as usersApi } from '../services/api';
-import { resolveGameThumbnail } from '../utils/thumbnails';
-import { AddFriendsScreen } from './AddFriendsScreen';
-import { GamePlayerModal } from './GamePlayerModal';
-import type { Orientation } from '../constants/orientation';
+import { AvatarStage } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
+import { MyAvatarModal } from './MyAvatarModal';
+import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Category, COLOR_SWATCHES, HAIR_SWATCHES } from '../avatar/catalog';
+import { saveAvatar, useAvatar } from '../avatar/store';
+import { ShopModal } from './ShopModal';
+import { AddFriendsScreen } from './AddFriendsScreen';
 import { Avatar } from './Avatar';
-import { FollowListModal } from './FollowListModal';
-import { UserProfileModal } from './UserProfileModal';
+import { TokBuxIcon } from './TokBuxIcon';
 
-// V2 design tokens — kept inline so this screen is self-contained.
-const PURPLE = '#a855f7';
-const PURPLE_DEEP = '#7c3aed';
-const TEXT = '#ffffff';
-const TEXT_MUTED = '#9a9aa8';
-const TEXT_DIM = '#6b6b78';
-const BG = '#000000';
-const SURFACE = '#0e0e14';
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GRID_PADDING = 12;
-const GRID_GAP = 4;
-const TILE_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * 2) / 3;
-const TILE_HEIGHT = TILE_WIDTH * 1.34;
+const TOKBUX_STORAGE_KEY = 'gametok_user_tokbux_balance';
+const OWNED_ITEMS_KEY = 'gametok.avatar.owned.v1';
 
-interface Game {
-  id: string;
-  name: string;
-  thumbnail?: string;
-  plays?: number;
-  embedUrl?: string;
-  /** 'portrait' (default) or 'landscape' — GameSurface rotates the latter. */
-  orientation?: Orientation | null;
-}
+const CATEGORIES: { id: Category; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'body', label: 'Body' },
+  { id: 'hair', label: 'Hair' },
+  { id: 'clothing', label: 'Clothing' },
+  { id: 'shoes', label: 'Shoes' },
+  { id: 'accessories', label: 'Accessories' },
+];
 
-const getThumbnailUrl = (game: Game) => {
-  return resolveGameThumbnail(game.thumbnail, game.id, game);
-};
-
-const formatCount = (n: number): string => {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-};
-
-type ProfileContentTab = 'created' | 'played' | 'liked';
-
-export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
+export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const insets = useSafeAreaInsets();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
-  const { showAuthScreen, showLoginScreen } = useAuthScreen();
 
-  const [showAddFriends, setShowAddFriends] = useState(false);
-  const [playingGame, setPlayingGame] = useState<Game | null>(null);
+  const [stageMode, setStageMode] = useState<'marketplace' | 'customize'>('marketplace');
+  const [activeCategory, setActiveCategory] = useState<Category>('all');
+
+  // Currency & Items. Starter items (price 0) are owned by everyone.
+  const [tokbux, setTokbux] = useState(1250);
+  const [boughtItems, setBoughtItems] = useState<string[]>([]);
+  const [selectedItem, setSelectedItem] = useState<AvatarItem | null>(null);
+  const saved = useAvatar();
+  const [history, setHistory] = useState<{ undo: AvatarRecord[]; redo: AvatarRecord[] }>({ undo: [], redo: [] });
+
+  const isOwned = (item: AvatarItem) => item.price === 0 || boughtItems.includes(item.id);
+  const isWorn = (item: AvatarItem) => !!saved && !!item.isWorn?.(saved);
+
+  // try-on: the stage shows the selected item on the player's own avatar before they buy or equip it
+  const shown = useMemo(
+    () => (saved && selectedItem?.wear && !isWorn(selectedItem) ? selectedItem.wear(saved) : saved),
+    [saved, selectedItem],
+  );
+
+  // Modals
+  const [showShop, setShowShop] = useState(false);
+  const [showMyAvatar, setShowMyAvatar] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showAddFriends, setShowAddFriends] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [createdGamesList, setCreatedGamesList] = useState<Game[]>([]);
-  const [playedGamesList, setPlayedGamesList] = useState<Game[]>([]);
-  const [likedGamesList, setLikedGamesList] = useState<Game[]>([]);
-  const [profileTab, setProfileTab] = useState<ProfileContentTab>('created');
-  const [socialStats, setSocialStats] = useState({ followers: 0, following: 0, likes: 0 });
-  const [followModalConfig, setFollowModalConfig] = useState<{ visible: boolean; tab: 'followers' | 'following' }>({
-    visible: false,
-    tab: 'followers',
-  });
-  const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
-  // User tapped in the follow list, held until that modal has fully closed so
-  // we never present two native modals at once (iOS drops the second one).
-  const pendingProfileUserRef = useRef<any>(null);
-  const lastFetchRef = useRef<number>(0);
-
-  const username = user?.username || 'guest';
-  const displayName = user?.displayName || username;
-  const avatar = user?.avatar || null;
-  const bio = user?.bio || '';
-  const isVerified = Boolean(user?.verified);
 
   useEffect(() => {
-    if (isAuthenticated) fetchData();
-  }, [isAuthenticated]);
+    loadUserData();
+  }, []);
 
-  useEffect(() => {
-    if (isActive && isAuthenticated && !refreshing) {
-      const now = Date.now();
-      if (now - lastFetchRef.current > 5000) {
-        setTimeout(() => fetchData(true), 500);
-      }
-    }
-  }, [isActive]);
-
-  const fetchData = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
+  const loadUserData = async () => {
     try {
-      const [createdRes, playedRes, likedRes, userRes] = await Promise.allSettled([
-        user?.id ? usersApi.created(user.id) : Promise.resolve({ games: [] }),
-        user?.id ? usersApi.played(user.id) : Promise.resolve({ games: [] }),
-        user?.id ? likesApi.userLikes(user.id) : Promise.resolve({ games: [] }),
-        user?.id ? usersApi.get(user.id) : Promise.resolve({ stats: { followers: 0, following: 0, likes: 0 } }),
-      ]);
+      const savedBal = await AsyncStorage.getItem(TOKBUX_STORAGE_KEY);
+      if (savedBal !== null) setTokbux(parseInt(savedBal, 10) || 1250);
 
-      if (createdRes.status === 'fulfilled') setCreatedGamesList(createdRes.value?.games || []);
-      if (playedRes.status === 'fulfilled') setPlayedGamesList(playedRes.value?.games || []);
-      if (likedRes.status === 'fulfilled') setLikedGamesList(likedRes.value?.games || []);
-      if (userRes.status === 'fulfilled' && userRes.value?.stats) {
-        setSocialStats({
-          followers: userRes.value.stats.followers || 0,
-          following: userRes.value.stats.following || 0,
-          likes: userRes.value.stats.likes || userRes.value.stats.totalLikes || 0,
-        });
+      const savedOwned = await AsyncStorage.getItem(OWNED_ITEMS_KEY);
+      if (savedOwned) setBoughtItems(JSON.parse(savedOwned));
+    } catch {}
+  };
+
+  const commit = (next: AvatarRecord) => {
+    if (!saved) return;
+    setHistory((h) => ({ undo: [...h.undo.slice(-30), saved], redo: [] }));
+    saveAvatar(next);
+  };
+  const undo = () => {
+    const prev = history.undo[history.undo.length - 1];
+    if (!prev || !saved) return;
+    setHistory((h) => ({ undo: h.undo.slice(0, -1), redo: [...h.redo, saved] }));
+    setSelectedItem(null);
+    saveAvatar(prev);
+  };
+  const redo = () => {
+    const next = history.redo[history.redo.length - 1];
+    if (!next || !saved) return;
+    setHistory((h) => ({ undo: [...h.undo, saved], redo: h.redo.slice(0, -1) }));
+    setSelectedItem(null);
+    saveAvatar(next);
+  };
+
+  const handleSelectItem = (item: AvatarItem) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedItem(selectedItem?.id === item.id ? null : item);
+  };
+
+  const recolor = (color: string) => {
+    if (!saved || !selectedItem?.colorKey) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const k = selectedItem.colorKey;
+    commit(k === 'hair' ? { ...saved, hairColor: color } : { ...saved, colors: { ...saved.colors, [k]: color } });
+  };
+
+  const handlePrimaryAction = async () => {
+    if (!selectedItem || !saved) return;
+
+    if (isOwned(selectedItem)) {
+      // wear it, or take it off if it's already on
+      if (isWorn(selectedItem)) {
+        // deselect too, or the stage would keep showing it as a try-on
+        if (selectedItem.takeOff) { commit(selectedItem.takeOff(saved)); setSelectedItem(null); }
+      } else if (selectedItem.wear) {
+        commit(selectedItem.wear(saved));
       }
-      lastFetchRef.current = Date.now();
-    } catch (e) {
-      console.log('[Profile] fetch failed:', e);
-    } finally {
-      setRefreshing(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      return;
     }
-  };
 
-  // Play in place, the way explore does. This used to call openSharedGame + setActiveTab('home'),
-  // which threw the user out of their profile and into the feed just to play one game.
-  const openProfileGame = (game: Game) => {
-    setPlayingGame(game);
-  };
-
-  const handleShareProfile = async () => {
-    try {
-      await Share.share({
-        message: `Check out @${username} on GameTok: https://games.gametok.co/u/${username}`,
-      });
-    } catch (e) {
-      console.log('Failed to share profile:', e);
+    // Purchase with TokBux, then wear it
+    if (tokbux < selectedItem.price) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        'Get More TokBux',
+        `You need ${selectedItem.price.toLocaleString()} TokBux to purchase ${selectedItem.name}.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Get TokBux', onPress: () => setShowShop(true) },
+        ]
+      );
+      return;
     }
+
+    const newBal = tokbux - selectedItem.price;
+    const newBought = [...boughtItems, selectedItem.id];
+    setTokbux(newBal);
+    setBoughtItems(newBought);
+    if (selectedItem.wear) commit(selectedItem.wear(saved));
+    await AsyncStorage.setItem(TOKBUX_STORAGE_KEY, String(newBal));
+    await AsyncStorage.setItem(OWNED_ITEMS_KEY, JSON.stringify(newBought));
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const activeList = useMemo(() => {
-    if (profileTab === 'created') return createdGamesList;
-    if (profileTab === 'played') return playedGamesList;
-    return likedGamesList;
-  }, [profileTab, createdGamesList, playedGamesList, likedGamesList]);
+  const filteredItems = useMemo(() => {
+    let pool = AVATAR_ITEMS;
+    if (stageMode === 'customize') pool = pool.filter(isOwned);
+    if (activeCategory === 'all') return pool;
+    return pool.filter((item) => item.category === activeCategory);
+  }, [stageMode, activeCategory, boughtItems]);
 
-  if (!isAuthenticated) {
-    return <UnauthenticatedPreview onSignUp={showAuthScreen} onLogIn={showLoginScreen} insets={insets} />;
-  }
+  const isSelectedOwned = !!selectedItem && isOwned(selectedItem);
+  const isSelectedEquipped = !!selectedItem && isWorn(selectedItem);
 
   return (
     <View style={styles.root}>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 96 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor={TEXT} />
-        }
-      >
-        {/* Top bar */}
-        <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-          <Pressable style={styles.topIconBtn} onPress={() => setShowAddFriends(true)} hitSlop={6}>
-            <Ionicons name="person-add-outline" size={19} color={TEXT} />
-          </Pressable>
-          <View style={styles.topUsernameWrap}>
-            <Text style={styles.topUsername}>@{username}</Text>
-            {isVerified ? <VerifiedDot size={16} /> : null}
+      {/* 1. TOP 46% 3D CHARACTER STUDIO STAGE */}
+      <View style={styles.stageWrap}>
+        <AvatarStage style={StyleSheet.absoluteFill} avatar={shown} focus={selectedItem?.focus || 'body'} />
+
+        {/* Floating Top Controls Header */}
+        <View style={[styles.stageTopBar, { paddingTop: insets.top + 6 }]}>
+          {/* Left: Menu & Profile Pill */}
+          <View style={styles.leftGroup}>
+            <Pressable
+              style={styles.iconBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowSettings(true);
+              }}
+              hitSlop={8}
+            >
+              <Ionicons name="menu" size={20} color="#FFFFFF" />
+              <View style={styles.blueDot} />
+            </Pressable>
+
+            <Pressable
+              style={styles.profileBadgeCapsule}
+              onPress={() => setShowEditProfile(true)}
+              hitSlop={8}
+            >
+              <Avatar uri={user?.avatar} userId={user?.id} size={28} />
+              <View style={styles.profileBadgeGear}>
+                <Ionicons name="settings" size={9} color="#000000" />
+              </View>
+            </Pressable>
           </View>
-          <Pressable style={styles.topIconBtn} onPress={() => setShowSettings(true)} hitSlop={6}>
-            <Ionicons name="menu-outline" size={22} color={TEXT} />
-          </Pressable>
-        </View>
 
-        {/* Avatar */}
-        <View style={styles.avatarWrap}>
-          <View style={styles.avatarBorder}>
-            <Avatar uri={avatar} userId={user?.id} size={140} />
+          {/* Center: Segmented Toggle [ Marketplace | Customize ] */}
+          <View style={styles.segmentedToggle}>
+            <Pressable
+              style={[
+                styles.segmentBtn,
+                stageMode === 'marketplace' && styles.segmentBtnActive,
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setStageMode('marketplace');
+              }}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  stageMode === 'marketplace' && styles.segmentTextActive,
+                ]}
+              >
+                Marketplace
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.segmentBtn,
+                stageMode === 'customize' && styles.segmentBtnActive,
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setStageMode('customize');
+              }}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  stageMode === 'customize' && styles.segmentTextActive,
+                ]}
+              >
+                Customize
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Right: Search & TokBux Balance */}
+          <View style={styles.rightGroup}>
+            <Pressable
+              style={styles.iconBtn}
+              onPress={() => setShowShop(true)}
+              hitSlop={8}
+            >
+              <Ionicons name="search" size={20} color="#FFFFFF" />
+            </Pressable>
+
+            <Pressable
+              style={styles.tokbuxCapsule}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowShop(true);
+              }}
+              hitSlop={8}
+            >
+              <TokBuxIcon size={22} />
+              <Text style={styles.tokbuxAmount}>{tokbux.toLocaleString()}</Text>
+            </Pressable>
           </View>
         </View>
 
-        {/* Display name */}
-        <Text style={styles.displayName}>{displayName}</Text>
-        <Text style={styles.handle}>@{username}</Text>
-
-        {/* Bio */}
-        {bio ? <Text style={styles.bio}>{bio}</Text> : null}
-
-        {/* Stat row (4 columns, no card) */}
-        <View style={styles.statsRow}>
-          <StatCol
-            value={socialStats.following}
-            label="Following"
-            onPress={() => setFollowModalConfig({ visible: true, tab: 'following' })}
-          />
-          <StatCol
-            value={socialStats.followers}
-            label="Followers"
-            onPress={() => setFollowModalConfig({ visible: true, tab: 'followers' })}
-          />
-          <StatCol value={createdGamesList.length} label="Created" />
-          <StatCol value={socialStats.likes} label="Likes" />
-        </View>
-
-        {/* Action buttons */}
-        <View style={styles.actionRow}>
-          <Pressable style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
-            <Text style={styles.editBtnText}>Edit profile</Text>
-          </Pressable>
-          <Pressable style={styles.shareBtn} onPress={handleShareProfile}>
-            <Ionicons name="arrow-up-outline" size={15} color={PURPLE} style={{ marginRight: 6 }} />
-            <Text style={styles.shareBtnText}>Share profile</Text>
-          </Pressable>
-        </View>
-
-        {/* Tabs */}
-        <View style={styles.tabRow}>
-          <ProfileTab
-            label="CREATED"
-            icon="grid-outline"
-            isActive={profileTab === 'created'}
-            onPress={() => setProfileTab('created')}
-          />
-          <ProfileTab
-            label="PLAYED"
-            icon="play-circle-outline"
-            isActive={profileTab === 'played'}
-            onPress={() => setProfileTab('played')}
-          />
-          <ProfileTab
-            label="LIKED"
-            icon="heart-outline"
-            isActive={profileTab === 'liked'}
-            onPress={() => setProfileTab('liked')}
-          />
-        </View>
-        <View style={styles.tabUnderlineTrack} />
-
-        {/* Grid */}
-        {activeList.length === 0 ? (
-          <EmptyState tab={profileTab} />
-        ) : (
-          <View style={styles.grid}>
-            {activeList.map((g) => (
-              <GameTile key={g.id} game={g} onPress={() => openProfileGame(g)} />
-            ))}
+        {/* Floating Stage Controls (Bottom-Left: Undo/Redo pill matching Roblox) */}
+        <View style={styles.stageFloatingControls}>
+          <View style={styles.undoRedoPill}>
+            <Pressable
+              style={styles.undoBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                undo();
+              }}
+              hitSlop={6}
+            >
+              <Ionicons name="arrow-undo" size={16} color={history.undo.length ? '#FFFFFF' : 'rgba(255,255,255,0.35)'} />
+            </Pressable>
+            <View style={styles.undoDivider} />
+            <Pressable
+              style={styles.undoBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                redo();
+              }}
+              hitSlop={6}
+            >
+              <Ionicons name="arrow-redo" size={16} color={history.redo.length ? '#FFFFFF' : 'rgba(255,255,255,0.35)'} />
+            </Pressable>
           </View>
+        </View>
+      </View>
+
+      {/* 2. BOTTOM 54% MARKETPLACE & CUSTOMIZATION SHEET */}
+      <View style={styles.sheetContainer}>
+        {/* Grabber Handle */}
+        <View style={styles.grabberHandle} />
+
+        {/* Category Underline Tabs (matching Roblox: All, Avatars, Body, Clothing, etc.) */}
+        <View style={styles.categoryBarWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {CATEGORIES.map((cat) => {
+              const isActive = activeCategory === cat.id;
+              return (
+                <Pressable
+                  key={cat.id}
+                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setActiveCategory(cat.id);
+                  }}
+                >
+                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive]}>
+                    {cat.label}
+                  </Text>
+                  {isActive && <View style={styles.categoryTabIndicator} />}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* Filter Sliders Button on Right */}
+          <Pressable
+            style={styles.filterBtn}
+            onPress={() => setShowSettings(true)}
+            hitSlop={6}
+          >
+            <Ionicons name="options-outline" size={18} color="#FFFFFF" />
+          </Pressable>
+        </View>
+
+        {/* Section Heading: "Recommended For You" */}
+        <View style={styles.sectionHeadingWrap}>
+          <Text style={styles.sectionHeadingText}>
+            {stageMode === 'marketplace' ? 'Recommended For You' : 'My Customizables'}
+          </Text>
+        </View>
+
+        {/* 3-Column Item Grid */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 110 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {filteredItems.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyText}>No items found in this category.</Text>
+            </View>
+          ) : (
+            <View style={styles.itemsGrid}>
+              {filteredItems.map((item) => {
+                const isSelected = selectedItem?.id === item.id;
+                const owned = isOwned(item);
+                const isEquipped = isWorn(item);
+
+                return (
+                  <Pressable
+                    key={item.id}
+                    style={styles.gridCard}
+                    onPress={() => handleSelectItem(item)}
+                  >
+                    {/* Square Item Preview Box */}
+                    <View
+                      style={[
+                        styles.cardThumb,
+                        isSelected && styles.cardThumbSelected,
+                      ]}
+                    >
+                      <Ionicons name={item.icon} size={42} color={item.tint} />
+
+                      {isEquipped && (
+                        <View style={styles.cardEquippedTag}>
+                          <Text style={styles.cardEquippedText}>ON</Text>
+                        </View>
+                      )}
+
+                      {/* Details Badge on Selected Card */}
+                      {isSelected && (
+                        <View style={styles.detailsBadge}>
+                          <Text style={styles.detailsBadgeText}>Details</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Title */}
+                    <Text style={styles.cardName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+
+                    {/* Brand / Creator */}
+                    <Text style={styles.cardCreator} numberOfLines={1}>
+                      GameTok
+                    </Text>
+
+                    {/* Price Row with TokBux Token */}
+                    <View style={styles.cardPriceRow}>
+                      {owned ? (
+                        <Text style={styles.cardOwnedLabel}>
+                          {isEquipped ? '✓ Equipped' : item.price === 0 ? 'Free' : 'Owned'}
+                        </Text>
+                      ) : (
+                        <>
+                          <TokBuxIcon size={16} />
+                          <Text style={styles.cardPriceText}>{item.price}</Text>
+                        </>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Colour swatches for the selected item, once it's on */}
+        {selectedItem?.colorKey && isSelectedEquipped && saved && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.swatchBar, { bottom: (insets.bottom > 0 ? insets.bottom + 4 : 14) + 74 }]} contentContainerStyle={styles.swatchRow}>
+            {(selectedItem.colorKey === 'hair' ? HAIR_SWATCHES : COLOR_SWATCHES).map((c) => {
+              const k = selectedItem.colorKey!;
+              const on = (k === 'hair' ? saved.hairColor : saved.colors[k]) === c;
+              return (
+                <Pressable key={c} onPress={() => recolor(c)} style={[styles.swatch, { backgroundColor: c }, on && styles.swatchOn]} />
+              );
+            })}
+          </ScrollView>
         )}
-      </ScrollView>
 
-      {/* Fullscreen player — the exact component explore uses. */}
-      <GamePlayerModal game={playingGame} onClose={() => setPlayingGame(null)} />
+        {/* Fixed Bottom Action Bar */}
+        <View style={[styles.bottomActionBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 4 : 14 }]}>
+          {/* Primary Action Button (Blue button matching Roblox) */}
+          <Pressable
+            style={[
+              styles.primaryBtn,
+              isSelectedEquipped && styles.primaryBtnEquipped,
+              !!selectedItem && !isSelectedOwned && styles.primaryBtnBuy,
+            ]}
+            onPress={handlePrimaryAction}
+          >
+            {!selectedItem ? (
+              <Text style={styles.primaryBtnText}>Pick an item to try on</Text>
+            ) : isSelectedEquipped ? (
+              <Text style={styles.primaryBtnText}>{selectedItem.takeOff ? 'Take Off' : '✓ Wearing'}</Text>
+            ) : isSelectedOwned ? (
+              <Text style={styles.primaryBtnText}>Wear</Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TokBuxIcon size={22} />
+                <Text style={[styles.primaryBtnText, { fontSize: 18 }]}>
+                  {selectedItem?.price}
+                </Text>
+              </View>
+            )}
+          </Pressable>
 
-      {/* Modals */}
-      <AddFriendsScreen visible={showAddFriends} onClose={() => setShowAddFriends(false)} />
-      <EditProfileModal visible={showEditProfile} onClose={() => setShowEditProfile(false)} />
+          {/* More Options Button [...] */}
+          <Pressable
+            style={styles.moreBtn}
+            onPress={() => setShowMyAvatar(true)}
+            hitSlop={8}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="#FFFFFF" />
+          </Pressable>
+        </View>
+      </View>
 
-      <FollowListModal
-        visible={followModalConfig.visible}
-        onClose={() => setFollowModalConfig({ ...followModalConfig, visible: false })}
-        userId={user?.id || ''}
-        username={username}
-        initialTab={followModalConfig.tab}
-        onUserPress={(profileUser) => {
-          pendingProfileUserRef.current = { ...profileUser, isFriend: false };
-          setFollowModalConfig({ ...followModalConfig, visible: false });
+      {/* MODALS */}
+      <ShopModal
+        visible={showShop}
+        onClose={() => setShowShop(false)}
+        onOpenAvatarPreview={() => {
+          setShowShop(false);
+          setShowMyAvatar(true);
         }}
-        onClosed={() => {
-          if (pendingProfileUserRef.current) {
-            setSelectedProfileUser(pendingProfileUserRef.current);
-            pendingProfileUserRef.current = null;
-          }
-        }}
+        onBalanceChange={(b) => setTokbux(b)}
       />
 
-      <UserProfileModal
-        visible={!!selectedProfileUser}
-        onClose={() => {
-          setSelectedProfileUser(null);
-          fetchData(true);
-        }}
-        user={selectedProfileUser}
+      <MyAvatarModal
+        visible={showMyAvatar}
+        onClose={() => setShowMyAvatar(false)}
       />
 
-      {/* Settings sheet */}
+      <EditProfileModal
+        visible={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+      />
+
+      <AddFriendsScreen
+        visible={showAddFriends}
+        onClose={() => setShowAddFriends(false)}
+      />
+
+      {/* Settings Sheet */}
       <Modal
         visible={showSettings}
         animationType="slide"
@@ -313,6 +514,22 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           <View style={styles.sheetCard}>
             <View style={styles.sheetGrabber} />
             <ScrollView showsVerticalScrollIndicator={false}>
+              <SheetItem
+                icon="body-outline"
+                label="3D Avatar & Skeleton"
+                onPress={() => {
+                  setShowSettings(false);
+                  setShowMyAvatar(true);
+                }}
+              />
+              <SheetItem
+                icon="cart-outline"
+                label="TokBux & Coin Store"
+                onPress={() => {
+                  setShowSettings(false);
+                  setShowShop(true);
+                }}
+              />
               <SheetItem
                 icon="person-outline"
                 label="Edit Profile"
@@ -331,12 +548,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               />
               <View style={styles.sheetDivider} />
               <View style={styles.sheetSwitchRow}>
-                <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={20} color={TEXT} />
+                <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={20} color="#FFFFFF" />
                 <Text style={styles.sheetItemLabel}>Dark Mode</Text>
                 <Switch
                   value={isDark}
                   onValueChange={toggleTheme}
-                  trackColor={{ false: '#ccc', true: PURPLE_DEEP }}
+                  trackColor={{ false: '#ccc', true: '#7C3AED' }}
                   thumbColor="#fff"
                   style={{ marginLeft: 'auto' }}
                 />
@@ -352,45 +569,16 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 label="Privacy Policy"
                 onPress={() => Linking.openURL('https://gametok.co/privacy.html')}
               />
-              <SheetItem
-                icon="document-text-outline"
-                label="Terms of Service"
-                onPress={() => Linking.openURL('https://gametok.co/terms.html')}
-              />
               <View style={styles.sheetDivider} />
               <SheetItem
                 icon="log-out-outline"
                 label="Log Out"
-                tone="danger"
+                danger
                 onPress={() => {
                   setShowSettings(false);
                   logout();
                 }}
               />
-              <SheetItem
-                icon="trash-outline"
-                label="Delete Account"
-                tone="danger"
-                onPress={() => {
-                  Alert.alert('Delete Account', 'Are you sure? This cannot be undone.', [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await auth.deleteAccount();
-                          setShowSettings(false);
-                          logout();
-                        } catch {
-                          Alert.alert('Error', 'Failed to delete account.');
-                        }
-                      },
-                    },
-                  ]);
-                }}
-              />
-              <View style={{ height: 32 }} />
             </ScrollView>
           </View>
         </View>
@@ -399,422 +587,356 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   );
 };
 
-// --- Sub-components ---------------------------------------------------------
-
-const VerifiedDot: React.FC<{ size?: number }> = ({ size = 16 }) => (
-  <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-    <MaterialIcons name="verified" size={size} color={PURPLE} />
-  </View>
-);
-
-const StatCol: React.FC<{ value: number; label: string; onPress?: () => void }> = ({ value, label, onPress }) => {
-  const Wrapper: any = onPress ? Pressable : View;
-  return (
-    <Wrapper onPress={onPress} style={statColStyles.col}>
-      <Text style={statColStyles.value}>{formatCount(value)}</Text>
-      <Text style={statColStyles.label}>{label}</Text>
-    </Wrapper>
-  );
-};
-
-const statColStyles = StyleSheet.create({
-  col: {
-    flex: 1,
-    alignItems: 'center',
-    minWidth: 0, // Prevent flex overflow
-  },
-  value: {
-    color: TEXT,
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-    minHeight: 28, // Fixed height to prevent layout shift
-  },
-  label: {
-    color: TEXT_MUTED,
-    fontSize: 11,
-    fontWeight: '500',
-    marginTop: 4,
-    letterSpacing: 0.1,
-    minHeight: 16, // Fixed height to prevent layout shift
-  },
-});
-
-const ProfileTab: React.FC<{
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  isActive: boolean;
-  onPress: () => void;
-}> = ({ label, icon, isActive, onPress }) => (
-  <Pressable 
-    style={[tabStyles.tab, isActive && tabStyles.tabActive]} 
-    onPress={onPress}
-  >
-    <Ionicons name={icon} size={16} color={isActive ? TEXT : TEXT_DIM} />
-    <Text style={[tabStyles.label, { color: isActive ? TEXT : TEXT_DIM }]}>{label}</Text>
-  </Pressable>
-);
-
-const tabStyles = StyleSheet.create({
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  tabActive: {
-    backgroundColor: '#333333',
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.0,
-  },
-});
-
-const GameTile: React.FC<{ game: Game; onPress: () => void }> = ({ game, onPress }) => (
-  <Pressable style={[tileStyles.tile, { width: TILE_WIDTH, height: TILE_HEIGHT }]} onPress={onPress}>
-    <Image source={{ uri: getThumbnailUrl(game) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-    <LinearGradient
-      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
-      locations={[0, 0.5, 1]}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <View style={tileStyles.body}>
-      <Text style={tileStyles.title} numberOfLines={1}>
-        {game.name}
-      </Text>
-      {typeof game.plays === 'number' ? (
-        <View style={tileStyles.playsRow}>
-          <Ionicons name="play" size={9} color="rgba(255,255,255,0.85)" />
-          <Text style={tileStyles.playsText}>{formatCount(game.plays || 0)}</Text>
-        </View>
-      ) : null}
-    </View>
-  </Pressable>
-);
-
-const tileStyles = StyleSheet.create({
-  tile: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#1a1a22',
-  },
-  body: {
-    position: 'absolute',
-    left: 8,
-    right: 8,
-    bottom: 8,
-  },
-  title: {
-    color: TEXT,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-    textShadowColor: 'rgba(0,0,0,0.85)',
-    textShadowRadius: 4,
-  },
-  playsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 3,
-  },
-  playsText: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 10,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowRadius: 4,
-  },
-});
-
-const EmptyState: React.FC<{ tab: ProfileContentTab }> = ({ tab }) => {
-  const config = {
-    created: {
-      title: 'No published games yet',
-      subtitle: 'Tap the create tab to dream a new game into existence.',
-      icon: 'sparkles-outline' as const,
-    },
-    played: {
-      title: 'No played games yet',
-      subtitle: 'Games you spend time in show up here automatically.',
-      icon: 'play-circle-outline' as const,
-    },
-    liked: {
-      title: 'No liked games yet',
-      subtitle: 'Tap the heart on any game to save it here.',
-      icon: 'heart-outline' as const,
-    },
-  };
-  const c = config[tab];
-  return (
-    <View style={emptyStyles.root}>
-      <View style={emptyStyles.iconBubble}>
-        <Ionicons name={c.icon} size={28} color={TEXT_DIM} />
-      </View>
-      <Text style={emptyStyles.title}>{c.title}</Text>
-      <Text style={emptyStyles.subtitle}>{c.subtitle}</Text>
-    </View>
-  );
-};
-
-const emptyStyles = StyleSheet.create({
-  root: {
-    alignItems: 'center',
-    paddingHorizontal: 30,
-    paddingTop: 56,
-    paddingBottom: 56,
-  },
-  iconBubble: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  title: {
-    color: TEXT,
-    fontSize: 16,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: TEXT_MUTED,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-});
-
 const SheetItem: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  danger?: boolean;
   onPress: () => void;
-  tone?: 'default' | 'danger';
-}> = ({ icon, label, onPress, tone = 'default' }) => {
-  const isDanger = tone === 'danger';
-  return (
-    <Pressable style={styles.sheetItem} onPress={onPress}>
-      <Ionicons name={icon} size={20} color={isDanger ? '#ef4444' : TEXT} />
-      <Text style={[styles.sheetItemLabel, { color: isDanger ? '#ef4444' : TEXT }]}>{label}</Text>
-    </Pressable>
-  );
-};
-
-const UnauthenticatedPreview: React.FC<{
-  onSignUp: () => void;
-  onLogIn: () => void;
-  insets: { top: number };
-}> = ({ onSignUp, onLogIn, insets }) => (
-  <View style={styles.root}>
-    <ScrollView contentContainerStyle={{ paddingBottom: 100 }} scrollEnabled={false}>
-      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.topIconBtn} />
-        <Text style={styles.topUsername}>@username</Text>
-        <View style={styles.topIconBtn} />
-      </View>
-      <View style={styles.avatarWrap}>
-        <View style={styles.avatarBorder}>
-          <View
-            style={{
-              width: 140,
-              height: 140,
-              borderRadius: 70,
-              backgroundColor: SURFACE,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="person" size={64} color={TEXT_DIM} />
-          </View>
-        </View>
-      </View>
-      <Text style={styles.displayName}>Your profile</Text>
-      <Text style={styles.handle}>@username</Text>
-      <Text style={styles.bio}>Sign up to start dreaming and playing games.</Text>
-    </ScrollView>
-    <View style={StyleSheet.absoluteFill}>
-      <BlurView intensity={70} tint="dark" style={StyleSheet.absoluteFill} />
-      <View style={styles.authOverlay}>
-        <Text style={styles.authTitle}>Sign up to continue</Text>
-        <Pressable style={styles.authPrimary} onPress={onSignUp}>
-          <Text style={styles.authPrimaryText}>Sign Up</Text>
-        </Pressable>
-        <Pressable onPress={onLogIn}>
-          <Text style={styles.authSecondary}>or log in</Text>
-        </Pressable>
-      </View>
-    </View>
-  </View>
+}> = ({ icon, label, danger, onPress }) => (
+  <Pressable style={styles.sheetItem} onPress={onPress}>
+    <Ionicons name={icon} size={20} color={danger ? '#ef4444' : '#FFFFFF'} style={{ width: 28 }} />
+    <Text style={[styles.sheetItemLabel, danger && { color: '#ef4444' }]}>{label}</Text>
+    <Ionicons name="chevron-forward" size={16} color="#6B6B78" style={{ marginLeft: 'auto' }} />
+  </Pressable>
 );
 
-// --- Styles -----------------------------------------------------------------
-
 const styles = StyleSheet.create({
+  swatchBar: { flexGrow: 0, position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(18,17,29,0.9)' },
+  swatchRow: { paddingHorizontal: 14, gap: 10, paddingVertical: 8 },
+  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)' },
+  swatchOn: { borderColor: '#FFFFFF', borderWidth: 3 },
   root: {
     flex: 1,
-    backgroundColor: BG,
+    backgroundColor: '#16151f',
   },
-  playerRoot: {
-    flex: 1,
-    backgroundColor: '#000',
+  stageWrap: {
+    height: SCREEN_HEIGHT * 0.46,
+    width: '100%',
+    position: 'relative',
+    backgroundColor: '#16151f',
   },
-  playerCloseBtn: {
+  stageTopBar: {
     position: 'absolute',
-    left: 16,
-    zIndex: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  topBar: {
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingHorizontal: 14,
+    zIndex: 10,
   },
-  topIconBtn: {
+  leftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  blueDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#3B82F6',
+  },
+  profileBadgeCapsule: {
+    position: 'relative',
+  },
+  profileBadgeGear: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    backgroundColor: '#FFD23F',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topUsernameWrap: {
+  segmentedToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 22,
+    padding: 3,
+  },
+  segmentBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  segmentText: {
+    color: '#D4D0E8',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+  },
+  segmentTextActive: {
+    color: '#000000',
+    fontFamily: 'Inter_800ExtraBold',
+  },
+  tokbuxCapsule: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 18,
     gap: 6,
   },
-  topUsername: {
-    color: TEXT,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+  tokbuxAmount: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Inter_800ExtraBold',
   },
-  avatarWrap: {
+  stageFloatingControls: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    zIndex: 10,
+  },
+  undoRedoPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 18,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
-  avatarBorder: {
-    width: 144,
-    height: 144,
-    borderRadius: 72,
-    padding: 3,
-    borderWidth: 2,
-    borderColor: 'rgba(168,85,247,0.75)',
+  undoBtn: {
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: PURPLE,
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 0 },
   },
-  displayName: {
-    color: TEXT,
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    textAlign: 'center',
+  undoDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    marginHorizontal: 4,
   },
-  handle: {
-    color: TEXT_MUTED,
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  bio: {
-    color: TEXT,
-    fontSize: 14,
-    fontWeight: '400',
-    textAlign: 'center',
-    marginTop: 10,
-    paddingHorizontal: 32,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    marginTop: 10,
-    minHeight: 70, // Fixed height to prevent layout shift
-  },
-  actionRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 16,
-  },
-  editBtn: {
+  sheetContainer: {
     flex: 1,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: '#12111D',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
+    borderTopColor: '#25233A',
+    overflow: 'hidden',
+  },
+  grabberHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3E3B5A',
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  categoryBarWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E1C2E',
+  },
+  categoryScroll: {
+    gap: 16,
+    paddingRight: 10,
+  },
+  categoryTab: {
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    position: 'relative',
+  },
+  categoryTabActive: {},
+  categoryTabText: {
+    color: '#8E8AAB',
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+  },
+  categoryTabTextActive: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_800ExtraBold',
+  },
+  categoryTabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 2.5,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 1.5,
+  },
+  filterBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 6,
   },
-  editBtnText: {
-    color: TEXT,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+  sectionHeadingWrap: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  shareBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(168,85,247,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+  sectionHeadingText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontFamily: 'Inter_800ExtraBold',
+    letterSpacing: -0.3,
   },
-  shareBtnText: {
-    color: PURPLE,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    marginHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 16,
-    borderRadius: 16,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  tabUnderlineTrack: {
-    display: 'none',
-  },
-  grid: {
+  itemsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: GRID_PADDING,
-    paddingTop: 6,
-    gap: GRID_GAP,
+    gap: 8,
+    paddingTop: 4,
+  },
+  gridCard: {
+    width: (SCREEN_WIDTH - 44) / 3,
+    marginBottom: 12,
+  },
+  cardThumb: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 14,
+    backgroundColor: '#1E1D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    position: 'relative',
+  },
+  cardThumbSelected: {
+    borderColor: '#3B82F6',
+    backgroundColor: '#24223A',
+  },
+  cardEquippedTag: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  cardEquippedText: {
+    color: '#000000',
+    fontSize: 8,
+    fontFamily: 'Inter_800ExtraBold',
+  },
+  detailsBadge: {
+    position: 'absolute',
+    bottom: 6,
+    alignSelf: 'center',
+    backgroundColor: '#1E1D2D',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  detailsBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+  },
+  cardName: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 6,
+  },
+  cardCreator: {
+    color: '#8A86A8',
+    fontSize: 10,
+    fontFamily: 'Inter_500Medium',
+    marginTop: 1,
+  },
+  cardPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  cardPriceText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Inter_800ExtraBold',
+  },
+  cardOwnedLabel: {
+    color: '#A855F7',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+  },
+  bottomActionBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    backgroundColor: 'rgba(18,17,29,0.96)',
+    borderTopWidth: 1,
+    borderTopColor: '#26243A',
+  },
+  primaryBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnBuy: {
+    backgroundColor: '#2563EB',
+  },
+  primaryBtnEquipped: {
+    backgroundColor: '#26243A',
+  },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: 'Inter_800ExtraBold',
+  },
+  moreBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#1E1D2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#34304E',
+  },
+  emptyWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#8E8AAB',
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
   },
   sheetBackdrop: {
     flex: 1,
@@ -822,70 +944,38 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheetCard: {
-    backgroundColor: SURFACE,
+    backgroundColor: '#17142A',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingHorizontal: 18,
-    paddingBottom: 18,
-    maxHeight: '70%',
-    borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    padding: 20,
+    maxHeight: '75%',
   },
   sheetGrabber: {
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: '#383256',
     alignSelf: 'center',
-    marginVertical: 12,
+    marginBottom: 16,
   },
   sheetItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
     paddingVertical: 14,
   },
   sheetItemLabel: {
-    color: TEXT,
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
+    color: '#FFFFFF',
+  },
+  sheetDivider: {
+    height: 1,
+    backgroundColor: '#272242',
+    marginVertical: 6,
   },
   sheetSwitchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
-  },
-  sheetDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    marginVertical: 4,
-  },
-  authOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  authTitle: {
-    color: TEXT,
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 18,
-  },
-  authPrimary: {
-    paddingVertical: 14,
-    paddingHorizontal: 48,
-    backgroundColor: PURPLE,
-    borderRadius: 999,
-  },
-  authPrimaryText: {
-    color: TEXT,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  authSecondary: {
-    color: TEXT_MUTED,
-    fontSize: 13,
-    marginTop: 16,
+    paddingVertical: 10,
   },
 });

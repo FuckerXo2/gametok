@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   logoContainer: {
     position: 'absolute',

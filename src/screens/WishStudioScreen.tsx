@@ -1228,6 +1228,17 @@ export const WishStudioScreen = ({
     else proposeBrief();
   }, [journeyView, refineBrief, proposeBrief]);
 
+  const building = phase === 'building';
+  // Publish is offered only once there's a real, playable game to ship.
+  const canPublish = phase === 'live' && (!!html || !!gameUrl);
+  // When opening an existing draft or game, the studio must never display the understanding/concept phase.
+  const activeJourneyView: JourneyView =
+    initialGame &&
+    (journeyView === 'understanding' ||
+      journeyView === 'directions')
+      ? 'creator'
+      : journeyView;
+
   // Progressive step advance for understanding phase (0 -> 1 -> 2 -> 3 -> 4)
   useEffect(() => {
     if (!visible || activeJourneyView !== 'understanding') return;
@@ -1274,17 +1285,6 @@ export const WishStudioScreen = ({
     backendDerivedStep !== null ? backendDerivedStep : 0,
     buildingSimulatedStep
   );
-
-  const building = phase === 'building';
-  // Publish is offered only once there's a real, playable game to ship.
-  const canPublish = phase === 'live' && (!!html || !!gameUrl);
-  // When opening an existing draft or game, the studio must never display the understanding/concept phase.
-  const activeJourneyView: JourneyView =
-    initialGame &&
-    (journeyView === 'understanding' ||
-      journeyView === 'directions')
-      ? 'creator'
-      : journeyView;
 
   useEffect(() => {
     if (activeJourneyView === 'play' && isLandscape(orientation)) {

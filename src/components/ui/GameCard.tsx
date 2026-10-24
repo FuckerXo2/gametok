@@ -54,11 +54,11 @@ export const GameCard: React.FC<GameCardProps> = ({
     >
       <View style={[styles.card, { width: d.width, height: d.height }]}>
         {source ? (
-          <Image source={source} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+          <Image source={source} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : (
           <View
             style={[
-              StyleSheet.absoluteFillObject,
+              StyleSheet.absoluteFill,
               { backgroundColor: colors.bgCard },
             ]}
           />
@@ -66,7 +66,7 @@ export const GameCard: React.FC<GameCardProps> = ({
         <LinearGradient
           colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.0)', 'rgba(0,0,0,0.85)']}
           locations={[0, 0.45, 1]}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         {liveBadge ? (
           <View style={styles.liveBadge}>

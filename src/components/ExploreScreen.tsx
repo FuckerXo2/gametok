@@ -27,6 +27,9 @@ import { Avatar } from './Avatar';
 import { RemixModal } from './RemixModal';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
+import { GamesHome } from './GamesHome';
+import { ShopModal } from './ShopModal';
+import { MyAvatarModal } from './MyAvatarModal';
 
 const PURPLE = '#a855f7';
 const PURPLE_DEEP = '#7c3aed';
@@ -116,6 +119,9 @@ export const ExploreScreen: React.FC = () => {
   const [remixLoading, setRemixLoading] = useState(false);
   // Active discovery category, or null for "Home" (all games).
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [shopModalVisible, setShopModalVisible] = useState(false);
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+  const [recentGameIds, setRecentGameIds] = useState<string[]>(['backrooms-level-0', 'gta-lagos']);
 
   // Games in the current category. Multi-label: a game shows under every category it carries.
   const categoryGames = useMemo(() => {
@@ -130,7 +136,14 @@ export const ExploreScreen: React.FC = () => {
         usersApi.recommended(),
       ]);
       if (gamesRes.status === 'fulfilled') {
-        setAllGames(gamesRes.value?.games || []);
+        const rawGames = gamesRes.value?.games || [];
+        const curated = rawGames.filter((g: any) =>
+          /gta[-_ ]?lagos/i.test(g.id) ||
+          /gta lagos/i.test(g.name || '') ||
+          /no[-_ ]?rules/i.test(g.id) ||
+          /no rules/i.test(g.name || '')
+        );
+        setAllGames(curated);
       }
       if (recRes.status === 'fulfilled') {
         setCreators(recRes.value?.users || []);
@@ -221,6 +234,9 @@ export const ExploreScreen: React.FC = () => {
   };
 
   const openGame = async (gameOrId: string | ExploreGame) => {
+    const gameId = typeof gameOrId === 'string' ? gameOrId : gameOrId.id;
+    setRecentGameIds(prev => [gameId, ...prev.filter(x => x !== gameId)].slice(0, 10));
+
     const existingGame = typeof gameOrId === 'string'
       ? allGames.find((game) => game.id === gameOrId)
       : gameOrId;
@@ -294,7 +310,7 @@ export const ExploreScreen: React.FC = () => {
                       : { width: CARD_WIDTH, height: CARD_WIDTH * 1.33 },
                   ]}
                 >
-                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                  <Image source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 </View>
                 <View style={styles.gameCardMeta}>
                   <Text style={styles.gameCardName} numberOfLines={1}>{g.name}</Text>
@@ -313,77 +329,34 @@ export const ExploreScreen: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 110 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
-        }
-      >
-        {/* Header matching mobile website */}
-        <View style={[styles.exploreHeader, { paddingTop: insets.top + 12 }]}>
-          <View>
-            <Text style={styles.headerSub}>GAMETOK</Text>
-            <Text style={styles.headerTitle}>Explore</Text>
-          </View>
-          <Pressable style={styles.createBtn} onPress={() => setActiveTab('create')}>
-            <Ionicons name="sparkles" size={14} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={styles.createBtnText}>Create</Text>
-          </Pressable>
-        </View>
+      <GamesHome
+        games={allGames}
+        recentIds={recentGameIds}
+        activeCategory={activeCategory}
+        onCategory={setActiveCategory}
+        onOpen={(g) => openGame(g.id)}
+        onSearch={() => setSearchModalVisible(true)}
+        onFriends={() => setActiveTab('connect')}
+        onOpenShop={() => setShopModalVisible(true)}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+      />
 
-        {/* Search bar matching mobile website */}
-        <Pressable style={styles.searchBarBox} onPress={() => setSearchModalVisible(true)}>
-          <Ionicons name="search" size={18} color="#686868" style={{ marginRight: 8 }} />
-          <Text style={styles.searchBarPlaceholder}>Search games, creators, worlds</Text>
-        </Pressable>
+      {/* TokBux Shop Modal */}
+      <ShopModal
+        visible={shopModalVisible}
+        onClose={() => setShopModalVisible(false)}
+        onOpenAvatarPreview={() => {
+          setShopModalVisible(false);
+          setAvatarModalVisible(true);
+        }}
+      />
 
-        {/* Category nav. "Home" is the all-games tab, not a category a game can carry.
-            Inside any category the sub-navigation is just Trending and New. */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryNav}
-          style={styles.categoryNavWrap}
-        >
-          <Pressable
-            style={[styles.categoryChip, !activeCategory && styles.categoryChipActive]}
-            onPress={() => setActiveCategory(null)}
-          >
-            <Text style={[styles.categoryChipText, !activeCategory && styles.categoryChipTextActive]}>
-              Home
-            </Text>
-          </Pressable>
-          {CATEGORIES.map((c) => {
-            const active = activeCategory === c.slug;
-            return (
-              <Pressable
-                key={c.slug}
-                style={[styles.categoryChip, active && styles.categoryChipActive]}
-                onPress={() => setActiveCategory(c.slug)}
-              >
-                <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
-                  {c.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Game Rows */}
-        {renderGameRow('Trending', trendingGames)}
-        {renderGameRow('New', freshGames)}
-
-        {trendingGames.length === 0 && freshGames.length === 0 && (
-          <View style={styles.exploreEmpty}>
-            <Text style={styles.exploreEmptyText}>
-              {activeCategory ? `Nothing in ${categoryLabel(activeCategory)} yet.` : 'No games found.'}
-            </Text>
-          </View>
-        )}
-
-      </ScrollView>
+      {/* 3D Avatar Modal */}
+      <MyAvatarModal
+        visible={avatarModalVisible}
+        onClose={() => setAvatarModalVisible(false)}
+      />
 
       {/* Search modal */}
       <Modal visible={searchModalVisible} animationType="slide" onRequestClose={() => setSearchModalVisible(false)}>
@@ -495,13 +468,13 @@ export const ExploreScreen: React.FC = () => {
                         >
                           <Image
                             source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }}
-                            style={StyleSheet.absoluteFillObject}
+                            style={StyleSheet.absoluteFill}
                             resizeMode="cover"
                           />
                           <LinearGradient
                             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
                             locations={[0, 0.45, 1]}
-                            style={StyleSheet.absoluteFillObject}
+                            style={StyleSheet.absoluteFill}
                           />
                           <View style={styles.topGameRank}>
                             <Text style={styles.topGameRankText}>#{index + 1}</Text>
@@ -569,13 +542,13 @@ export const ExploreScreen: React.FC = () => {
                         >
                           <Image
                             source={{ uri: resolveThumbnail(g.thumbnail, g.id, g) }}
-                            style={StyleSheet.absoluteFillObject}
+                            style={StyleSheet.absoluteFill}
                             resizeMode="cover"
                           />
                           <LinearGradient
                             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
                             locations={[0, 0.45, 1]}
-                            style={StyleSheet.absoluteFillObject}
+                            style={StyleSheet.absoluteFill}
                           />
                           <View style={styles.searchGameBody}>
                             <Text style={styles.searchGameTitle} numberOfLines={1}>

@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
     marginTop: 16
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: LoopsColors.black,
     justifyContent: 'center',
     alignItems: 'center'

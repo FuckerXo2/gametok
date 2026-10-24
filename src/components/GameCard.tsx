@@ -571,7 +571,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   gameArea: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   gameFrame: {
     flex: 1,
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   playOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.4)',
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#1a1a1a',
@@ -692,7 +692,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollModeOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.3)',
     zIndex: 100,
   },

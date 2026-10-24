@@ -100,7 +100,7 @@ export const VideoThumb = ({ uri, poster, style, dimmed, atMs = 800 }: Props) =>
 const styles = StyleSheet.create({
   dimmed: { opacity: 0.65 },
   placeholder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.04)',

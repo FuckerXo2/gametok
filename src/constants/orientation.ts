@@ -20,6 +20,16 @@ export function isLandscape(value: unknown): boolean {
   return normalizeOrientation(value) === 'landscape';
 }
 
+export function isGameLandscape(game?: any): boolean {
+  if (!game) return false;
+  if (isLandscape(game.orientation)) return true;
+  const name = String(game.name || game.title || '').toLowerCase();
+  const desc = String(game.description || game.prompt || '').toLowerCase();
+  const categories = Array.isArray(game.categories) ? game.categories.join(' ').toLowerCase() : '';
+  const text = `${name} ${desc} ${categories}`;
+  return /sunbreak|downhill|descent|sunrise|turbo.*kart|kart|gta.*lagos|grand\s*theft.*lagos|leonida|racing|flight|pilot|drift|landscape/i.test(text);
+}
+
 /** Copy for the Forge picker. `glyph` is an Ionicons name. */
 export const ORIENTATION_OPTIONS: Array<{
   key: Orientation;

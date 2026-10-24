@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -68,6 +69,13 @@ const safeHeight = SCREEN_HEIGHT || 812;
 const GOOGLE_IOS_CLIENT_ID = '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com';
 const GOOGLE_IOS_WEB_CLIENT_ID = '690098564284-9j4fj28fiqimjg8c20mn2vtjg6b70qr7.apps.googleusercontent.com';
 const GOOGLE_ANDROID_WEB_CLIENT_ID = '516560435127-l6db4akjqei5q57j764kgu3aoaedu45l.apps.googleusercontent.com';
+
+const STARTER_SKINS = [
+  { id: 'lagos-striker', name: 'Lagos Striker', tag: 'STREET 5S', color: '#F59E0B', icon: 'football-outline' },
+  { id: 'cyber-viper', name: 'Cyber Viper', tag: 'NEON RUN', color: '#EC4899', icon: 'flash-outline' },
+  { id: 'shadow-shinobi', name: 'Shadow Shinobi', tag: 'FIGHT CLUB', color: '#8B5CF6', icon: 'shield-outline' },
+  { id: 'golden-kingpin', name: 'Gold Kingpin', tag: 'CHAMPION', color: '#EAB308', icon: 'trophy-outline' },
+];
 
 const randomOption = <T,>(options: T[], current?: T) => {
   const pool = current === undefined ? options : options.filter((option) => option !== current);
@@ -424,6 +432,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     seed: 'gametok',
     bg: DICEBEAR_BACKGROUNDS[0],
   });
+  const [selectedStarterSkin, setSelectedStarterSkin] = useState<string>('lagos-striker');
 
   // Credentials
   const [email, setEmail] = useState('');
@@ -946,6 +955,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       }));
     };
 
+    const handleSelectSkin = (skinId: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setSelectedStarterSkin(skinId);
+      AsyncStorage.setItem('gametok_user_active_skin', skinId);
+      AsyncStorage.setItem('gametok_user_owned_skins', JSON.stringify([skinId]));
+    };
+
     return (
       <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
         <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('genres')}>
@@ -959,12 +975,63 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
             Choose your Avatar
           </Animated.Text>
           <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>
-            This is how others will see you in GameTok.
+            Your 3D character across all GameTok games.
           </Animated.Text>
 
-          <Animated.View entering={ZoomIn.delay(300).springify()} style={{ marginVertical: 40 }}>
+          <Animated.View entering={ZoomIn.delay(300).springify()} style={{ marginVertical: 24, position: 'relative' }}>
             <View style={[styles.avatarPreviewRing, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <Avatar uri={makeDicebearAvatarUri(avatarConfig)} userId={displayName || username || 'onboarding'} size={180} />
+              <Avatar uri={makeDicebearAvatarUri(avatarConfig)} userId={displayName || username || 'onboarding'} size={150} />
+            </View>
+            <View style={{
+              position: 'absolute',
+              bottom: 4,
+              right: 4,
+              backgroundColor: '#2FD38A',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              borderWidth: 2,
+              borderColor: '#000',
+            }}>
+              <Ionicons name="cube" size={12} color="#000" />
+              <Text style={{ color: '#000', fontSize: 10, fontWeight: '900' }}>3D READY</Text>
+            </View>
+          </Animated.View>
+
+          {/* Starter 3D Character Skins */}
+          <Animated.View entering={FadeInUp.delay(350).springify()} style={{ width: '100%', marginBottom: 16 }}>
+            <Text style={{ color: '#8E8A9E', fontSize: 11, fontWeight: '800', letterSpacing: 1.2, textAlign: 'center', marginBottom: 10 }}>
+              STARTER 3D ROSTER
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+              {STARTER_SKINS.map((skin) => {
+                const isSelected = selectedStarterSkin === skin.id;
+                return (
+                  <TouchableOpacity
+                    key={skin.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 16,
+                      backgroundColor: isSelected ? 'rgba(255,255,255,0.14)' : colors.surface,
+                      borderWidth: 1.5,
+                      borderColor: isSelected ? skin.color : 'rgba(255,255,255,0.1)',
+                    }}
+                    onPress={() => handleSelectSkin(skin.id)}
+                  >
+                    <Ionicons name={skin.icon as any} size={15} color={skin.color} />
+                    <Text style={{ color: isSelected ? '#FFF' : '#A3A0B5', fontSize: 12, fontWeight: isSelected ? '800' : '600' }}>
+                      {skin.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </Animated.View>
 
@@ -974,8 +1041,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               onPress={rerollAvatar}
               activeOpacity={0.8}
             >
-              <Ionicons name="dice-outline" size={22} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.rerollBtnText, { color: colors.primary }]}>Randomize Look</Text>
+              <Ionicons name="dice-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.rerollBtnText, { color: colors.primary, fontSize: 14 }]}>Randomize Look</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -1088,7 +1155,7 @@ const styles = StyleSheet.create({
 
   // Welcome
   background: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  overlay: { ...StyleSheet.absoluteFillObject },
+  overlay: { ...StyleSheet.absoluteFill },
   logoContainer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   logoWrapper: { alignItems: 'center' },
   logoTextContainer: { flexDirection: 'row', alignItems: 'center' },

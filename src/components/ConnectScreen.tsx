@@ -135,7 +135,13 @@ const ChatRow = React.memo(function ChatRow({ chat, isOnline, animateEntry, entr
             ]}
             numberOfLines={1}
           >
-            {chat.lastMessage?.text || 'Start chatting'}
+            {chat.lastMessage?.gameShare
+              ? `🎮 Shared ${chat.lastMessage.gameShare.name}`
+              : chat.lastMessage?.text
+              ? chat.lastMessage.text
+              : isOnline
+              ? '🟢 Online now · Tap to chat'
+              : 'Tap to message'}
           </Text>
         </View>
         <View style={styles.chatMeta}>
@@ -398,7 +404,9 @@ const MessagesTab: React.FC<{
       const detail = await gamesApi.get(gameId);
       const game = detail?.game || detail;
       const embed: string | undefined = game?.embedUrl || game?.embed_url;
-      const sourceId = embed?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
+      const sourceId = embed?.includes('/api/ai/play/')
+        ? embed.split('/api/ai/play/')[1]?.split(/[?#]/)[0]
+        : (game?.id || gameId);
       if (!sourceId) {
         Alert.alert('Remix unavailable', "This game can't be remixed.");
         return;
@@ -951,20 +959,22 @@ const MessagesTab: React.FC<{
                             <Ionicons name="play" size={15} color="#fff" />
                             <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Play</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleRemixShared(item.gameShare.id)}
-                            disabled={remixingGameId === item.gameShare.id}
-                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-                          >
-                            {remixingGameId === item.gameShare.id ? (
-                              <ActivityIndicator size="small" color={colors.text} />
-                            ) : (
-                              <>
-                                <Ionicons name="git-branch" size={15} color={colors.text} />
-                                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Remix</Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
+                          {((item.gameShare as any)?.runtime === 'native' || (item.gameShare as any)?.runtime === 'gametok_engine') && (
+                            <TouchableOpacity
+                              onPress={() => handleRemixShared(item.gameShare.id)}
+                              disabled={remixingGameId === item.gameShare.id}
+                              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                            >
+                              {remixingGameId === item.gameShare.id ? (
+                                <ActivityIndicator size="small" color={colors.text} />
+                              ) : (
+                                <>
+                                  <Ionicons name="git-branch" size={15} color={colors.text} />
+                                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Remix</Text>
+                                </>
+                              )}
+                            </TouchableOpacity>
+                          )}
                         </View>
                         {cleanText ? (
                           <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>
@@ -1093,6 +1103,7 @@ export const ConnectScreen: React.FC = () => {
   const { setActiveTab, activeTab, pendingChatUserId, setPendingChatUserId, activityRequestNonce } = useNavigation();
   const { openSharedGame } = useDeepLink();
 
+  const [unifiedTab, setUnifiedTab] = useState<'chats' | 'friends'>('chats');
   const [filter, setFilter] = useState<ConnectFilter>('foryou');
   const [following, setFollowing] = useState<any[]>([]);
   const [recommended, setRecommended] = useState<any[]>([]);
@@ -1102,7 +1113,6 @@ export const ConnectScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [showFriendsPlaying, setShowFriendsPlaying] = useState(false);
   const [inboxMode, setInboxMode] = useState<InboxMode>('messages');
   const [inboxInitialChat, setInboxInitialChat] = useState<Conversation | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<any>(null);
@@ -1301,16 +1311,58 @@ export const ConnectScreen: React.FC = () => {
           <Pressable
             style={connectV3Styles.topIconBtn}
             onPress={() => {
-              setInboxMode('activity');
+              setInboxMode('messages');
               setInboxInitialChat(null);
               setShowInbox(true);
             }}
             hitSlop={6}
           >
-            <Ionicons name="notifications-outline" size={20} color="#fff" />
+            <Ionicons name="chatbubbles-outline" size={20} color="#fff" />
             {conversations.some((c) => c.lastMessage?.isUnread) ? (
               <View style={connectV3Styles.bellDot} />
             ) : null}
+          </Pressable>
+        </View>
+
+        {/* Sub-tabs: Chats & Friends */}
+        <View style={connectV3Styles.unifiedSegmentWrap}>
+          <Pressable
+            style={[
+              connectV3Styles.unifiedSegmentBtn,
+              unifiedTab === 'chats' && connectV3Styles.unifiedSegmentBtnActive,
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setUnifiedTab('chats');
+            }}
+          >
+            <Text
+              style={[
+                connectV3Styles.unifiedSegmentText,
+                unifiedTab === 'chats' && connectV3Styles.unifiedSegmentTextActive,
+              ]}
+            >
+              Chats ({conversations.length})
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              connectV3Styles.unifiedSegmentBtn,
+              unifiedTab === 'friends' && connectV3Styles.unifiedSegmentBtnActive,
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setUnifiedTab('friends');
+            }}
+          >
+            <Text
+              style={[
+                connectV3Styles.unifiedSegmentText,
+                unifiedTab === 'friends' && connectV3Styles.unifiedSegmentTextActive,
+              ]}
+            >
+              Friends ({following.length})
+            </Text>
           </Pressable>
         </View>
 
@@ -1389,13 +1441,13 @@ export const ConnectScreen: React.FC = () => {
               source={{
                 uri: resolveSharedGameThumbnail(trendingGames[0]?.thumbnail, trendingGames[0]?.id) || '',
               }}
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               resizeMode="cover"
             />
             <LinearGradient
               colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
               locations={[0, 0.5, 1]}
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
             />
             <View style={connectV3Styles.liveBadgeWrap}>
               <View style={connectV3Styles.liveBadge}>
@@ -1442,126 +1494,109 @@ export const ConnectScreen: React.FC = () => {
           </Pressable>
         ) : (
           <View style={connectV3Styles.liveCardEmpty}>
-            <View style={connectV3Styles.liveCardEmptyDot} />
-            <Text style={connectV3Styles.liveCardEmptyTitle}>
-              {allOnline.length > 0
-                ? `${allOnline.length} ${allOnline.length === 1 ? 'friend is' : 'friends are'} online`
-                : 'No friends online yet'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={connectV3Styles.liveCardEmptyDot} />
+              <Text style={connectV3Styles.liveCardEmptyTitle}>
+                {allOnline.length > 0
+                  ? `${allOnline.length} ${allOnline.length === 1 ? 'friend is' : 'friends are'} online`
+                  : 'No friends online right now'}
+              </Text>
+            </View>
             <Text style={connectV3Styles.liveCardEmptyBody}>
-              We'll show a LIVE banner here when someone you follow is in-game.
+              A LIVE banner will appear here when someone you follow is in-game.
             </Text>
           </View>
         )}
 
-        {/* Friends are playing — 3-col grid */}
-        <View style={connectV3Styles.section}>
-          <View style={connectV3Styles.sectionHeader}>
-            <Text style={connectV3Styles.sectionTitle}>Friends are playing</Text>
-            <Pressable hitSlop={8} onPress={() => setShowFriendsPlaying(true)}>
-              <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
-            </Pressable>
-          </View>
-          {trendingGames.length === 0 ? (
-            <Text style={connectV3Styles.sectionEmpty}>No games trending right now.</Text>
-          ) : (
-            <View style={connectV3Styles.friendsGrid}>
-              {trendingGames.slice(0, 3).map((g) => (
-                <Pressable
-                  key={g.id}
-                  style={connectV3Styles.friendsCard}
-                  onPress={() => {
-                    openSharedGame(g.id);
-                    setActiveTab('home');
-                  }}
-                >
-                  {g.thumbnail ? (
-                    <Image
-                      source={{ uri: resolveSharedGameThumbnail(g.thumbnail, g.id) || '' }}
-                      style={StyleSheet.absoluteFillObject}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a22' }]} />
-                  )}
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.85)']}
-                    locations={[0, 0.45, 1]}
-                    style={StyleSheet.absoluteFillObject}
-                  />
-                  <View style={connectV3Styles.friendsCardBody}>
-                    <Text style={connectV3Styles.friendsCardTitle} numberOfLines={1}>
-                      {g.name}
-                    </Text>
-                    <View style={connectV3Styles.friendsCardMeta}>
-                      <View style={connectV3Styles.friendsAvatarStack}>
-                        {following.slice(0, 2).map((u, i) => (
-                          <View
-                            key={u.id}
-                            style={[connectV3Styles.friendsStackAvatar, { marginLeft: i === 0 ? 0 : -6 }]}
-                          >
-                            <Avatar uri={u.avatar} userId={u.id} size={13} />
-                          </View>
-                        ))}
-                      </View>
-                      <Text style={connectV3Styles.friendsCount}>
-                        {following.length > 0 ? `${Math.min(following.length, 9)} friends` : 'Trending'}
+
+
+        {unifiedTab === 'chats' ? (
+          /* Direct Messages list */
+          <View style={connectV3Styles.section}>
+            <View style={connectV3Styles.sectionHeader}>
+              <Text style={connectV3Styles.sectionTitle}>Direct Messages</Text>
+            </View>
+            {conversations.length === 0 ? (
+              <View style={connectV3Styles.convoEmpty}>
+                <Ionicons name="chatbubble-outline" size={18} color={CONNECT_TEXT_MUTED} />
+                <Text style={connectV3Styles.convoEmptyText}>No conversations yet.</Text>
+              </View>
+            ) : (
+              conversations.map((c) => {
+                const last = c.lastMessage;
+                const time = last ? formatRelativeTime(last.createdAt) : '';
+                const unreadCount = last?.isUnread && !last?.isFromMe ? 1 : 0;
+                const status = presenceMap.get(c.user.id);
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={connectV3Styles.convoRow}
+                    onPress={() => {
+                      setInboxMode('messages');
+                      setInboxInitialChat(c);
+                      setShowInbox(true);
+                    }}
+                  >
+                    <View style={connectV3Styles.convoAvatarWrap}>
+                      <Avatar uri={c.user.avatar} userId={c.user.id} size={46} />
+                      {(status === 'online' || status === 'in-game') ? (
+                        <View
+                          style={[
+                            connectV3Styles.convoStatus,
+                            status === 'in-game' && { backgroundColor: CONNECT_PURPLE },
+                          ]}
+                        />
+                      ) : null}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={connectV3Styles.convoName} numberOfLines={1}>
+                        {c.user.displayName || c.user.username}
+                      </Text>
+                      <Text style={connectV3Styles.convoLast} numberOfLines={1}>
+                        {last?.gameShare
+                          ? `🎮 Shared ${last.gameShare.name}`
+                          : last?.text
+                          ? last.text
+                          : status === 'in-game'
+                          ? '🎮 Playing right now'
+                          : status === 'online'
+                          ? '🟢 Online now'
+                          : 'Tap to message'}
                       </Text>
                     </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* Active Conversations preview */}
-        <View style={connectV3Styles.section}>
-          <View style={connectV3Styles.sectionHeader}>
-            <Text style={connectV3Styles.sectionTitle}>Active Conversations</Text>
-            <Pressable
-              hitSlop={8}
-              onPress={() => {
-                setInboxMode('messages');
-                setInboxInitialChat(null);
-                setShowInbox(true);
-              }}
-            >
-              <Text style={connectV3Styles.sectionSeeAll}>See all</Text>
-            </Pressable>
+                    <View style={connectV3Styles.convoMeta}>
+                      <Text style={connectV3Styles.convoTime}>{time}</Text>
+                      {unreadCount > 0 ? (
+                        <View style={connectV3Styles.convoBadge}>
+                          <Text style={connectV3Styles.convoBadgeText}>{unreadCount}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })
+            )}
           </View>
-          {conversations.length === 0 ? (
-            <Pressable
-              style={connectV3Styles.convoEmpty}
-              onPress={() => {
-                setInboxMode('messages');
-                setInboxInitialChat(null);
-                setShowInbox(true);
-              }}
-            >
-              <Ionicons name="chatbubble-outline" size={18} color={CONNECT_TEXT_MUTED} />
-              <Text style={connectV3Styles.convoEmptyText}>
-                No active chats yet — tap to start one.
+        ) : (
+          /* Friends List tab */
+          <View style={connectV3Styles.section}>
+            <View style={connectV3Styles.sectionHeader}>
+              <Text style={connectV3Styles.sectionTitle}>
+                {following.length > 0 ? `Friends (${following.length})` : 'Suggested Creators'}
               </Text>
-            </Pressable>
-          ) : (
-            conversations.slice(0, 4).map((c) => {
-              const last = c.lastMessage;
-              const time = last ? formatRelativeTime(last.createdAt) : '';
-              const unreadCount = last?.isUnread && !last?.isFromMe ? 1 : 0;
-              const status = presenceMap.get(c.user.id);
+            </View>
+            {(following.length > 0 ? following : recommended).map((u) => {
+              const status = presenceMap.get(u.id);
               return (
                 <Pressable
-                  key={c.id}
+                  key={u.id}
                   style={connectV3Styles.convoRow}
                   onPress={() => {
-                    setInboxMode('messages');
-                    setInboxInitialChat(c);
-                    setShowInbox(true);
+                    setSelectedProfileUser(u);
                   }}
                 >
                   <View style={connectV3Styles.convoAvatarWrap}>
-                    <Avatar uri={c.user.avatar} userId={c.user.id} size={46} />
+                    <Avatar uri={u.avatar} userId={u.id} size={46} />
                     {(status === 'online' || status === 'in-game') ? (
                       <View
                         style={[
@@ -1573,25 +1608,48 @@ export const ConnectScreen: React.FC = () => {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={connectV3Styles.convoName} numberOfLines={1}>
-                      {c.user.displayName || c.user.username}
+                      {u.displayName || u.username}
                     </Text>
                     <Text style={connectV3Styles.convoLast} numberOfLines={1}>
-                      {last?.text || 'Tap to message'}
+                      {status === 'in-game'
+                        ? '🎮 Playing right now'
+                        : status === 'online'
+                        ? '🟢 Online now'
+                        : `@${u.username}`}
                     </Text>
                   </View>
-                  <View style={connectV3Styles.convoMeta}>
-                    <Text style={connectV3Styles.convoTime}>{time}</Text>
-                    {unreadCount > 0 ? (
-                      <View style={connectV3Styles.convoBadge}>
-                        <Text style={connectV3Styles.convoBadgeText}>{unreadCount}</Text>
-                      </View>
-                    ) : null}
-                  </View>
+                  <Pressable
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      borderRadius: 16,
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                    }}
+                    onPress={() => {
+                      const existing = conversations.find((c) => c.user.id === u.id);
+                      setInboxMode('messages');
+                      setInboxInitialChat(
+                        existing || {
+                          id: u.id,
+                          user: {
+                            id: u.id,
+                            username: u.username,
+                            displayName: u.displayName || u.username,
+                            avatar: u.avatar,
+                          },
+                          streak: 0,
+                        }
+                      );
+                      setShowInbox(true);
+                    }}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
+                  </Pressable>
                 </Pressable>
               );
-            })
-          )}
-        </View>
+            })}
+          </View>
+        )}
       </ScrollView>
 
       {/* User profile modal */}
@@ -1601,61 +1659,7 @@ export const ConnectScreen: React.FC = () => {
         user={selectedProfileUser}
       />
 
-      <SlideRightModal visible={showFriendsPlaying} onClose={() => setShowFriendsPlaying(false)}>
-        <View style={[connectV3Styles.fullListModal, { paddingTop: insets.top }]}>
-          <View style={connectV3Styles.fullListHeader}>
-            <TouchableOpacity onPress={() => setShowFriendsPlaying(false)} style={connectV3Styles.fullListBackBtn}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={connectV3Styles.fullListTitle}>Friends are playing</Text>
-            <View style={connectV3Styles.fullListBackBtn} />
-          </View>
 
-          {trendingGames.length === 0 ? (
-            <View style={connectV3Styles.fullListEmpty}>
-              <Ionicons name="game-controller-outline" size={48} color={CONNECT_TEXT_MUTED} />
-              <Text style={connectV3Styles.fullListEmptyText}>No games trending right now.</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={trendingGames}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={connectV3Styles.fullListContent}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={connectV3Styles.fullListRow}
-                  onPress={() => {
-                    setShowFriendsPlaying(false);
-                    openSharedGame(item.id);
-                    setActiveTab('home');
-                  }}
-                >
-                  <View style={connectV3Styles.fullListThumb}>
-                    {item.thumbnail ? (
-                      <Image
-                        source={{ uri: resolveSharedGameThumbnail(item.thumbnail, item.id) || '' }}
-                        style={StyleSheet.absoluteFillObject}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a22' }]} />
-                    )}
-                  </View>
-                  <View style={connectV3Styles.fullListCopy}>
-                    <Text style={connectV3Styles.fullListGameTitle} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={connectV3Styles.fullListGameMeta} numberOfLines={1}>
-                      {following.length > 0 ? `${Math.min(following.length, 9)} friends` : 'Trending'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={CONNECT_TEXT_MUTED} />
-                </Pressable>
-              )}
-            />
-          )}
-        </View>
-      </SlideRightModal>
 
       <SlideRightModal visible={showSearch} onClose={() => { setShowSearch(false); setSearchQuery(''); }}>
         <View style={[styles.searchModal, { paddingTop: insets.top, backgroundColor: colors.background }]}>
@@ -2037,30 +2041,56 @@ const connectV3Styles = StyleSheet.create({
   },
   liveCardEmpty: {
     marginHorizontal: 16,
-    marginTop: 18,
-    padding: 18,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.07)',
   },
   liveCardEmptyDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: '#22c55e',
-    marginBottom: 8,
   },
   liveCardEmptyTitle: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   liveCardEmptyBody: {
     color: CONNECT_TEXT_MUTED,
     fontSize: 12,
-    lineHeight: 17,
-    marginTop: 6,
+    lineHeight: 16,
+    marginTop: 4,
+  },
+
+  unifiedSegmentWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  unifiedSegmentBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  unifiedSegmentBtnActive: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  unifiedSegmentText: {
+    color: CONNECT_TEXT_MUTED,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  unifiedSegmentTextActive: {
+    color: '#fff',
+    fontWeight: '700',
   },
   section: {
     marginTop: 22,
@@ -2285,7 +2315,7 @@ const connectV3Styles = StyleSheet.create({
     fontWeight: '800',
   },
   inboxOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: CONNECT_BG,
     zIndex: 100,
   },

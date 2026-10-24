@@ -11,6 +11,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ForgeUnderstandingScreen } from './forge/ForgeUnderstandingScreen';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -35,6 +36,8 @@ interface ForgeDefenseGameProps {
    * status line replaces the full bottom bar.
    */
   embedded?: boolean;
+  /** Reuse the signature forge animation with stage-specific copy. */
+  experience?: 'understanding' | 'forging';
 }
 
 const FRAME_MS = 1000 / 24;
@@ -56,7 +59,25 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
   generationPhase,
   generationStatusMessage,
   embedded = false,
+  experience = 'forging',
 }) => {
+  if (experience === 'understanding') {
+    return (
+      <ForgeUnderstandingScreen
+        prompt={prompt}
+        activeStep={activeStep}
+        mascotMessage={
+          generationStatusMessage ||
+          cookingStatusLines[activeStep % cookingStatusLines.length] ||
+          'Exploring a few different directions for your game...'
+        }
+        onClose={onCancel}
+        onRetry={onRetry}
+        errorMessage={errorMessage}
+      />
+    );
+  }
+
   const insets = useSafeAreaInsets();
   const [frame, setFrame] = useState(0);
   // Measured size of the parent card when embedded.
@@ -82,12 +103,14 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
     : Math.max(SCREEN_HEIGHT - insets.top - bottomBarReserve - 62, 360);
   const time = frame / 24;
 
-  const warm = labsMode ? '#4CFFB8' : '#FFB45E';
-  const warmSoft = labsMode ? '#A6FFE0' : '#FFE3AF';
-  const cold = labsMode ? '#86FFF6' : '#99D8FF';
-  const inkTop = labsMode ? '#04110E' : '#080C16';
-  const inkMid = labsMode ? '#09161A' : '#10192B';
-  const inkBottom = labsMode ? '#04070F' : '#070B14';
+  // Preserve the recognizable forge motion, but bring it into GameTok's
+  // purple/cyan visual language.
+  const warm = '#A855F7';
+  const warmSoft = '#D8B4FE';
+  const cold = '#67E8F9';
+  const inkTop = '#090616';
+  const inkMid = '#100A22';
+  const inkBottom = '#05040D';
 
   const hasBackendProgress = typeof generationProgress === 'number';
   const progress = hasBackendProgress ? clamp(generationProgress, 0, 100) : 0;
@@ -158,7 +181,8 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
           ? 'Shaping the feel'
           : 'Finishing the magic';
 
-  const fallbackStepChip = activeStep === 0
+  const fallbackStepChip =
+    activeStep === 0
     ? 'World layout'
     : activeStep === 1
       ? 'Rules and loops'
@@ -181,7 +205,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
           : undefined
       }
     >
-      <LinearGradient colors={[inkTop, inkMid, inkBottom]} style={StyleSheet.absoluteFillObject} />
+      <LinearGradient colors={[inkTop, inkMid, inkBottom]} style={StyleSheet.absoluteFill} />
 
       {!embedded && (
         <Animated.View entering={FadeIn.duration(240)} style={styles.header}>
@@ -200,10 +224,10 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
 
       <View style={[styles.stage, embedded && styles.stageEmbedded, { height: stageHeight }]}>
         <LinearGradient
-          colors={labsMode ? ['#0E211B', '#0B121A'] : ['#111B30', '#0B111C']}
+          colors={['#160C2E', '#081421']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         <LinearGradient
@@ -235,7 +259,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
         />
 
         <LinearGradient
-          colors={['rgba(255,180,96,0)', 'rgba(255,180,96,0.06)', 'rgba(255,180,96,0)']}
+          colors={['rgba(168,85,247,0)', 'rgba(168,85,247,0.12)', 'rgba(103,232,249,0)']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.centerGlow}
@@ -387,8 +411,8 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
                 width: shard.width,
                 height: shard.height,
                 transform: [{ rotate: shard.rotate }],
-                backgroundColor: shard.active ? 'rgba(255,227,175,0.22)' : 'rgba(255,255,255,0.08)',
-                borderColor: shard.active ? 'rgba(255,227,175,0.5)' : 'rgba(255,255,255,0.12)',
+                backgroundColor: shard.active ? 'rgba(216,180,254,0.24)' : 'rgba(255,255,255,0.08)',
+                borderColor: shard.active ? 'rgba(216,180,254,0.58)' : 'rgba(255,255,255,0.12)',
                 opacity: shard.active ? 0.95 : 0.55,
               },
             ]}
@@ -428,31 +452,36 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
             style={styles.progressPanelSheen}
           />
           <View style={styles.panelTopRow}>
-            <View>
-              <Text style={styles.panelLabel}>ASSEMBLY PROGRESS</Text>
-              <Text style={styles.panelHeadline}>
-                {hasBackendProgress ? `${Math.round(progress)}% complete` : 'Waiting for backend'}
-              </Text>
-            </View>
-            <View style={styles.panelChip}>
-              <Text style={styles.panelChipText}>{stepChip}</Text>
-            </View>
-          </View>
-          <View style={styles.progressTrack}>
-            <LinearGradient
-              colors={[warm, warmSoft]}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={[styles.progressFill, { width: `${progress}%` }]}
-            />
-          </View>
-          <View style={styles.energyRow}>
-            <Text style={styles.energyLabel}>Backend signal</Text>
-            <View style={styles.energyMeter}>
-              <View style={[styles.progressFillSoft, { width: hasBackendProgress ? `${progress}%` : '0%', backgroundColor: cold }]} />
-            </View>
-            <Text style={styles.energyValue}>{hasBackendProgress ? 'live' : 'waiting'}</Text>
-          </View>
+                <View>
+                  <Text style={styles.panelLabel}>ASSEMBLY PROGRESS</Text>
+                  <Text style={styles.panelHeadline}>
+                    {hasBackendProgress ? `${Math.round(progress)}% complete` : 'Preparing the forge'}
+                  </Text>
+                </View>
+                <View style={styles.panelChip}>
+                  <Text style={styles.panelChipText}>{stepChip}</Text>
+                </View>
+              </View>
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={[warm, warmSoft]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={[styles.progressFill, { width: `${progress}%` }]}
+                />
+              </View>
+              <View style={styles.energyRow}>
+                <Text style={styles.energyLabel}>Backend signal</Text>
+                <View style={styles.energyMeter}>
+                  <View
+                    style={[
+                      styles.progressFillSoft,
+                      { width: hasBackendProgress ? `${progress}%` : '0%', backgroundColor: cold },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.energyValue}>{hasBackendProgress ? 'live' : 'waiting'}</Text>
+              </View>
         </View>
       </View>
 
@@ -542,7 +571,7 @@ export const ForgeDefenseGame: React.FC<ForgeDefenseGameProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#08101B',
     zIndex: 99999,
   },
@@ -645,11 +674,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
   },
   stageShell: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 24,
   },
   stageVignette: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   leftAtmosphere: {
     position: 'absolute',
@@ -784,8 +813,8 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,224,161,0.9)',
-    shadowColor: '#FFD27D',
+    backgroundColor: 'rgba(216,180,254,0.94)',
+    shadowColor: '#A855F7',
     shadowOpacity: 0.5,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
@@ -804,7 +833,7 @@ const styles = StyleSheet.create({
     height: 132,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,228,176,0.12)',
+    borderColor: 'rgba(216,180,254,0.18)',
   },
   shard: {
     position: 'absolute',
@@ -814,6 +843,28 @@ const styles = StyleSheet.create({
   mote: {
     position: 'absolute',
     backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  understandingSignal: {
+    position: 'absolute',
+    width: 92,
+    alignItems: 'center',
+    gap: 6,
+  },
+  understandingIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,12,28,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(192,132,252,0.28)',
+  },
+  understandingLabel: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   copyWrap: {
     position: 'absolute',
@@ -859,8 +910,53 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
   },
+  understandingPanel: {
+    paddingVertical: 14,
+  },
+  understandingSteps: {
+    gap: 10,
+  },
+  understandingStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepState: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepStateComplete: {
+    backgroundColor: '#67E8A5',
+    borderColor: '#67E8A5',
+  },
+  stepStateCurrent: {
+    borderColor: '#C084FC',
+    shadowColor: '#A855F7',
+    shadowOpacity: 0.7,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  stepStateDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#C084FC',
+  },
+  understandingStepText: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  understandingStepTextActive: {
+    color: 'rgba(255,255,255,0.88)',
+  },
   progressPanelSheen: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   panelTopRow: {
     flexDirection: 'row',

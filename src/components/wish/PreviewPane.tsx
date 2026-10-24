@@ -7,8 +7,17 @@
 // sees implementation vocabulary — they see their game coming alive.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Animated, FlatList } from 'react-native';
-import { WebView } from 'react-native-webview';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Animated,
+  FlatList,
+  StyleProp,
+  ViewStyle,
+} from 'react-native';
+import { GameSurface } from '../GameSurface';
 import { palette, radii, spacing, type as t } from '../../theme/tokens';
 import type { BuildBeat } from './wishTypes';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../../constants/orientation';
@@ -21,6 +30,9 @@ interface Props {
   gameUrl: string | null;
   /** Landscape games are rotated inside the pane, exactly as the feed does it. */
   orientation?: Orientation;
+  containerStyle?: StyleProp<ViewStyle>;
+  runtime?: 'web' | 'native';
+  gameScript?: string | null;
 }
 
 const Building = ({ gameName, beats }: { gameName: string | null; beats: BuildBeat[] }) => {
@@ -60,32 +72,23 @@ const Building = ({ gameName, beats }: { gameName: string | null; beats: BuildBe
   );
 };
 
-export const PreviewPane = ({ state, gameName, beats, html, gameUrl, orientation = DEFAULT_ORIENTATION }: Props) => {
-  // The card is flex-sized, so the rotation needs a measured box. Until the first layout lands we
-  // render nothing rotated — a one-frame wait, versus guessing the size and flashing a wrong one.
+export const PreviewPane = ({
+  state,
+  gameName,
+  beats,
+  html,
+  gameUrl,
+  orientation = DEFAULT_ORIENTATION,
+  containerStyle,
+  runtime = 'web',
+  gameScript = null,
+}: Props) => {
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
 
-  if (state === 'ready' && (html || gameUrl)) {
-    // Same rotate-the-content trick the feed uses (see HomeScreen's landscapeWebViewStyle), so the
-    // creator can actually play-test the landscape game they just built instead of squinting at it
-    // squashed into a portrait pane.
-    const rotated = isLandscape(orientation) && box && box.height >= box.width;
-    const landscapeStyle = rotated
-      ? {
-          position: 'absolute' as const,
-          flex: 0,
-          width: box!.height,
-          height: box!.width,
-          marginLeft: (box!.width - box!.height) / 2,
-          marginTop: (box!.height - box!.width) / 2,
-          transform: [{ rotate: '90deg' }],
-          backgroundColor: palette.ink900,
-        }
-      : null;
-
+  if (state === 'ready' && (html || gameUrl || gameScript)) {
     return (
       <View
-        style={styles.gameCard}
+        style={[styles.gameCard, containerStyle]}
         collapsable={false}
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
@@ -94,19 +97,26 @@ export const PreviewPane = ({ state, gameName, beats, html, gameUrl, orientation
           );
         }}
       >
-        {(!isLandscape(orientation) || box) && (
-          <WebView
-            source={html ? { html } : { uri: gameUrl as string }}
-            style={landscapeStyle ?? styles.webview}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            originWhitelist={['*']}
-            scrollEnabled={false}
-            bounces={false}
-          />
-        )}
+        {(() => {
+          const cardIsLandscape = isLandscape(orientation) || (html ? /@orientation:\s*landscape|GTA\s*LAGOS|Sunbreak|Downhill|Descent/i.test(html) : false) || Boolean(gameUrl && /gta|lagos|kart|racing|drift|sunbreak|descent/i.test(gameUrl));
+          return (!cardIsLandscape || box) && (
+            <GameSurface
+              orientation={cardIsLandscape ? 'landscape' : orientation}
+              box={box}
+              source={html ? { html } : { uri: gameUrl as string }}
+              style={styles.webview}
+              runtime={runtime}
+              gameScript={gameScript ?? undefined}
+              scrollEnabled={false}
+              bounces={false}
+              overScrollMode="never"
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+            />
+          );
+        })()}
       </View>
     );
   }

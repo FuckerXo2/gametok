@@ -202,21 +202,6 @@ export const GameActionRail = ({
         <AnimatedLikeButton isLiked={liked} likeCount={likeCount} onPress={handleLike} styles={styles} />
         <AnimatedCommentButton onPress={() => openSheet(setShowComments)} commentCount={0} styles={styles} />
         <AnimatedShareButton onPress={() => openSheet(setShowShare)} shareCount={shareCount} styles={styles} />
-        {onRemix ? (
-          <TouchableOpacity
-            style={styles.actionButton}
-            activeOpacity={0.9}
-            onPress={() => {
-              try {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              } catch {}
-              onRemix();
-            }}
-          >
-            <Ionicons name="git-branch" size={30} color={LoopsColors.white} />
-            <Text style={styles.actionCount}>Remix</Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
 
       <CommentsModal

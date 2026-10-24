@@ -2,25 +2,18 @@ import { GameConfig } from '../types';
 
 export const GAMES: GameConfig[] = [
   {
-    id: 'pacman',
-    name: 'Pac-Man',
-    description: 'Eat dots, avoid ghosts! Classic arcade action 👻',
-    color: '#FFFF00',
-    icon: '🟡',
-  },
-  {
-    id: 'fruit-slicer',
-    name: 'Fruit Slicer',
-    description: 'Swipe to slice fruits! Avoid bombs 💣',
-    color: '#ff6b6b',
-    icon: '🍉',
+    id: 'no-rules-fc',
+    name: 'No Rules FC',
+    description: '5v5 hero football. No ref, no fouls, every hero has a super.',
+    color: '#ff3a6a',
+    icon: '⚽',
   },
 ];
 
 export const getRandomGame = (): GameConfig => {
-  return GAMES[Math.floor(Math.random() * GAMES.length)];
+  return GAMES[0];
 };
 
 export const getGameById = (id: string): GameConfig | undefined => {
-  return GAMES.find(game => game.id === id);
+  return GAMES.find(game => game.id === id) || GAMES[0];
 };

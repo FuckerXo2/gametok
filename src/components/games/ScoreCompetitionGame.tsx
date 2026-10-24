@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   gameContainer: { flex: 1, borderRadius: 12, overflow: 'hidden' },
   webview: { flex: 1 },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.8)',

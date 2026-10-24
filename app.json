@@ -3,35 +3,24 @@
     "name": "GameTOK",
     "slug": "gametok",
     "scheme": "gametok",
-    "version": "2.1.2",
-    "orientation": "portrait",
-    "newArchEnabled": false,
+    "version": "2.1.5",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#000000"
-    },
     "assetBundlePatterns": [
       "**/*"
-    ],
-    "fonts": [
-      "./assets/fonts/graphik_arabic.otf",
-      "./assets/fonts/graphik_arabic_bold.otf",
-      "./assets/fonts/graphik_arabic_medium.otf",
-      "./assets/fonts/graphik_arabic_semibold.otf"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.olasubomi.gametok",
-      "buildNumber": "54",
+      "buildNumber": "57",
       "associatedDomains": [
         "applinks:gametok.co"
       ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryUsageDescription": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."
+        "NSPhotoLibraryUsageDescription": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you.",
+        "NSMicrophoneUsageDescription": "GameTOK uses your microphone for voice chat in multiplayer games."
       }
     },
     "android": {
@@ -44,7 +33,7 @@
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 54
+      "versionCode": 57
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -54,7 +43,7 @@
       [
         "expo-av",
         {
-          "microphonePermission": false
+          "microphonePermission": "GameTOK uses your microphone for voice chat in multiplayer games."
         }
       ],
       "expo-web-browser",
@@ -69,6 +58,36 @@
         "expo-image-picker",
         {
           "photosPermission": "GameTOK needs access to your photo library so you can choose a profile picture to personalize your account and help friends recognize you."
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/graphik_arabic.otf",
+            "./assets/fonts/graphik_arabic_bold.otf",
+            "./assets/fonts/graphik_arabic_medium.otf",
+            "./assets/fonts/graphik_arabic_semibold.otf"
+          ]
+        }
+      ],
+      "expo-image",
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#000000"
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
         }
       ]
     ],

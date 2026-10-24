@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   storyImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   topGradient: {
     position: 'absolute',

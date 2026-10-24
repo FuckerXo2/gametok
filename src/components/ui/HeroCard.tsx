@@ -38,7 +38,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
     <Pressable onPress={onPress} style={[styles.shadowWrap, style]}>
       <View style={styles.card}>
         {variant === 'image' && imageSource ? (
-          <Image source={imageSource} style={StyleSheet.absoluteFillObject} />
+          <Image source={imageSource} style={StyleSheet.absoluteFill} />
         ) : null}
         <LinearGradient
           colors={
@@ -48,7 +48,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
         {variant === 'gradient' && imageSource ? (
           <Image source={imageSource} style={styles.heroImage} resizeMode="cover" />

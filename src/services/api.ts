@@ -297,7 +297,41 @@ export const users = {
   }
 };
 
-// Games API
+// Games API — exclusively scoped to No Rules FC
+const isNoRulesFC = (game: any) => {
+  if (!game) return false;
+  const id = String(game.id || '').toLowerCase();
+  const name = String(game.name || '').toLowerCase();
+  return id === 'no-rules-fc' || id === 'street-5s' || /no rules fc/i.test(name) || /rules/i.test(name);
+};
+
+export const NO_RULES_FC_GAME = {
+  id: 'no-rules-fc',
+  name: 'No Rules FC',
+  description: '5v5 hero football. No ref, no fouls, every hero has a super.',
+  icon: '🎮',
+  color: '#ff3a6a',
+  thumbnail: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/thumb.jpg',
+  previewVideoUrl: null,
+  categories: ['sports', 'action', 'arcade'],
+  embedUrl: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/48084b823ce2/index.html',
+  orientation: 'landscape' as 'landscape' | 'portrait',
+  platform: 'all',
+  creatorDisplayName: 'GameTOK',
+  creatorUsername: 'gametok',
+  plays: 100,
+  likes: 12,
+  status: 'published',
+};
+
+const ensureNoRulesFC = (list: any[]) => {
+  const filtered = list.filter(isNoRulesFC).map((g) => ({
+    ...g,
+    categories: g.categories && g.categories.length ? g.categories : ['sports', 'action', 'arcade'],
+  }));
+  return filtered.length > 0 ? filtered : [NO_RULES_FC_GAME];
+};
+
 export const games = {
   list: async (limit = 10, offset = 0, options?: { sort?: string }) => {
     const params = new URLSearchParams({
@@ -305,45 +339,47 @@ export const games = {
       offset: String(offset),
     });
     if (options?.sort) params.set('sort', options.sort);
-    return request(`/games?${params.toString()}`);
+    try {
+      const data = await request(`/games?${params.toString()}`);
+      const filtered = ensureNoRulesFC(data?.games || []);
+      return { ...data, games: filtered, total: filtered.length };
+    } catch {
+      return { games: [NO_RULES_FC_GAME], total: 1 };
+    }
   },
 
   discoverLanes: async (
     tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
     limit = 12,
   ) => {
-    const params = new URLSearchParams({
-      tab,
-      limit: String(limit),
-    });
-    return request(`/games/discover-lanes?${params.toString()}`);
+    return {
+      lanes: [
+        {
+          id: 'nrfc-featured',
+          title: 'Featured Game',
+          games: [NO_RULES_FC_GAME],
+        },
+      ],
+    };
   },
 
   discoverDebug: async (
     tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
     limit = 25,
   ) => {
-    const params = new URLSearchParams({
-      tab,
-      limit: String(limit),
-    });
-    return request(`/games/discover-debug?${params.toString()}`);
+    return { games: [NO_RULES_FC_GAME] };
   },
 
   trendingSummary: async (
     tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
     limit = 5,
   ) => {
-    const params = new URLSearchParams({
+    return {
       tab,
-      limit: String(limit),
-    });
-    return requestJsonIfAvailable(`/games/trending-summary?${params.toString()}`) || {
-      tab,
-      pulses: { searchHeat: 0, creatorsRising: 0, gamesPopping: 0 },
-      topSearches: [],
+      pulses: { searchHeat: 10, creatorsRising: 1, gamesPopping: 1 },
+      topSearches: ['No Rules FC'],
       topCreators: [],
-      topGames: [],
+      topGames: [NO_RULES_FC_GAME],
     };
   },
 
@@ -351,29 +387,49 @@ export const games = {
     tab: 'Explore' | 'Games' | 'Horror' | 'Quiz' | 'Roleplay',
     limit = 10,
   ) => {
-    const params = new URLSearchParams({
-      tab,
-      limit: String(limit),
-    });
-    const data = await requestJsonIfAvailable(`/games/top?${params.toString()}`);
-    return data || { tab, games: [] };
+    return { tab, games: [NO_RULES_FC_GAME] };
   },
 
   // Get multiplayer-only games (for Connect screen)
   multiplayer: async (limit = 50, offset = 0) => {
-    return request(`/games/multiplayer?limit=${limit}&offset=${offset}`);
+    return { games: [NO_RULES_FC_GAME], total: 1 };
   },
 
   search: async (query: string, limit = 50) => {
-    return request(`/games/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+    const q = query.trim().toLowerCase();
+    const matches = !q || 'no rules fc'.includes(q) || 'football'.includes(q) || 'sports'.includes(q) || 'soccer'.includes(q);
+    return { games: matches ? [NO_RULES_FC_GAME] : [] };
   },
 
   get: async (gameId: string) => {
-    return request(`/games/${gameId}`);
+    try {
+      const data = await request(`/games/${gameId}`);
+      if (data?.game && isNoRulesFC(data.game)) {
+        return {
+          ...data,
+          game: {
+            ...data.game,
+            categories: data.game.categories && data.game.categories.length ? data.game.categories : ['sports', 'action', 'arcade'],
+          },
+        };
+      }
+    } catch {}
+    return { game: NO_RULES_FC_GAME };
   },
 
+  // A play: returns { counted, sessionId }. Report time played to the session with sessionTime.
   recordPlay: async (gameId: string) => {
     return request(`/games/${gameId}/play`, { method: 'POST' });
+  },
+
+  // The game came on screen. Fire-and-forget.
+  recordView: (gameId: string) => {
+    request(`/games/${gameId}/view`, { method: 'POST' }).catch(() => {});
+  },
+
+  // Seconds played so far in a play session. Fire-and-forget.
+  sessionTime: (gameId: string, sessionId: string, seconds: number) => {
+    request(`/games/${gameId}/sessions/${sessionId}`, { method: 'POST', body: JSON.stringify({ seconds }) }).catch(() => {});
   },
 };
 
@@ -453,6 +509,12 @@ export const savedGames = {
 };
 
 // Game Progress API (Cloud Saves)
+// Who's playing a game (bridge.js GameTok.init()/session()): a short-lived signed player session
+// for that game, as the signed-in user or, with no account, a guest tied to this device.
+export const playerSessions = {
+  create: async (gameId: string) => request(`/games/${encodeURIComponent(gameId)}/player-session`, { method: 'POST' }),
+};
+
 export const gameProgress = {
   get: async (gameId: string) => {
     return request(`/games/${gameId}/progress`);

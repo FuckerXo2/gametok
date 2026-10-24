@@ -60,7 +60,7 @@ export const ScoreLobbyPanel: React.FC<ScoreLobbyPanelProps> = ({ gameId, active
                     <LinearGradient
                         colors={['rgba(168,85,247,0.32)', 'rgba(17,17,23,0.92)', 'rgba(8,8,12,0.96)']}
                         locations={[0, 0.4, 1]}
-                        style={StyleSheet.absoluteFillObject}
+                        style={StyleSheet.absoluteFill}
                     />
                     <View style={styles.panelHeader}>
                         <View style={styles.panelHeaderLeft}>

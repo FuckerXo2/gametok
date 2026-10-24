@@ -278,7 +278,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.6)' },
   sheet: { height: SHEET_HEIGHT, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   handleArea: { alignItems: 'center', paddingVertical: 12 },
   handle: { width: 40, height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2 },

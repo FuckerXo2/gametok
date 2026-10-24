@@ -1,17 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AppState, View, StyleSheet, Pressable, Text, Animated as RNAnimated } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import React, { useEffect } from 'react';
+import { View, StyleSheet, Pressable, Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
-import { useNavigation } from '../../App';
 import { Avatar } from './Avatar';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -22,10 +18,6 @@ interface BottomNavProps {
   activeTab: TabName;
   onTabPress: (tab: TabName) => void;
 }
-
-// The deck coach tip is onboarding, not chrome: show it for the first few app opens and then stop.
-const DECK_COACH_SHOWS_KEY = '@gametok_deck_coach_shows';
-const DECK_COACH_MAX_SHOWS = 3;
 
 const NAV_WHITE = '#ffffff';
 const BRAND_PURPLE = '#a855f7';
@@ -142,236 +134,12 @@ const CreateButton = ({ onPress }: { onPress: () => void }) => {
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { isGameDeckActive, setIsGameDeckActive, isHudHidden, setIsHudHidden, triggerGameRestart, triggerGameSkip } = useNavigation();
-  const [showDeckCoach, setShowDeckCoach] = useState(false);
-  const [hasShownDeckCoachThisOpen, setHasShownDeckCoachThisOpen] = useState(false);
-  // How many app opens have shown the deck coach. Persisted, because the tip is only useful while
-  // the controls are unfamiliar — it used to reset on every foreground and so reappeared forever.
-  const deckCoachShowsRef = useRef<number | null>(null);
-  const coachOpacity = useRef(new RNAnimated.Value(0)).current;
-  const coachScale = useRef(new RNAnimated.Value(0.96)).current;
-  const coachGlowOpacity = useSharedValue(0.18);
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') {
-        setHasShownDeckCoachThisOpen(false);
-        setShowDeckCoach(false);
-        coachOpacity.stopAnimation();
-        coachScale.stopAnimation();
-        coachOpacity.setValue(0);
-        coachScale.setValue(0.96);
-        coachGlowOpacity.value = 0;
-      }
-    });
-    return () => sub.remove();
-  }, [coachGlowOpacity, coachOpacity]);
-
-  useEffect(() => {
-    if (activeTab !== 'home' || !isGameDeckActive || hasShownDeckCoachThisOpen) return;
-
-    // Claim this app-open synchronously so the async read below cannot race a second trigger.
-    setHasShownDeckCoachThisOpen(true);
-
-    (async () => {
-      let shows = deckCoachShowsRef.current;
-      if (shows === null) {
-        const stored = await AsyncStorage.getItem(DECK_COACH_SHOWS_KEY).catch(() => null);
-        shows = Number(stored) || 0;
-      }
-      if (shows >= DECK_COACH_MAX_SHOWS) {
-        deckCoachShowsRef.current = shows;
-        return;
-      }
-      deckCoachShowsRef.current = shows + 1;
-      AsyncStorage.setItem(DECK_COACH_SHOWS_KEY, String(shows + 1)).catch(() => {});
-
-      coachOpacity.stopAnimation();
-      coachScale.stopAnimation();
-      coachOpacity.setValue(0);
-      coachScale.setValue(0.96);
-      coachGlowOpacity.value = 0;
-      setShowDeckCoach(true);
-    })();
-  }, [activeTab, coachGlowOpacity, coachOpacity, coachScale, hasShownDeckCoachThisOpen, isGameDeckActive]);
-
-  useEffect(() => {
-    if (!showDeckCoach) return;
-    coachOpacity.stopAnimation();
-    coachScale.stopAnimation();
-    coachOpacity.setValue(0);
-    coachScale.setValue(0.96);
-    coachGlowOpacity.value = 0.12;
-    RNAnimated.timing(coachOpacity, {
-      toValue: 1,
-      duration: 850,
-      useNativeDriver: true,
-    }).start();
-    RNAnimated.sequence([
-      RNAnimated.timing(coachScale, {
-        toValue: 1,
-        duration: 850,
-        useNativeDriver: true,
-      }),
-      RNAnimated.loop(
-        RNAnimated.sequence([
-          RNAnimated.timing(coachScale, {
-            toValue: 1.025,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-          RNAnimated.timing(coachScale, {
-            toValue: 1,
-            duration: 900,
-            useNativeDriver: true,
-          }),
-        ]),
-      ),
-    ]).start();
-    coachGlowOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.32, { duration: 780 }),
-        withTiming(0.12, { duration: 780 }),
-      ),
-      -1,
-      false,
-    );
-    const fadeOut = setTimeout(() => {
-      coachScale.stopAnimation();
-      RNAnimated.timing(coachOpacity, {
-        toValue: 0,
-        duration: 650,
-        useNativeDriver: true,
-      }).start();
-      RNAnimated.timing(coachScale, {
-        toValue: 0.98,
-        duration: 650,
-        useNativeDriver: true,
-      }).start();
-      coachGlowOpacity.value = withTiming(0, { duration: 420 });
-    }, 4350);
-    const hide = setTimeout(() => setShowDeckCoach(false), 5000);
-    return () => {
-      coachScale.stopAnimation();
-      clearTimeout(fadeOut);
-      clearTimeout(hide);
-    };
-  }, [coachGlowOpacity, coachOpacity, coachScale, showDeckCoach]);
-
-  const deckCoachAnimatedStyle = {
-    opacity: coachOpacity,
-    transform: [{ scale: coachScale }],
-  };
-  const deckCoachGlowAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: coachGlowOpacity.value,
-  }));
-
-  const left: TabSpec[] = [
-    { name: 'home', icon: 'home-outline', iconActive: 'home', label: 'Home' },
-    { name: 'explore', icon: 'compass-outline', iconActive: 'compass', label: 'Explore' },
-  ];
-
-  const right: TabSpec[] = [
-    { name: 'connect', icon: 'people-outline', iconActive: 'people', label: 'Connect' },
+  const tabs: TabSpec[] = [
+    { name: 'home', icon: 'game-controller-outline', iconActive: 'game-controller', label: 'Games' },
+    { name: 'connect', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', label: 'Connect' },
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profile' },
   ];
-
-  // GAME DECK RENDER
-  if (activeTab === 'home' && isGameDeckActive) {
-    return (
-      <View style={styles.deckShell} pointerEvents="box-none">
-        {showDeckCoach && (
-          <RNAnimated.View
-            pointerEvents="none"
-            style={[
-              styles.deckCoach,
-              { bottom: (insets.bottom || 8) + 78 },
-              deckCoachAnimatedStyle,
-            ]}
-          >
-            <Animated.View
-              style={[styles.deckCoachGlow, deckCoachGlowAnimatedStyle]}
-            />
-            <Text style={styles.deckCoachText}>
-              Use the center controls to switch games or restart.
-            </Text>
-          </RNAnimated.View>
-        )}
-        <View
-          style={[
-            styles.container,
-            styles.gameDeckContainer,
-            { paddingBottom: insets.bottom || 8 },
-          ]}
-        >
-          {/* Left Anchor: Home Button acts as the 'More/Menu' button to show standard tabs */}
-          <Pressable 
-            style={[styles.deckSideBtn, noFocusRing]} 
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              // Toggle back to standard navigation
-              setIsGameDeckActive(false);
-              setIsHudHidden(false);
-            }}
-          >
-            <Ionicons name="home-outline" size={24} color={NAV_WHITE} />
-            <Text style={[styles.label, { color: NAV_WHITE }]}>Home</Text>
-          </Pressable>
-
-          {/* Faint divider between Home and media controls */}
-          <View style={{ width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 1 }} />
-
-          {/* Center: The Game Player Scroll Zone */}
-          <View style={styles.deckPlayerZone}>
-          <Pressable 
-            style={[styles.deckPlayerIcon, noFocusRing]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              triggerGameSkip('prev');
-            }}
-          >
-            <MaterialIcons name="skip-previous" size={32} color={NAV_WHITE} />
-          </Pressable>
-          
-          <Pressable 
-            style={[styles.deckPlayBtn, noFocusRing]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-              triggerGameRestart();
-            }}
-          >
-            <MaterialIcons name="replay" size={28} color="#000" />
-          </Pressable>
-          
-          <Pressable 
-            style={[styles.deckPlayerIcon, noFocusRing]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              triggerGameSkip('next');
-            }}
-          >
-            <MaterialIcons name="skip-next" size={32} color={NAV_WHITE} />
-          </Pressable>
-          </View>
-
-          {/* Right Anchor: Toggle HUD Visibility */}
-            <Pressable 
-              style={[styles.deckSideBtn, noFocusRing]} 
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                setIsHudHidden(!isHudHidden);
-              }}
-            >
-              <FontAwesome5 
-                name={isHudHidden ? "chevron-up" : "chevron-down"} 
-                size={22} 
-                color={NAV_WHITE} 
-              />
-            </Pressable>
-        </View>
-      </View>
-    );
-  }
 
   // STANDARD TABS RENDER
   return (
@@ -381,19 +149,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
         { paddingBottom: insets.bottom || 8 },
       ]}
     >
-      {left.map((tab) => (
-        <NavTab
-          key={tab.name}
-          tab={tab}
-          isActive={activeTab === tab.name}
-          onPress={() => onTabPress(tab.name)}
-          user={user}
-        />
-      ))}
-
-      <CreateButton onPress={() => onTabPress('create')} />
-
-      {right.map((tab) => (
+      {tabs.map((tab) => (
         <NavTab
           key={tab.name}
           tab={tab}
@@ -480,85 +236,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  
-  /* GAME DECK STYLES */
-  deckShell: {
-    position: 'relative',
-    zIndex: 10000,
-    elevation: 10000,
-  },
-  deckCoach: {
-    position: 'absolute',
-    alignSelf: 'center',
-    maxWidth: '86%',
-    minHeight: 40,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.72)',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    shadowColor: '#fff',
-    shadowOpacity: 0.38,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
-    overflow: 'visible',
-  },
-  deckCoachGlow: {
-    position: 'absolute',
-    top: -5,
-    left: -5,
-    right: -5,
-    bottom: -5,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  deckCoachText: {
-    color: '#111',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '800',
-    letterSpacing: 0,
-    textAlign: 'center',
-  },
-  gameDeckContainer: {
-    backgroundColor: '#0a0b16', // Competitor uses a subtle bluish/purplish black
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 0,
-  },
-  deckSideBtn: {
-    width: '15%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  deckPlayerZone: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 32,
-  },
-  deckPlayerZoneHidden: {
-    flex: 1,
-  },
-  deckPlayerIcon: {
-    padding: 10,
-  },
-  deckPlayBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#a855f7',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
   },
 });

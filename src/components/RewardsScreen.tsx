@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
   missionProgressFill: { height: '100%', borderRadius: 2 },
   missionProgressText2: { ...FontStyles.caption, color: LoopsColors.white50, textAlign: 'center' },
   claimOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: LoopsColors.coinGold + 'E6',
     borderRadius: 16,
     justifyContent: 'center',
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
   achievementReward: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   achievementRewardText: { color: LoopsColors.coinGold, fontSize: 11, fontWeight: '700' },
   lockedOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: LoopsColors.black40,
     borderRadius: 16,
     justifyContent: 'center',
@@ -837,7 +837,7 @@ const styles = StyleSheet.create({
   signUpText: { color: LoopsColors.white, fontSize: 17, fontWeight: '700' },
 
   // Auth overlay - minimal
-  authOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+  authOverlay: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   authTitle: { color: LoopsColors.white, fontSize: 20, fontWeight: '700', marginBottom: 20 },
   authBtn: { width: 200, borderRadius: 25, overflow: 'hidden' },
   authBtnGradient: { paddingVertical: 14, alignItems: 'center' },
