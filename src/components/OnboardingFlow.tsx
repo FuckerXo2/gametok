@@ -226,12 +226,6 @@ const GameTokLogo: React.FC = () => {
         <SvgText x="195" y="70" fontSize="48" fontWeight="900" fill="url(#tokGrad)" fontFamily="System">TOK</SvgText>
         <Rect x="70" y="80" width="195" height="4" rx="2" fill="url(#glowGrad)" />
       </Svg>
-      <Animated.Text
-        entering={FadeInDown.delay(800)}
-        style={styles.tagline}
-      >
-        PLAY • DRESS UP • HANG OUT
-      </Animated.Text>
     </Animated.View>
   );
 };

@@ -124,8 +124,6 @@ const GameTokLogo = () => {
         <Rect x="70" y="80" width="195" height="4" rx="2" fill="url(#glowGrad)" />
       </Svg>
 
-      {/* Tagline */}
-      <Text style={styles.tagline}>PLAY • DRESS UP • HANG OUT</Text>
     </Animated.View>
   );
 };
