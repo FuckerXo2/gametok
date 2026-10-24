@@ -515,6 +515,14 @@ export const playerSessions = {
   create: async (gameId: string) => request(`/games/${encodeURIComponent(gameId)}/player-session`, { method: 'POST' }),
 };
 
+// The player's 3D avatar, owned items and TokBux, on their account (backend src/avatar-router.js).
+// Prices are the server's; a purchase only counts once the server says so.
+export const avatarAccount = {
+  me: async () => request('/avatar/me'),
+  save: async (avatar: object) => request('/avatar/me', { method: 'PUT', body: JSON.stringify({ avatar }) }),
+  buy: async (itemId: string) => request('/avatar/buy', { method: 'POST', body: JSON.stringify({ itemId }) }),
+};
+
 export const gameProgress = {
   get: async (gameId: string) => {
     return request(`/games/${gameId}/progress`);

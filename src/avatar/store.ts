@@ -1,31 +1,92 @@
-// The saved avatar record, shared by every screen that shows it.
-// Saved on the phone for now; moving it to the player's account is the next step (see games/avatar-editor/BRIEF.md).
+// The player's avatar, owned items and TokBux, shared by every screen that shows them.
+// Signed in: the GameTok account is the truth (backend src/avatar-router.js); this phone keeps a copy so the
+// avatar shows at once and offline. Signed out: the avatar lives on this phone only, and only free items.
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AvatarRecord, normalizeAvatar } from './catalog';
+import { avatarAccount } from '../services/api';
+import { AVATAR_ITEMS, AvatarRecord, normalizeAvatar } from './catalog';
 
 const KEY = 'gametok.avatar.v1';
 
-let current: AvatarRecord | null = null;
-const listeners = new Set<(r: AvatarRecord) => void>();
-const loaded = AsyncStorage.getItem(KEY)
-  .then((s) => { current = normalizeAvatar(s ? JSON.parse(s) : null); })
-  .catch(() => { current = normalizeAvatar(null); })
-  .then(() => listeners.forEach((l) => l(current!)));
-
-export function saveAvatar(r: AvatarRecord) {
-  current = r;
-  listeners.forEach((l) => l(r));
-  AsyncStorage.setItem(KEY, JSON.stringify(r)).catch(() => {});
+export interface AvatarAccount {
+  avatar: AvatarRecord;
+  owned: string[];
+  tokbux: number;
+  prices: Record<string, number>;     // the server's; the app's catalog prices until it has answered
+  signedIn: boolean;
 }
 
-// null until the saved record has been read
-export function useAvatar(): AvatarRecord | null {
-  const [r, setR] = useState(current);
+let current: AvatarAccount | null = null;
+const listeners = new Set<(a: AvatarAccount) => void>();
+const emit = () => listeners.forEach((l) => l(current!));
+const set = (patch: Partial<AvatarAccount>) => { current = { ...current!, ...patch }; emit(); };
+
+const loaded = AsyncStorage.getItem(KEY)
+  .then((s) => normalizeAvatar(s ? JSON.parse(s) : null))
+  .catch(() => normalizeAvatar(null))
+  .then((avatar) => {
+    current = { avatar, owned: [], tokbux: 0, prices: Object.fromEntries(AVATAR_ITEMS.map((i) => [i.id, i.price])), signedIn: false };
+    emit();
+    return syncAvatar();
+  });
+
+// paid items this record wears that aren't owned: taken off
+function onlyOwned(r: AvatarRecord, owned: string[], prices: Record<string, number>): AvatarRecord {
+  let out = r;
+  for (const item of AVATAR_ITEMS) if (item.isWorn?.(out) && item.takeOff && (prices[item.id] ?? item.price) > 0 && !owned.includes(item.id)) out = item.takeOff(out);
+  return out;
+}
+
+// Pull the account's avatar (call again after signing in or out). A first sign-in uploads this phone's avatar.
+export async function syncAvatar() {
+  try {
+    const me = await avatarAccount.me();
+    if (me.avatar) {
+      set({ avatar: normalizeAvatar(me.avatar), owned: me.owned, tokbux: me.tokbux, prices: me.prices, signedIn: true });
+      AsyncStorage.setItem(KEY, JSON.stringify(current!.avatar)).catch(() => {});
+    } else {
+      const avatar = onlyOwned(current!.avatar, me.owned, me.prices);
+      set({ avatar, owned: me.owned, tokbux: me.tokbux, prices: me.prices, signedIn: true });
+      avatarAccount.save(avatar).catch(() => {});
+    }
+  } catch (e: any) {
+    if (e?.status === 401) set({ signedIn: false, owned: [], tokbux: 0 });   // otherwise offline: keep what we have
+  }
+}
+
+let saveT: ReturnType<typeof setTimeout> | null = null;
+export function saveAvatar(r: AvatarRecord) {
+  set({ avatar: r });
+  AsyncStorage.setItem(KEY, JSON.stringify(r)).catch(() => {});
+  if (!current!.signedIn) return;
+  if (saveT) clearTimeout(saveT);
+  saveT = setTimeout(() => { avatarAccount.save(r).catch(() => syncAvatar()); }, 600);   // refused: take the account's
+}
+
+// Spend TokBux on an item. Resolves to an error message, or null when it's theirs.
+export async function buyItem(itemId: string): Promise<string | null> {
+  if (!current?.signedIn) return 'Sign in to buy items';
+  try {
+    const me = await avatarAccount.buy(itemId);
+    set({ owned: me.owned, tokbux: me.tokbux, prices: me.prices });
+    return null;
+  } catch (e: any) {
+    if (e?.code === 'NOT_ENOUGH_TOKBUX') return e.message;
+    return 'Could not buy that. Check your connection and try again.';
+  }
+}
+
+// null until this phone's copy has been read
+export function useAvatarAccount(): AvatarAccount | null {
+  const [a, setA] = useState(current);
   useEffect(() => {
-    listeners.add(setR);
-    loaded.then(() => setR(current));
-    return () => { listeners.delete(setR); };
+    listeners.add(setA);
+    loaded.then(() => setA(current));
+    return () => { listeners.delete(setA); };
   }, []);
-  return r;
+  return a;
+}
+
+export function useAvatar(): AvatarRecord | null {
+  return useAvatarAccount()?.avatar ?? null;
 }

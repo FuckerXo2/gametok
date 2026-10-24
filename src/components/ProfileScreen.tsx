@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 
 import { useAuth } from '../context/AuthContext';
@@ -25,7 +24,7 @@ import { AvatarStage } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
 import { MyAvatarModal } from './MyAvatarModal';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Category, COLOR_SWATCHES, HAIR_SWATCHES } from '../avatar/catalog';
-import { saveAvatar, useAvatar } from '../avatar/store';
+import { buyItem, saveAvatar, syncAvatar, useAvatarAccount } from '../avatar/store';
 import { ShopModal } from './ShopModal';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { Avatar } from './Avatar';
@@ -33,8 +32,6 @@ import { TokBuxIcon } from './TokBuxIcon';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const TOKBUX_STORAGE_KEY = 'gametok_user_tokbux_balance';
-const OWNED_ITEMS_KEY = 'gametok.avatar.owned.v1';
 
 const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -53,14 +50,16 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const [stageMode, setStageMode] = useState<'marketplace' | 'customize'>('marketplace');
   const [activeCategory, setActiveCategory] = useState<Category>('all');
 
-  // Currency & Items. Starter items (price 0) are owned by everyone.
-  const [tokbux, setTokbux] = useState(1250);
-  const [boughtItems, setBoughtItems] = useState<string[]>([]);
+  // Avatar, owned items and TokBux: on the GameTok account (avatar/store.ts). Free items are everyone's.
+  const account = useAvatarAccount();
+  const saved = account?.avatar ?? null;
+  const tokbux = account?.tokbux ?? 0;
+  const priceOf = (item: AvatarItem) => account?.prices[item.id] ?? item.price;
   const [selectedItem, setSelectedItem] = useState<AvatarItem | null>(null);
-  const saved = useAvatar();
+  const [buying, setBuying] = useState(false);
   const [history, setHistory] = useState<{ undo: AvatarRecord[]; redo: AvatarRecord[] }>({ undo: [], redo: [] });
 
-  const isOwned = (item: AvatarItem) => item.price === 0 || boughtItems.includes(item.id);
+  const isOwned = (item: AvatarItem) => priceOf(item) === 0 || !!account?.owned.includes(item.id);
   const isWorn = (item: AvatarItem) => !!saved && !!item.isWorn?.(saved);
 
   // try-on: the stage shows the selected item on the player's own avatar before they buy or equip it
@@ -76,19 +75,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const [showAddFriends, setShowAddFriends] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
-
-  const loadUserData = async () => {
-    try {
-      const savedBal = await AsyncStorage.getItem(TOKBUX_STORAGE_KEY);
-      if (savedBal !== null) setTokbux(parseInt(savedBal, 10) || 1250);
-
-      const savedOwned = await AsyncStorage.getItem(OWNED_ITEMS_KEY);
-      if (savedOwned) setBoughtItems(JSON.parse(savedOwned));
-    } catch {}
-  };
+  // signing in or out switches whose avatar this is
+  useEffect(() => { syncAvatar(); }, [user?.id]);
 
   const commit = (next: AvatarRecord) => {
     if (!saved) return;
@@ -137,27 +125,27 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       return;
     }
 
-    // Purchase with TokBux, then wear it
-    if (tokbux < selectedItem.price) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert(
-        'Get More TokBux',
-        `You need ${selectedItem.price.toLocaleString()} TokBux to purchase ${selectedItem.name}.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Get TokBux', onPress: () => setShowShop(true) },
-        ]
-      );
+    // Buy with TokBux (the account decides), then wear it
+    if (!account?.signedIn) {
+      Alert.alert('Sign in to buy', 'Items you buy are kept on your GameTok account, so they follow you to every game and phone.');
       return;
     }
-
-    const newBal = tokbux - selectedItem.price;
-    const newBought = [...boughtItems, selectedItem.id];
-    setTokbux(newBal);
-    setBoughtItems(newBought);
-    if (selectedItem.wear) commit(selectedItem.wear(saved));
-    await AsyncStorage.setItem(TOKBUX_STORAGE_KEY, String(newBal));
-    await AsyncStorage.setItem(OWNED_ITEMS_KEY, JSON.stringify(newBought));
+    if (tokbux < priceOf(selectedItem)) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert('Not enough TokBux', `${selectedItem.name} costs ${priceOf(selectedItem).toLocaleString()} TokBux. You have ${tokbux.toLocaleString()}.`);
+      return;
+    }
+    if (buying) return;
+    setBuying(true);
+    const item = selectedItem, before = saved;
+    const err = await buyItem(item.id);
+    setBuying(false);
+    if (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Not bought', err);
+      return;
+    }
+    if (item.wear) commit(item.wear(before));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -166,7 +154,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
     if (stageMode === 'customize') pool = pool.filter(isOwned);
     if (activeCategory === 'all') return pool;
     return pool.filter((item) => item.category === activeCategory);
-  }, [stageMode, activeCategory, boughtItems]);
+  }, [stageMode, activeCategory, account]);
 
   const isSelectedOwned = !!selectedItem && isOwned(selectedItem);
   const isSelectedEquipped = !!selectedItem && isWorn(selectedItem);
@@ -409,12 +397,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
                     <View style={styles.cardPriceRow}>
                       {owned ? (
                         <Text style={styles.cardOwnedLabel}>
-                          {isEquipped ? '✓ Equipped' : item.price === 0 ? 'Free' : 'Owned'}
+                          {isEquipped ? '✓ Equipped' : priceOf(item) === 0 ? 'Free' : 'Owned'}
                         </Text>
                       ) : (
                         <>
                           <TokBuxIcon size={16} />
-                          <Text style={styles.cardPriceText}>{item.price}</Text>
+                          <Text style={styles.cardPriceText}>{priceOf(item)}</Text>
                         </>
                       )}
                     </View>
@@ -459,7 +447,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <TokBuxIcon size={22} />
                 <Text style={[styles.primaryBtnText, { fontSize: 18 }]}>
-                  {selectedItem?.price}
+                  {selectedItem && priceOf(selectedItem)}
                 </Text>
               </View>
             )}
@@ -484,7 +472,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
           setShowShop(false);
           setShowMyAvatar(true);
         }}
-        onBalanceChange={(b) => setTokbux(b)}
       />
 
       <MyAvatarModal

@@ -16,10 +16,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { TokBuxIcon } from './TokBuxIcon';
+import { useAvatarAccount } from '../avatar/store';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const TOKBUX_STORAGE_KEY = 'gametok_user_tokbux_balance';
 const OWNED_SKINS_KEY = 'gametok_user_owned_skins';
 const ACTIVE_SKIN_KEY = 'gametok_user_active_skin';
 
@@ -151,7 +151,9 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<ShopTab>('skins');
-  const [balance, setBalance] = useState<number>(1250);
+  // TokBux live on the GameTok account (avatar/store.ts). Buying TokBux, skins and emotes needs real payments: not yet.
+  const balance = useAvatarAccount()?.tokbux ?? 0;
+  const comingSoon = () => Alert.alert('Coming soon', 'This opens once payments are live. Avatar items can already be bought with TokBux in your Profile.');
   const [ownedSkins, setOwnedSkins] = useState<string[]>(['lagos-striker']);
   const [activeSkin, setActiveSkin] = useState<string>('lagos-striker');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -162,17 +164,6 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 
   const loadShopState = async () => {
     try {
-      const savedBalance = await AsyncStorage.getItem(TOKBUX_STORAGE_KEY);
-      if (savedBalance !== null) {
-        const val = parseInt(savedBalance, 10);
-        setBalance(isNaN(val) ? 1250 : val);
-        if (onBalanceChange) onBalanceChange(isNaN(val) ? 1250 : val);
-      } else {
-        await AsyncStorage.setItem(TOKBUX_STORAGE_KEY, '1250');
-        setBalance(1250);
-        if (onBalanceChange) onBalanceChange(1250);
-      }
-
       const savedOwned = await AsyncStorage.getItem(OWNED_SKINS_KEY);
       if (savedOwned) {
         setOwnedSkins(JSON.parse(savedOwned));
@@ -194,15 +185,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     }, 2400);
   };
 
-  const handleBuyTokBux = async (pack: TokBuxPack) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const addedAmount = pack.tokbux + (pack.bonus || 0);
-    const newBal = balance + addedAmount;
-    setBalance(newBal);
-    await AsyncStorage.setItem(TOKBUX_STORAGE_KEY, String(newBal));
-    if (onBalanceChange) onBalanceChange(newBal);
-    showToast(`+${addedAmount.toLocaleString()} TokBux Added! 🪙`);
-  };
+  const handleBuyTokBux = (_pack: TokBuxPack) => comingSoon();
 
   const handleBuySkin = async (skin: SkinItem) => {
     const isOwned = ownedSkins.includes(skin.id);
@@ -215,31 +198,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
       return;
     }
 
-    if (balance < skin.price) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert(
-        'Not Enough TokBux',
-        `You need ${skin.price.toLocaleString()} TokBux to unlock ${skin.name}. Would you like to get more TokBux?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Get TokBux', onPress: () => setActiveTab('tokbux') },
-        ]
-      );
-      return;
-    }
-
-    // Deduct and purchase
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const newBal = balance - skin.price;
-    const newOwned = [...ownedSkins, skin.id];
-    setBalance(newBal);
-    setOwnedSkins(newOwned);
-    setActiveSkin(skin.id);
-    await AsyncStorage.setItem(TOKBUX_STORAGE_KEY, String(newBal));
-    await AsyncStorage.setItem(OWNED_SKINS_KEY, JSON.stringify(newOwned));
-    await AsyncStorage.setItem(ACTIVE_SKIN_KEY, skin.id);
-    if (onBalanceChange) onBalanceChange(newBal);
-    showToast(`Unlocked ${skin.name}! 🎉`);
+    comingSoon();
   };
 
   return (
@@ -498,18 +457,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                   </View>
                   <Pressable
                     style={styles.emoteBuyBtn}
-                    onPress={() => {
-                      if (balance >= emote.price) {
-                        const newBal = balance - emote.price;
-                        setBalance(newBal);
-                        AsyncStorage.setItem(TOKBUX_STORAGE_KEY, String(newBal));
-                        if (onBalanceChange) onBalanceChange(newBal);
-                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        showToast(`Unlocked ${emote.name}! ⚡`);
-                      } else {
-                        Alert.alert('Not enough TokBux', 'Get TokBux from the shop to unlock this emote.');
-                      }
-                    }}
+                    onPress={comingSoon}
                   >
                     <Text style={styles.emotePriceText}>🪙 {emote.price}</Text>
                   </Pressable>
