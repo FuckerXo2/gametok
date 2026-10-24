@@ -305,7 +305,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                 <Text style={styles.sectionEyebrow}>SEASON 1 ROSTER</Text>
                 <Text style={styles.sectionTitle}>Full Character Skins</Text>
                 <Text style={styles.sectionSubtitle}>
-                  100% compatible across Street 5s, Fight Club, GTA Lagos & all platform games.
+                  Works in No Rules FC and every GameTok game with characters.
                 </Text>
               </View>
 

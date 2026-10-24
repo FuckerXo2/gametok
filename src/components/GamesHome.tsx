@@ -15,11 +15,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { CustomImage as Image } from './CustomImage';
 import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { resolveGameThumbnail } from '../utils/thumbnails';
+import { useAvatarAccount } from '../avatar/store';
 
 const BG = '#08080C';
 const SURFACE = '#181722';
@@ -29,7 +29,6 @@ const PURPLE = '#8B5CF6';
 const YELLOW = '#FFD23F';
 const PAD = 16;
 
-const TOKBUX_STORAGE_KEY = 'gametok_user_tokbux_balance';
 
 export interface HomeGame {
   id: string;
@@ -55,17 +54,8 @@ interface Props {
   onRefresh: () => void;
 }
 
-// Built-in catalog so the screen is always populated and looks identical to the mockup
-// Built-in catalog: ONLY the two core flagship games
+// Built-in catalog so the screen is always populated: the flagship (GTA Lagos is off the app for now)
 const DEFAULT_CATALOG: HomeGame[] = [
-  {
-    id: 'gta-lagos',
-    name: 'GTA Lagos',
-    description: 'Open-world Lagos, from Ojota to Lekki. Hustle, drive, run missions with your crew, and play with everyone online.',
-    thumbnail: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/gta-lagos/thumb.jpg',
-    categories: ['action', 'adventure'],
-    plays: 98000,
-  },
   {
     id: 'no-rules-fc',
     name: 'No Rules FC',
@@ -102,23 +92,12 @@ export const GamesHome = ({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [heroIndex, setHeroIndex] = useState(0);
-  const [tokbuxBalance, setTokbuxBalance] = useState(1250);
+  const tokbuxBalance = useAvatarAccount()?.tokbux ?? 0;
   const heroW = width - PAD * 2;
 
-  useEffect(() => {
-    AsyncStorage.getItem(TOKBUX_STORAGE_KEY).then((val) => {
-      if (val !== null) {
-        const parsed = parseInt(val, 10);
-        if (!isNaN(parsed)) setTokbuxBalance(parsed);
-      }
-    });
-  }, []);
-
-  // Strictly keep ONLY GTA Lagos and No Rules FC
+  // Strictly keep ONLY No Rules FC
   const effectiveGames = useMemo(() => {
     const isTarget = (id: string, name?: string) =>
-      /gta[-_ ]?lagos/i.test(id) ||
-      /gta lagos/i.test(name || '') ||
       /no[-_ ]?rules/i.test(id) ||
       /no rules/i.test(name || '');
 

@@ -264,6 +264,9 @@ const AppContent = () => {
   const [activityNotifNonce, setActivityNotifNonce] = useState(0);
   const [showAuth, setShowAuth] = useState(false);
   const [startWithLogin, setStartWithLogin] = useState(false);
+  // Like Roblox: sign up or log in first, then no gates anywhere. Stays up after the account exists until the
+  // rest of onboarding (genres, profile) is done.
+  const [onboarding, setOnboarding] = useState(false);
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
 
@@ -378,11 +381,11 @@ const AppContent = () => {
   }, [isAuthenticated, authLoading]);
 
   const checkOnboarding = async () => {
-    // Never show onboarding on launch — users go straight to home screen.
-    // Sign up / login is only accessible through auth gates on locked tabs.
     await AsyncStorage.setItem('hasSeenOnboarding', 'true');
     setShowOnboarding(false);
   };
+
+  useEffect(() => { if (!authLoading && !isAuthenticated) setOnboarding(true); }, [authLoading, isAuthenticated]);
 
   const parseDeepLink = (url: string) => {
     try {
@@ -451,6 +454,15 @@ const AppContent = () => {
     );
   }
 
+  // Signed out: the account comes first
+  if (onboarding || !isAuthenticated) {
+    return (
+      <View style={{ flex: 1 }}>
+        <OnboardingFlow onComplete={() => setOnboarding(false)} isAuthLoading={false} skipIntro={false} startWithLogin={false} />
+      </View>
+    );
+  }
+
   // Show auth screen (triggered from AuthGate on locked tabs)
   if (showAuth) {
     return (
@@ -465,7 +477,7 @@ const AppContent = () => {
     );
   }
 
-  // Go straight to main app - individual screens handle auth gating
+  // Signed in: the whole app
   return (
     <AuthScreenContext.Provider value={{
       showAuthScreen: () => { setStartWithLogin(false); setShowAuth(true); },

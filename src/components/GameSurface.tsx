@@ -10,12 +10,13 @@
 // floating points or direct WKWebView layer rotation. The WebView itself remains unrotated at full native 3x
 // Retina resolution with hardware acceleration (-webkit-transform: translateZ(0)) and WebGL fog patching.
 
-import React, { forwardRef, useState, useCallback } from 'react';
+import React, { forwardRef, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewProps } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 import { useAvatar } from '../avatar/store';
+import { playerSessions } from '../services/api';
 
 export const GAMES_HOST = 'https://games.gametok.co';
 
@@ -43,6 +44,8 @@ type Props = WebViewProps & {
   controlsConfig?: any;
   onScore?: (score: number) => void;
   onGameOver?: (won: boolean, score?: number) => void;
+  /** The catalog id: lets the game ask who's playing (bridge.js GameTok.session()). */
+  gameId?: string;
 };
 
 const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
@@ -366,9 +369,18 @@ true;
 `;
 
 export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
-  { orientation = DEFAULT_ORIENTATION, containerStyle, box: boxProp = null, style, runtime = 'web', gameScript, showControls, controlsConfig, onScore, onGameOver, ...webViewProps },
+  { orientation = DEFAULT_ORIENTATION, containerStyle, box: boxProp = null, style, runtime = 'web', gameScript, showControls, controlsConfig, onScore, onGameOver, gameId, ...webViewProps },
   ref,
 ) {
+  const webRef = useRef<WebView | null>(null);
+  const setRefs = useCallback((w: WebView | null) => {
+    webRef.current = w;
+    if (typeof ref === 'function') ref(w); else if (ref) ref.current = w;
+  }, [ref]);
+  // reply to the game (bridge.js reads message events with no source as the app's)
+  const reply = useCallback((msg: object) => {
+    webRef.current?.injectJavaScript(`window.dispatchEvent(new MessageEvent('message', { data: ${JSON.stringify(JSON.stringify(msg))} })); true;`);
+  }, []);
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
   const box = boxProp || measured;
   // the player's avatar goes into every game: games that use it read window.GAMETOK_AVATAR
@@ -501,6 +513,11 @@ true;
         } else {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         }
+      } else if (data.type === 'GAMETOK_PLAYER_SESSION_REQUEST' && gameId) {
+        // who's playing: the signed-in GameTok player (their name and avatar), signed for this game's server
+        playerSessions.create(gameId)
+          .then((r: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: true, player: r.player, session: r.session, mode: r.mode, expiresIn: r.expiresIn }))
+          .catch((e: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: false, code: e?.code, error: e?.message }));
       } else if (data.type === 'SCORE' && onScore) {
         onScore(data.score);
       } else if (data.type === 'GAME_OVER' && onGameOver) {
@@ -510,7 +527,7 @@ true;
     if (webViewProps.onMessage) {
       webViewProps.onMessage(event);
     }
-  }, [onScore, onGameOver, webViewProps.onMessage]);
+  }, [onScore, onGameOver, webViewProps.onMessage, gameId, reply]);
 
   return (
     <View
@@ -532,13 +549,13 @@ true;
           <RNWebView
             scalesPageToFit={false}
             contentMode="mobile"
-            ref={ref}
+            ref={setRefs}
             onContentProcessDidTerminate={(e: any) => {
               console.warn('[GameSurface] WebContent process terminated, reloading...');
               if (webViewProps.onContentProcessDidTerminate) {
                 webViewProps.onContentProcessDidTerminate(e);
-              } else if (ref && typeof ref !== 'function' && ref.current?.reload) {
-                ref.current.reload();
+              } else {
+                webRef.current?.reload();
               }
             }}
             setSupportMultipleWindows={false}

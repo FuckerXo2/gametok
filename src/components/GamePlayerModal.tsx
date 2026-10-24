@@ -79,6 +79,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
         {game ? (
           <GameSurface
             key={key}
+            gameId={game.id}
             orientation={game.orientation}
             source={{ uri: buildGameUrl(game, API_ORIGIN) }}
             scrollEnabled={false}

@@ -121,7 +121,7 @@ export const ExploreScreen: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [shopModalVisible, setShopModalVisible] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
-  const [recentGameIds, setRecentGameIds] = useState<string[]>(['backrooms-level-0', 'gta-lagos']);
+  const [recentGameIds, setRecentGameIds] = useState<string[]>([]);
 
   // Games in the current category. Multi-label: a game shows under every category it carries.
   const categoryGames = useMemo(() => {
@@ -138,8 +138,6 @@ export const ExploreScreen: React.FC = () => {
       if (gamesRes.status === 'fulfilled') {
         const rawGames = gamesRes.value?.games || [];
         const curated = rawGames.filter((g: any) =>
-          /gta[-_ ]?lagos/i.test(g.id) ||
-          /gta lagos/i.test(g.name || '') ||
           /no[-_ ]?rules/i.test(g.id) ||
           /no rules/i.test(g.name || '')
         );
