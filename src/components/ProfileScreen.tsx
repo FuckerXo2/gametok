@@ -122,8 +122,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   }, [saved, user?.avatar, account?.signedIn]);
   const onHeadshot = (png: string, of: AvatarRecord) => { uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); }); };
 
+  const tabs = TABS.filter((t) => mode === 'mine' || !t.mineOnly);
   const items = useMemo(() => AVATAR_ITEMS.filter((i) =>
-    (mode === 'shop' || owns(i)) && (tab === 'all' || i.tab === tab) && (!sub || i.sub === sub)), [mode, tab, sub, account]);
+    (mode === 'shop' ? i.tab !== 'body' : owns(i)) && (tab === 'all' || i.tab === tab) && (!sub || i.sub === sub)), [mode, tab, sub, account]);
   const subs = TABS.find((t) => t.id === tab)?.subs ?? [];
   const swatches = selected?.colorKey && look && selected.isWorn?.(look) ? (selected.colorKey === 'hair' ? HAIR_SWATCHES : COLOR_SWATCHES) : null;
   const swatchOn = swatches && look && selected?.colorKey ? (selected.colorKey === 'hair' ? look.hairColor : look.colors[selected.colorKey]) : null;
@@ -138,7 +139,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
           <Pressable style={styles.round} onPress={() => setMenu(true)} hitSlop={6}><Ionicons name="menu" size={22} color="#fff" /></Pressable>
           <View style={styles.seg}>
             {(['shop', 'mine'] as const).map((m) => (
-              <Pressable key={m} onPress={() => setMode(m)} style={[styles.segBtn, mode === m && styles.segOn]}>
+              <Pressable key={m} onPress={() => { setMode(m); if (m === 'shop' && tab === 'body') { setTab('all'); setSub(null); } }} style={[styles.segBtn, mode === m && styles.segOn]}>
                 <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === 'shop' ? 'Shop' : 'My items'}</Text>
               </Pressable>
             ))}
@@ -162,7 +163,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       <View style={styles.sheet}>
         <View style={styles.handle} />
         <View style={styles.tabs}>
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
               <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
             </Pressable>
@@ -190,8 +191,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
                     : <View style={[styles.skinDot, { backgroundColor: i.tint }]} />}
                 </View>
                 <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
-                <Text style={styles.maker} numberOfLines={1}>GameTok</Text>
-                {owned && priceOf(i) > 0 ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
+                {i.tab === 'body' ? null : <Text style={styles.maker} numberOfLines={1}>GameTok</Text>}
+                {i.tab === 'body' ? null   /* your body: not an item, no price */
+                  : owned && priceOf(i) > 0 ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
                   : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
                   : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={styles.price}>{priceOf(i)}</Text></View>}
               </Pressable>

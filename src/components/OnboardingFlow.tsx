@@ -42,6 +42,7 @@ import Animated, {
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { useAuth } from '../context/AuthContext';
+import { MakeAvatar } from './MakeAvatar';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
 
@@ -67,9 +68,9 @@ const randomOption = <T,>(options: T[], current?: T) => {
   return (pool.length > 0 ? pool : options)[Math.floor(Math.random() * (pool.length > 0 ? pool.length : options.length))];
 };
 
-type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'how_heard' | 'genres' | 'profile';
+type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'look' | 'how_heard' | 'genres' | 'profile';
 
-const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'how_heard', 'genres', 'profile'];
+const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'look', 'how_heard', 'genres', 'profile'];
 
 const HOW_HEARD_OPTIONS = [
   { id: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
@@ -535,7 +536,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         await signup(username.trim(), password, username.trim(), email.trim());
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      goTo('how_heard');
+      goTo('look');
     } catch (e: any) {
       setError(e.message || 'Failed to set username');
     } finally {
@@ -846,11 +847,26 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   );
 
   // ═══════════════════════════════════════
+  // MAKE YOUR AVATAR (free: build, skin, hair, starter outfit)
+  // ═══════════════════════════════════════
+  const renderLook = () => (
+    <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
+      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
+      <Text style={[styles.stepTitle, { color: colors.text, paddingHorizontal: 20 }]}>Make your avatar</Text>
+      <Text style={[styles.stepSubtitle, { color: colors.textSecondary, paddingHorizontal: 20, marginBottom: 12 }]}>This is you in every game. Change it any time in Me.</Text>
+      <MakeAvatar textColor={colors.text} dimColor={colors.textSecondary} />
+      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
+        <AnimatedButton onPress={() => goTo('how_heard')} disabled={false} colors={['#a855f7', '#ec4899']} label="Next" delay={200} />
+      </View>
+    </View>
+  );
+
+  // ═══════════════════════════════════════
   // HOW HEARD SCREEN
   // ═══════════════════════════════════════
   const renderHowHeard = () => (
     <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('username')}>
+      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('look')}>
         <Ionicons name="arrow-back" size={24} color={colors.text} />
       </TouchableOpacity>
 
@@ -968,6 +984,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       {step === 'welcome' && renderWelcome()}
       {step === 'credentials' && renderCredentials()}
       {step === 'username' && renderUsername()}
+      {step === 'look' && renderLook()}
       {step === 'how_heard' && renderHowHeard()}
       {step === 'genres' && renderGenres()}
       {step === 'profile' && renderProfile()}

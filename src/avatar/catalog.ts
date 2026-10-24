@@ -32,11 +32,13 @@ export function normalizeAvatar(r: any): AvatarRecord {
 export type Category = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'accessories';
 export type Focus = 'body' | 'head' | 'torso' | 'legs';
 
-// Me screen tabs, like Roblox's: a tab, then sub-tabs inside it
-export type Tab = 'all' | 'body' | 'clothing' | 'shoes' | 'extras';
-export const TABS: { id: Tab; label: string; subs: string[] }[] = [
+// Me screen tabs, like Roblox's: a tab, then sub-tabs inside it.
+// Body (build, skin) is who you are, not something you buy: it's only in My items (and in sign-up), never the Shop.
+export type Tab = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'extras';
+export const TABS: { id: Tab; label: string; subs: string[]; mineOnly?: boolean }[] = [
   { id: 'all', label: 'All', subs: [] },
-  { id: 'body', label: 'Body', subs: ['Body type', 'Skin', 'Hair', 'Beards'] },
+  { id: 'body', label: 'Body', subs: ['Build', 'Skin'], mineOnly: true },
+  { id: 'hair', label: 'Hair', subs: ['Hair', 'Beards'] },
   { id: 'clothing', label: 'Clothing', subs: ['Tops', 'Sleeves', 'Pants'] },
   { id: 'shoes', label: 'Shoes', subs: [] },
   { id: 'extras', label: 'Extras', subs: ['Hoods', 'Pauldrons'] },
@@ -62,6 +64,7 @@ export interface AvatarItem {
 }
 
 const SKIN_SWATCHES = ['#f2cfb3', '#dcae8a', '#b98258', '#8a5536', '#6a3e26', '#46281a'];
+const SKIN_NAMES = ['Fair', 'Light', 'Tan', 'Brown', 'Dark', 'Deep'];
 export const COLOR_SWATCHES = ['#ffffff', '#2b2b33', '#e9e4da', '#d8344a', '#ff8a2b', '#ffd23f', '#2fd38a', '#3fd0ff', '#3f5bff', '#b04cff', '#ff5fb7'];
 export const HAIR_SWATCHES = ['#2a1a12', '#6b3e1f', '#c98b3c', '#f1d27a', '#e8e8e8', '#d8344a', '#3f7bff', '#9b5cff', '#2fd38a'];
 
@@ -93,23 +96,23 @@ const HAIRS: { id: string; name: string; price: number }[] = [
 
 export const AVATAR_ITEMS: AvatarItem[] = [
   ...(['Male', 'Female'] as const).map((b): AvatarItem => ({
-    id: `body-${b}`, name: b === 'Male' ? 'Body A' : 'Body B', category: 'body', price: 0,
-    icon: 'body-outline', tint: '#cbd5e1', focus: 'body', tab: 'body', sub: 'Body type',
+    id: `body-${b}`, name: b === 'Male' ? 'Broad' : 'Curvy', category: 'body', price: 0,
+    icon: 'body-outline', tint: '#cbd5e1', focus: 'body', tab: 'body', sub: 'Build',
     wear: (r) => ({ ...r, body: b }), isWorn: (r) => r.body === b,
   })),
   ...SKIN_SWATCHES.map((c, i): AvatarItem => ({
-    id: `skin-${i}`, name: `Skin ${i + 1}`, category: 'body', price: 0,
+    id: `skin-${i}`, name: SKIN_NAMES[i], category: 'body', price: 0,
     icon: 'ellipse', tint: c, focus: 'head', tab: 'body', sub: 'Skin',
     wear: (r) => ({ ...r, skin: i }), isWorn: (r) => r.skin === i,
   })),
   ...HAIRS.map((h): AvatarItem => ({
     id: `hair-${h.id}`, name: h.name, category: 'hair', price: h.price,
-    icon: 'cut-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Hair',
+    icon: 'cut-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'hair', sub: 'Hair',
     wear: (r) => ({ ...r, hair: h.id }), isWorn: (r) => r.hair === h.id, takeOff: (r) => ({ ...r, hair: null }),
   })),
   {
     id: 'beard', name: 'Full Beard', category: 'hair', price: 20,
-    icon: 'man-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Beards',
+    icon: 'man-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'hair', sub: 'Beards',
     wear: (r) => ({ ...r, beard: true }), isWorn: (r) => r.beard, takeOff: (r) => ({ ...r, beard: false }),
   },
   ...SETS.flatMap(({ set, name, price }) => PIECES.filter((p) => !p.only || p.only.includes(set)).map((p): AvatarItem => ({
