@@ -7,6 +7,7 @@ import { avatarAccount } from '../services/api';
 import { AVATAR_ITEMS, AvatarRecord, normalizeAvatar } from './catalog';
 
 const KEY = 'gametok.avatar.v1';
+const SHOT_KEY = 'gametok.avatar.headshotFor';   // the look the profile picture was last made from
 
 export interface AvatarAccount {
   avatar: AvatarRecord;
@@ -77,6 +78,23 @@ export async function buyItem(itemId: string): Promise<string | null> {
 }
 
 export const getAvatarAccount = () => current;
+
+// The profile picture is a headshot of the avatar: is it out of date for this look?
+let shotFor: string | null = null;
+const shotLoaded = AsyncStorage.getItem(SHOT_KEY).then((v) => { shotFor = v; }).catch(() => {});
+export async function needsHeadshot(r: AvatarRecord, hasPicture: boolean) {
+  await shotLoaded;
+  return !!current?.signedIn && (!hasPicture || shotFor !== JSON.stringify(r));
+}
+// Upload it; resolves to the picture's address (or null)
+export async function uploadHeadshot(png: string, r: AvatarRecord): Promise<string | null> {
+  try {
+    const { avatar } = await avatarAccount.headshot(png);
+    shotFor = JSON.stringify(r);
+    AsyncStorage.setItem(SHOT_KEY, shotFor).catch(() => {});
+    return avatar;
+  } catch { return null; }
+}
 
 // null until this phone's copy has been read
 export function useAvatarAccount(): AvatarAccount | null {

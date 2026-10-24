@@ -10,8 +10,6 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "@dicebear/adventurer": "^9.4.2",
-    "@dicebear/core": "^9.4.2",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",

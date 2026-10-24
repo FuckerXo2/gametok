@@ -24,7 +24,8 @@ import { AvatarStage } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
 import { MyAvatarModal } from './MyAvatarModal';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Category, COLOR_SWATCHES, HAIR_SWATCHES } from '../avatar/catalog';
-import { buyItem, saveAvatar, syncAvatar, useAvatarAccount } from '../avatar/store';
+import { buyItem, needsHeadshot, saveAvatar, syncAvatar, uploadHeadshot, useAvatarAccount } from '../avatar/store';
+import { hasHeadshot } from './Avatar';
 import { ShopModal } from './ShopModal';
 import { AddFriendsScreen } from './AddFriendsScreen';
 import { Avatar } from './Avatar';
@@ -44,7 +45,7 @@ const CATEGORIES: { id: Category; label: string }[] = [
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   const [stageMode, setStageMode] = useState<'marketplace' | 'customize'>('marketplace');
@@ -77,6 +78,18 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
 
   // signing in or out switches whose avatar this is
   useEffect(() => { syncAvatar(); }, [user?.id]);
+
+  // the profile picture is a headshot of the saved look: retake it when the look changes
+  const [shotOf, setShotOf] = useState<AvatarRecord | null>(null);
+  useEffect(() => {
+    if (!saved) return;
+    let live = true;
+    needsHeadshot(saved, hasHeadshot(user?.avatar)).then((n) => { if (live) setShotOf(n ? saved : null); });
+    return () => { live = false; };
+  }, [saved, user?.avatar, account?.signedIn]);
+  const onHeadshot = (png: string, of: AvatarRecord) => {
+    uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); });
+  };
 
   const commit = (next: AvatarRecord) => {
     if (!saved) return;
@@ -163,7 +176,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
     <View style={styles.root}>
       {/* 1. TOP 46% 3D CHARACTER STUDIO STAGE */}
       <View style={styles.stageWrap}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={shown} focus={selectedItem?.focus || 'body'} />
+        <AvatarStage style={StyleSheet.absoluteFill} avatar={shown} focus={selectedItem?.focus || 'body'} headshotOf={shotOf} onHeadshot={onHeadshot} />
 
         {/* Floating Top Controls Header */}
         <View style={[styles.stageTopBar, { paddingTop: insets.top + 6 }]}>

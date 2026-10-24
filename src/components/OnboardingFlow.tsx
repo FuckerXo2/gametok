@@ -44,21 +44,6 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { users, auth as authApi } from '../services/api';
-import {
-  Avatar,
-  DicebearConfig,
-  makeDicebearAvatarUri,
-  DICEBEAR_ACCESSORY_OPTIONS,
-  DICEBEAR_BACKGROUNDS,
-  DICEBEAR_BROW_OPTIONS,
-  DICEBEAR_EARRING_OPTIONS,
-  DICEBEAR_EYE_OPTIONS,
-  DICEBEAR_FEATURE_OPTIONS,
-  DICEBEAR_HAIR_COLORS,
-  DICEBEAR_HAIR_OPTIONS,
-  DICEBEAR_MOUTH_OPTIONS,
-  DICEBEAR_SKIN_TONES,
-} from './Avatar';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -82,9 +67,9 @@ const randomOption = <T,>(options: T[], current?: T) => {
   return (pool.length > 0 ? pool : options)[Math.floor(Math.random() * (pool.length > 0 ? pool.length : options.length))];
 };
 
-type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'how_heard' | 'genres' | 'avatar' | 'profile';
+type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'how_heard' | 'genres' | 'profile';
 
-const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'how_heard', 'genres', 'avatar', 'profile'];
+const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'how_heard', 'genres', 'profile'];
 
 const HOW_HEARD_OPTIONS = [
   { id: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
@@ -421,11 +406,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   // How Heard
   const [selectedHowHeard, setSelectedHowHeard] = useState<string | null>(null);
 
-  // Avatar Builder
-  const [avatarConfig, setAvatarConfig] = useState<DicebearConfig>({
-    seed: 'gametok',
-    bg: DICEBEAR_BACKGROUNDS[0],
-  });
   const [selectedStarterSkin, setSelectedStarterSkin] = useState<string>('lagos-striker');
 
   // Credentials
@@ -555,7 +535,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         await signup(username.trim(), password, username.trim(), email.trim());
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setAvatarConfig(prev => ({ ...prev, seed: username.trim() }));
       goTo('how_heard');
     } catch (e: any) {
       setError(e.message || 'Failed to set username');
@@ -570,7 +549,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         await users.update(user.id, {
           displayName: displayName || undefined,
           bio: bio || undefined,
-          avatar: makeDicebearAvatarUri(avatarConfig),
         });
         await refreshUser();
       } catch (e) { console.error('Failed to update profile:', e); }
@@ -714,13 +692,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
         <AnimatedButton
-          onPress={() => goTo('avatar')}
+          onPress={() => goTo('profile')}
           disabled={selectedGenres.length === 0}
           colors={selectedGenres.length > 0 ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
           label="Next"
           delay={400}
         />
-        <TouchableOpacity onPress={() => goTo('avatar')}>
+        <TouchableOpacity onPress={() => goTo('profile')}>
           <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip</Text>
         </TouchableOpacity>
       </View>
@@ -928,133 +906,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   );
 
   // ═══════════════════════════════════════
-  // AVATAR CREATOR SCREEN
-  // ═══════════════════════════════════════
-  const renderAvatar = () => {
-    const rerollAvatar = () => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setAvatarConfig(prev => ({
-        ...prev,
-        seed: `${username.trim() || 'gametok'}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        bg: randomOption(DICEBEAR_BACKGROUNDS, prev.bg),
-        skinColor: randomOption(DICEBEAR_SKIN_TONES, prev.skinColor),
-        hairColor: randomOption(DICEBEAR_HAIR_COLORS, prev.hairColor),
-        hair: randomOption(DICEBEAR_HAIR_OPTIONS, prev.hair),
-        eyes: randomOption(DICEBEAR_EYE_OPTIONS, prev.eyes),
-        eyebrows: randomOption(DICEBEAR_BROW_OPTIONS, prev.eyebrows),
-        mouth: randomOption(DICEBEAR_MOUTH_OPTIONS, prev.mouth),
-        accessory: randomOption(DICEBEAR_ACCESSORY_OPTIONS, prev.accessory),
-        feature: randomOption(DICEBEAR_FEATURE_OPTIONS, prev.feature),
-        earrings: randomOption(DICEBEAR_EARRING_OPTIONS, prev.earrings),
-      }));
-    };
-
-    const handleSelectSkin = (skinId: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setSelectedStarterSkin(skinId);
-      AsyncStorage.setItem('gametok_user_active_skin', skinId);
-      AsyncStorage.setItem('gametok_user_owned_skins', JSON.stringify([skinId]));
-    };
-
-    return (
-      <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-        <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('genres')}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-
-        <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
-
-        <View style={[styles.formContainer, { alignItems: 'center' }]}>
-          <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text, textAlign: 'center' }]}>
-            Choose your Avatar
-          </Animated.Text>
-          <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>
-            Your 3D character across all GameTok games.
-          </Animated.Text>
-
-          <Animated.View entering={ZoomIn.delay(300).springify()} style={{ marginVertical: 24, position: 'relative' }}>
-            <View style={[styles.avatarPreviewRing, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <Avatar uri={makeDicebearAvatarUri(avatarConfig)} userId={displayName || username || 'onboarding'} size={150} />
-            </View>
-            <View style={{
-              position: 'absolute',
-              bottom: 4,
-              right: 4,
-              backgroundColor: '#2FD38A',
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderRadius: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              borderWidth: 2,
-              borderColor: '#000',
-            }}>
-              <Ionicons name="cube" size={12} color="#000" />
-              <Text style={{ color: '#000', fontSize: 10, fontWeight: '900' }}>3D READY</Text>
-            </View>
-          </Animated.View>
-
-          {/* Starter 3D Character Skins */}
-          <Animated.View entering={FadeInUp.delay(350).springify()} style={{ width: '100%', marginBottom: 16 }}>
-            <Text style={{ color: '#8E8A9E', fontSize: 11, fontWeight: '800', letterSpacing: 1.2, textAlign: 'center', marginBottom: 10 }}>
-              STARTER 3D ROSTER
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-              {STARTER_SKINS.map((skin) => {
-                const isSelected = selectedStarterSkin === skin.id;
-                return (
-                  <TouchableOpacity
-                    key={skin.id}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 6,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 16,
-                      backgroundColor: isSelected ? 'rgba(255,255,255,0.14)' : colors.surface,
-                      borderWidth: 1.5,
-                      borderColor: isSelected ? skin.color : 'rgba(255,255,255,0.1)',
-                    }}
-                    onPress={() => handleSelectSkin(skin.id)}
-                  >
-                    <Ionicons name={skin.icon as any} size={15} color={skin.color} />
-                    <Text style={{ color: isSelected ? '#FFF' : '#A3A0B5', fontSize: 12, fontWeight: isSelected ? '800' : '600' }}>
-                      {skin.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </Animated.View>
-
-          <Animated.View entering={FadeInUp.delay(400).springify()}>
-            <TouchableOpacity
-              style={[styles.rerollBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={rerollAvatar}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="dice-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.rerollBtnText, { color: colors.primary, fontSize: 14 }]}>Randomize Look</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-
-        <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24, width: '100%' }]}>
-          <AnimatedButton
-            onPress={() => goTo('profile')}
-            disabled={false}
-            colors={['#a855f7', '#ec4899']}
-            label="Looks good!"
-            delay={500}
-          />
-        </View>
-      </View>
-    );
-  };
-
-  // ═══════════════════════════════════════
   // PROFILE SCREEN
   // ═══════════════════════════════════════
   const renderProfile = () => (
@@ -1068,12 +919,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>
           Tell us about yourself
         </Animated.Text>
-
-        <Animated.View entering={ZoomIn.delay(300).springify()}>
-          <View style={styles.avatarPicker}>
-            <Avatar uri={makeDicebearAvatarUri(avatarConfig)} userId={displayName || username || 'onboarding'} size={120} />
-          </View>
-        </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(600).springify()} style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <TextInput
@@ -1125,7 +970,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       {step === 'username' && renderUsername()}
       {step === 'how_heard' && renderHowHeard()}
       {step === 'genres' && renderGenres()}
-      {step === 'avatar' && renderAvatar()}
       {step === 'profile' && renderProfile()}
     </View>
   );
