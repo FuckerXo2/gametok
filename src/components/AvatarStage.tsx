@@ -5,11 +5,13 @@ import { View, StyleSheet, ActivityIndicator, ViewStyle, Platform, Text } from '
 import { WebView } from 'react-native-webview';
 import type { AvatarRecord, Focus } from '../avatar/catalog';
 
-// Dev: the avatar-editor server on the Mac (launch config "avatar-editor"). Release: the same folder on R2.
+// The stage on R2 (games/avatar-editor/tools/publish_stage.mjs). LOCAL_STAGE: while editing the stage itself, load it
+// from the avatar-editor server on the Mac (launch config "avatar-editor") instead.
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
 const STAGE_V = 4;
+const LOCAL_STAGE = false;
 const DEV_HOST = Platform.OS === 'android' ? 'http://10.0.2.2:8980' : 'http://localhost:8980';
-export const AVATAR_STAGE_URL = (__DEV__
+export const AVATAR_STAGE_URL = (__DEV__ && LOCAL_STAGE
   ? `${DEV_HOST}/app-stage.html`
   : 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/avatar/app-stage.html') + `?v=${STAGE_V}`;
 
