@@ -11,11 +11,11 @@
 // Retina resolution with hardware acceleration (-webkit-transform: translateZ(0)) and WebGL fog patching.
 
 import React, { forwardRef, useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import { View, StyleSheet, Platform, Alert, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewProps } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
-import { useAvatar } from '../avatar/store';
+import { buyItem, getAvatarAccount, syncAvatar, useAvatar } from '../avatar/store';
 import { playerSessions } from '../services/api';
 
 export const GAMES_HOST = 'https://games.gametok.co';
@@ -519,6 +519,30 @@ true;
         playerSessions.create(gameId)
           .then((r: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: true, player: r.player, session: r.session, mode: r.mode, expiresIn: r.expiresIn }))
           .catch((e: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: false, code: e?.code, error: e?.message }));
+      } else if (data.type === 'GAMETOK_PURCHASE_REQUEST' && gameId) {
+        // a game sells its own items for TokBux: the player confirms here, at the server's price
+        const item = String(data.item || ''), id = `${gameId}:${item}`;
+        const done = (ok: boolean, error?: string) => reply({ type: 'GAMETOK_PURCHASE', requestId: data.requestId, ok, item, error });
+        const name = String(data.name || item).slice(0, 40);
+        syncAvatar().then(() => {   // the balance as it is now (TokBux may have been bought elsewhere)
+          const acct = getAvatarAccount(), price = acct?.prices[id];
+          if (!acct?.signedIn || price === undefined) { done(false, 'Not for sale'); return; }
+          if (acct.owned.includes(id)) { done(true); return; }
+          if (acct.tokbux < price) {
+            Alert.alert('Not enough TokBux', `${name} costs ${price.toLocaleString()} TokBux. You have ${acct.tokbux.toLocaleString()}.`);
+            done(false, 'NOT_ENOUGH_TOKBUX');
+            return;
+          }
+          Alert.alert(`Buy ${name}?`, `${price.toLocaleString()} TokBux. You have ${acct.tokbux.toLocaleString()}.`, [
+            { text: 'Cancel', style: 'cancel', onPress: () => done(false, 'CANCELLED') },
+            { text: `Buy · ${price.toLocaleString()}`, onPress: async () => {
+              const err = await buyItem(id);
+              if (err) { Alert.alert('Not bought', err); done(false, err); return; }
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              done(true);
+            } },
+          ]);
+        });
       } else if (data.type === 'SCORE' && onScore) {
         onScore(data.score);
       } else if (data.type === 'GAME_OVER' && onGameOver) {

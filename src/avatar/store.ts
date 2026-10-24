@@ -76,6 +76,8 @@ export async function buyItem(itemId: string): Promise<string | null> {
   }
 }
 
+export const getAvatarAccount = () => current;
+
 // null until this phone's copy has been read
 export function useAvatarAccount(): AvatarAccount | null {
   const [a, setA] = useState(current);
