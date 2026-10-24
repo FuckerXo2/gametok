@@ -314,7 +314,7 @@ export const NO_RULES_FC_GAME = {
   thumbnail: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/thumb.jpg',
   previewVideoUrl: null,
   categories: ['sports', 'action', 'arcade'],
-  embedUrl: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/a8bdf6fea90c/index.html',
+  embedUrl: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/aa7c9b745145/index.html',
   orientation: 'landscape' as 'landscape' | 'portrait',
   platform: 'all',
   creatorDisplayName: 'GameTOK',
