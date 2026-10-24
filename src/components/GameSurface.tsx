@@ -319,7 +319,8 @@ const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
 
         if (isRot) {
           cssRules.push(
-            'body { position: fixed !important; top: 0 !important; left: 0 !important; width: ' + LW + 'px !important; height: ' + LH + 'px !important; margin: 0 !important; padding: 0 !important; transform-origin: 0 0 !important; transform: rotate(90deg) translateY(-' + LH + 'px) !important; -webkit-transform: rotate(90deg) translateY(-' + LH + 'px) !important; overflow: hidden !important; -webkit-text-size-adjust: 100% !important; background: #000 !important; touch-action: manipulation !important; }'
+            // 'html body' outranks any plain 'body' rule a game (or bridge.js: html, body { width: 100% !important }) adds later
+            'html body { position: fixed !important; top: 0 !important; left: 0 !important; width: ' + LW + 'px !important; height: ' + LH + 'px !important; margin: 0 !important; padding: 0 !important; transform-origin: 0 0 !important; transform: rotate(90deg) translateY(-' + LH + 'px) !important; -webkit-transform: rotate(90deg) translateY(-' + LH + 'px) !important; overflow: hidden !important; -webkit-text-size-adjust: 100% !important; background: #000 !important; touch-action: manipulation !important; }'
           );
         } else {
           cssRules.push(
