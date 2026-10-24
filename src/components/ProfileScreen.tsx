@@ -15,7 +15,7 @@ import { AddFriendsScreen } from './AddFriendsScreen';
 import { Avatar, hasHeadshot } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
-import { AVATAR_ITEMS, AvatarItem, AvatarRecord, COLOR_SWATCHES, HAIR_SWATCHES, TABS, Tab, thumbOf } from '../avatar/catalog';
+import { AVATAR_ITEMS, AvatarItem, AvatarRecord, TABS, Tab, thumbOf } from '../avatar/catalog';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -84,12 +84,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
     change({ look: item.wear(look), cart: owns(item) ? cart : [...cart, item.id] });
   };
 
-  const recolor = (color: string) => {
-    if (!look || !selected?.colorKey) return;
-    const k = selected.colorKey;
-    change({ look: k === 'hair' ? { ...look, hairColor: color } : { ...look, colors: { ...look.colors, [k]: color } }, cart });
-  };
-
   const cartItems = cart.map((id) => AVATAR_ITEMS.find((i) => i.id === id)!).filter(Boolean);
   const total = cartItems.reduce((t, i) => t + priceOf(i), 0);
   const checkout = async () => {
@@ -124,11 +118,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
 
   const tabs = TABS.filter((t) => mode === 'mine' || !t.mineOnly);
   const items = useMemo(() => AVATAR_ITEMS.filter((i) =>
-    (mode === 'shop' ? i.tab !== 'body' : owns(i)) && (tab === 'all' || i.tab === tab) && (!sub || i.sub === sub)), [mode, tab, sub, account]);
+    (mode === 'shop' ? !owns(i) : owns(i)) && (tab === 'all' || i.tab === tab) && (!sub || i.sub === sub)), [mode, tab, sub, account]);
   const subs = TABS.find((t) => t.id === tab)?.subs ?? [];
-  const swatches = selected?.colorKey && look && selected.isWorn?.(look) ? (selected.colorKey === 'hair' ? HAIR_SWATCHES : COLOR_SWATCHES) : null;
-  const swatchOn = swatches && look && selected?.colorKey ? (selected.colorKey === 'hair' ? look.hairColor : look.colors[selected.colorKey]) : null;
-  const bottomH = (cart.length ? 76 : 0) + (swatches ? 46 : 0);
+  const bottomH = cart.length ? 76 : 0;
 
   return (
     <View style={styles.root}>
@@ -179,7 +171,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
             ))}
           </View>
         ) : null}
-        <Text style={styles.heading}>{mode === 'mine' ? 'My items' : sub || (tab === 'all' ? 'Recommended For You' : TABS.find((t) => t.id === tab)?.label)}</Text>
+        <Text style={styles.heading}>{sub || (tab === 'all' ? (mode === 'mine' ? 'My items' : 'Recommended For You') : TABS.find((t) => t.id === tab)?.label)}</Text>
         <View style={styles.grid}>
           {items.length ? items.map((i) => {
             const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i);
@@ -198,19 +190,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
                   : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={styles.price}>{priceOf(i)}</Text></View>}
               </Pressable>
             );
-          }) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'Nothing here yet.'}</Text>}
+          }) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'You own everything here. More coming soon.'}</Text>}
         </View>
         </ScrollView>
 
-        {/* colours for what's selected, and the checkout */}
+        {/* the checkout */}
         <View style={styles.bottom} pointerEvents="box-none">
-          {swatches ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatches}>
-              {swatches.map((c) => (
-                <Pressable key={c} onPress={() => recolor(c)} style={[styles.swatch, { backgroundColor: c }, swatchOn === c && styles.swatchOn]} />
-              ))}
-            </ScrollView>
-          ) : null}
           {cart.length ? (
             <View style={styles.bar}>
               <View style={{ flex: 1 }}>
@@ -303,9 +288,6 @@ const styles = StyleSheet.create({
   price: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 4 },
   empty: { color: DIM, fontWeight: '600', padding: 20 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingBottom: 10 },
-  swatches: { gap: 10, paddingVertical: 8 },
-  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'rgba(255,255,255,0.15)' },
-  swatchOn: { borderColor: '#fff', borderWidth: 3 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#0e0b16', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 10, paddingLeft: 16 },
   barTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
   barSub: { color: DIM, fontSize: 12, fontWeight: '600', marginTop: 2 },
