@@ -230,7 +230,7 @@ const GameTokLogo: React.FC = () => {
         entering={FadeInDown.delay(800)}
         style={styles.tagline}
       >
-        SWIPE • PLAY • COMPETE
+        PLAY • DRESS UP • HANG OUT
       </Animated.Text>
     </Animated.View>
   );

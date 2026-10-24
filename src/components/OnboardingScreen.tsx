@@ -125,7 +125,7 @@ const GameTokLogo = () => {
       </Svg>
 
       {/* Tagline */}
-      <Text style={styles.tagline}>SWIPE • PLAY • COMPETE</Text>
+      <Text style={styles.tagline}>PLAY • DRESS UP • HANG OUT</Text>
     </Animated.View>
   );
 };
