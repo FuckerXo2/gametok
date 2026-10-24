@@ -39,7 +39,7 @@ export const TABS: { id: Tab; label: string; subs: string[]; mineOnly?: boolean 
   { id: 'all', label: 'All', subs: [] },
   { id: 'body', label: 'Body', subs: ['Build', 'Skin'], mineOnly: true },
   { id: 'hair', label: 'Hair', subs: ['Hair', 'Beards'] },
-  { id: 'clothing', label: 'Clothing', subs: ['Tops', 'Sleeves', 'Pants'] },
+  { id: 'clothing', label: 'Clothing', subs: ['Tops', 'Sleeves', 'Bottoms'] },
   { id: 'shoes', label: 'Shoes', subs: [] },
   { id: 'extras', label: 'Extras', subs: ['Hoods', 'Pauldrons'] },
 ];
@@ -80,7 +80,7 @@ const SETS: { set: string; name: string; price: number }[] = [
 const PIECES: { slot: Slot; suffix: string; category: AvatarItem['category']; icon: AvatarItem['icon']; focus: Focus; only?: string[]; tab: AvatarItem['tab']; sub: string }[] = [
   { slot: 'top', suffix: 'Top', category: 'clothing', icon: 'shirt-outline', focus: 'torso', tab: 'clothing', sub: 'Tops' },
   { slot: 'arms', suffix: 'Sleeves', category: 'clothing', icon: 'hand-left-outline', focus: 'torso', tab: 'clothing', sub: 'Sleeves' },
-  { slot: 'legs', suffix: 'Pants', category: 'clothing', icon: 'walk-outline', focus: 'legs', tab: 'clothing', sub: 'Pants' },
+  { slot: 'legs', suffix: 'Pants', category: 'clothing', icon: 'walk-outline', focus: 'legs', tab: 'clothing', sub: 'Bottoms' },
   { slot: 'feet', suffix: 'Boots', category: 'shoes', icon: 'footsteps-outline', focus: 'legs', tab: 'shoes', sub: 'Shoes' },
   { slot: 'head', suffix: 'Hood', category: 'accessories', icon: 'person-circle-outline', focus: 'head', only: ['Male_Ranger', 'Female_Ranger'], tab: 'extras', sub: 'Hoods' },
   { slot: 'acc', suffix: 'Pauldron', category: 'accessories', icon: 'shield-outline', focus: 'torso', only: ['Male_Ranger', 'Female_Ranger'], tab: 'extras', sub: 'Pauldrons' },
@@ -92,6 +92,15 @@ const HAIRS: { id: string; name: string; price: number }[] = [
   { id: 'Hair_SimpleParted', name: 'Side Part', price: 20 },
   { id: 'Hair_Long', name: 'Long Hair', price: 35 },
   { id: 'Hair_Buns', name: 'Space Buns', price: 35 },
+];
+
+// Clothing grown from the body (games/avatar-editor/tools/make_clothing.py): one item per garment and colour, like Roblox.
+// A top replaces any sleeves (it has its own); colours are baked in, so the slot's tint is reset to white.
+const STREET: { set: string; name: string; slot: Slot; price: number; sub: string }[] = [
+  ...['White', 'Black', 'Red', 'Green'].map((c) => ({ set: `Street_Tee${c}`, name: `${c} Tee`, slot: 'top' as Slot, price: 25, sub: 'Tops' })),
+  ...['Grey', 'Navy', 'Cream'].map((c) => ({ set: `Street_Sweater${c}`, name: `${c} Sweater`, slot: 'top' as Slot, price: 40, sub: 'Tops' })),
+  ...['Blue', 'Black'].map((c) => ({ set: `Street_Jeans${c}`, name: `${c} Jeans`, slot: 'legs' as Slot, price: 35, sub: 'Bottoms' })),
+  ...['Khaki', 'Black'].map((c) => ({ set: `Street_Shorts${c}`, name: `${c} Shorts`, slot: 'legs' as Slot, price: 20, sub: 'Bottoms' })),
 ];
 
 export const AVATAR_ITEMS: AvatarItem[] = [
@@ -120,4 +129,11 @@ export const AVATAR_ITEMS: AvatarItem[] = [
     icon: p.icon, tint: '#e2e8f0', focus: p.focus, colorKey: p.slot, tab: p.tab, sub: p.sub,
     wear: (r) => withPart(r, p.slot, set), isWorn: (r) => r.parts[p.slot] === set, takeOff: (r) => withPart(r, p.slot, null),
   }))),
+  ...STREET.map((c): AvatarItem => ({
+    id: `${c.set}-${c.slot}`, name: c.name, category: 'clothing', price: c.price,
+    icon: c.slot === 'top' ? 'shirt-outline' : 'walk-outline', tint: '#e2e8f0', focus: c.slot === 'top' ? 'torso' : 'legs',
+    tab: 'clothing', sub: c.sub,
+    wear: (r) => ({ ...r, parts: { ...r.parts, [c.slot]: c.set, ...(c.slot === 'top' ? { arms: null } : {}) }, colors: { ...r.colors, [c.slot]: '#ffffff' } }),
+    isWorn: (r) => r.parts[c.slot] === c.set, takeOff: (r) => withPart(r, c.slot, null),
+  })),
 ];
