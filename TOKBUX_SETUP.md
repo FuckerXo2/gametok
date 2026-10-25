@@ -7,6 +7,8 @@ Each gives exactly that many TokBux (the backend decides, not the store).
 ## 1. Apple (App Store Connect)
 1. **Business → Agreements, Tax, and Banking**: the *Paid Apps* agreement must be active (bank + tax filled in).
    Without it, in-app purchases never load.
+   Also apply to the **App Store Small Business Program** (developer.apple.com/app-store/small-business-program):
+   Apple then takes 15% instead of 30% while GameTok earns under $1M a year. It isn't automatic.
 2. **Your app → Monetization → In-App Purchases → +**, five times, type **Consumable**:
    | Product ID | Name shown | Suggested price |
    |---|---|---|
