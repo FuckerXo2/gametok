@@ -9,11 +9,14 @@ import { saveAvatar, syncAvatar, useAvatar } from '../avatar/store';
 
 const H = Dimensions.get('window').height;
 const byId = (id: string) => AVATAR_ITEMS.find((i) => i.id === id)!;
-const STARTER_OUTFITS: { id: string; name: string; set: string }[] = [
-  { id: 'Male_Ranger-top', name: 'Ranger', set: 'Male_Ranger' },
-  { id: 'Male_Peasant-top', name: 'Peasant', set: 'Male_Peasant' },
+// the free starter clothes (catalog FREE): a white tee and sneakers, with jeans or shorts
+const STARTER_OUTFITS: { id: string; name: string; legs: string }[] = [
+  { id: 'Street_JeansBlue-legs', name: 'Jeans', legs: 'Street_JeansBlue' },
+  { id: 'Street_ShortsKhaki-legs', name: 'Shorts', legs: 'Street_ShortsKhaki' },
 ];
-const outfit = (r: AvatarRecord, set: string): AvatarRecord => ({ ...r, parts: { ...r.parts, top: set, arms: set, legs: set, feet: set } });
+const outfit = (r: AvatarRecord, legs: string): AvatarRecord => ({ ...r,
+  parts: { ...r.parts, top: 'Street_TeeWhite', arms: null, legs, feet: 'Street_SneakersWhite' },
+  colors: { ...r.colors, top: '#ffffff', legs: '#ffffff', feet: '#ffffff' } });
 
 export const MakeAvatar: React.FC<{ textColor: string; dimColor: string }> = ({ textColor, dimColor }) => {
   const look = useAvatar() ?? DEFAULT_AVATAR;
@@ -56,7 +59,7 @@ export const MakeAvatar: React.FC<{ textColor: string; dimColor: string }> = ({ 
         <Text style={[styles.label, { color: dimColor }]}>OUTFIT</Text>
         <View style={styles.row}>
           {STARTER_OUTFITS.map((o) => (
-            <Choice key={o.id} on={look.parts.top === o.set} onPress={() => set(outfit(look, o.set))}>
+            <Choice key={o.id} on={look.parts.legs === o.legs} onPress={() => set(outfit(look, o.legs))}>
               <Pic id={o.id} /><Text style={[styles.name, { color: textColor }]}>{o.name}</Text>
             </Choice>
           ))}
