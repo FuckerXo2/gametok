@@ -9,6 +9,6 @@ export const AVATAR_HOST = __DEV__ && LOCAL ? DEV_HOST : 'https://pub-b7694276c8
 
 // The TokBux store page (web/store/, tools/publish_store.mjs). STORE_LOCAL: while working on it, launch config
 // "gametok-store" on the Mac instead.
-const STORE_LOCAL = true;
+const STORE_LOCAL = false;
 const STORE_DEV = Platform.OS === 'android' ? 'http://10.0.2.2:8982' : 'http://localhost:8982';
 export const STORE_URL = `${__DEV__ && STORE_LOCAL ? STORE_DEV : 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/store'}/tokbux.html`;
