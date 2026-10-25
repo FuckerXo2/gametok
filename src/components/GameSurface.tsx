@@ -18,6 +18,7 @@ import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants
 import { buyItem, getAvatarAccount, syncAvatar, useAvatar } from '../avatar/store';
 import { playerSessions } from '../services/api';
 import { APP_VERSION } from './UpdateRequired';
+import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 
 export const GAMES_HOST = 'https://games.gametok.co';
 
@@ -384,6 +385,7 @@ export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
     webRef.current?.injectJavaScript(`window.dispatchEvent(new MessageEvent('message', { data: ${JSON.stringify(JSON.stringify(msg))} })); true;`);
   }, []);
   const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null);
+  const [buyReq, setBuyReq] = useState<(BuyRequest & { done: (ok: boolean, error?: string) => void }) | null>(null);
   const box = boxProp || measured;
   // the player's avatar goes into every game: games that use it read window.GAMETOK_AVATAR
   const avatar = useAvatar();
@@ -531,20 +533,8 @@ true;
           const acct = getAvatarAccount(), price = acct?.prices[id];
           if (!acct?.signedIn || price === undefined) { done(false, 'Not for sale'); return; }
           if (acct.owned.includes(id)) { done(true); return; }
-          if (acct.tokbux < price) {
-            Alert.alert('Not enough TokBux', `${name} costs ${price.toLocaleString()} TokBux. You have ${acct.tokbux.toLocaleString()}.`);
-            done(false, 'NOT_ENOUGH_TOKBUX');
-            return;
-          }
-          Alert.alert(`Buy ${name}?`, `${price.toLocaleString()} TokBux. You have ${acct.tokbux.toLocaleString()}.`, [
-            { text: 'Cancel', style: 'cancel', onPress: () => done(false, 'CANCELLED') },
-            { text: `Buy · ${price.toLocaleString()}`, onPress: async () => {
-              const err = await buyItem(id);
-              if (err) { Alert.alert('Not bought', err); done(false, err); return; }
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              done(true);
-            } },
-          ]);
+          // the buy popup (it tops up TokBux first when short)
+          setBuyReq({ name, price, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy: () => buyItem(id), done });
         });
       } else if (data.type === 'GAMETOK_OPEN_TOKBUX') {
         DeviceEventEmitter.emit('gametok:open-tokbux');   // the game player opens the TokBux store over the game
@@ -622,6 +612,7 @@ true;
           />
         </View>
       )}
+      <BuyItemSheet request={buyReq} sideways={rotate} onDone={(ok) => { buyReq?.done(ok, ok ? undefined : 'CANCELLED'); setBuyReq(null); }} />
     </View>
   );
 });

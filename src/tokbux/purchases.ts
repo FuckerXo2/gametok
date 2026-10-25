@@ -8,7 +8,16 @@ import { Platform } from 'react-native';
 import { getAvatarAccount, syncAvatar } from '../avatar/store';
 
 // store product id (App Store Connect = Google Play) -> TokBux it gives; must match the backend's TOKBUX_PACKS
-export const TOKBUX_PACKS: Record<string, number> = { tokbux_500: 500, tokbux_1200: 1200, tokbux_3000: 3000, tokbux_8500: 8500 };
+export const TOKBUX_PACKS: Record<string, number> = { tokbux_80: 80, tokbux_500: 500, tokbux_1200: 1200, tokbux_3000: 3000, tokbux_8500: 8500 };
+
+// the suggested US prices (TOKBUX_SETUP.md): shown only in development, where the store isn't connected
+const DEV_PRICES: Record<string, string> = { tokbux_80: '$0.99', tokbux_500: '$4.99', tokbux_1200: '$9.99', tokbux_3000: '$19.99', tokbux_8500: '$49.99' };
+export const devPrice = (id: string) => (__DEV__ ? DEV_PRICES[id] : undefined);
+
+// Short of TokBux for something: the two smallest packs that cover it (like Roblox's "Buy Robux and item")
+export function packsCovering(short: number): string[] {
+  return Object.keys(TOKBUX_PACKS).sort((a, b) => TOKBUX_PACKS[a] - TOKBUX_PACKS[b]).filter((id) => TOKBUX_PACKS[id] >= short).slice(0, 2);
+}
 
 const API_KEY = Platform.select({
   ios: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,

@@ -15,6 +15,7 @@ import { AddFriendsScreen } from './AddFriendsScreen';
 import { Avatar, hasHeadshot } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
+import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, TABS, Tab, thumbOf } from '../avatar/catalog';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
@@ -86,24 +87,26 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
 
   const cartItems = cart.map((id) => AVATAR_ITEMS.find((i) => i.id === id)!).filter(Boolean);
   const total = cartItems.reduce((t, i) => t + priceOf(i), 0);
-  const checkout = async () => {
+  // Buy: the popup confirms (and tops up TokBux first when short), then every item in the cart is bought
+  const [buyReq, setBuyReq] = useState<BuyRequest | null>(null);
+  const checkout = () => {
     if (!look || buying) return;
     if (!account?.signedIn) { Alert.alert('Sign in to buy'); return; }
-    if ((account.tokbux ?? 0) < total) {
-      Alert.alert('Not enough TokBux', `This costs ${total.toLocaleString()} TokBux. You have ${account.tokbux.toLocaleString()}.`, [
-        { text: 'Cancel', style: 'cancel' }, { text: 'Get TokBux', onPress: () => setTokbux(true) },
-      ]);
-      return;
-    }
-    setBuying(true);
-    for (const item of cartItems) {
-      const err = await buyItem(item.id);
-      if (err) { setBuying(false); Alert.alert('Not bought', `${item.name}: ${err}`); return; }
-    }
-    setBuying(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    apply({ look, cart: [] });   // all owned now: saved
+    const one = cartItems.length === 1 ? cartItems[0] : null;
+    setBuyReq({
+      name: one ? one.name : `${cartItems.length} items`, price: total, thumb: thumbOf(cartItems[0]),
+      buy: async () => {
+        setBuying(true);
+        for (const item of cartItems) {
+          const err = await buyItem(item.id);
+          if (err) { setBuying(false); return `${item.name}: ${err}`; }
+        }
+        setBuying(false);
+        return null;
+      },
+    });
   };
+  const onBought = (bought: boolean) => { setBuyReq(null); if (bought && look) apply({ look, cart: [] }); };   // all owned now: saved
   const clearCart = () => { if (saved && look) { setHistory((h) => ({ undo: [...h.undo, { look, cart }], redo: [] })); setDraft(null); } };
 
   // the profile picture is a headshot of the saved look: retake it when the look changes
@@ -213,6 +216,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       </View>
 
       <TokBuxSheet visible={tokbux} onClose={() => setTokbux(false)} />
+      <BuyItemSheet request={buyReq} onDone={onBought} />
       <EditProfileModal visible={editProfile} onClose={() => setEditProfile(false)} />
       <AddFriendsScreen visible={friends} onClose={() => setFriends(false)} />
 

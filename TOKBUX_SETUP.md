@@ -1,15 +1,16 @@
 # Selling TokBux: what to set up
 
 The code is done (app 2.2.0, backend, No Rules FC). These are the account steps only you can do.
-Product IDs are the same everywhere: `tokbux_500`, `tokbux_1200`, `tokbux_3000`, `tokbux_8500`.
+Product IDs are the same everywhere: `tokbux_80`, `tokbux_500`, `tokbux_1200`, `tokbux_3000`, `tokbux_8500`.
 Each gives exactly that many TokBux (the backend decides, not the store).
 
 ## 1. Apple (App Store Connect)
 1. **Business → Agreements, Tax, and Banking**: the *Paid Apps* agreement must be active (bank + tax filled in).
    Without it, in-app purchases never load.
-2. **Your app → Monetization → In-App Purchases → +**, four times, type **Consumable**:
+2. **Your app → Monetization → In-App Purchases → +**, five times, type **Consumable**:
    | Product ID | Name shown | Suggested price |
    |---|---|---|
+   | tokbux_80 | 80 TokBux | $0.99 |
    | tokbux_500 | 500 TokBux | $4.99 |
    | tokbux_1200 | 1,200 TokBux | $9.99 |
    | tokbux_3000 | 3,000 TokBux | $19.99 |
@@ -24,7 +25,7 @@ Each gives exactly that many TokBux (the backend decides, not the store).
 1. **Setup → Payments profile**: a merchant account must exist.
 2. Upload the 2.2.0 build to a testing track first (Google only lets you create products once a build with billing
    is uploaded).
-3. **Monetize → Products → In-app products**: the same four IDs and prices, then activate them.
+3. **Monetize → Products → In-app products**: the same five IDs and prices, then activate them.
 4. A **service account** for RevenueCat (follow RevenueCat's "Google Play service credentials" guide: Google Cloud
    service account + JSON key, invited in Play Console → Users and permissions with financial access).
 5. **Setup → License testing**: add your Gmail, for test purchases.
@@ -32,8 +33,8 @@ Each gives exactly that many TokBux (the backend decides, not the store).
 ## 3. RevenueCat (revenuecat.com, free until $2,500/month)
 1. Create a project **GameTok**. Add the **App Store app** (bundle `com.olasubomi.gametok`, upload the .p8 from Apple)
    and the **Play Store app** (package `com.olasubomi.gametok`, upload the service account JSON).
-2. **Products**: import the four products from both stores.
-3. **Offerings**: make the `default` offering *current*, with four packages, one per product
+2. **Products**: import the five products from both stores.
+3. **Offerings**: make the `default` offering *current*, with five packages, one per product
    (each package holds the iOS and Android product of the same ID).
 4. **API keys**: copy the two public SDK keys (`appl_…` and `goog_…`). Send them to me, or put them in
    `gametok/.env`:
