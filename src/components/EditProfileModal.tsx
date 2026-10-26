@@ -89,7 +89,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
               @{user?.username || 'gametok'}
             </Text>
             <Text style={[styles.avatarSubtitle, { color: colors.textSecondary }]}>
-              Your picture is your avatar. Change your look in Profile.
+              Your picture is your avatar. Change your look in Me.
             </Text>
           </View>
 
