@@ -30,7 +30,7 @@ export function normalizeAvatar(r: any): AvatarRecord {
 }
 
 export type Category = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'accessories';
-export type Focus = 'body' | 'head' | 'torso' | 'legs';
+export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet';
 
 // Me screen tabs, like Roblox's: a tab, then sub-tabs inside it.
 // Body (build, skin) is who you are, not something you buy: it's only in My items (and in sign-up), never the Shop.
@@ -81,7 +81,7 @@ const PIECES: { slot: Slot; suffix: string; category: AvatarItem['category']; ic
   { slot: 'top', suffix: 'Top', category: 'clothing', icon: 'shirt-outline', focus: 'torso', tab: 'clothing', sub: 'Fantasy' },
   { slot: 'arms', suffix: 'Sleeves', category: 'clothing', icon: 'hand-left-outline', focus: 'torso', tab: 'clothing', sub: 'Fantasy' },
   { slot: 'legs', suffix: 'Pants', category: 'clothing', icon: 'walk-outline', focus: 'legs', tab: 'clothing', sub: 'Fantasy' },
-  { slot: 'feet', suffix: 'Boots', category: 'shoes', icon: 'footsteps-outline', focus: 'body', tab: 'shoes', sub: 'Boots' },
+  { slot: 'feet', suffix: 'Boots', category: 'shoes', icon: 'footsteps-outline', focus: 'feet', tab: 'shoes', sub: 'Boots' },
   { slot: 'head', suffix: 'Hood', category: 'accessories', icon: 'person-circle-outline', focus: 'head', only: ['Male_Ranger', 'Female_Ranger'], tab: 'extras', sub: 'Hoods' },
   { slot: 'acc', suffix: 'Pauldron', category: 'accessories', icon: 'shield-outline', focus: 'torso', only: ['Male_Ranger', 'Female_Ranger'], tab: 'extras', sub: 'Pauldrons' },
 ];
@@ -130,7 +130,7 @@ export const AVATAR_ITEMS: AvatarItem[] = [
   // street clothes first: they're what most people wear; the fantasy sets after
   ...STREET.map((c): AvatarItem => ({
     id: `${c.set}-${c.slot}`, name: c.name, category: c.slot === 'feet' ? 'shoes' : 'clothing', price: c.price,
-    icon: c.slot === 'top' ? 'shirt-outline' : c.slot === 'feet' ? 'footsteps-outline' : 'walk-outline', tint: '#e2e8f0', focus: c.slot === 'top' ? 'torso' : c.slot === 'feet' ? 'body' : 'legs',   // shoes: the whole avatar (the legs view crops the feet)
+    icon: c.slot === 'top' ? 'shirt-outline' : c.slot === 'feet' ? 'footsteps-outline' : 'walk-outline', tint: '#e2e8f0', focus: c.slot === 'top' ? 'torso' : c.slot === 'feet' ? 'feet' : 'legs',
     tab: c.slot === 'feet' ? 'shoes' : 'clothing', sub: c.sub,
     wear: (r) => ({ ...r, parts: { ...r.parts, [c.slot]: c.set, ...(c.slot === 'top' ? { arms: null } : {}) }, colors: { ...r.colors, [c.slot]: '#ffffff' } }),
     isWorn: (r) => r.parts[c.slot] === c.set, takeOff: (r) => withPart(r, c.slot, null),
