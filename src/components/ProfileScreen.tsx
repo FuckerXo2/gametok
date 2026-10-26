@@ -2,16 +2,15 @@
 // Tap an item: it goes on the avatar straight away. Owned items are worn and saved; items not owned yet are tried on
 // and collect in the checkout, bought together with TokBux. "My items" shows only what they own.
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Modal, Switch, Alert, Linking, Dimensions, StyleSheet, Pressable, Image } from 'react-native';
+import { View, Text, ScrollView, Alert, Dimensions, StyleSheet, Pressable, Image, DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import { AvatarStage } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
-import { AddFriendsScreen } from './AddFriendsScreen';
+import { openAccountMenu } from './AccountMenu';
 import { Avatar, hasHeadshot } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
@@ -27,8 +26,7 @@ type Draft = { look: AvatarRecord; cart: string[] };   // on the stage, and the 
 
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const insets = useSafeAreaInsets();
-  const { user, logout, refreshUser } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { user, refreshUser } = useAuth();
   const account = useAvatarAccount();
   const saved = account?.avatar ?? null;
 
@@ -40,10 +38,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [history, setHistory] = useState<{ undo: Draft[]; redo: Draft[] }>({ undo: [], redo: [] });
   const [buying, setBuying] = useState(false);
-  const [menu, setMenu] = useState(false);
   const [tokbux, setTokbux] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
-  const [friends, setFriends] = useState(false);
 
   // an outfit is its pieces: owned when they all are, and it costs what's still unowned
   const piecesOf = (i: AvatarItem) => (i.pieces ?? []).map((id) => AVATAR_ITEMS.find((x) => x.id === id)!).filter(Boolean);
@@ -55,6 +51,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const look = draft?.look ?? saved;
   const cart = draft?.cart ?? [];
 
+  // the account menu's "My items"
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('gametok:my-items', () => { setMode('mine'); setTab('all'); setSub(null); });
+    return () => sub.remove();
+  }, []);
   // signing in or out switches whose avatar this is
   useEffect(() => { syncAvatar(); }, [user?.id]);
   // the saved look changed elsewhere (another phone, a purchase): show it, unless they're mid try-on
@@ -167,7 +168,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       <View style={styles.stage}>
         <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={selected?.focus || 'body'} look="dark" headshotOf={shotOf} onHeadshot={onHeadshot} />
         <View style={[styles.topRow, { top: insets.top + 6 }]}>
-          <Pressable style={styles.round} onPress={() => setMenu(true)} hitSlop={6}><Ionicons name="menu" size={22} color="#fff" /></Pressable>
+          <Pressable style={styles.round} onPress={openAccountMenu} hitSlop={6}><Ionicons name="menu" size={22} color="#fff" /></Pressable>
           <View style={styles.seg}>
             {(['shop', 'mine'] as const).map((m) => (
               <Pressable key={m} onPress={() => { setMode(m); setSub(null); }} style={[styles.segBtn, mode === m && styles.segOn]}>
@@ -253,38 +254,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       <TokBuxSheet visible={tokbux} onClose={() => setTokbux(false)} />
       <BuyItemSheet request={buyReq} onDone={onBought} />
       <EditProfileModal visible={editProfile} onClose={() => setEditProfile(false)} />
-      <AddFriendsScreen visible={friends} onClose={() => setFriends(false)} />
 
-      {/* you: profile, friends, settings */}
-      <Modal visible={menu} animationType="slide" transparent onRequestClose={() => setMenu(false)}>
-        <View style={styles.menuBackdrop}>
-          <Pressable style={{ flex: 1 }} onPress={() => setMenu(false)} />
-          <View style={[styles.menu, { paddingBottom: insets.bottom + 12 }]}>
-            <View style={styles.grabber} />
-            <MenuItem icon="person-outline" label="Edit Profile" onPress={() => { setMenu(false); setEditProfile(true); }} />
-            <MenuItem icon="person-add-outline" label="Find Friends" onPress={() => { setMenu(false); setFriends(true); }} />
-            <MenuItem icon="wallet-outline" label="TokBux" onPress={() => { setMenu(false); setTokbux(true); }} />
-            <View style={styles.menuRow}>
-              <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={20} color="#fff" />
-              <Text style={styles.menuLabel}>Dark Mode</Text>
-              <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#ccc', true: '#7C3AED' }} thumbColor="#fff" style={{ marginLeft: 'auto' }} />
-            </View>
-            <MenuItem icon="mail-outline" label="Contact Us" onPress={() => Linking.openURL('mailto:info@gametok.com')} />
-            <MenuItem icon="shield-outline" label="Privacy Policy" onPress={() => Linking.openURL('https://gametok.co/privacy.html')} />
-            <MenuItem icon="log-out-outline" label="Log Out" danger onPress={() => { setMenu(false); logout(); }} />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
 
-const MenuItem: React.FC<{ icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; danger?: boolean }> = ({ icon, label, onPress, danger }) => (
-  <Pressable style={styles.menuRow} onPress={onPress}>
-    <Ionicons name={icon} size={20} color={danger ? '#ef4444' : '#fff'} />
-    <Text style={[styles.menuLabel, danger && { color: '#ef4444' }]}>{label}</Text>
-  </Pressable>
-);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
@@ -338,9 +312,4 @@ const styles = StyleSheet.create({
   buy: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 15 },
   buyText: { color: '#fff', fontWeight: '900', fontSize: 15 },
   bin: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
-  menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  menu: { backgroundColor: '#1b1526', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8, paddingHorizontal: 18 },
-  grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 8 },
-  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 15 },
-  menuLabel: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

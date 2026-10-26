@@ -205,6 +205,15 @@ export const auth = {
     return data;
   },
 
+  // Settings: the account's email (if any), confirmed or not
+  account: async (): Promise<{ username: string; email: string | null; emailVerified: boolean }> => request('/auth/account'),
+  changePassword: async (current: string, next: string) =>
+    request('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) }),
+  // add an email: a 6-digit code is sent to it; confirmEmail with that code
+  addEmail: async (email: string) => request('/auth/email', { method: 'POST', body: JSON.stringify({ email }) }),
+  confirmEmail: async (email: string, code: string) =>
+    request('/auth/verify-code', { method: 'POST', body: JSON.stringify({ email, code }) }),
+
   // Is this username free? { available, valid }
   usernameAvailable: async (username: string): Promise<{ available: boolean; valid: boolean }> =>
     request(`/auth/username-available?username=${encodeURIComponent(username)}`),

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, Text, Linking, ActivityIndicator, Platform } from 'react-native';
+import { StyleSheet, View, Text, Linking, ActivityIndicator, Platform, DeviceEventEmitter } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +21,7 @@ import { ConnectScreen } from './src/components/ConnectScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
 import { ExploreScreen } from './src/components/ExploreScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
+import { AccountMenu } from './src/components/AccountMenu';
 import { UpdateRequired, useUpdateRequired } from './src/components/UpdateRequired';
 import { startPurchases } from './src/tokbux/purchases';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
@@ -240,6 +241,8 @@ const MainApp = ({
       </View>
       
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
+      {/* the account menu (the ☰ on Games and Me) */}
+      <AccountMenu onMyItems={() => { setActiveTab('profile'); DeviceEventEmitter.emit('gametok:my-items'); }} />
       
       {/* Sliding Create Screen Modal - Overlays everything natively */}
       <CreateScreen

@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { CustomImage as Image } from './CustomImage';
 import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { resolveGameThumbnail } from '../utils/thumbnails';
+import { openAccountMenu } from './AccountMenu';
 import { useAvatarAccount } from '../avatar/store';
 
 const BG = '#08080C';
@@ -199,7 +200,10 @@ export const GamesHome = ({
     >
       {/* 1. Header with Kicker, Title, TokBux button, and Search */}
       <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
-        <View>
+        <Pressable style={[styles.iconBtn, { marginRight: 12 }]} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}>
+          <Ionicons name="menu" size={22} color={TEXT} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
           <Text style={styles.kicker}>YOUR NEXT FAVORITE</Text>
           <Text style={styles.pageTitle}>
             Games<Text style={styles.pageTitleDot}>.</Text>
