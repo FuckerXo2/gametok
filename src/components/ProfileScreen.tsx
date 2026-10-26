@@ -94,7 +94,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
     if (!account?.signedIn) { Alert.alert('Sign in to buy'); return; }
     const one = cartItems.length === 1 ? cartItems[0] : null;
     setBuyReq({
-      name: one ? one.name : `${cartItems.length} items`, price: total, thumb: thumbOf(cartItems[0]),
+      name: one ? one.name : `${cartItems.length} items`, price: total, thumb: thumbOf(cartItems[0], look.body),
       buy: async () => {
         setBuying(true);
         for (const item of cartItems) {
@@ -177,7 +177,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
         <Text style={styles.heading}>{sub || (tab === 'all' ? (mode === 'mine' ? 'My items' : 'Recommended For You') : TABS.find((t) => t.id === tab)?.label)}</Text>
         <View style={styles.grid}>
           {items.length ? items.map((i) => {
-            const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i);
+            const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i, look?.body);
             return (
               <Pressable key={i.id} onPress={() => tap(i)} style={styles.item}>
                 <View style={[styles.thumb, selected?.id === i.id && styles.thumbSel]}>

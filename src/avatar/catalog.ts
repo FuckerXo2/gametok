@@ -9,6 +9,7 @@ export type Slot = 'head' | 'top' | 'arms' | 'legs' | 'feet' | 'acc';
 export interface AvatarRecord {
   body: 'Male' | 'Female';
   skin: number;
+  face?: number;                       // 0..5: games/avatar-editor/js/face.js FACES
   hair: string | null;
   beard: boolean;
   hairColor: string;
@@ -18,7 +19,7 @@ export interface AvatarRecord {
 }
 
 export const DEFAULT_AVATAR: AvatarRecord = {
-  body: 'Male', skin: 3, hair: 'Hair_Buzzed', beard: false, hairColor: '#2a1a12', fit: true,
+  body: 'Male', skin: 3, face: 0, hair: 'Hair_Buzzed', beard: false, hairColor: '#2a1a12', fit: true,
   parts: { head: null, top: 'Street_TeeWhite', arms: null, legs: 'Street_JeansBlue', feet: 'Street_SneakersWhite', acc: null },
   colors: { head: '#ffffff', top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff', acc: '#ffffff' },
 };
@@ -37,15 +38,17 @@ export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet';
 export type Tab = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'extras';
 export const TABS: { id: Tab; label: string; subs: string[]; mineOnly?: boolean }[] = [
   { id: 'all', label: 'All', subs: [] },
-  { id: 'body', label: 'Body', subs: ['Build', 'Skin'], mineOnly: true },
+  { id: 'body', label: 'Body', subs: ['Build', 'Face', 'Skin'], mineOnly: true },
   { id: 'hair', label: 'Hair', subs: ['Hair', 'Beards'] },
   { id: 'clothing', label: 'Clothing', subs: ['Tops', 'Bottoms', 'Fantasy'] },
   { id: 'shoes', label: 'Shoes', subs: ['Sneakers', 'Boots'] },
   { id: 'extras', label: 'Extras', subs: ['Hoods', 'Pauldrons'] },
 ];
 
-// item pictures, rendered from the 3D files (games/avatar-editor/tools/thumbs.html), with the avatar stage
-export const thumbOf = (item: AvatarItem) => (item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}.webp`);
+// item pictures, rendered from the 3D files (games/avatar-editor/tools/thumbs.html; faces: tools/faces.html, one
+// per build, shown on the wearer's)
+export const thumbOf = (item: AvatarItem, body: AvatarRecord['body'] = 'Male') =>
+  item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}${item.id.startsWith('face-') ? `-${body}` : ''}.webp`;
 
 export interface AvatarItem {
   id: string;
@@ -65,6 +68,7 @@ export interface AvatarItem {
 
 const SKIN_SWATCHES = ['#f2cfb3', '#dcae8a', '#b98258', '#8a5536', '#6a3e26', '#46281a'];
 const SKIN_NAMES = ['Fair', 'Light', 'Tan', 'Brown', 'Dark', 'Deep'];
+const FACE_NAMES = ['Classic', 'Strong', 'Slim', 'Round', 'Sharp', 'Soft'];   // js/face.js FACES, in order
 export const COLOR_SWATCHES = ['#ffffff', '#2b2b33', '#e9e4da', '#d8344a', '#ff8a2b', '#ffd23f', '#2fd38a', '#3fd0ff', '#3f5bff', '#b04cff', '#ff5fb7'];
 export const HAIR_SWATCHES = ['#2a1a12', '#6b3e1f', '#c98b3c', '#f1d27a', '#e8e8e8', '#d8344a', '#3f7bff', '#9b5cff', '#2fd38a'];
 
@@ -116,6 +120,11 @@ export const AVATAR_ITEMS: AvatarItem[] = [
     id: `skin-${i}`, name: SKIN_NAMES[i], category: 'body', price: 0,
     icon: 'ellipse', tint: c, focus: 'head', tab: 'body', sub: 'Skin',
     wear: (r) => ({ ...r, skin: i }), isWorn: (r) => r.skin === i,
+  })),
+  ...FACE_NAMES.map((name, i): AvatarItem => ({
+    id: `face-${i}`, name, category: 'body', price: 0,
+    icon: 'happy-outline', tint: '#e2e8f0', focus: 'head', tab: 'body', sub: 'Face',
+    wear: (r) => ({ ...r, face: i }), isWorn: (r) => (r.face ?? 0) === i,
   })),
   ...HAIRS.map((h): AvatarItem => ({
     id: `hair-${h.id}`, name: h.name, category: 'hair', price: h.price,

@@ -26,7 +26,7 @@ export const MakeAvatar: React.FC<{ textColor: string; dimColor: string }> = ({ 
   const Choice = ({ on, onPress, children }: { on: boolean; onPress: () => void; children: React.ReactNode }) => (
     <Pressable onPress={onPress} style={[styles.choice, on && styles.choiceOn]}>{children}</Pressable>
   );
-  const Pic = ({ id }: { id: string }) => <Image source={{ uri: thumbOf(byId(id))! }} style={styles.pic} resizeMode="contain" />;
+  const Pic = ({ id }: { id: string }) => <Image source={{ uri: thumbOf(byId(id), look.body)! }} style={styles.pic} resizeMode="contain" />;
 
   return (
     <View style={{ flex: 1 }}>
@@ -46,6 +46,14 @@ export const MakeAvatar: React.FC<{ textColor: string; dimColor: string }> = ({ 
             <Pressable key={i.id} onPress={() => set({ ...look, skin: k })} style={[styles.dot, { backgroundColor: i.tint }, look.skin === k && styles.dotOn]} />
           ))}
         </View>
+        <Text style={[styles.label, { color: dimColor }]}>FACE</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+          {AVATAR_ITEMS.filter((i) => i.id.startsWith('face-')).map((i, k) => (
+            <Pressable key={i.id} onPress={() => set({ ...look, face: k })} style={[styles.face, (look.face ?? 0) === k && styles.choiceOn]}>
+              <Image source={{ uri: thumbOf(i, look.body)! }} style={styles.facePic} resizeMode="cover" />
+            </Pressable>
+          ))}
+        </ScrollView>
         <Text style={[styles.label, { color: dimColor }]}>HAIR</Text>
         <View style={styles.row}>
           <Choice on={look.hair === 'Hair_Buzzed'} onPress={() => set({ ...look, hair: 'Hair_Buzzed' })}>
@@ -78,6 +86,8 @@ const styles = StyleSheet.create({
   pic: { width: '100%', height: 84 },
   name: { fontSize: 14, fontWeight: '700', marginTop: 4 },
   dots: { flexDirection: 'row', justifyContent: 'space-between' },
+  face: { width: 72, height: 72, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.06)' },
+  facePic: { width: '100%', height: '100%' },
   dot: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, borderColor: 'transparent' },
   dotOn: { borderColor: '#fff' },
 });
