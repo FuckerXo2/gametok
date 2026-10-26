@@ -108,12 +108,12 @@ const Item = ({ label, value, onPress, danger, right }: { label: string; value?:
   </Pressable>
 );
 
-// Settings: your email (add one, so a forgotten password isn't a lost account), password, dark mode, log out
+// Settings: your email (add one, so a forgotten password isn't a lost account; saved as typed), password, dark mode, log out
 const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
   const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const [acct, setAcct] = useState<{ email: string | null; emailVerified: boolean } | null>(null);
-  const [form, setForm] = useState<'email' | 'code' | 'password' | null>(null);
+  const [form, setForm] = useState<'email' | 'password' | null>(null);
   const [a, setA] = useState(''); const [b, setB] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = () => authApi.account().then(setAcct).catch(() => {});
@@ -123,7 +123,7 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
     setBusy(true); setError('');
     try { await fn(); after(); } catch (e: any) { setError(e?.message || 'Something went wrong'); } finally { setBusy(false); }
   };
-  const emailLabel = acct?.email ? (acct.emailVerified ? acct.email : `${acct.email} (not confirmed)`) : 'Add an email';
+  const emailLabel = acct?.email || 'Add an email';
 
   return (
     <Page visible={visible} title="Settings" onClose={onClose}>
@@ -131,27 +131,14 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
         <Item label="Email" value={acct ? emailLabel : '…'} onPress={() => start('email')} />
         <Item label="Change password" onPress={() => start('password')} />
       </Section>
-      {form === 'email' || form === 'code' ? (
+      {form === 'email' ? (
         <View style={styles.form}>
-          {form === 'email' ? (
-            <>
-              <Text style={styles.formTitle}>Add an email</Text>
-              <Text style={styles.formSub}>So you can get back in if you ever forget your password. We’ll send it a 6-digit code.</Text>
-              <TextInput style={styles.input} value={a} onChangeText={setA} placeholder="you@example.com" placeholderTextColor={DIM} autoCapitalize="none" keyboardType="email-address" autoFocus />
-              <Pressable style={styles.button} disabled={busy} onPress={() => run(() => authApi.addEmail(a.trim()), () => setForm('code'))}>
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send code</Text>}
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <Text style={styles.formTitle}>Enter the code</Text>
-              <Text style={styles.formSub}>We sent a 6-digit code to {a.trim()}.</Text>
-              <TextInput style={styles.input} value={b} onChangeText={setB} placeholder="123456" placeholderTextColor={DIM} keyboardType="number-pad" maxLength={6} autoFocus />
-              <Pressable style={styles.button} disabled={busy} onPress={() => run(() => authApi.confirmEmail(a.trim(), b.trim()), () => { setForm(null); load(); Alert.alert('Email added', 'Your email is confirmed.'); })}>
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirm</Text>}
-              </Pressable>
-            </>
-          )}
+          <Text style={styles.formTitle}>{acct?.email ? 'Change email' : 'Add an email'}</Text>
+          <Text style={styles.formSub}>So you can get back in if you ever forget your password.</Text>
+          <TextInput style={styles.input} value={a} onChangeText={setA} placeholder="you@example.com" placeholderTextColor={DIM} autoCapitalize="none" keyboardType="email-address" autoFocus />
+          <Pressable style={styles.button} disabled={busy} onPress={() => run(() => authApi.addEmail(a.trim()), () => { setForm(null); load(); })}>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save</Text>}
+          </Pressable>
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
       ) : null}
