@@ -93,8 +93,8 @@ const PIECES: { slot: Slot; suffix: string; category: AvatarItem['category']; ic
 
 const HAIRS: { id: string; name: string; price: number }[] = [
   { id: 'Hair_Buzzed', name: 'Buzz Cut', price: 0 },
-  { id: 'Hair_BuzzedFemale', name: 'Buzz Fade', price: 15 },
-  { id: 'Hair_SimpleParted', name: 'Side Part', price: 20 },
+  { id: 'Hair_BuzzedFemale', name: 'Buzz Fade', price: 0 },
+  { id: 'Hair_SimpleParted', name: 'Side Part', price: 0 },
   { id: 'Hair_Long', name: 'Long Hair', price: 35 },
   { id: 'Hair_Buns', name: 'Space Buns', price: 35 },
 ];
@@ -102,7 +102,7 @@ const HAIRS: { id: string; name: string; price: number }[] = [
 // Clothing grown from the body (games/avatar-editor/tools/make_clothing.py): one item per garment and colour, like Roblox.
 // A top replaces any sleeves (it has its own); colours are baked in, so the slot's tint is reset to white.
 // FREE: everyone's starter clothes (the backend's PRICES say the same).
-const FREE = ['Street_TeeWhite', 'Street_JeansBlue', 'Street_ShortsKhaki', 'Street_SneakersWhite'];
+const FREE = ['Street_TeeWhite', 'Street_TeeBlack', 'Street_JeansBlue', 'Street_JeansBlack', 'Street_ShortsKhaki', 'Street_SneakersWhite', 'Street_SneakersBlack'];
 const STREET: { set: string; name: string; slot: Slot; price: number; sub: string }[] = [
   ...['White', 'Black', 'Red', 'Green'].map((c) => ({ set: `Street_Tee${c}`, name: `${c} Tee`, slot: 'top' as Slot, price: 25, sub: 'T-Shirts' })),
   ...['Grey', 'Navy', 'Cream'].map((c) => ({ set: `Street_Sweater${c}`, name: `${c} Sweater`, slot: 'top' as Slot, price: 40, sub: 'Sweaters' })),
