@@ -205,12 +205,8 @@ export const auth = {
     return data;
   },
 
-  // Settings: the account's email (if any), confirmed or not
-  account: async (): Promise<{ username: string; email: string | null; emailVerified: boolean }> => request('/auth/account'),
   changePassword: async (current: string, next: string) =>
     request('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) }),
-  // add or change the account's email (for getting back in if the password is forgotten)
-  addEmail: async (email: string) => request('/auth/email', { method: 'POST', body: JSON.stringify({ email }) }),
 
   // Is this username free? { available, valid }
   usernameAvailable: async (username: string): Promise<{ available: boolean; valid: boolean }> =>

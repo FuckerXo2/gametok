@@ -108,40 +108,25 @@ const Item = ({ label, value, onPress, danger, right }: { label: string; value?:
   </Pressable>
 );
 
-// Settings: your email (add one, so a forgotten password isn't a lost account; saved as typed), password, dark mode, log out
+// Settings: password, dark mode, log out (no email: accounts are username + password only, like Roblox)
 const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
   const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
-  const [acct, setAcct] = useState<{ email: string | null; emailVerified: boolean } | null>(null);
-  const [form, setForm] = useState<'email' | 'password' | null>(null);
+  const [form, setForm] = useState<'password' | null>(null);
   const [a, setA] = useState(''); const [b, setB] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  const load = () => authApi.account().then(setAcct).catch(() => {});
-  useEffect(() => { if (visible) { load(); setForm(null); } }, [visible]);
+  useEffect(() => { if (visible) setForm(null); }, [visible]);
   const start = (f: typeof form) => { setForm(f); setA(''); setB(''); setError(''); };
   const run = async (fn: () => Promise<any>, after: () => void) => {
     setBusy(true); setError('');
     try { await fn(); after(); } catch (e: any) { setError(e?.message || 'Something went wrong'); } finally { setBusy(false); }
   };
-  const emailLabel = acct?.email || 'Add an email';
 
   return (
     <Page visible={visible} title="Settings" onClose={onClose}>
       <Section title="ACCOUNT">
-        <Item label="Email" value={acct ? emailLabel : '…'} onPress={() => start('email')} />
         <Item label="Change password" onPress={() => start('password')} />
       </Section>
-      {form === 'email' ? (
-        <View style={styles.form}>
-          <Text style={styles.formTitle}>{acct?.email ? 'Change email' : 'Add an email'}</Text>
-          <Text style={styles.formSub}>So you can get back in if you ever forget your password.</Text>
-          <TextInput style={styles.input} value={a} onChangeText={setA} placeholder="you@example.com" placeholderTextColor={DIM} autoCapitalize="none" keyboardType="email-address" autoFocus />
-          <Pressable style={styles.button} disabled={busy} onPress={() => run(() => authApi.addEmail(a.trim()), () => { setForm(null); load(); })}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save</Text>}
-          </Pressable>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-        </View>
-      ) : null}
       {form === 'password' ? (
         <View style={styles.form}>
           <Text style={styles.formTitle}>Change password</Text>
