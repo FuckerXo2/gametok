@@ -35,6 +35,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const [mode, setMode] = useState<'shop' | 'mine'>('shop');
   const [tab, setTab] = useState<Tab>('all');
   const [sub, setSub] = useState<string | null>(null);
+  const [seeAll, setSeeAll] = useState(false);   // came from All's "See All": the heading is a way back
   const [selected, setSelected] = useState<AvatarItem | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [history, setHistory] = useState<{ undo: Draft[]; redo: Draft[] }>({ undo: [], redo: [] });
@@ -194,7 +195,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
         <View style={styles.handle} />
         <View style={styles.tabs}>
           {tabs.map((t) => (
-            <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
+            <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); setSeeAll(false); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
               <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
             </Pressable>
           ))}
@@ -213,14 +214,19 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
           <>
             <View style={styles.rowHead}>
               <Text style={[styles.heading, { marginBottom: 0 }]}>Outfits</Text>
-              <Pressable onPress={() => { setTab('outfits'); setSub(null); }} style={styles.seeAll} hitSlop={6}><Text style={styles.seeAllText}>See All</Text></Pressable>
+              <Pressable onPress={() => { setTab('outfits'); setSub(null); setSeeAll(true); }} style={styles.seeAll} hitSlop={6}><Text style={styles.seeAllText}>See All</Text></Pressable>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
               {outfitRow.map((i) => <ItemTile key={i.id} i={i} width={CELL} />)}
             </ScrollView>
           </>
         ) : null}
-        <Text style={styles.heading}>{sub || (tab === 'all' ? (mode === 'mine' ? 'My items' : 'Recommended For You') : TABS.find((t) => t.id === tab)?.label)}</Text>
+        {seeAll && tab === 'outfits' ? (
+          <Pressable style={styles.backRow} onPress={() => { setTab('all'); setSeeAll(false); }} hitSlop={6}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+            <Text style={[styles.heading, { paddingHorizontal: 10, paddingTop: 0 }]}>Outfits</Text>
+          </Pressable>
+        ) : <Text style={styles.heading}>{sub || (tab === 'all' ? (mode === 'mine' ? 'My items' : 'Recommended For You') : TABS.find((t) => t.id === tab)?.label)}</Text>}
         <View style={styles.grid}>
           {items.length ? items.map((i) => <ItemTile key={i.id} i={i} />) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'You own everything here. More coming soon.'}</Text>}
         </View>
@@ -310,6 +316,7 @@ const styles = StyleSheet.create({
   heading: { color: '#fff', fontSize: 24, fontWeight: '800', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 18, padding: 16 },
   item: { width: CELL },
+  backRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 4 },
   rowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 },
   seeAll: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginTop: 18 },
   seeAllText: { color: '#fff', fontSize: 13, fontWeight: '700' },

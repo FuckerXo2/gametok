@@ -1,171 +1,31 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// Signing up and in, like Roblox: two short screens, then straight into Games (the avatar, Shop and the rest come
+// later, in Me: people want a better look once they've seen other players in a game).
+//   Create Account: birthday, username (checked as you type), build, with your avatar changing live above.
+//   Password: "Hi <username>", then you're in.
+//   Sign In: username and password.
+// No email (Roblox doesn't ask for one either) and no Apple / Google.
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-  Keyboard,
-  TouchableWithoutFeedback,
+  View, Text, StyleSheet, Pressable, TextInput, ImageBackground, Modal, ScrollView, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Linking, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle, Path } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText, Rect, G, Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withDelay,
-  withSequence,
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  FadeOut,
-  SlideInRight,
-  SlideOutLeft,
-  ZoomIn,
-  BounceIn,
-  Easing,
-} from 'react-native-reanimated';
-
-import * as AppleAuthentication from 'expo-apple-authentication';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
-import { MakeAvatar } from './MakeAvatar';
-import { useTheme } from '../context/ThemeContext';
-import { users, auth as authApi } from '../services/api';
+import { auth as authApi } from '../services/api';
+import { AvatarStage } from './AvatarStage';
+import { DEFAULT_AVATAR } from '../avatar/catalog';
+import { saveAvatar, syncAvatar, useAvatar } from '../avatar/store';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const BG = '#0d0a16', FIELD = '#1b1626', LINE = 'rgba(255,255,255,0.14)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', OK = '#22c55e';
+const H = Dimensions.get('window').height;
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const USERNAME_RULE = /^(?=.{3,20}$)[A-Za-z0-9]+(_[A-Za-z0-9]+)?$/;   // the backend's (src/index.js)
 
-// Ensure dimensions are valid
-const safeWidth = SCREEN_WIDTH || 375;
-const safeHeight = SCREEN_HEIGHT || 812;
-
-const GOOGLE_IOS_CLIENT_ID = '690098564284-704g6n4d0ur6audbsgqnd2tnkfranatc.apps.googleusercontent.com';
-const GOOGLE_IOS_WEB_CLIENT_ID = '690098564284-9j4fj28fiqimjg8c20mn2vtjg6b70qr7.apps.googleusercontent.com';
-const GOOGLE_ANDROID_WEB_CLIENT_ID = '516560435127-l6db4akjqei5q57j764kgu3aoaedu45l.apps.googleusercontent.com';
-
-const STARTER_SKINS = [
-  { id: 'lagos-striker', name: 'Lagos Striker', tag: 'STREET 5S', color: '#F59E0B', icon: 'football-outline' },
-  { id: 'cyber-viper', name: 'Cyber Viper', tag: 'NEON RUN', color: '#EC4899', icon: 'flash-outline' },
-  { id: 'shadow-shinobi', name: 'Shadow Shinobi', tag: 'FIGHT CLUB', color: '#8B5CF6', icon: 'shield-outline' },
-  { id: 'golden-kingpin', name: 'Gold Kingpin', tag: 'CHAMPION', color: '#EAB308', icon: 'trophy-outline' },
-];
-
-const randomOption = <T,>(options: T[], current?: T) => {
-  const pool = current === undefined ? options : options.filter((option) => option !== current);
-  return (pool.length > 0 ? pool : options)[Math.floor(Math.random() * (pool.length > 0 ? pool.length : options.length))];
-};
-
-type OnboardingStep = 'welcome' | 'credentials' | 'username' | 'look' | 'how_heard' | 'genres' | 'profile';
-
-const STEP_ORDER: OnboardingStep[] = ['welcome', 'credentials', 'username', 'look', 'how_heard', 'genres', 'profile'];
-
-const HOW_HEARD_OPTIONS = [
-  { id: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
-  { id: 'instagram', label: 'Instagram / Reels', icon: 'logo-instagram' },
-  { id: 'youtube', label: 'YouTube', icon: 'logo-youtube' },
-  { id: 'twitter', label: 'X (Twitter)', icon: 'logo-twitter' },
-  { id: 'friend', label: 'Friend / Word of Mouth', icon: 'people-outline' },
-  { id: 'other', label: 'Other', icon: 'sparkles-outline' },
-];
-
-const GAME_GENRES = [
-  { id: 'pvp', name: 'PvP', icon: 'flash-outline' as const, color: '#FF4757' },
-  { id: 'party', name: 'Party', icon: 'people-outline' as const, color: '#FF6B81' },
-  { id: 'strategy', name: 'Strategy', icon: 'bulb-outline' as const, color: '#7C4DFF' },
-  { id: 'racing', name: 'Racing', icon: 'car-sport-outline' as const, color: '#FF9F43' },
-  { id: 'casual', name: 'Casual', icon: 'happy-outline' as const, color: '#2ED573' },
-  { id: 'puzzle', name: 'Puzzle', icon: 'extension-puzzle-outline' as const, color: '#1E90FF' },
-  { id: 'arcade', name: 'Arcade', icon: 'game-controller-outline' as const, color: '#FFA502' },
-  { id: 'simulation', name: 'Simulation', icon: 'globe-outline' as const, color: '#3742FA' },
-  { id: 'card', name: 'Card', icon: 'copy-outline' as const, color: '#5F27CD' },
-  { id: 'board', name: 'Board', icon: 'grid-outline' as const, color: '#10AC84' },
-  { id: 'action', name: 'Action', icon: 'rocket-outline' as const, color: '#EE5A24' },
-  { id: 'sports', name: 'Sports', icon: 'football-outline' as const, color: '#0984E3' },
-];
-
-const SPRING_CONFIG = { damping: 15, stiffness: 150, mass: 0.8 };
-
-// ──────────────────────────────────────────────
-// Floating Particle (welcome screen background)
-// ──────────────────────────────────────────────
-const FloatingParticle: React.FC<{ emoji: string; delay: number; startX: number; startY: number }> = ({ emoji, delay, startX, startY }) => {
-  const opacity = useSharedValue(0);
-
-  useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(0.4, { duration: 800 }));
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[{ position: 'absolute', left: startX, top: startY }, animStyle]}>
-      <Text style={{ fontSize: 28 }}>{emoji}</Text>
-    </Animated.View>
-  );
-};
-
-const PARTICLES = [
-  { emoji: '🎮', x: safeWidth * 0.1, y: safeHeight * 0.12, delay: 0 },
-  { emoji: '🕹️', x: safeWidth * 0.75, y: safeHeight * 0.08, delay: 300 },
-  { emoji: '🏆', x: safeWidth * 0.85, y: safeHeight * 0.25, delay: 600 },
-  { emoji: '⚡', x: safeWidth * 0.05, y: safeHeight * 0.3, delay: 200 },
-  { emoji: '🎯', x: safeWidth * 0.6, y: safeHeight * 0.18, delay: 500 },
-  { emoji: '🔥', x: safeWidth * 0.3, y: safeHeight * 0.06, delay: 400 },
-];
-
-// ──────────────────────────────────────────────
-// Progress Bar
-// ──────────────────────────────────────────────
-const ProgressBar: React.FC<{ currentStep: number; totalSteps: number }> = ({ currentStep, totalSteps }) => {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withSpring((currentStep + 1) / totalSteps, { damping: 20, stiffness: 90 });
-  }, [currentStep]);
-
-  const barStyle = useAnimatedStyle(() => ({
-    width: `${progress.value * 100}%`,
-  }));
-
-  return (
-    <View style={progressStyles.container}>
-      <View style={progressStyles.track}>
-        <Animated.View style={[progressStyles.fill, barStyle]}>
-          <LinearGradient
-            colors={['#a855f7', '#ec4899']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
-      </View>
-    </View>
-  );
-};
-
-const progressStyles = StyleSheet.create({
-  container: { paddingHorizontal: 24, paddingTop: 8 },
-  track: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 2 },
-});
-
-// ──────────────────────────────────────────────
-// Animated GameTok Logo
-// ──────────────────────────────────────────────
 const GameTokLogo: React.FC = () => {
   const scale = useSharedValue(0.95);
   const opacity = useSharedValue(0);
@@ -216,894 +76,264 @@ const GameTokLogo: React.FC = () => {
   );
 };
 
-// ──────────────────────────────────────────────
-// Genre Chip
-// ──────────────────────────────────────────────
-const GenreChip: React.FC<{
-  genre: typeof GAME_GENRES[0];
-  selected: boolean;
-  onPress: () => void;
-  index: number;
-  themeColors: any;
-}> = ({ genre, selected, onPress, index, themeColors }) => {
-  const chipScale = useSharedValue(1);
 
-  const handlePress = () => {
-    chipScale.value = withSequence(
-      withTiming(0.9, { duration: 80 }),
-      withSpring(1, SPRING_CONFIG)
-    );
-    onPress();
-  };
+type Step = 'welcome' | 'create' | 'password' | 'signin';
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: chipScale.value }],
-  }));
-
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(index * 60).springify().damping(14)}
-      style={animStyle}
-    >
-      <TouchableOpacity
-        style={[
-          genreStyles.chip,
-          { backgroundColor: themeColors.surface, borderColor: themeColors.border },
-          selected && { backgroundColor: genre.color, borderColor: genre.color },
-        ]}
-        onPress={handlePress}
-        activeOpacity={0.8}
-      >
-        <Ionicons
-          name={genre.icon}
-          size={18}
-          color={selected ? '#fff' : themeColors.textSecondary}
-          style={{ marginRight: 6 }}
-        />
-        <Text style={[
-          genreStyles.chipText,
-          { color: selected ? '#fff' : themeColors.text },
-        ]}>
-          {genre.name}
-        </Text>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-};
-
-const genreStyles = StyleSheet.create({
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    marginRight: 10,
-    marginBottom: 12,
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
-
-// ──────────────────────────────────────────────
-// Animated Button
-// ──────────────────────────────────────────────
-const AnimatedButton: React.FC<{
-  onPress: () => void;
-  disabled?: boolean;
-  colors: string[];
-  label: string;
-  delay?: number;
-}> = ({ onPress, disabled, colors: gradColors, label, delay = 0 }) => {
-  const btnScale = useSharedValue(1);
-
-  const handlePressIn = () => { btnScale.value = withSpring(0.96, { damping: 15, stiffness: 200 }); };
-  const handlePressOut = () => { btnScale.value = withSpring(1, SPRING_CONFIG); };
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: btnScale.value }],
-  }));
-
-  // Ensure colors are always valid strings
-  const safeColors: [string, string] = gradColors && gradColors.length >= 2
-    ? [gradColors[0] || '#333', gradColors[1] || '#333']
-    : ['#a855f7', '#ec4899'];
-
-  return (
-    <Animated.View entering={FadeInUp.delay(delay).springify()} style={animStyle}>
-      <TouchableOpacity
-        style={[styles.primaryButton, disabled && styles.buttonDisabled]}
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled}
-        activeOpacity={1}
-      >
-        <LinearGradient
-          colors={safeColors}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={styles.gradientButton}
-        >
-          <Text style={styles.primaryButtonText}>{label}</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-};
-
-// ──────────────────────────────────────────────
-// Shake wrapper for errors
-// ──────────────────────────────────────────────
-const ShakeText: React.FC<{ text: string; visible: boolean }> = ({ text, visible }) => {
-  const shakeX = useSharedValue(0);
-
-  useEffect(() => {
-    if (visible && text) {
-      shakeX.value = withSequence(
-        withTiming(-8, { duration: 50 }),
-        withTiming(8, { duration: 50 }),
-        withTiming(-6, { duration: 50 }),
-        withTiming(6, { duration: 50 }),
-        withTiming(0, { duration: 50 }),
-      );
-    }
-  }, [text, visible]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shakeX.value }],
-  }));
-
-  if (!visible || !text) return null;
-
-  return (
-    <Animated.View style={animStyle}>
-      <Text style={styles.errorText}>{text}</Text>
-    </Animated.View>
-  );
-};
-
-// ══════════════════════════════════════════════
-// MAIN COMPONENT
-// ══════════════════════════════════════════════
-interface OnboardingFlowProps {
-  onComplete: () => void;
-  isAuthLoading?: boolean;
-  skipIntro?: boolean;
-  startWithLogin?: boolean;
-}
-
-export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
-  onComplete,
-  isAuthLoading = false,
-  skipIntro = false,
-  startWithLogin = false,
+export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: boolean; skipIntro?: boolean; startWithLogin?: boolean }> = ({
+  onComplete, startWithLogin = false,
 }) => {
-  const rawInsets = useSafeAreaInsets();
-  // Ensure insets are always valid numbers
-  const insets = {
-    top: rawInsets.top || 0,
-    bottom: rawInsets.bottom || 0,
-    left: rawInsets.left || 0,
-    right: rawInsets.right || 0,
-  };
-  const { signup, login, loginWithOAuth, user, refreshUser } = useAuth();
-  const { colors } = useTheme();
-
-  const [step, setStep] = useState<OnboardingStep>(
-    skipIntro ? 'credentials' : 'welcome'
-  );
-  const [isLogin, setIsLogin] = useState(startWithLogin);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
-  const [stepKey, setStepKey] = useState(0); // forces re-render for entering animations
-
-  // Genre selection
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-
-  // How Heard
-  const [selectedHowHeard, setSelectedHowHeard] = useState<string | null>(null);
-
-  const [selectedStarterSkin, setSelectedStarterSkin] = useState<string>('lagos-striker');
-
-  // Credentials
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  // Username
+  const insets = useSafeAreaInsets();
+  const { signup, login } = useAuth();
+  const [step, setStep] = useState<Step>(startWithLogin ? 'signin' : 'welcome');
+  const [birthday, setBirthday] = useState<{ y: number; m: number; d: number } | null>(null);
+  const [picking, setPicking] = useState(false);
   const [username, setUsername] = useState('');
+  const [free, setFree] = useState<boolean | null>(null);   // username not taken (null: not checked yet)
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const look = useAvatar() ?? DEFAULT_AVATAR;
 
-  // Profile
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [avatar, setAvatar] = useState<string | null>(null);
-
-  // Check Apple Sign-In
+  // is the username free? (asked as you type, a moment after you stop)
   useEffect(() => {
-    const checkApple = async () => {
-      const available = await AppleAuthentication.isAvailableAsync();
-      setIsAppleAvailable(available);
-    };
-    checkApple();
+    setFree(null);
+    if (!USERNAME_RULE.test(username)) return;
+    const t = setTimeout(() => { authApi.usernameAvailable(username).then((r) => setFree(r.available)).catch(() => {}); }, 350);
+    return () => clearTimeout(t);
+  }, [username]);
 
-    const googleConfig: Parameters<typeof GoogleSignin.configure>[0] = {
-      iosClientId: GOOGLE_IOS_CLIENT_ID,
-      webClientId: Platform.OS === 'android' ? GOOGLE_ANDROID_WEB_CLIENT_ID : GOOGLE_IOS_WEB_CLIENT_ID,
-    };
+  const go = (s: Step) => { setError(''); setStep(s); };
+  const age = birthday ? Math.floor((Date.now() - new Date(birthday.y, birthday.m, birthday.d).getTime()) / 31557600000) : null;
+  const rules = [
+    { ok: username.length >= 3 && username.length <= 20, text: 'Is between 3 and 20 characters long' },
+    { ok: /^[A-Za-z0-9_]*$/.test(username) && USERNAME_RULE.test(username), text: 'Contains only letters, numbers, and one _ in the middle' },
+    { ok: free === true, text: 'Is not already in use' },
+  ];
+  const pwRules = [
+    { ok: password.length >= 8, text: 'Is at least 8 characters long' },
+    { ok: !!password && !password.toLowerCase().includes(username.toLowerCase()), text: 'Doesn’t contain your username' },
+  ];
+  const canContinue = !!birthday && rules.every((r) => r.ok);
+  const canFinish = pwRules.every((r) => r.ok);
 
-    GoogleSignin.configure(googleConfig);
-  }, []);
-
-  // ── Navigation ──
-  const goTo = useCallback((nextStep: OnboardingStep) => {
-    setError('');
-    setStepKey(k => k + 1);
-    setStep(nextStep);
-  }, []);
-
-  const currentStepIndex = STEP_ORDER.indexOf(step);
-
-  // ── OAuth ──
-  const handleAppleSignIn = async () => {
+  const finish = async () => {
+    if (!canFinish || !birthday || busy) return;
+    setBusy(true); setError('');
     try {
-      setLoading(true);
-      setError('');
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      const result = await loginWithOAuth('apple', {
-        identityToken: credential.identityToken,
-        email: credential.email,
-        fullName: credential.fullName,
-        user: credential.user,
-      });
+      const pad = (n: number) => String(n).padStart(2, '0');
+      await signup(username, password, `${birthday.y}-${pad(birthday.m + 1)}-${pad(birthday.d)}`);
+      await syncAvatar();   // the avatar you made here goes on the new account
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if ((result as any)?.isNewUser || !(result as any)?.user?.username) {
-        goTo('username');
-      } else {
-        onComplete();
-      }
+      onComplete();
     } catch (e: any) {
-      if (e.code !== 'ERR_REQUEST_CANCELED') {
-        setError('Apple Sign-In failed. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (e?.code === 'USERNAME_TAKEN') { setFree(false); go('create'); }
+      setError(e?.message || 'Could not create your account');
+    } finally { setBusy(false); }
+  };
+  const signIn = async () => {
+    if (!username || !password || busy) return;
+    setBusy(true); setError('');
+    try { await login(username.trim(), password); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); onComplete(); }
+    catch (e: any) { setError(e?.message || 'Could not sign in'); }
+    finally { setBusy(false); }
   };
 
-  const handleGoogleSignIn = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      await GoogleSignin.hasPlayServices();
-      const response = await GoogleSignin.signIn();
-      if (response.type === 'success' && response.data) {
-        const { idToken, user: googleUser } = response.data;
-        const result = await loginWithOAuth('google', {
-          idToken,
-          user: { id: googleUser.id, email: googleUser.email, name: googleUser.name, photo: googleUser.photo },
-        });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        if ((result as any)?.isNewUser || !(result as any)?.user?.username) {
-          goTo('username');
-        } else {
-          onComplete();
-        }
-      }
-    } catch (e: any) {
-      console.error('[GoogleSignIn] Error:', e.code, e.message, JSON.stringify(e));
-      if (e.code === statusCodes.SIGN_IN_CANCELLED) { /* cancelled */ }
-      else if (e.code === statusCodes.IN_PROGRESS) { setError('Sign-in already in progress'); }
-      else if (e.code === '10') {
-        setError('Google Sign-In is not configured for this Android build yet.');
-      }
-      else { setError(`Google Sign-In failed: ${e.code || e.message}`); }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ── Handlers ──
-  const handleCredentialsContinue = async () => {
-    if (!email.trim()) { setError('Please enter your email'); return; }
-    if (!password.trim() || password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (isLogin) {
-      setLoading(true);
-      try { await login(email.trim(), password); onComplete(); }
-      catch (e: any) { setError(e.message || 'Login failed'); }
-      finally { setLoading(false); }
-    } else {
-      goTo('username');
-    }
-  };
-
-  const handleUsernameContinue = async () => {
-    if (!username.trim() || username.length < 3) { setError('Username must be at least 3 characters'); return; }
-    setLoading(true);
-    setError('');
-    try {
-      if (user) {
-        await users.update(user.id, { username: username.trim() });
-        await refreshUser();
-      } else {
-        await signup(username.trim(), password, username.trim(), email.trim());
-      }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      goTo('look');
-    } catch (e: any) {
-      setError(e.message || 'Failed to set username');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleProfileContinue = async () => {
-    if (user) {
-      try {
-        await users.update(user.id, {
-          displayName: displayName || undefined,
-          bio: bio || undefined,
-        });
-        await refreshUser();
-      } catch (e) { console.error('Failed to update profile:', e); }
-    }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete();
-  };
-
-  const toggleGenre = (id: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedGenres(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  // ═══════════════════════════════════════
-  // WELCOME SCREEN
-  // ═══════════════════════════════════════
-  const renderWelcome = () => (
-    <View style={styles.stepContainer}>
-      <ImageBackground
-        source={require('../../assets/gametok_bg.png')}
-        style={styles.background}
-        resizeMode="cover"
-      >
-        <LinearGradient
-          colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.88)', '#000']}
-          locations={[0, 0.3, 0.6, 0.85]}
-          style={styles.overlay}
-        />
-      </ImageBackground>
-
-      {/* Floating particles */}
-      {PARTICLES.map((p, i) => (
-        <FloatingParticle key={i} emoji={p.emoji} startX={p.x} startY={p.y} delay={p.delay} />
+  const Rules = ({ list, show }: { list: { ok: boolean; text: string }[]; show: boolean }) => show ? (
+    <View style={{ marginTop: 8, gap: 3 }}>
+      {list.map((r) => (
+        <View key={r.text} style={styles.rule}>
+          <Ionicons name={r.ok ? 'checkmark' : 'ellipse-outline'} size={r.ok ? 14 : 8} color={r.ok ? OK : DIM} style={{ width: 16 }} />
+          <Text style={[styles.ruleText, r.ok && { color: '#fff' }]}>{r.text}</Text>
+        </View>
       ))}
+    </View>
+  ) : null;
+  const Header = ({ title, back }: { title: string; back: Step }) => (
+    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <Pressable onPress={() => go(back)} hitSlop={12} style={styles.headerX}><Ionicons name={back === 'welcome' ? 'close' : 'chevron-back'} size={26} color="#fff" /></Pressable>
+      <Text style={styles.headerTitle}>{title}</Text>
+      <View style={styles.headerX} />
+    </View>
+  );
+  const Button = ({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) => (
+    <Pressable onPress={onPress} disabled={!on || busy} style={[styles.button, !on && { opacity: 0.4 }]}>
+      {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{label}</Text>}
+    </Pressable>
+  );
+  const Terms = () => (
+    <Text style={styles.fine}>
+      By clicking Continue, you agree to our{' '}
+      <Text style={styles.link} onPress={() => Linking.openURL('https://gametok.co/terms.html')}>Terms of Use</Text> and{' '}
+      <Text style={styles.link} onPress={() => Linking.openURL('https://gametok.co/privacy.html')}>Privacy Policy</Text>.
+      If you are under 18, you agree that your parent or guardian permits you to create this account.
+    </Text>
+  );
 
-      <View style={[styles.logoContainer, { top: insets.top + 40 }]}>
-        <GameTokLogo />
-      </View>
-
-      <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + 20 }]}>
-        <Animated.Text entering={FadeInUp.delay(600).springify()} style={styles.signupTitle}>
-          Sign up for GameTOK
-        </Animated.Text>
-
-        {/* Apple */}
-        {isAppleAvailable && (
-          <Animated.View entering={FadeInUp.delay(700).springify()}>
-            <TouchableOpacity
-              style={[styles.authOption, styles.appleButton]}
-              onPress={handleAppleSignIn}
-              disabled={loading || isAuthLoading}
-            >
-              <Ionicons name="logo-apple" size={22} color="#fff" />
-              <Text style={styles.authOptionText}>Continue with Apple</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {/* Google */}
-        <Animated.View entering={FadeInUp.delay(800).springify()}>
-          <TouchableOpacity
-            style={styles.googleButtonModern}
-            onPress={handleGoogleSignIn}
-            disabled={loading || isAuthLoading}
-          >
-            <Svg width={18} height={18} viewBox="0 0 24 24" style={{ marginRight: 10 }}>
-              <Path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <Path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <Path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <Path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </Svg>
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Email */}
-        <Animated.View entering={FadeInUp.delay(900).springify()}>
-          <TouchableOpacity
-            style={styles.authOption}
-            onPress={() => { setIsLogin(false); goTo('credentials'); }}
-            disabled={loading || isAuthLoading}
-          >
-            <Ionicons name="mail-outline" size={22} color="#fff" />
-            <Text style={styles.authOptionText}>Use phone or email</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {error ? <ShakeText text={error} visible={true} /> : null}
-
-        <Animated.View entering={FadeIn.delay(1000)}>
-          <View style={styles.termsRow}>
-            <Text style={styles.termsText}>By continuing, you agree to our </Text>
-            <TouchableOpacity><Text style={styles.termsLink}>Terms</Text></TouchableOpacity>
-            <Text style={styles.termsText}> and </Text>
-            <TouchableOpacity><Text style={styles.termsLink}>Privacy Policy</Text></TouchableOpacity>
-          </View>
-
-          <View style={styles.loginRow}>
-            <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => { setIsLogin(true); goTo('credentials'); }}>
-              <Text style={styles.loginLink}>Log in</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+  if (step === 'welcome') return (
+    <View style={styles.root}>
+      <ImageBackground source={require('../../assets/gametok_bg.png')} style={StyleSheet.absoluteFill} resizeMode="cover">
+        <LinearGradient colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.88)', '#000']} locations={[0, 0.3, 0.6, 0.85]} style={StyleSheet.absoluteFill} />
+      </ImageBackground>
+      <View style={{ position: 'absolute', top: insets.top + 60, left: 0, right: 0, alignItems: 'center' }}><GameTokLogo /></View>
+      <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + 24 }]}>
+        <Pressable style={styles.welcomePrimary} onPress={() => go('create')}><Text style={styles.welcomePrimaryText}>Create Account</Text></Pressable>
+        <Pressable style={styles.welcomeSecondary} onPress={() => go('signin')}><Text style={styles.buttonText}>Sign In</Text></Pressable>
+        <View style={styles.welcomeLinks}>
+          <Text style={styles.link} onPress={() => Linking.openURL('https://gametok.co/terms.html')}>Terms</Text>
+          <Text style={styles.link} onPress={() => Linking.openURL('https://gametok.co/privacy.html')}>Privacy</Text>
+        </View>
       </View>
     </View>
   );
 
-  // ═══════════════════════════════════════
-  // GENRE SELECTION SCREEN
-  // ═══════════════════════════════════════
-  const renderGenres = () => (
-    <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('how_heard')}>
-        <Ionicons name="arrow-back" size={24} color={colors.text} />
-      </TouchableOpacity>
+  if (step === 'signin') return (
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Header title="Sign In" back="welcome" />
+      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+        <Text style={styles.label}>Username</Text>
+        <TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false}
+          placeholder="Username" placeholderTextColor={DIM} textContentType="username" autoComplete="username" />
+        <Text style={styles.label}>Password</Text>
+        <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Password"
+          placeholderTextColor={DIM} textContentType="password" autoComplete="password" onSubmitEditing={signIn} />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Button label="Sign In" on={!!username && !!password} onPress={signIn} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
 
-      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
+  if (step === 'password') return (
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Header title="Create Account" back="create" />
+      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+        <Text style={styles.hi}>Hi {username}</Text>
+        <Text style={styles.sub}>Choose a password to secure your account.</Text>
+        <Text style={styles.label}>Password</Text>
+        <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry autoFocus
+          placeholder="Password" placeholderTextColor={DIM} textContentType="newPassword" autoComplete="password-new" onSubmitEditing={finish} />
+        <Rules list={pwRules} show />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Button label="Done" on={canFinish} onPress={finish} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
 
-      <View style={styles.formContainer}>
-        <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
-          Select your game genre
-        </Animated.Text>
-        <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-          Get better game recommendations
-        </Animated.Text>
-
-        <View style={genreStyles2.grid}>
-          {GAME_GENRES.map((genre, idx) => (
-            <GenreChip
-              key={genre.id}
-              genre={genre}
-              selected={selectedGenres.includes(genre.id)}
-              onPress={() => toggleGenre(genre.id)}
-              index={idx}
-              themeColors={colors}
-            />
+  // Create Account: your avatar on top, changing as you pick a build
+  return (
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Header title="Create Account" back="welcome" />
+      <ScrollView contentContainerStyle={[styles.form, { paddingTop: 0 }]} keyboardShouldPersistTaps="handled">
+        <View style={styles.stage}><AvatarStage style={StyleSheet.absoluteFill} avatar={look} look="dark" /></View>
+        <View style={styles.builds}>
+          {(['Male', 'Female'] as const).map((b) => (
+            <Pressable key={b} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); saveAvatar({ ...look, body: b }); }}
+              style={[styles.build, look.body === b && styles.buildOn]}>
+              <Ionicons name={b === 'Male' ? 'man' : 'woman'} size={22} color="#fff" />
+            </Pressable>
           ))}
         </View>
-      </View>
-
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <AnimatedButton
-          onPress={() => goTo('profile')}
-          disabled={selectedGenres.length === 0}
-          colors={selectedGenres.length > 0 ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
-          label="Next"
-          delay={400}
-        />
-        <TouchableOpacity onPress={() => goTo('profile')}>
-          <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  // ═══════════════════════════════════════
-  // CREDENTIALS SCREEN
-  // ═══════════════════════════════════════
-  const renderCredentials = () => (
-    <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} key={stepKey}>
-      <TouchableOpacity
-        style={[styles.backButton, { top: 8 }]}
-        onPress={() => goTo(isLogin ? 'welcome' : 'welcome')}
-      >
-        <Ionicons name="arrow-back" size={24} color={colors.text} />
-      </TouchableOpacity>
-
-      {!isLogin && <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />}
-
-      <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
-        <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
-          {isLogin ? 'Log in' : 'Enter email & password'}
-        </Animated.Text>
-        <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-          {isLogin ? 'Enter your email and password' : 'You can always change this later.'}
-        </Animated.Text>
-
-        <ShakeText text={error} visible={!!error} />
-
-        <Animated.View entering={FadeInDown.delay(300).springify()} style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Email"
-            placeholderTextColor={colors.textSecondary}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoCorrect={false}
-          />
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.delay(380).springify()} style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Password"
-            placeholderTextColor={colors.textSecondary}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-        </Animated.View>
-
-        {isLogin && (
-          <Animated.View entering={FadeIn.delay(450)}>
-            <TouchableOpacity style={styles.forgotPassword}>
-              <Text style={[styles.forgotPasswordText, { color: colors.textSecondary }]}>Forgot password?</Text>
-            </TouchableOpacity>
-
-            <View style={styles.oauthSection}>
-              <View style={styles.dividerRow}>
-                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
-                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-              </View>
-              <View style={styles.oauthIconsRow}>
-                {isAppleAvailable && (
-                  <TouchableOpacity style={[styles.oauthIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={handleAppleSignIn} disabled={loading}>
-                    <Ionicons name="logo-apple" size={24} color={colors.text} />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity style={[styles.oauthIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={handleGoogleSignIn} disabled={loading}>
-                  <Ionicons name="logo-google" size={22} color="#EA4335" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        )}
+        <Text style={styles.label}>Birthday{age !== null ? ` (${age} years old)` : ''}</Text>
+        <Pressable style={[styles.input, styles.dateField]} onPress={() => setPicking(true)}>
+          <Text style={{ color: birthday ? '#fff' : DIM, fontSize: 16 }}>{birthday ? `${MONTHS[birthday.m]} ${birthday.d} ${birthday.y}` : 'Date'}</Text>
+          <Ionicons name="calendar-outline" size={18} color={DIM} />
+        </Pressable>
+        <Text style={styles.label}>Username</Text>
+        <TextInput style={styles.input} value={username} onChangeText={(t) => setUsername(t.trim())} autoCapitalize="none" autoCorrect={false}
+          placeholder="Don't use your real name" placeholderTextColor={DIM} textContentType="username" maxLength={20} />
+        <Rules list={rules} show={!!username} />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Button label="Continue" on={canContinue} onPress={() => go('password')} />
+        <Terms />
       </ScrollView>
-
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <AnimatedButton
-          onPress={handleCredentialsContinue}
-          disabled={!email || !password || loading}
-          colors={email && password ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
-          label={loading ? 'Please wait...' : 'Next'}
-          delay={500}
-        />
-      </View>
+      <BirthdayPicker visible={picking} value={birthday} onClose={() => setPicking(false)} onPick={(v) => { setBirthday(v); setPicking(false); }} />
     </KeyboardAvoidingView>
-  );
-
-  // ═══════════════════════════════════════
-  // USERNAME SCREEN
-  // ═══════════════════════════════════════
-  const renderUsername = () => (
-    <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('credentials')}>
-        <Ionicons name="arrow-back" size={24} color={colors.text} />
-      </TouchableOpacity>
-
-      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
-
-      <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
-        <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
-          Create username
-        </Animated.Text>
-        <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-          You can always change this later.
-        </Animated.Text>
-
-        <ShakeText text={error} visible={!!error} />
-
-        <Animated.View entering={FadeInDown.delay(300).springify()} style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Ionicons name="at" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Username"
-            placeholderTextColor={colors.textSecondary}
-            value={username}
-            onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </Animated.View>
-
-        <Animated.Text entering={FadeIn.delay(400)} style={[styles.usernameHint, { color: colors.textSecondary }]}>
-          Usernames can only contain letters, numbers, and underscores.
-        </Animated.Text>
-      </ScrollView>
-
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <AnimatedButton
-          onPress={handleUsernameContinue}
-          disabled={username.length < 3 || loading}
-          colors={username.length >= 3 ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
-          label={loading ? 'Creating account...' : 'Sign up'}
-          delay={500}
-        />
-      </View>
-    </KeyboardAvoidingView>
-  );
-
-  // ═══════════════════════════════════════
-  // MAKE YOUR AVATAR (free: build, skin, hair, starter outfit)
-  // ═══════════════════════════════════════
-  const renderLook = () => (
-    <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
-      <Text style={[styles.stepTitle, { color: colors.text, paddingHorizontal: 20 }]}>Make your avatar</Text>
-      <Text style={[styles.stepSubtitle, { color: colors.textSecondary, paddingHorizontal: 20, marginBottom: 12 }]}>This is you in every game. Change it any time in Me.</Text>
-      <MakeAvatar textColor={colors.text} dimColor={colors.textSecondary} />
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <AnimatedButton onPress={() => goTo('how_heard')} disabled={false} colors={['#a855f7', '#ec4899']} label="Next" delay={200} />
-      </View>
-    </View>
-  );
-
-  // ═══════════════════════════════════════
-  // HOW HEARD SCREEN
-  // ═══════════════════════════════════════
-  const renderHowHeard = () => (
-    <View style={[styles.stepContainer, { backgroundColor: colors.background }]} key={stepKey}>
-      <TouchableOpacity style={[styles.backButton, { top: 8 }]} onPress={() => goTo('look')}>
-        <Ionicons name="arrow-back" size={24} color={colors.text} />
-      </TouchableOpacity>
-
-      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
-
-      <View style={styles.formContainer}>
-        <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text }]}>
-          How did you hear about us?
-        </Animated.Text>
-        <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-          Help us understand where our players come from.
-        </Animated.Text>
-
-        <View style={styles.howHeardList}>
-          {HOW_HEARD_OPTIONS.map((option, idx) => {
-            const isSelected = selectedHowHeard === option.id;
-            return (
-              <Animated.View key={option.id} entering={FadeInDown.delay(100 + idx * 50).springify()}>
-                <TouchableOpacity
-                  style={[
-                    styles.howHeardOption,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                    isSelected && { borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.1)' }
-                  ]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedHowHeard(option.id);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name={option.icon as any} size={24} color={isSelected ? '#a855f7' : colors.text} style={{ marginRight: 16 }} />
-                  <Text style={[styles.howHeardText, { color: isSelected ? '#a855f7' : colors.text }]}>{option.label}</Text>
-                  {isSelected && (
-                    <Ionicons name="checkmark-circle" size={24} color="#a855f7" style={{ marginLeft: 'auto' }} />
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          })}
-        </View>
-      </View>
-
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <AnimatedButton
-          onPress={() => goTo('genres')}
-          disabled={!selectedHowHeard}
-          colors={selectedHowHeard ? ['#a855f7', '#ec4899'] : [colors.surface, colors.border]}
-          label="Next"
-          delay={400}
-        />
-      </View>
-    </View>
-  );
-
-  // ═══════════════════════════════════════
-  // PROFILE SCREEN
-  // ═══════════════════════════════════════
-  const renderProfile = () => (
-    <KeyboardAvoidingView style={[styles.stepContainer, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} key={stepKey}>
-      <ProgressBar currentStep={currentStepIndex} totalSteps={STEP_ORDER.length} />
-
-      <ScrollView contentContainerStyle={styles.profileScroll} keyboardShouldPersistTaps="handled">
-        <Animated.Text entering={FadeInDown.delay(100).springify()} style={[styles.stepTitle, { color: colors.text, textAlign: 'center' }]}>
-          Set up your profile
-        </Animated.Text>
-        <Animated.Text entering={FadeInDown.delay(200).springify()} style={[styles.stepSubtitle, { color: colors.textSecondary, textAlign: 'center' }]}>
-          Tell us about yourself
-        </Animated.Text>
-
-        <Animated.View entering={FadeInDown.delay(600).springify()} style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Display Name"
-            placeholderTextColor={colors.textSecondary}
-            value={displayName}
-            onChangeText={setDisplayName}
-          />
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.delay(680).springify()} style={[styles.inputContainer, styles.bioContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <TextInput
-            style={[styles.input, styles.bioInput, { color: colors.text }]}
-            placeholder="Bio (optional)"
-            placeholderTextColor={colors.textSecondary}
-            value={bio}
-            onChangeText={setBio}
-            multiline
-            maxLength={150}
-          />
-        </Animated.View>
-        <Text style={[styles.charCount, { color: colors.textSecondary }]}>{bio.length}/150</Text>
-      </ScrollView>
-
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 24 }]}>
-        <AnimatedButton
-          onPress={handleProfileContinue}
-          disabled={false}
-          colors={['#a855f7', '#ec4899']}
-          label="Let's go! 🚀"
-          delay={700}
-        />
-        <TouchableOpacity onPress={onComplete}>
-          <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip for now</Text>
-        </TouchableOpacity>
-      </View>
-
-    </KeyboardAvoidingView>
-  );
-
-  // ═══════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════
-  return (
-    <View style={[styles.container, { paddingTop: step === 'welcome' ? 0 : insets.top }]}>
-      {step === 'welcome' && renderWelcome()}
-      {step === 'credentials' && renderCredentials()}
-      {step === 'username' && renderUsername()}
-      {step === 'look' && renderLook()}
-      {step === 'how_heard' && renderHowHeard()}
-      {step === 'genres' && renderGenres()}
-      {step === 'profile' && renderProfile()}
-    </View>
   );
 };
 
-// ══════════════════════════════════════════════
-// STYLES
-// ══════════════════════════════════════════════
-
-const genreStyles2 = StyleSheet.create({
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-});
+// Birthday, Roblox-style: a sheet with month / day / year columns and Confirm
+const ROW = 40;
+const Column = ({ items, index, onChange }: { items: string[]; index: number; onChange: (i: number) => void }) => {
+  const ref = useRef<ScrollView>(null);
+  useEffect(() => { ref.current?.scrollTo({ y: index * ROW, animated: false }); }, []);
+  return (
+    <View style={{ flex: 1, height: ROW * 5 }}>
+      <ScrollView ref={ref} showsVerticalScrollIndicator={false} snapToInterval={ROW} decelerationRate="fast"
+        contentContainerStyle={{ paddingVertical: ROW * 2 }}
+        onMomentumScrollEnd={(e) => onChange(Math.max(0, Math.min(items.length - 1, Math.round(e.nativeEvent.contentOffset.y / ROW))))}>
+        {items.map((t, i) => (
+          <View key={t + i} style={{ height: ROW, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: i === index ? '#fff' : DIM, fontSize: i === index ? 19 : 16, fontWeight: i === index ? '800' : '500' }}>{t}</Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
+const BirthdayPicker = ({ visible, value, onClose, onPick }: {
+  visible: boolean; value: { y: number; m: number; d: number } | null; onClose: () => void; onPick: (v: { y: number; m: number; d: number }) => void;
+}) => {
+  const insets = useSafeAreaInsets();
+  const now = new Date().getFullYear();
+  const years = Array.from({ length: 100 }, (_, i) => now - i).reverse();
+  const [m, setM] = useState(value?.m ?? 0);
+  const [d, setD] = useState((value?.d ?? 1) - 1);
+  const [y, setY] = useState(years.indexOf(value?.y ?? now - 13));
+  const days = new Date(years[y], m + 1, 0).getDate();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1 }} onPress={onClose} />
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.sheetHead}>
+          <Pressable onPress={onClose} hitSlop={12}><Ionicons name="close" size={24} color="#fff" /></Pressable>
+          <Text style={styles.headerTitle}>Birthday</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={{ flexDirection: 'row', paddingHorizontal: 12 }}>
+          <View pointerEvents="none" style={styles.wheelBand} />
+          <Column items={MONTHS} index={m} onChange={setM} />
+          <Column items={Array.from({ length: 31 }, (_, i) => String(i + 1))} index={Math.min(d, days - 1)} onChange={setD} />
+          <Column items={years.map(String)} index={y} onChange={setY} />
+        </View>
+        <Pressable style={styles.confirm} onPress={() => onPick({ y: years[y], m, d: Math.min(d, days - 1) + 1 })}>
+          <Text style={[styles.buttonText, { color: '#111' }]}>Confirm Birthday</Text>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  stepContainer: { flex: 1, backgroundColor: '#000' },
-
-  // Welcome
-  background: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  overlay: { ...StyleSheet.absoluteFill },
-  logoContainer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  root: { flex: 1, backgroundColor: BG },
   logoWrapper: { alignItems: 'center' },
-  logoTextContainer: { flexDirection: 'row', alignItems: 'center' },
-  logoTextGame: { fontSize: 48, fontWeight: '900', color: '#FF6B6B' },
-  logoTextTok: { fontSize: 48, fontWeight: '900', color: '#4ECDC4' },
-  tagline: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)', letterSpacing: 4, marginTop: 12 },
-  welcomeBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24 },
-  signupTitle: { fontSize: 22, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 20 },
-  authOption: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 24, height: 48,
-    marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
-  },
-  appleButton: { backgroundColor: '#000', borderColor: '#333' },
-  authOptionText: { color: '#fff', fontSize: 15, fontWeight: '600', marginLeft: 12 },
-  termsRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', marginTop: 16, marginBottom: 16 },
-  termsText: { fontSize: 12, color: 'rgba(255,255,255,0.5)' },
-  termsLink: { fontSize: 12, color: '#fff', fontWeight: '600' },
-  loginRow: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' },
-  loginText: { fontSize: 15, color: 'rgba(255,255,255,0.6)' },
-  loginLink: { fontSize: 15, color: '#a855f7', fontWeight: '600' },
-
-  // Form screens
-  backButton: { position: 'absolute', left: 12, zIndex: 10, padding: 10, width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  formContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
-  stepTitle: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 8 },
-  stepSubtitle: { fontSize: 15, color: 'rgba(255,255,255,0.6)', marginBottom: 24 },
-  errorText: { color: '#FF6B6B', fontSize: 14, marginBottom: 16 },
-
-  // Inputs
-  inputContainer: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a1a',
-    borderRadius: 12, marginBottom: 16, paddingHorizontal: 16, height: 56,
-    borderWidth: 1, borderColor: '#333',
-  },
-  inputIcon: { marginRight: 12 },
-  input: { flex: 1, fontSize: 16, color: '#fff' },
-  forgotPassword: { alignSelf: 'flex-end' },
-  forgotPasswordText: { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
-  usernameHint: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: -8 },
-
-  // Profile
-  profileScroll: { flexGrow: 1, paddingTop: 40, paddingHorizontal: 24, alignItems: 'center' },
-  avatarPicker: { width: 120, height: 120, borderRadius: 60, marginBottom: 20, marginTop: 24 },
-  avatarImage: { width: 120, height: 120, borderRadius: 60 },
-  avatarPlaceholder: {
-    width: 120, height: 120, borderRadius: 60, justifyContent: 'center',
-    alignItems: 'center', borderWidth: 2, borderStyle: 'dashed',
-  },
-  avatarBadge: {
-    position: 'absolute', bottom: 0, right: 0, width: 36, height: 36,
-    borderRadius: 18, justifyContent: 'center', alignItems: 'center',
-    borderWidth: 3, borderColor: '#000',
-  },
-  createAvatarBtnOnboarding: {
-    marginBottom: 24, paddingVertical: 10, paddingHorizontal: 20,
-    borderRadius: 20, backgroundColor: 'rgba(168,85,247,0.15)',
-  },
-  createAvatarTextOnboarding: { fontSize: 14, fontWeight: '600', color: '#a855f7', textAlign: 'center' },
-  bioContainer: { height: 100, alignItems: 'flex-start', paddingTop: 12 },
-  bioInput: { height: 80, textAlignVertical: 'top' },
-  charCount: { fontSize: 12, alignSelf: 'flex-end', marginTop: -8, marginBottom: 16 },
-
-  // Bottom actions
-  bottomActions: { paddingHorizontal: 24, paddingTop: 16 },
-  primaryButton: { height: 52, borderRadius: 26, overflow: 'hidden', marginBottom: 16 },
-  gradientButton: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  primaryButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  buttonDisabled: { opacity: 0.5 },
-  skipText: { fontSize: 15, color: 'rgba(255,255,255,0.5)', textAlign: 'center' },
-
-  // OAuth
-  oauthSection: { marginTop: 24 },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  dividerLine: { flex: 1, height: 1 },
-  dividerText: { marginHorizontal: 16, fontSize: 14 },
-  oauthIconsRow: { flexDirection: 'row', justifyContent: 'center' },
-  oauthIconButton: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', borderWidth: 1, marginHorizontal: 8 },
-  googleButtonModern: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#fff', borderRadius: 24, height: 48, marginBottom: 12,
-  },
-  googleButtonText: { color: '#333', fontSize: 15, fontWeight: '600' },
-
-  // How Heard
-  howHeardList: { marginTop: 16 },
-  howHeardOption: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
-  howHeardText: { fontSize: 16, fontWeight: '500' },
-
-  // Avatar Setup
-  avatarPreviewRing: { padding: 10, borderRadius: 100, borderWidth: 2 },
-  rerollBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 24, borderWidth: 1 },
-  rerollBtnText: { fontSize: 16, fontWeight: '600' },
+  welcomeBottom: { position: 'absolute', left: 24, right: 24, bottom: 0, gap: 12 },
+  welcomePrimary: { backgroundColor: '#fff', borderRadius: 12, height: 50, alignItems: 'center', justifyContent: 'center' },
+  welcomePrimaryText: { color: '#111', fontSize: 16, fontWeight: '800' },
+  welcomeSecondary: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)', borderRadius: 12, height: 50, alignItems: 'center', justifyContent: 'center' },
+  welcomeLinks: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 6 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  headerX: { width: 32 },
+  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  form: { padding: 20, paddingBottom: 60 },
+  stage: { height: H * 0.26, borderRadius: 20, overflow: 'hidden', marginBottom: 10 },
+  builds: { flexDirection: 'row', borderWidth: 1, borderColor: LINE, borderRadius: 10, overflow: 'hidden', marginBottom: 6 },
+  build: { flex: 1, height: 44, alignItems: 'center', justifyContent: 'center' },
+  buildOn: { backgroundColor: 'rgba(168,85,247,0.35)' },
+  label: { color: DIM, fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 6 },
+  input: { backgroundColor: FIELD, borderRadius: 10, height: 48, paddingHorizontal: 14, color: '#fff', fontSize: 16, borderWidth: 1, borderColor: LINE },
+  dateField: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rule: { flexDirection: 'row', alignItems: 'center' },
+  ruleText: { color: DIM, fontSize: 12.5 },
+  hi: { color: '#fff', fontSize: 24, fontWeight: '800', marginTop: 8 },
+  sub: { color: DIM, fontSize: 14, marginTop: 4 },
+  button: { backgroundColor: ACCENT, borderRadius: 12, height: 50, alignItems: 'center', justifyContent: 'center', marginTop: 24 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  error: { color: '#f87171', fontSize: 14, marginTop: 12 },
+  fine: { color: DIM, fontSize: 12, lineHeight: 17, marginTop: 14, textAlign: 'center' },
+  link: { color: '#fff', fontWeight: '700', textDecorationLine: 'underline' },
+  sheet: { backgroundColor: '#17121f', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12 },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  wheelBand: { position: 'absolute', left: 12, right: 12, top: ROW * 2, height: ROW, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' },
+  confirm: { backgroundColor: '#fff', borderRadius: 12, height: 50, alignItems: 'center', justifyContent: 'center', margin: 16 },
 });
 
 export default OnboardingFlow;

@@ -186,10 +186,11 @@ const requestJsonIfAvailable = async (endpoint: string, options: RequestInit = {
 
 // Auth API
 export const auth = {
-  signup: async (username: string, password: string, displayName?: string, email?: string) => {
+  // Sign up like Roblox: birthday (YYYY-MM-DD), username, password; signed in at once
+  signup: async (username: string, password: string, birthday: string) => {
     const data = await request('/auth/signup', {
       method: 'POST',
-      body: JSON.stringify({ username, password, displayName, email }),
+      body: JSON.stringify({ username, password, birthday }),
     });
     await setToken(data.token);
     return data;
@@ -198,20 +199,15 @@ export const auth = {
   login: async (username: string, password: string) => {
     const data = await request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, noCode: true }),
     });
     await setToken(data.token);
     return data;
   },
 
-  oauth: async (provider: 'apple' | 'google', oauthData: any) => {
-    const data = await request('/auth/oauth', {
-      method: 'POST',
-      body: JSON.stringify({ provider, ...oauthData }),
-    });
-    await setToken(data.token);
-    return data;
-  },
+  // Is this username free? { available, valid }
+  usernameAvailable: async (username: string): Promise<{ available: boolean; valid: boolean }> =>
+    request(`/auth/username-available?username=${encodeURIComponent(username)}`),
 
   logout: async () => {
     try {

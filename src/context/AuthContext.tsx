@@ -21,8 +21,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
-  signup: (username: string, password: string, displayName?: string, email?: string) => Promise<void>;
-  loginWithOAuth: (provider: 'apple' | 'google', data: any) => Promise<void>;
+  signup: (username: string, password: string, birthday: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -137,9 +136,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signup = async (username: string, password: string, displayName?: string, email?: string) => {
+  const signup = async (username: string, password: string, birthday: string) => {
     console.log('[Auth] Signing up:', username);
-    const data = await auth.signup(username, password, displayName, email);
+    const data = await auth.signup(username, password, birthday);
     console.log('[Auth] Signup successful, token saved');
     setUser(data.user);
     await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
@@ -153,26 +152,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await savePushToken(pushToken, authToken);
       }
     }
-  };
-
-  const loginWithOAuth = async (provider: 'apple' | 'google', oauthData: any) => {
-    console.log('[Auth] OAuth login with:', provider);
-    const data = await auth.oauth(provider, oauthData);
-    console.log('[Auth] OAuth successful, token saved');
-    setUser(data.user);
-    await AsyncStorage.setItem('authUser', JSON.stringify(data.user));
-
-    // Send push token to backend (may have been collected before OAuth)
-    const pushToken = await AsyncStorage.getItem('pushToken') || await registerForPushNotifications();
-    if (pushToken) {
-      await AsyncStorage.setItem('pushToken', pushToken);
-      const authToken = await getToken();
-      if (authToken) {
-        await savePushToken(pushToken, authToken);
-      }
-    }
-
-    return data;
   };
 
   const logout = async () => {
@@ -199,7 +178,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: !!user,
       login,
       signup,
-      loginWithOAuth,
       logout,
       refreshUser,
     }}>

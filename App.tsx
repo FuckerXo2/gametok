@@ -114,7 +114,7 @@ const MainApp = ({
   pendingForgeNotification?: { journeyView: 'directions' | 'perspective'; sessionId?: string } | null;
   onForgeNotificationHandled?: () => void;
 }) => {
-  const [activeTab, setActiveTab] = useState<TabName>('profile');
+  const [activeTab, setActiveTab] = useState<TabName>('home');   // open on Games (like Roblox's Home)
   const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
