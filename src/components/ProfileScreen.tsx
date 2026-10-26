@@ -44,8 +44,13 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const [editProfile, setEditProfile] = useState(false);
   const [friends, setFriends] = useState(false);
 
-  const priceOf = (i: AvatarItem) => account?.prices[i.id] ?? i.price;
-  const owns = (i: AvatarItem) => priceOf(i) === 0 || !!account?.owned.includes(i.id);
+  // an outfit is its pieces: owned when they all are, and it costs what's still unowned
+  const piecesOf = (i: AvatarItem) => (i.pieces ?? []).map((id) => AVATAR_ITEMS.find((x) => x.id === id)!).filter(Boolean);
+  const ownsOne = (i: AvatarItem) => (account?.prices[i.id] ?? i.price) === 0 || !!account?.owned.includes(i.id);
+  const owns = (i: AvatarItem): boolean => (i.pieces ? piecesOf(i).every(ownsOne) : ownsOne(i));
+  const priceOf = (i: AvatarItem): number => (i.pieces
+    ? piecesOf(i).filter((p) => !ownsOne(p)).reduce((t, p) => t + priceOf(p), 0)
+    : account?.prices[i.id] ?? i.price);
   const look = draft?.look ?? saved;
   const cart = draft?.cart ?? [];
 
@@ -82,6 +87,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       return;
     }
     if (!item.wear) return;
+    if (item.pieces) {   // a whole look (Roblox asks first: it replaces what you're wearing)
+      const unowned = piecesOf(item).filter((p) => !ownsOne(p)).map((p) => p.id);
+      Alert.alert('Wear outfit?', 'This replaces the clothes you’re wearing.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Wear', onPress: () => change({ look: item.wear!(look), cart: [...cart.filter((id) => !unowned.includes(id)), ...unowned] }) },
+      ]);
+      return;
+    }
     change({ look: item.wear(look), cart: owns(item) ? cart : [...cart, item.id] });
   };
 
@@ -119,11 +132,33 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   }, [saved, user?.avatar, account?.signedIn]);
   const onHeadshot = (png: string, of: AvatarRecord) => { uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); }); };
 
-  const tabs = TABS.filter((t) => mode === 'mine' || !t.mineOnly);
-  const items = useMemo(() => AVATAR_ITEMS.filter((i) =>
-    (mode === 'shop' ? !owns(i) : owns(i)) && (tab === 'all' || i.tab === tab) && (!sub || i.sub === sub)), [mode, tab, sub, account]);
-  const subs = TABS.find((t) => t.id === tab)?.subs ?? [];
+  const tabs = TABS;
+  const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => (mode === 'shop' ? !owns(i) : owns(i))), [mode, account]);
+  // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
+  const items = inMode.filter((i) => (tab === 'all' ? !i.pieces : i.tab === tab) && (!sub || i.sub === sub));
+  const outfitRow = tab === 'all' ? inMode.filter((i) => i.pieces) : [];
+  const subs = (TABS.find((t) => t.id === tab)?.subs ?? []).filter((s) => inMode.some((i) => i.tab === tab && i.sub === s));
   const bottomH = cart.length ? 76 : 0;
+
+  // one item in the grid (or the outfits row)
+  const ItemTile = ({ i, width }: { i: AvatarItem; width?: number }) => {
+    const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i, look?.body);
+    return (
+      <Pressable onPress={() => tap(i)} style={[styles.item, width ? { width } : null]}>
+        <View style={[styles.thumb, selected?.id === i.id && styles.thumbSel]}>
+          {on ? <Text style={styles.onTag}>ON</Text> : null}
+          {thumb ? <Image source={{ uri: thumb }} style={styles.thumbImg} resizeMode="contain" />
+            : <View style={[styles.skinDot, { backgroundColor: i.tint }]} />}
+        </View>
+        <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
+        {i.category === 'body' ? null : <Text style={styles.maker} numberOfLines={1}>GameTok</Text>}
+        {i.category === 'body' ? null   /* your body: not an item, no price */
+          : owned && (i.pieces ? piecesOf(i).some((p) => (account?.prices[p.id] ?? p.price) > 0) : priceOf(i) > 0) ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
+          : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
+          : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={styles.price}>{priceOf(i)}</Text></View>}
+      </Pressable>
+    );
+  };
 
   return (
     <View style={styles.root}>
@@ -134,7 +169,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
           <Pressable style={styles.round} onPress={() => setMenu(true)} hitSlop={6}><Ionicons name="menu" size={22} color="#fff" /></Pressable>
           <View style={styles.seg}>
             {(['shop', 'mine'] as const).map((m) => (
-              <Pressable key={m} onPress={() => { setMode(m); if (m === 'shop' && tab === 'body') { setTab('all'); setSub(null); } }} style={[styles.segBtn, mode === m && styles.segOn]}>
+              <Pressable key={m} onPress={() => { setMode(m); setSub(null); }} style={[styles.segBtn, mode === m && styles.segOn]}>
                 <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === 'shop' ? 'Shop' : 'My items'}</Text>
               </Pressable>
             ))}
@@ -166,34 +201,28 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
         </View>
         <ScrollView contentContainerStyle={{ paddingBottom: bottomH + 20 }} showsVerticalScrollIndicator={false}>
         {subs.length ? (
-          <View style={styles.subs}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subs}>
             {subs.map((s) => (
               <Pressable key={s} onPress={() => setSub(sub === s ? null : s)} style={[styles.sub, sub === s && styles.subOn]}>
                 <Text style={[styles.subText, sub === s && styles.subTextOn]}>{s}</Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
+        ) : null}
+        {outfitRow.length ? (
+          <>
+            <View style={styles.rowHead}>
+              <Text style={[styles.heading, { marginBottom: 0 }]}>Outfits</Text>
+              <Pressable onPress={() => { setTab('outfits'); setSub(null); }} style={styles.seeAll} hitSlop={6}><Text style={styles.seeAllText}>See All</Text></Pressable>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+              {outfitRow.map((i) => <ItemTile key={i.id} i={i} width={CELL} />)}
+            </ScrollView>
+          </>
         ) : null}
         <Text style={styles.heading}>{sub || (tab === 'all' ? (mode === 'mine' ? 'My items' : 'Recommended For You') : TABS.find((t) => t.id === tab)?.label)}</Text>
         <View style={styles.grid}>
-          {items.length ? items.map((i) => {
-            const on = !!look && !!i.isWorn?.(look), owned = owns(i), thumb = thumbOf(i, look?.body);
-            return (
-              <Pressable key={i.id} onPress={() => tap(i)} style={styles.item}>
-                <View style={[styles.thumb, selected?.id === i.id && styles.thumbSel]}>
-                  {on ? <Text style={styles.onTag}>ON</Text> : null}
-                  {thumb ? <Image source={{ uri: thumb }} style={styles.thumbImg} resizeMode="contain" />
-                    : <View style={[styles.skinDot, { backgroundColor: i.tint }]} />}
-                </View>
-                <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
-                {i.tab === 'body' ? null : <Text style={styles.maker} numberOfLines={1}>GameTok</Text>}
-                {i.tab === 'body' ? null   /* your body: not an item, no price */
-                  : owned && priceOf(i) > 0 ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
-                  : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
-                  : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={styles.price}>{priceOf(i)}</Text></View>}
-              </Pressable>
-            );
-          }) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'You own everything here. More coming soon.'}</Text>}
+          {items.length ? items.map((i) => <ItemTile key={i.id} i={i} />) : <Text style={styles.empty}>{mode === 'mine' ? 'Nothing here yet. Find things in Shop.' : 'You own everything here. More coming soon.'}</Text>}
         </View>
         </ScrollView>
 
@@ -273,7 +302,7 @@ const styles = StyleSheet.create({
   tabOn: { borderBottomColor: '#fff' },
   tabText: { color: DIM, fontSize: 16, fontWeight: '700' },
   tabTextOn: { color: '#fff' },
-  subs: { flexDirection: 'row', gap: 20, paddingHorizontal: 18, paddingTop: 12 },
+  subs: { gap: 20, paddingHorizontal: 18, paddingTop: 12 },
   sub: { paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   subOn: { borderBottomColor: '#fff' },
   subText: { color: DIM, fontSize: 14, fontWeight: '700' },
@@ -281,6 +310,10 @@ const styles = StyleSheet.create({
   heading: { color: '#fff', fontSize: 24, fontWeight: '800', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 18, padding: 16 },
   item: { width: CELL },
+  rowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 },
+  seeAll: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginTop: 18 },
+  seeAllText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  row: { columnGap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: GREEN, color: '#052e12', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   thumb: { width: CELL, height: CELL, backgroundColor: CARD, borderRadius: 14, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
   thumbSel: { borderColor: ACCENT },
