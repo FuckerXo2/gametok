@@ -1,7 +1,7 @@
 // Showcase: a development-only switch that fills the Games screen like the design mock (gametok/design/games-mocks):
 // the backend's other games as stand-ins, and three sample friends online. Never on in a release build (__DEV__).
 // Sample headshots come from the avatar-editor server on the Mac (launch config "avatar-editor").
-export const SHOWCASE = __DEV__ && true;
+export const SHOWCASE = __DEV__ && false;
 
 const HEADS = 'http://localhost:8980/assets/thumbs';
 export const SHOWCASE_FRIENDS = [
