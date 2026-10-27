@@ -122,6 +122,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
   };
   const tap = (g: HomeGame) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onOpen(g); };
   const cell = (width - PAD * 2 - 10) / 2;
+  const few = catalog.length <= 3;
 
   // the greeting follows who's online
   const one = online.length === 1 ? online[0] : null;
@@ -172,27 +173,48 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
           </View>
         </View>
 
-        <Text style={styles.heading}>Jump back in</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 10 }}>
-          {recent.map((g) => (
-            <Pressable key={g.id} style={{ width: 160 }} onPress={() => tap(g)}>
-              <Image source={{ uri: thumb(g) }} style={styles.wide} resizeMode="cover" />
-              <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
-              {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
-            </Pressable>
-          ))}
-        </ScrollView>
+        {few ? (
+          // only a few games so far: each one big, full width (rows of small tiles would look empty)
+          <>
+            <Text style={[styles.heading, { marginTop: -14 }]}>{recentIds.length ? 'Jump back in' : 'Play now'}</Text>
+            {forYou.map((g) => (
+              <Pressable key={g.id} style={styles.bigCard} onPress={() => tap(g)}>
+                <Image source={{ uri: thumb(g) }} style={[styles.bigImg, { height: (width - PAD * 2) * 0.5 }]} resizeMode="cover" />
+                <View style={[styles.row, { marginTop: 10 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.name, { fontSize: 17, marginTop: 0 }]} numberOfLines={1}>{g.name}</Text>
+                    {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
+                  </View>
+                  <View style={styles.playBtn}><Ionicons name="play" size={16} color="#111" /><Text style={styles.playText}>Play</Text></View>
+                </View>
+              </Pressable>
+            ))}
+          </>
+        ) : (
+          <>
+            <Text style={styles.heading}>Jump back in</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 10 }}>
+              {recent.map((g) => (
+                <Pressable key={g.id} style={{ width: 160 }} onPress={() => tap(g)}>
+                  <Image source={{ uri: thumb(g) }} style={styles.wide} resizeMode="cover" />
+                  <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
+                  {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
+                </Pressable>
+              ))}
+            </ScrollView>
 
-        <Text style={styles.heading}>For you</Text>
-        <View style={styles.grid}>
-          {forYou.map((g) => (
-            <Pressable key={g.id} style={{ width: cell }} onPress={() => tap(g)}>
-              <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: cell * 0.75 }]} resizeMode="cover" />
-              <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
-              {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
-            </Pressable>
-          ))}
-        </View>
+            <Text style={styles.heading}>For you</Text>
+            <View style={styles.grid}>
+              {forYou.map((g) => (
+                <Pressable key={g.id} style={{ width: cell }} onPress={() => tap(g)}>
+                  <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: cell * 0.75 }]} resizeMode="cover" />
+                  <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
+                  {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
       </ScrollView>
 
       {/* Join friends: who's on, and the game each is in */}
@@ -237,6 +259,10 @@ const styles = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: PURPLE, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, marginTop: 12 },
   pillDim: { backgroundColor: 'rgba(255,255,255,0.12)' },
   pillText: { color: TEXT, fontWeight: '800', fontSize: 14 },
+  bigCard: { marginHorizontal: PAD, marginBottom: 18 },
+  bigImg: { width: '100%', borderRadius: 18, backgroundColor: CARD },
+  playBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fff', borderRadius: 999, paddingVertical: 9, paddingHorizontal: 18 },
+  playText: { color: '#111', fontWeight: '800', fontSize: 15 },
   heading: { color: TEXT, fontSize: 20, fontWeight: '800', marginHorizontal: PAD, marginTop: 20, marginBottom: 10 },
   wide: { width: 160, height: 96, borderRadius: 14, backgroundColor: CARD },
   tall: { width: '100%', borderRadius: 14, backgroundColor: CARD },
