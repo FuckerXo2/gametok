@@ -123,29 +123,37 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
   };
 
   return (
-    <Page visible={visible} title="Settings" onClose={onClose}>
-      <Section title="ACCOUNT">
-        <Item label="Change password" onPress={() => start('password')} />
-      </Section>
+    // Change password opens as its own page (in the same sheet: iOS can't stack a second one on top)
+    <Page visible={visible} title={form === 'password' ? 'Change password' : 'Settings'} onClose={form ? () => setForm(null) : onClose}>
       {form === 'password' ? (
-        <View style={styles.form}>
-          <Text style={styles.formTitle}>Change password</Text>
-          <TextInput style={styles.input} value={a} onChangeText={setA} placeholder="Current password" placeholderTextColor={DIM} secureTextEntry autoFocus />
-          <TextInput style={[styles.input, { marginTop: 10 }]} value={b} onChangeText={setB} placeholder="New password (8+ characters)" placeholderTextColor={DIM} secureTextEntry />
-          <TextInput style={[styles.input, { marginTop: 10 }]} value={c} onChangeText={setC} placeholder="Confirm new password" placeholderTextColor={DIM} secureTextEntry />
-          <Pressable style={styles.button} disabled={busy} onPress={() => (b !== c ? setError('The new passwords don’t match')
-            : run(() => authApi.changePassword(a, b), () => { setForm(null); Alert.alert('Password changed'); }))}>
+        <>
+          <Text style={styles.label}>Current password</Text>
+          <TextInput style={styles.input} value={a} onChangeText={setA} secureTextEntry autoFocus textContentType="password" />
+          <Text style={styles.label}>New password</Text>
+          <TextInput style={styles.input} value={b} onChangeText={setB} secureTextEntry textContentType="newPassword" />
+          <Text style={styles.hint}>At least 8 characters, and not your username.</Text>
+          <Text style={styles.label}>Confirm new password</Text>
+          <TextInput style={styles.input} value={c} onChangeText={setC} secureTextEntry textContentType="newPassword" />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Pressable style={[styles.button, { marginTop: 28 }, !(a && b && c) && { opacity: 0.4 }]} disabled={busy || !(a && b && c)}
+            onPress={() => (b !== c ? setError('The new passwords don’t match')
+              : run(() => authApi.changePassword(a, b), () => { setForm(null); Alert.alert('Password changed'); }))}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save</Text>}
           </Pressable>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-        </View>
-      ) : null}
-      <Section title="APP">
-        <Item label="Dark mode" right={<View style={{ justifyContent: 'center', height: 52 }}><Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#555', true: ACCENT }} thumbColor="#fff" /></View>} />
-      </Section>
-      <Section title="">
-        <Item label="Log out" danger onPress={() => Alert.alert('Log out?', '', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: () => { onClose(); logout(); } }])} />
-      </Section>
+        </>
+      ) : (
+        <>
+        <Section title="ACCOUNT">
+          <Item label="Change password" onPress={() => start('password')} />
+        </Section>
+        <Section title="APP">
+          <Item label="Dark mode" right={<View style={{ justifyContent: 'center', height: 52 }}><Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#555', true: ACCENT }} thumbColor="#fff" /></View>} />
+        </Section>
+        <Section title="">
+          <Item label="Log out" danger onPress={() => Alert.alert('Log out?', '', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: () => { onClose(); logout(); } }])} />
+        </Section>
+        </>
+      )}
     </Page>
   );
 };
@@ -183,6 +191,8 @@ const styles = StyleSheet.create({
   item: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, minHeight: 52, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: LINE },
   itemText: { color: '#fff', fontSize: 16, fontWeight: '600', flex: 1 },
   itemValue: { color: DIM, fontSize: 14, maxWidth: '55%' },
+  label: { color: DIM, fontSize: 13, fontWeight: '600', marginTop: 18, marginBottom: 6 },
+  hint: { color: DIM, fontSize: 12, marginTop: 6 },
   form: { backgroundColor: CARD, borderRadius: 14, padding: 16, marginTop: -10, marginBottom: 22 },
   formTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
   formSub: { color: DIM, fontSize: 13, marginTop: 4, marginBottom: 12, lineHeight: 18 },
