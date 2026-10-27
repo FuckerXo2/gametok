@@ -48,6 +48,8 @@ type Props = WebViewProps & {
   onGameOver?: (won: boolean, score?: number) => void;
   /** The catalog id: lets the game ask who's playing (bridge.js GameTok.session()). */
   gameId?: string;
+  /** Opened from a friend's Join: their GameTok user id (the game puts you in their party, window.GAMETOK_JOIN_FRIEND). */
+  joinFriend?: string | null;
 };
 
 const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
@@ -372,7 +374,7 @@ true;
 `;
 
 export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
-  { orientation = DEFAULT_ORIENTATION, containerStyle, box: boxProp = null, style, runtime = 'web', gameScript, showControls, controlsConfig, onScore, onGameOver, gameId, ...webViewProps },
+  { orientation = DEFAULT_ORIENTATION, containerStyle, box: boxProp = null, style, runtime = 'web', gameScript, showControls, controlsConfig, onScore, onGameOver, gameId, joinFriend, ...webViewProps },
   ref,
 ) {
   const webRef = useRef<WebView | null>(null);
@@ -501,6 +503,7 @@ true;
     (avatar ? `window.GAMETOK_AVATAR = ${JSON.stringify(avatar)};\n` : '') +
     // which app this is (a game can tell an app too old for it: no version = older than 2.2.0)
     `window.GAMETOK_APP_VERSION = ${JSON.stringify(APP_VERSION)};\n` +
+    (joinFriend ? `window.GAMETOK_JOIN_FRIEND = ${JSON.stringify(String(joinFriend))};\n` : '') +
     (webViewProps.injectedJavaScriptBeforeContentLoaded || '');
 
   const handleMessage = useCallback((event: any) => {

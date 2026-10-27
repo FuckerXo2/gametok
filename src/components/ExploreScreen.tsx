@@ -117,7 +117,7 @@ export const ExploreScreen: React.FC = () => {
   const [searchCreators, setSearchCreators] = useState<ExploreCreator[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState<any>(null);
-  const [playingGame, setPlayingGame] = useState<ExploreGame | null>(null);
+  const [playingGame, setPlayingGame] = useState<(ExploreGame & { joinFriend?: string }) | null>(null);
   const [remixTarget, setRemixTarget] = useState<ExploreGame | null>(null);
   const [remixLoading, setRemixLoading] = useState(false);
   // Active discovery category, or null for "Home" (all games).
@@ -230,7 +230,7 @@ export const ExploreScreen: React.FC = () => {
     }
   };
 
-  const openGame = async (gameOrId: string | ExploreGame) => {
+  const openGame = async (gameOrId: string | ExploreGame, joinFriend?: string) => {
     const gameId = typeof gameOrId === 'string' ? gameOrId : gameOrId.id;
     setRecentGameIds(prev => [gameId, ...prev.filter(x => x !== gameId)].slice(0, 10));
 
@@ -239,7 +239,7 @@ export const ExploreScreen: React.FC = () => {
       : gameOrId;
 
     if (existingGame) {
-      setPlayingGame(existingGame);
+      setPlayingGame(joinFriend ? { ...existingGame, joinFriend } : existingGame);
       gamesApi.recordPlay(existingGame.id).catch(() => {});
       return;
     }
@@ -332,6 +332,7 @@ export const ExploreScreen: React.FC = () => {
         activeCategory={activeCategory}
         onCategory={setActiveCategory}
         onOpen={(g) => openGame(g.id)}
+        onJoinFriend={(g, friendId) => openGame(g.id, friendId)}
         onSearch={() => setSearchModalVisible(true)}
         onFriends={() => setActiveTab('connect')}
         onOpenShop={() => setTokbuxOpen(true)}

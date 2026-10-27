@@ -46,6 +46,8 @@ interface Props {
   activeCategory?: string | null;
   onCategory?: (slug: string | null) => void;
   onOpen: (game: HomeGame) => void;
+  /** a friend's Join: open their game and land in their party / lobby */
+  onJoinFriend?: (game: HomeGame, friendId: string) => void;
   onSearch: () => void;
   onFriends: () => void;
   onOpenShop?: () => void;
@@ -70,7 +72,7 @@ interface Friend { id: string; name: string; avatar?: string; status: string; ga
 const thumb = (g: HomeGame) => resolveGameThumbnail(g.thumbnail, g.id, g as any);
 const plays = (n?: number) => (!n ? '' : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K plays` : `${n} plays`);
 
-export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpenShop, refreshing, onRefresh }: Props) => {
+export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, onFriends, onOpenShop, refreshing, onRefresh }: Props) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const account = useAvatarAccount();
@@ -119,7 +121,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
     if (!g) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSheet(false);
-    onOpen(g);
+    if (onJoinFriend) onJoinFriend(g, f.id); else onOpen(g);
   };
   const tap = (g: HomeGame) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onOpen(g); };
   const cell = (width - PAD * 2 - 10) / 2;

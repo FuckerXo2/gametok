@@ -26,6 +26,7 @@ const REVEAL_DELAY_MS = 1200;
 
 export interface PlayableGame {
   id: string;
+  joinFriend?: string | null;          // opened from a friend's Join: their GameTok user id
   name: string;
   thumbnail?: string | null;
   embedUrl?: string | null;
@@ -96,6 +97,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
           <GameSurface
             key={key}
             gameId={game.id}
+            joinFriend={game.joinFriend}
             orientation={game.orientation}
             source={{ uri: buildGameUrl(game, API_ORIGIN) }}
             scrollEnabled={false}
