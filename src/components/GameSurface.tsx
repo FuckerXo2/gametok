@@ -48,7 +48,8 @@ type Props = WebViewProps & {
   onGameOver?: (won: boolean, score?: number) => void;
   /** The catalog id: lets the game ask who's playing (bridge.js GameTok.session()). */
   gameId?: string;
-  /** Opened from a friend's Join: their GameTok user id (the game puts you in their party, window.GAMETOK_JOIN_FRIEND). */
+  /** Opened from a friend's Join: their GameTok user id. The game gets who they are in it (their per-game player id,
+   *  from the player session) as window.GAMETOK_JOIN_FRIEND, and puts you in their party. */
   joinFriend?: string | null;
 };
 
@@ -503,7 +504,6 @@ true;
     (avatar ? `window.GAMETOK_AVATAR = ${JSON.stringify(avatar)};\n` : '') +
     // which app this is (a game can tell an app too old for it: no version = older than 2.2.0)
     `window.GAMETOK_APP_VERSION = ${JSON.stringify(APP_VERSION)};\n` +
-    (joinFriend ? `window.GAMETOK_JOIN_FRIEND = ${JSON.stringify(String(joinFriend))};\n` : '') +
     (webViewProps.injectedJavaScriptBeforeContentLoaded || '');
 
   const handleMessage = useCallback((event: any) => {
@@ -524,8 +524,11 @@ true;
         }
       } else if (data.type === 'GAMETOK_PLAYER_SESSION_REQUEST' && gameId) {
         // who's playing: the signed-in GameTok player (their name and avatar), signed for this game's server
-        playerSessions.create(gameId)
-          .then((r: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: true, player: r.player, session: r.session, mode: r.mode, expiresIn: r.expiresIn }))
+        playerSessions.create(gameId, joinFriend)
+          .then((r: any) => {
+            if (r.joinFriend) webRef.current?.injectJavaScript(`window.GAMETOK_JOIN_FRIEND = ${JSON.stringify(String(r.joinFriend))}; true;`);
+            reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: true, player: r.player, session: r.session, mode: r.mode, expiresIn: r.expiresIn });
+          })
           .catch((e: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: false, code: e?.code, error: e?.message }));
       } else if (data.type === 'GAMETOK_PURCHASE_REQUEST' && gameId) {
         // a game sells its own items for TokBux: the player confirms here, at the server's price
@@ -550,7 +553,7 @@ true;
     if (webViewProps.onMessage) {
       webViewProps.onMessage(event);
     }
-  }, [onScore, onGameOver, webViewProps.onMessage, gameId, reply]);
+  }, [onScore, onGameOver, webViewProps.onMessage, gameId, reply, joinFriend]);
 
   return (
     <View

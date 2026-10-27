@@ -516,7 +516,9 @@ export const savedGames = {
 // Who's playing a game (bridge.js GameTok.init()/session()): a short-lived signed player session
 // for that game, as the signed-in user or, with no account, a guest tied to this device.
 export const playerSessions = {
-  create: async (gameId: string) => request(`/games/${encodeURIComponent(gameId)}/player-session`, { method: 'POST' }),
+  // joinFriend: a friend's GameTok id (their Join): the reply carries who they are in this game
+  create: async (gameId: string, joinFriend?: string | null) =>
+    request(`/games/${encodeURIComponent(gameId)}/player-session`, { method: 'POST', ...(joinFriend ? { body: JSON.stringify({ joinFriend }) } : {}) }),
 };
 
 // The player's 3D avatar, owned items and TokBux, on their account (backend src/avatar-router.js).
