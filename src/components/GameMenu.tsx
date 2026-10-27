@@ -1,9 +1,9 @@
-// The in-game menu, like Roblox's: a small GameTok button in the game's top-left corner opens Resume / Invite
+// The in-game menu, like Roblox's: a small menu (three-line) button in the game's top-left corner opens Resume / Invite
 // friends / Leave game over the game. Leaving asks first, so a stray tap can't end a match. A landscape game is
 // drawn turned 90° inside the portrait screen (GameSurface), so the button and the menu turn with it: they read
 // the right way up while the phone is held sideways.
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Image, Share, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Share, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -33,7 +33,7 @@ export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: b
     <View style={[styles.frame, frame]} pointerEvents="box-none">
       {!open && (
         <Pressable style={[styles.corner, corner]} onPress={show} hitSlop={10} accessibilityLabel="Game menu">
-          <Image source={require('../../assets/icon.png')} style={styles.logo} />
+          <Ionicons name="menu" size={24} color="#fff" />
         </Pressable>
       )}
       {open && (
@@ -76,7 +76,6 @@ const styles = StyleSheet.create({
     position: 'absolute', width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  logo: { width: 28, height: 28, borderRadius: 8 },
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   card: { width: 300, borderRadius: 20, backgroundColor: '#17131f', padding: 16, gap: 10 },
   title: { color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
