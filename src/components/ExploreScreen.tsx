@@ -28,6 +28,9 @@ import { RemixModal } from './RemixModal';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GamesHome } from './GamesHome';
+
+// The games on the app for now: only No Rules FC (the backend has older games that stay off the app)
+const onTheApp = (g: any) => /no[-_ ]?rules/i.test(g.id) || /no rules/i.test(g.name || '');
 import { TokBuxSheet } from './TokBuxSheet';
 
 const PURPLE = '#a855f7';
@@ -135,10 +138,7 @@ export const ExploreScreen: React.FC = () => {
       ]);
       if (gamesRes.status === 'fulfilled') {
         const rawGames = gamesRes.value?.games || [];
-        const curated = rawGames.filter((g: any) =>
-          /no[-_ ]?rules/i.test(g.id) ||
-          /no rules/i.test(g.name || '')
-        );
+        const curated = rawGames.filter(onTheApp);
         setAllGames(curated);
       }
       if (recRes.status === 'fulfilled') {
@@ -181,7 +181,7 @@ export const ExploreScreen: React.FC = () => {
           usersApi.search(searchQuery.trim()),
         ]);
         if (gameRes.status === 'fulfilled') {
-          setSearchResults(gameRes.value?.games || []);
+          setSearchResults((gameRes.value?.games || []).filter(onTheApp));
         }
         if (userRes.status === 'fulfilled') {
           setSearchCreators(userRes.value?.users || []);
