@@ -7,13 +7,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { View, Modal, Pressable, StatusBar, StyleSheet, DeviceEventEmitter } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Modal, StatusBar, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { games as gamesApi, API_URL } from '../services/api';
 import { GameSurface, buildGameUrl } from './GameSurface';
 import { TokBuxSheet } from './TokBuxSheet';
 import { GameActionRail } from './GameActionRail';
+import { GameMenu } from './GameMenu';
 import { isLandscape, type Orientation } from '../constants/orientation';
 
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
@@ -118,13 +118,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
           />
         ) : null}
 
-        <Pressable
-          style={[styles.closeBtn, { top: insets.top + 10 }]}
-          onPress={close}
-          hitSlop={8}
-        >
-          <Ionicons name="close" size={24} color="#fff" />
-        </Pressable>
+        {game ? <GameMenu key={`menu-${key}`} gameId={game.id} gameName={game.name} landscape={isLandscape(game.orientation)} onLeave={close} /> : null}
         <TokBuxSheet visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} />
       </View>
     </Modal>
@@ -134,16 +128,5 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  closeBtn: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 100,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
 });
