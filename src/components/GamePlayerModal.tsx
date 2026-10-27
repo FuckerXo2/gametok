@@ -1,10 +1,9 @@
 // GamePlayerModal — the fullscreen player. This IS how a game opens in explore, extracted so
 // profile and other-user profiles open games identically instead of each rolling their own shell.
 //
-// "Opens like explore" is more than a WebView in a Modal — it's the branded loading screen with
-// the game's thumbnail, creator and real load progress, the game's own colour behind it, the play
-// being recorded, and the deliberate 1200ms hold after load so the game isn't revealed mid-boot.
-// Every one of those was missing from the ad-hoc players elsewhere in the app.
+// No loading screen of the app's own: the game shows straight away and loads with its own screen (a generic
+// thumbnail-and-percent card in front of every game hid each game's look). The game's colour sits behind it
+// until its page paints, and the play is recorded.
 
 import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
@@ -12,17 +11,12 @@ import { View, Modal, Pressable, StatusBar, StyleSheet, DeviceEventEmitter } fro
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { games as gamesApi, API_URL } from '../services/api';
-import { resolveGameThumbnail } from '../utils/thumbnails';
-import { GameLoadingScreen } from './GameLoadingScreen';
 import { GameSurface, buildGameUrl } from './GameSurface';
 import { TokBuxSheet } from './TokBuxSheet';
 import { GameActionRail } from './GameActionRail';
 import { isLandscape, type Orientation } from '../constants/orientation';
 
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
-
-/** How long to keep the loading screen up after onLoadEnd, so the game isn't shown mid-boot. */
-const REVEAL_DELAY_MS = 1200;
 
 export interface PlayableGame {
   id: string;
@@ -55,7 +49,6 @@ interface Props {
 export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: Props) => {
   const insets = useSafeAreaInsets();
   const [loaded, setLoaded] = useState(false);
-  const [progress, setProgress] = useState(0);
   // a game's "get TokBux" opens the TokBux store over it
   const [tokbuxOpen, setTokbuxOpen] = useState(false);
   useEffect(() => {
@@ -71,13 +64,12 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
     return () => setMyStatus('online');
   }, [game?.id]);
 
-  // Keyed on the game id so a second game opened from the same surface starts from the loading
-  // screen again rather than flashing the previous game's finished state.
+  // Keyed on the game id so a second game opened from the same surface starts fresh rather than
+  // flashing the previous game's finished state.
   const key = game?.id || 'none';
 
   const close = () => {
     setLoaded(false);
-    setProgress(0);
     onClose();
   };
 
@@ -108,25 +100,8 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
             allowsAirPlayForMediaPlayback={false}
-            onLoadProgress={({ nativeEvent }) => {
-              setProgress(Math.round((nativeEvent.progress || 0) * 100));
-            }}
-            onLoadEnd={() => {
-              setProgress(100);
-              setTimeout(() => setLoaded(true), REVEAL_DELAY_MS);
-            }}
+            onLoadEnd={() => setLoaded(true)}
           />
-        ) : null}
-
-        {!loaded && game ? (
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            <GameLoadingScreen
-              gameName={game.name}
-              gameThumbnail={resolveGameThumbnail(game.thumbnail, game.id, game)}
-              creatorName={game.creatorDisplayName || game.creatorUsername}
-              progress={progress}
-            />
-          </View>
         ) : null}
 
         {/* Action rail — only once the game is up, so it never sits over the loading screen.
