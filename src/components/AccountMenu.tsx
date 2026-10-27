@@ -113,10 +113,10 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
   const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const [form, setForm] = useState<'password' | null>(null);
-  const [a, setA] = useState(''); const [b, setB] = useState('');
+  const [a, setA] = useState(''); const [b, setB] = useState(''); const [c, setC] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   useEffect(() => { if (visible) setForm(null); }, [visible]);
-  const start = (f: typeof form) => { setForm(f); setA(''); setB(''); setError(''); };
+  const start = (f: typeof form) => { setForm(f); setA(''); setB(''); setC(''); setError(''); };
   const run = async (fn: () => Promise<any>, after: () => void) => {
     setBusy(true); setError('');
     try { await fn(); after(); } catch (e: any) { setError(e?.message || 'Something went wrong'); } finally { setBusy(false); }
@@ -132,7 +132,9 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
           <Text style={styles.formTitle}>Change password</Text>
           <TextInput style={styles.input} value={a} onChangeText={setA} placeholder="Current password" placeholderTextColor={DIM} secureTextEntry autoFocus />
           <TextInput style={[styles.input, { marginTop: 10 }]} value={b} onChangeText={setB} placeholder="New password (8+ characters)" placeholderTextColor={DIM} secureTextEntry />
-          <Pressable style={styles.button} disabled={busy} onPress={() => run(() => authApi.changePassword(a, b), () => { setForm(null); Alert.alert('Password changed'); })}>
+          <TextInput style={[styles.input, { marginTop: 10 }]} value={c} onChangeText={setC} placeholder="Confirm new password" placeholderTextColor={DIM} secureTextEntry />
+          <Pressable style={styles.button} disabled={busy} onPress={() => (b !== c ? setError('The new passwords don’t match')
+            : run(() => authApi.changePassword(a, b), () => { setForm(null); Alert.alert('Password changed'); }))}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save</Text>}
           </Pressable>
           {error ? <Text style={styles.error}>{error}</Text> : null}
