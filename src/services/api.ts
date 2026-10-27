@@ -280,6 +280,9 @@ export const users = {
     return request(`/users/${userId}/pending-count`);
   },
 
+  // who's online and which game they're in: { statuses: {id: status}, games: {id: gameId} }
+  presence: async (userIds: string[]): Promise<{ statuses: Record<string, string>; games?: Record<string, string> }> =>
+    request(`/presence?userIds=${userIds.map(encodeURIComponent).join(',')}`),
   following: async (userId: string) => {
     return request(`/users/${userId}/following`);
   },

@@ -1,35 +1,32 @@
-// GamesHome — the Games tab's main screen, pixel-matched to the official GameTok design.
-// Includes TokBux shop integration, featured hero carousel, friends card, and themed rows.
+// GamesHome — the Games tab ("your lobby", design C of gametok/design/games-mocks): your avatar and a greeting at the
+// top that follows who's online (nobody: invite; one friend: join them; several: "Join friends" opens the list of
+// friends and the game each is in), then Jump back in (your recent games) and For you.
 
-import React, { useMemo, useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  useWindowDimensions,
-  RefreshControl,
-  ImageBackground,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, useWindowDimensions, RefreshControl, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { CustomImage as Image } from './CustomImage';
-import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { openAccountMenu } from './AccountMenu';
+import { AvatarStage } from './AvatarStage';
+import { TokBuxIcon } from './TokBuxIcon';
+import { Avatar } from './Avatar';
 import { useAvatarAccount } from '../avatar/store';
+import { DEFAULT_AVATAR } from '../avatar/catalog';
+import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import { users as usersApi } from '../services/api';
 
-const BG = '#08080C';
-const SURFACE = '#181722';
+const BG = '#0d0a16';
+const CARD = '#1b1626';
 const TEXT = '#FFFFFF';
-const MUTED = '#9A96AA';
-const PURPLE = '#8B5CF6';
-const YELLOW = '#FFD23F';
+const MUTED = 'rgba(255,255,255,0.55)';
+const PURPLE = '#a855f7';
+const GREEN = '#22c55e';
 const PAD = 16;
-
 
 export interface HomeGame {
   id: string;
@@ -45,8 +42,8 @@ interface Props {
   games: HomeGame[];
   /** Ids of games this player opened recently, newest first. */
   recentIds: string[];
-  activeCategory: string | null;
-  onCategory: (slug: string | null) => void;
+  activeCategory?: string | null;
+  onCategory?: (slug: string | null) => void;
   onOpen: (game: HomeGame) => void;
   onSearch: () => void;
   onFriends: () => void;
@@ -55,7 +52,7 @@ interface Props {
   onRefresh: () => void;
 }
 
-// Built-in catalog so the screen is always populated: the flagship (GTA Lagos is off the app for now)
+// Built-in catalog so the screen is never empty while the list loads
 const DEFAULT_CATALOG: HomeGame[] = [
   {
     id: 'no-rules-fc',
@@ -67,756 +64,189 @@ const DEFAULT_CATALOG: HomeGame[] = [
   },
 ];
 
+interface Friend { id: string; name: string; avatar?: string; status: string; gameId?: string }
+
 const thumb = (g: HomeGame) => resolveGameThumbnail(g.thumbnail, g.id, g as any);
-const inCat = (g: HomeGame, slug: string) => (g.categories || []).includes(slug);
+const plays = (n?: number) => (!n ? '' : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K plays` : `${n} plays`);
 
-const ROWS: { slug: string; title: string; shape: 'wide' | 'tall' }[] = [
-  { slug: 'racing', title: 'Floor it', shape: 'wide' },
-  { slug: 'horror', title: "Don't play alone", shape: 'tall' },
-  { slug: 'action', title: 'All action', shape: 'wide' },
-  { slug: 'sports', title: 'Game day', shape: 'tall' },
-  { slug: 'adventure', title: 'Go explore', shape: 'wide' },
-];
-
-export const GamesHome = ({
-  games,
-  recentIds,
-  activeCategory,
-  onCategory,
-  onOpen,
-  onSearch,
-  onFriends,
-  onOpenShop,
-  refreshing,
-  onRefresh,
-}: Props) => {
+export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpenShop, refreshing, onRefresh }: Props) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [heroIndex, setHeroIndex] = useState(0);
-  const tokbuxBalance = useAvatarAccount()?.tokbux ?? 0;
-  const heroW = width - PAD * 2;
+  const account = useAvatarAccount();
+  const { user } = useAuth();
+  const { presenceMap, presenceGames } = useSocket();
+  const [following, setFollowing] = useState<any[]>([]);
+  const [seed, setSeed] = useState<{ statuses: Record<string, string>; games: Record<string, string> }>({ statuses: {}, games: {} });
+  const [sheet, setSheet] = useState(false);
 
-  // Strictly keep ONLY No Rules FC
-  const effectiveGames = useMemo(() => {
-    const isTarget = (id: string, name?: string) =>
-      /no[-_ ]?rules/i.test(id) ||
-      /no rules/i.test(name || '');
-
-    const filtered = games.filter((g) => isTarget(g.id, g.name));
-    const existingIds = new Set(filtered.map((g) => g.id));
-    const merged = [...filtered];
-
-    DEFAULT_CATALOG.forEach((item) => {
-      if (!existingIds.has(item.id)) merged.push(item);
-    });
-
-    return merged;
+  const catalog = useMemo(() => {
+    const out = [...games];
+    for (const g of DEFAULT_CATALOG) if (!out.some((x) => x.id === g.id)) out.push(g);
+    return out;
   }, [games]);
+  const byId = (id?: string) => catalog.find((g) => g.id === id);
+  const recent = useMemo(() => {
+    const r = recentIds.map((id) => byId(id)).filter(Boolean) as HomeGame[];
+    return r.length ? r : [...catalog].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 6);
+  }, [recentIds, catalog]);
+  const forYou = useMemo(() => [...catalog].sort((a, b) => (b.plays || 0) - (a.plays || 0)), [catalog]);
 
-  const byPlays = useMemo(
-    () => [...effectiveGames].sort((a, b) => (b.plays || 0) - (a.plays || 0)),
-    [effectiveGames]
-  );
-
-  // Featured carousel: GTA Lagos first, No Rules FC second
-  const featured = useMemo(() => {
-    const gta = effectiveGames.find((g) => /gta/i.test(g.id) || /gta/i.test(g.name));
-    const noRules = effectiveGames.find((g) => /no[-_ ]?rules/i.test(g.id) || /no rules/i.test(g.name));
-    const list: HomeGame[] = [];
-    if (gta) list.push(gta);
-    if (noRules && noRules.id !== gta?.id) list.push(noRules);
-    return list;
-  }, [effectiveGames]);
-
-  const recent = useMemo(
-    () =>
-      recentIds
-        .map((id) => effectiveGames.find((g) => g.id === id))
-        .filter(Boolean)
-        .slice(0, 10) as HomeGame[],
-    [recentIds, effectiveGames]
-  );
-
-  const rows = useMemo(() => {
-    const shown = new Set(featured.map((g) => g.id));
-    const out = ROWS.map((r) => {
-      let list = byPlays.filter((g) => inCat(g, r.slug) && !shown.has(g.id)).slice(0, 10);
-      if (list.length < 2) {
-        // Fallback items in category from default catalog
-        const extras = DEFAULT_CATALOG.filter((d) => inCat(d, r.slug) && !shown.has(d.id));
-        list = [...list, ...extras].slice(0, 10);
+  // who you follow, and who of them is on (seeded once, then live from the presence socket)
+  const loadFriends = async () => {
+    if (!user?.id) return;
+    try {
+      const list = await usersApi.following(user.id);
+      const arr = Array.isArray(list) ? list : list?.users || [];
+      setFollowing(arr);
+      if (arr.length) {
+        const p = await usersApi.presence(arr.map((f: any) => f.id));
+        setSeed({ statuses: p.statuses || {}, games: p.games || {} });
       }
-      list.forEach((g) => shown.add(g.id));
-      return { ...r, list };
-    }).filter((r) => r.list.length >= 1);
+    } catch { /* offline: no friends row */ }
+  };
+  useEffect(() => { loadFriends(); }, [user?.id]);
+  const online: Friend[] = useMemo(() => following.map((f: any) => {
+    const status = presenceMap.get(f.id) || seed.statuses[f.id] || 'offline';
+    const gameId = status === 'in-game' ? presenceGames.get(f.id) || seed.games[f.id] : undefined;
+    return { id: f.id, name: f.displayName || f.username, avatar: f.avatar, status, gameId };
+  }).filter((f) => f.status === 'online' || f.status === 'in-game')
+    .sort((a, b) => Number(!!b.gameId) - Number(!!a.gameId)), [following, presenceMap, presenceGames, seed]);
 
-    const quick = byPlays
-      .filter((g) => (inCat(g, 'arcade') || inCat(g, 'puzzle')) && !shown.has(g.id))
-      .slice(0, 12);
-    quick.forEach((g) => shown.add(g.id));
-    const rest = byPlays.filter((g) => !shown.has(g.id));
-    return { themed: out, quick, rest };
-  }, [byPlays, featured]);
+  const firstName = (user?.displayName || user?.username || '').split(' ')[0];
+  const join = (f: Friend) => {
+    const g = byId(f.gameId);
+    if (!g) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSheet(false);
+    onOpen(g);
+  };
+  const tap = (g: HomeGame) => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onOpen(g); };
+  const cell = (width - PAD * 2 - 10) / 2;
 
-  const categoryList = useMemo(
-    () => (activeCategory ? effectiveGames.filter((g) => inCat(g, activeCategory)) : []),
-    [effectiveGames, activeCategory]
-  );
-
-  const tile = (width - PAD * 2 - 24) / 3;
-
-  const Grid = ({ list }: { list: HomeGame[] }) => (
-    <View style={styles.grid}>
-      {list.map((g) => (
-        <Pressable
-          key={g.id}
-          style={{ width: tile }}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onOpen(g);
-          }}
-        >
-          <View style={[styles.thumb, { width: tile, height: tile }]}>
-            <Image source={{ uri: thumb(g) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          </View>
-          <Text style={styles.cardName} numberOfLines={1}>
-            {g.name}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-
-  const Title = ({ children }: { children: string }) => (
-    <Text style={styles.sectionTitle}>{children}</Text>
+  // the greeting follows who's online
+  const one = online.length === 1 ? online[0] : null;
+  const greeting = !online.length ? (
+    <>
+      <Text style={styles.greetSub}>None of your friends are on right now</Text>
+      <Pressable style={[styles.pill, styles.pillDim]} onPress={onFriends}><Ionicons name="person-add-outline" size={14} color={TEXT} /><Text style={styles.pillText}>Invite friends</Text></Pressable>
+    </>
+  ) : one ? (
+    <>
+      <View style={[styles.row, { marginTop: 10, gap: 8 }]}>
+        <Avatar uri={one.avatar} size={34} style={styles.onRing} />
+        <Text style={styles.greetSub2} numberOfLines={2}><Text style={{ fontWeight: '800', color: TEXT }}>{one.name}</Text>{one.gameId ? ` is in ${byId(one.gameId)?.name ?? 'a game'}` : ' is online'}</Text>
+      </View>
+      {byId(one.gameId) ? <Pressable style={styles.pill} onPress={() => join(one)}><Text style={styles.pillText}>Join {one.name}</Text></Pressable> : null}
+    </>
+  ) : (
+    <>
+      <View style={[styles.row, { marginTop: 10 }]}>
+        {online.slice(0, 3).map((f, i) => <Avatar key={f.id} uri={f.avatar} size={30} style={[styles.stack, i > 0 && { marginLeft: -8 }]} />)}
+        <Text style={[styles.greetSub2, { marginLeft: 8, color: TEXT, fontWeight: '700' }]}>{online.length} friends online</Text>
+      </View>
+      <Pressable style={styles.pill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSheet(true); }}><Text style={styles.pillText}>Join friends</Text></Pressable>
+    </>
   );
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: BG }}
-      contentContainerStyle={{ paddingBottom: 130 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
-    >
-      {/* 1. Header with Kicker, Title, TokBux button, and Search */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
-        <Pressable style={[styles.iconBtn, { marginRight: 12 }]} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}>
-          <Ionicons name="menu" size={22} color={TEXT} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>YOUR NEXT FAVORITE</Text>
-          <Text style={styles.pageTitle}>
-            Games<Text style={styles.pageTitleDot}>.</Text>
-          </Text>
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 130 }} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { onRefresh(); loadFriends(); }} tintColor="#fff" />}>
+        {/* you */}
+        <View style={{ height: insets.top + 286 }}>
+          {/* the 3D stage fills the top, the avatar framed on its right */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <AvatarStage style={StyleSheet.absoluteFill} avatar={account?.avatar ?? DEFAULT_AVATAR} look="dark" focus="lobby" />
+            <LinearGradient colors={['rgba(13,10,22,0)', BG]} style={styles.fade} />
+          </View>
+          <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
+            <Pressable style={styles.round} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}><Ionicons name="menu" size={22} color={TEXT} /></Pressable>
+            <View style={[styles.row, { gap: 10 }]}>
+              <Pressable style={styles.round} onPress={onSearch} accessibilityLabel="Search games" hitSlop={6}><Ionicons name="search" size={20} color={TEXT} /></Pressable>
+              <Pressable style={styles.tb} onPress={onOpenShop} hitSlop={6}><TokBuxIcon size={24} /><Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text></Pressable>
+            </View>
+          </View>
+          <View style={[styles.greet, { top: insets.top + 86 }]}>
+            <Text style={styles.hey}>Hey {firstName},{'\n'}ready?</Text>
+            {greeting}
+          </View>
         </View>
 
-        <Pressable
-          style={styles.iconBtn}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onSearch();
-          }}
-          accessibilityLabel="Search games"
-          hitSlop={6}
-        >
-          <Ionicons name="search" size={20} color={TEXT} />
-        </Pressable>
-      </View>
-
-      {/* 2. Category Filter Pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chips}
-        style={styles.categoryRail}
-      >
-        {[{ slug: null as string | null, label: 'For you' }, ...CATEGORIES].map((c) => {
-          const on = activeCategory === c.slug;
-          return (
-            <Pressable
-              key={c.slug || 'for-you'}
-              style={[styles.chip, on && styles.chipOn]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onCategory(c.slug);
-              }}
-            >
-              <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
+        <Text style={styles.heading}>Jump back in</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 10 }}>
+          {recent.map((g) => (
+            <Pressable key={g.id} style={{ width: 160 }} onPress={() => tap(g)}>
+              <Image source={{ uri: thumb(g) }} style={styles.wide} resizeMode="cover" />
+              <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
+              {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
             </Pressable>
-          );
-        })}
+          ))}
+        </ScrollView>
+
+        <Text style={styles.heading}>For you</Text>
+        <View style={styles.grid}>
+          {forYou.map((g) => (
+            <Pressable key={g.id} style={{ width: cell }} onPress={() => tap(g)}>
+              <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: cell * 0.75 }]} resizeMode="cover" />
+              <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
+              {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
+            </Pressable>
+          ))}
+        </View>
       </ScrollView>
 
-      {/* 3. Featured Hero Carousel */}
-      {!activeCategory && featured.length > 0 ? (
-        <View>
-          <View style={styles.featureHeading}>
-            <Text style={styles.featureEyebrow}>PICKED FOR YOU</Text>
-            <Text style={styles.featureTitle}>Drop into something good.</Text>
-          </View>
-
-          <ScrollView
-            horizontal
-            pagingEnabled
-            snapToInterval={heroW + 12}
-            decelerationRate="fast"
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: PAD, gap: 12 }}
-            onMomentumScrollEnd={(e) =>
-              setHeroIndex(Math.round(e.nativeEvent.contentOffset.x / (heroW + 12)))
-            }
-          >
-            {featured.map((g, i) => (
-              <Pressable
-                key={g.id}
-                style={[styles.hero, { width: heroW, height: heroW * 1.05 }]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  onOpen(g);
-                }}
-              >
-                <Image source={{ uri: thumb(g) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                <LinearGradient
-                  colors={['rgba(8,8,12,0.1)', 'rgba(8,8,12,0.7)', 'rgba(8,8,12,0.98)']}
-                  style={styles.heroShade}
-                />
-
-                {/* Top Badges */}
-                <View style={styles.heroBadges}>
-                  <Text style={[styles.badge, { backgroundColor: YELLOW, color: '#14110A' }]}>
-                    {i === 0 ? 'FEATURED' : 'POPULAR'}
-                  </Text>
-                  {g.categories?.[0] ? (
-                    <Text style={[styles.badge, styles.badgeDark]}>
-                      {categoryLabel(g.categories[0]).toUpperCase()}
-                    </Text>
-                  ) : null}
+      {/* Join friends: who's on, and the game each is in */}
+      <Modal visible={sheet} transparent animationType="slide" onRequestClose={() => setSheet(false)}>
+        <Pressable style={styles.dim} onPress={() => setSheet(false)} />
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.grabber} />
+          <Text style={[styles.heading, { marginTop: 4, marginHorizontal: 0 }]}>Friends online</Text>
+          {online.map((f) => {
+            const g = byId(f.gameId);
+            return (
+              <View key={f.id} style={[styles.row, styles.friendRow]}>
+                <Avatar uri={f.avatar} size={44} style={styles.onRing} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.friendName}>{f.name}</Text>
+                  <Text style={styles.meta}>{f.gameId ? `In ${g?.name ?? 'a game'}` : 'Online'}</Text>
                 </View>
-
-                {/* Bottom Body */}
-                <View style={styles.heroBody}>
-                  <Text style={styles.heroTitle} numberOfLines={2}>
-                    {g.name}
-                  </Text>
-                  {g.description ? (
-                    <Text style={styles.heroDesc} numberOfLines={2}>
-                      {g.description}
-                    </Text>
-                  ) : null}
-
-                  {/* Play Now CTA Button */}
-                  <View style={styles.playBtn}>
-                    <Ionicons name="play" size={18} color="#000" style={{ marginRight: 6 }} />
-                    <Text style={styles.playText}>Play now</Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          {/* Carousel Dots */}
-          <View style={styles.dots}>
-            {featured.map((g, i) => (
-              <View key={g.id} style={[styles.dot, i === heroIndex && styles.dotActive]} />
-            ))}
-          </View>
+                {g ? <Image source={{ uri: thumb(g) }} style={styles.friendGame} resizeMode="cover" /> : null}
+                {g ? <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => join(f)}><Text style={styles.pillText}>Join</Text></Pressable> : null}
+              </View>
+            );
+          })}
         </View>
-      ) : null}
-
-      {/* 4. Continue Playing Row */}
-      {!activeCategory && recent.length > 0 ? (
-        <View style={styles.section}>
-          <Title>Continue playing</Title>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.rowScroll}
-          >
-            {recent.map((g) => (
-              <Pressable
-                key={g.id}
-                style={{ width: 120 }}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onOpen(g);
-                }}
-              >
-                <View style={[styles.thumb, { width: 120, height: 120 }]}>
-                  <Image source={{ uri: thumb(g) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                </View>
-                <Text style={styles.cardName} numberOfLines={1}>
-                  {g.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* 5. See Who's Playing (Social / Friends banner) */}
-      {!activeCategory ? (
-        <Pressable
-          style={styles.friends}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onFriends();
-          }}
-        >
-          <View style={styles.friendIcon}>
-            <Ionicons name="people" size={22} color="#FFFFFF" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.friendsTitle}>See who's playing</Text>
-            <Text style={styles.friendsSub}>Find your friends and jump into their game.</Text>
-          </View>
-          <View style={styles.inviteBtn}>
-            <Text style={styles.inviteText}>Friends</Text>
-          </View>
-        </Pressable>
-      ) : null}
-
-      {/* 6. Premier Games Showcase */}
-      {activeCategory ? (
-        <View style={styles.section}>
-          {categoryList.length ? (
-            <Grid list={categoryList} />
-          ) : (
-            <Text style={styles.empty}>No games in {categoryLabel(activeCategory)} yet.</Text>
-          )}
-        </View>
-      ) : (
-        <View style={styles.section}>
-          <Title>Live Games</Title>
-          <View style={{ gap: 14 }}>
-            {effectiveGames.map((g) => (
-              <Pressable
-                key={g.id}
-                style={styles.showcaseCard}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  onOpen(g);
-                }}
-              >
-                <View style={styles.showcaseThumbWrap}>
-                  <Image source={{ uri: thumb(g) }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(10,8,16,0.92)']}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <View style={styles.showcaseBadge}>
-                    <Text style={styles.showcaseBadgeText}>ONLINE 3D</Text>
-                  </View>
-                </View>
-                <View style={styles.showcaseBody}>
-                  <Text style={styles.showcaseTitle}>{g.name}</Text>
-                  <Text style={styles.showcaseDesc} numberOfLines={2}>
-                    {g.description}
-                  </Text>
-                  <View style={styles.showcaseFooter}>
-                    <View style={styles.showcaseTagRow}>
-                      <View style={styles.tagPill}>
-                        <Text style={styles.tagText}>
-                          {g.id === 'gta-lagos' ? 'Open World' : 'Hero 5v5'}
-                        </Text>
-                      </View>
-                      <View style={styles.tagPill}>
-                        <Text style={styles.tagText}>Multiplayer</Text>
-                      </View>
-                    </View>
-                    <View style={styles.showcasePlayBtn}>
-                      <Ionicons name="play" size={13} color="#000" style={{ marginRight: 4 }} />
-                      <Text style={styles.showcasePlayText}>Play</Text>
-                    </View>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      )}
-    </ScrollView>
+      </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: PAD,
-    paddingBottom: 14,
-  },
-  kicker: {
-    color: '#8E8A9E',
-    fontSize: 10,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: 1.8,
-    marginBottom: 2,
-  },
-  pageTitle: {
-    color: TEXT,
-    fontSize: 34,
-    lineHeight: 38,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: -1.2,
-  },
-  pageTitleDot: {
-    color: YELLOW,
-  },
-  headerRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tokbuxPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1C192E',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#362E56',
-    gap: 6,
-  },
-  tokbuxCoin: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: YELLOW,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tokbuxCoinText: {
-    color: '#000000',
-    fontSize: 10,
-    fontFamily: 'Inter_800ExtraBold',
-    lineHeight: 12,
-  },
-  tokbuxText: {
-    color: YELLOW,
-    fontSize: 13,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  tokbuxAddCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: PURPLE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: SURFACE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryRail: {
-    marginBottom: 20,
-  },
-  chips: {
-    gap: 8,
-    paddingHorizontal: PAD,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 22,
-    backgroundColor: SURFACE,
-  },
-  chipOn: {
-    backgroundColor: '#FFFFFF',
-  },
-  chipText: {
-    color: '#D4D0E5',
-    fontSize: 14,
-    fontFamily: 'Inter_700Bold',
-  },
-  chipTextOn: {
-    color: '#000000',
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  featureHeading: {
-    paddingHorizontal: PAD,
-    marginBottom: 12,
-  },
-  featureEyebrow: {
-    color: YELLOW,
-    fontSize: 10,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: 1.7,
-    marginBottom: 4,
-  },
-  featureTitle: {
-    color: TEXT,
-    fontSize: 22,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: -0.4,
-  },
-  hero: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: SURFACE,
-    borderWidth: 1,
-    borderColor: '#262335',
-  },
-  heroShade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '75%',
-  },
-  heroBadges: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  badge: {
-    fontSize: 10,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: 0.8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  badgeDark: {
-    backgroundColor: 'rgba(10,10,14,0.75)',
-    color: TEXT,
-  },
-  heroBody: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 20,
-    gap: 8,
-  },
-  heroTitle: {
-    color: TEXT,
-    fontSize: 30,
-    lineHeight: 34,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: -0.8,
-  },
-  heroDesc: {
-    color: '#C6C2D6',
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: 'Inter_500Medium',
-  },
-  playBtn: {
-    marginTop: 8,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playText: {
-    color: '#000000',
-    fontSize: 16,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  dots: {
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'center',
-    marginTop: 14,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#3E3A4F',
-  },
-  dotActive: {
-    width: 24,
-    backgroundColor: TEXT,
-  },
-  section: {
-    marginTop: 28,
-    paddingHorizontal: PAD,
-  },
-  sectionHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-  },
-  sectionTitle: {
-    color: TEXT,
-    fontSize: 22,
-    fontFamily: 'Inter_800ExtraBold',
-    marginBottom: 12,
-    letterSpacing: -0.4,
-  },
-  seeAll: {
-    color: '#B68BFE',
-    fontSize: 14,
-    fontFamily: 'Inter_700Bold',
-  },
-  rowScroll: {
-    gap: 12,
-    paddingRight: PAD,
-  },
-  thumb: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: SURFACE,
-  },
-  cardName: {
-    color: TEXT,
-    fontSize: 13,
-    fontFamily: 'Inter_700Bold',
-    marginTop: 6,
-  },
-  cardNameBig: {
-    color: TEXT,
-    fontSize: 15,
-    fontFamily: 'Inter_800ExtraBold',
-    marginTop: 8,
-  },
-  friends: {
-    marginTop: 26,
-    marginHorizontal: PAD,
-    padding: 16,
-    borderRadius: 22,
-    backgroundColor: '#19152B',
-    borderWidth: 1,
-    borderColor: '#292245',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  friendIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#7C4DFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  friendsTitle: {
-    color: TEXT,
-    fontSize: 16,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  friendsSub: {
-    color: '#ACA7C2',
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-    marginTop: 2,
-  },
-  inviteBtn: {
-    height: 38,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: PURPLE,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  inviteText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  showcaseCard: {
-    backgroundColor: '#151322',
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#26223B',
-  },
-  showcaseThumbWrap: {
-    width: '100%',
-    height: 180,
-    backgroundColor: '#0F0E18',
-    position: 'relative',
-  },
-  showcaseBadge: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    backgroundColor: YELLOW,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  showcaseBadgeText: {
-    color: '#000000',
-    fontSize: 10,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: 0.8,
-  },
-  showcaseBody: {
-    padding: 16,
-  },
-  showcaseTitle: {
-    color: TEXT,
-    fontSize: 20,
-    fontFamily: 'Inter_800ExtraBold',
-    letterSpacing: -0.4,
-  },
-  showcaseDesc: {
-    color: '#B5B0CC',
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: 'Inter_500Medium',
-    marginTop: 4,
-  },
-  showcaseFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  showcaseTagRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  tagPill: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  tagText: {
-    color: '#D4D0E6',
-    fontSize: 11,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  showcasePlayBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 12,
-  },
-  showcasePlayText: {
-    color: '#000000',
-    fontSize: 13,
-    fontFamily: 'Inter_800ExtraBold',
-  },
-  empty: {
-    color: MUTED,
-    fontSize: 15,
-    fontFamily: 'Inter_500Medium',
-    textAlign: 'center',
-    marginTop: 30,
-  },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  topBar: { position: 'absolute', left: PAD, right: PAD, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  round: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 12 },
+  tbText: { color: TEXT, fontWeight: '800', fontSize: 15 },
+  fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 60 },
+  greet: { position: 'absolute', left: 18, width: '52%' },
+  hey: { color: TEXT, fontSize: 28, fontWeight: '900', letterSpacing: -0.6, lineHeight: 31 },
+  greetSub: { color: MUTED, fontSize: 14, marginTop: 8 },
+  greetSub2: { color: MUTED, fontSize: 13, flexShrink: 1 },
+  onRing: { borderWidth: 2, borderColor: GREEN },
+  stack: { borderWidth: 2, borderColor: BG },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: PURPLE, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, marginTop: 12 },
+  pillDim: { backgroundColor: 'rgba(255,255,255,0.12)' },
+  pillText: { color: TEXT, fontWeight: '800', fontSize: 14 },
+  heading: { color: TEXT, fontSize: 20, fontWeight: '800', marginHorizontal: PAD, marginTop: 20, marginBottom: 10 },
+  wide: { width: 160, height: 96, borderRadius: 14, backgroundColor: CARD },
+  tall: { width: '100%', borderRadius: 14, backgroundColor: CARD },
+  name: { color: TEXT, fontWeight: '700', fontSize: 14, marginTop: 6 },
+  meta: { color: MUTED, fontSize: 12, marginTop: 1 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: PAD },
+  dim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: { backgroundColor: CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 10 },
+  grabber: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', marginBottom: 6 },
+  friendRow: { paddingVertical: 10 },
+  friendName: { color: TEXT, fontWeight: '800', fontSize: 16 },
+  friendGame: { width: 56, height: 36, borderRadius: 8, backgroundColor: BG },
 });

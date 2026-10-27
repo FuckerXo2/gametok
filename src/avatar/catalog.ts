@@ -31,7 +31,7 @@ export function normalizeAvatar(r: any): AvatarRecord {
 }
 
 export type Category = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'accessories';
-export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet';
+export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet' | 'lobby';
 
 // Me screen tabs, laid out like Roblox's Marketplace: a tab, then sub-tabs inside it (a sub-tab shows only where it
 // has items: the Shop never shows your build, skin or face, they're free). Outfits are whole looks (Roblox's

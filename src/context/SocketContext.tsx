@@ -16,8 +16,9 @@ interface SocketContextType {
     onlineUsers: string[];
     typingUsers: Map<string, string>;
     presenceMap: Map<string, PresenceStatus>;
+    presenceGames: Map<string, string>;   // userId -> the game they're in (when 'in-game')
     myStatus: PresenceStatus;
-    setMyStatus: (status: PresenceStatus) => void;
+    setMyStatus: (status: PresenceStatus, gameId?: string | null) => void;
     joinConversation: (conversationId: string) => void;
     leaveConversation: (conversationId: string) => void;
     sendTyping: (conversationId: string) => void;
@@ -34,6 +35,7 @@ const SocketContext = createContext<SocketContextType>({
     onlineUsers: [],
     typingUsers: new Map(),
     presenceMap: new Map(),
+    presenceGames: new Map(),
     myStatus: 'offline',
     setMyStatus: () => {},
     joinConversation: () => {},
@@ -61,6 +63,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const [myStatus, setMyStatusState] = useState<PresenceStatus>('offline');
     const presenceSocketRef = useRef<Socket | null>(null);
     const myStatusRef = useRef<PresenceStatus>('offline');
+    const myGameRef = useRef<string | null>(null);
+    const [presenceGames, setPresenceGames] = useState<Map<string, string>>(new Map());
     const { isAuthenticated, user } = useAuth();
 
     const joinConversation = useCallback((conversationId: string) => {
@@ -79,12 +83,13 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         chatSocket?.emit('chat:typing_stop', { conversationId });
     }, [chatSocket]);
 
-    const setMyStatus = useCallback((status: PresenceStatus) => {
+    const setMyStatus = useCallback((status: PresenceStatus, gameId: string | null = null) => {
         myStatusRef.current = status;
+        myGameRef.current = status === 'in-game' ? gameId : null;
         setMyStatusState(status);
         const sock = presenceSocketRef.current;
         if (sock?.connected && status !== 'offline') {
-            sock.emit('presence:set', { status });
+            sock.emit('presence:set', { status, gameId: myGameRef.current });
         }
     }, []);
 
@@ -186,6 +191,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 newPresenceSocket.on('connect', () => {
                     console.log('[Presence] Connected:', newPresenceSocket?.id);
                     setIsPresenceConnected(true);
+                    if (myGameRef.current) {   // reconnected mid-game: still in it
+                        newPresenceSocket?.emit('presence:set', { status: 'in-game', gameId: myGameRef.current });
+                        return;
+                    }
                     myStatusRef.current = 'online';
                     setMyStatusState('online');
                 });
@@ -195,7 +204,13 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                     setIsPresenceConnected(false);
                 });
 
-                newPresenceSocket.on('presence:update', ({ userId, status }: { userId: string; status: PresenceStatus }) => {
+                newPresenceSocket.on('presence:update', ({ userId, status, gameId }: { userId: string; status: PresenceStatus; gameId?: string | null }) => {
+                    setPresenceGames((prev) => {
+                        if ((prev.get(userId) ?? null) === (gameId ?? null)) return prev;
+                        const next = new Map(prev);
+                        if (gameId && status === 'in-game') next.set(userId, gameId); else next.delete(userId);
+                        return next;
+                    });
                     setPresenceMap((prev) => {
                         const next = new Map(prev);
                         if (status === 'offline') {
@@ -266,6 +281,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 onlineUsers,
                 typingUsers,
                 presenceMap,
+                presenceGames,
                 myStatus,
                 setMyStatus,
                 joinConversation,

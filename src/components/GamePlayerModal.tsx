@@ -7,6 +7,7 @@
 // Every one of those was missing from the ad-hoc players elsewhere in the app.
 
 import React, { useEffect, useState } from 'react';
+import { useSocket } from '../context/SocketContext';
 import { View, Modal, Pressable, StatusBar, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -60,6 +61,14 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
     const sub = DeviceEventEmitter.addListener('gametok:open-tokbux', () => setTokbuxOpen(true));
     return () => sub.remove();
   }, []);
+
+  // your friends see which game you're in (the Games screen's "Join friends")
+  const { setMyStatus } = useSocket();
+  useEffect(() => {
+    if (!game) return;
+    setMyStatus('in-game', game.id);
+    return () => setMyStatus('online');
+  }, [game?.id]);
 
   // Keyed on the game id so a second game opened from the same surface starts from the loading
   // screen again rather than flashing the previous game's finished state.
