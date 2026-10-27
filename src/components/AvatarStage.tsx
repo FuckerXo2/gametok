@@ -78,6 +78,8 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
           if (m.type === 'ERROR') { console.warn('[AvatarStage]', m.msg); setError(m.msg); }
         }}
         onError={(e) => setError(e.nativeEvent.description)}
+        // iOS drops a backgrounded WebView's page to save memory: bring it back (it says READY again, sync() refills it)
+        onContentProcessDidTerminate={() => { setReady(false); ref.current?.reload(); }}
       />
       {loading && (
         <View style={[styles.overlay, { backgroundColor: bg }]} pointerEvents="none">
