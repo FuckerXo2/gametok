@@ -1,14 +1,13 @@
 // Signing up and in, like Roblox: two short screens, then straight into Games (the avatar, Shop and the rest come
 // later, in Me: people want a better look once they've seen other players in a game).
 //   Create Account: birthday, username (checked as you type).
-//   Your avatar: build, skin, face, hair and clothes, from the free starter items only (the Shop is in Me).
 //   Password: "Hi <username>", then you're in.
 //   Sign In: username and password.
 // No email (Roblox doesn't ask for one either) and no Apple / Google.
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, TextInput, ImageBackground, Modal, ScrollView, KeyboardAvoidingView, Platform, Image,
-  ActivityIndicator, Linking, Dimensions,
+  View, Text, StyleSheet, Pressable, TextInput, ImageBackground, Modal, ScrollView, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,12 +17,8 @@ import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
 import { auth as authApi } from '../services/api';
-import { AvatarStage } from './AvatarStage';
-import { AVATAR_ITEMS, AvatarItem, DEFAULT_AVATAR, Focus, thumbOf } from '../avatar/catalog';
-import { saveAvatar, syncAvatar, useAvatar } from '../avatar/store';
 
 const BG = '#0d0a16', FIELD = '#1b1626', LINE = 'rgba(255,255,255,0.14)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', OK = '#22c55e';
-const H = Dimensions.get('window').height;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const USERNAME_RULE = /^(?=.{3,20}$)[A-Za-z0-9]+(_[A-Za-z0-9]+)?$/;   // the backend's (src/index.js)
 
@@ -78,7 +73,7 @@ const GameTokLogo: React.FC = () => {
 };
 
 
-type Step = 'welcome' | 'create' | 'avatar' | 'password' | 'signin';
+type Step = 'welcome' | 'create' | 'password' | 'signin';
 
 export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: boolean; skipIntro?: boolean; startWithLogin?: boolean }> = ({
   onComplete, startWithLogin = false,
@@ -93,7 +88,6 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const look = useAvatar() ?? DEFAULT_AVATAR;
 
   // is the username free? (asked as you type, a moment after you stop)
   useEffect(() => {
@@ -123,7 +117,6 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
     try {
       const pad = (n: number) => String(n).padStart(2, '0');
       await signup(username, password, `${birthday.y}-${pad(birthday.m + 1)}-${pad(birthday.d)}`);
-      await syncAvatar();   // the avatar you made here goes on the new account
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onComplete();
     } catch (e: any) {
@@ -205,7 +198,7 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
 
   if (step === 'password') return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Header title="Create Account" back="avatar" />
+      <Header title="Create Account" back="create" />
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <Text style={styles.hi}>Hi {username}</Text>
         <Text style={styles.sub}>Choose a password to secure your account.</Text>
@@ -219,7 +212,6 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
     </KeyboardAvoidingView>
   );
 
-  if (step === 'avatar') return <AvatarStep look={look} onBack={() => go('create')} onDone={() => go('password')} />;
 
   // Create Account
   return (
@@ -236,70 +228,11 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
           placeholder="Don't use your real name" placeholderTextColor={DIM} textContentType="username" maxLength={20} />
         <Rules list={rules} show={!!username} />
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Button label="Continue" on={canContinue} onPress={() => go('avatar')} />
+        <Button label="Continue" on={canContinue} onPress={() => go('password')} />
         <Terms />
       </ScrollView>
       <BirthdayPicker visible={picking} value={birthday} onClose={() => setPicking(false)} onPick={(v) => { setBirthday(v); setPicking(false); }} />
     </KeyboardAvoidingView>
-  );
-};
-
-// The sign-up avatar creator: the avatar big, rows of the free starter items under it (tap one, it's on).
-const FREE_ROWS: { title: string; pick: (i: AvatarItem) => boolean }[] = [
-  { title: 'Build', pick: (i) => i.sub === 'Build' },
-  { title: 'Skin', pick: (i) => i.sub === 'Skin' },
-  { title: 'Face', pick: (i) => i.sub === 'Face' },
-  { title: 'Hair', pick: (i) => i.sub === 'Hair' },
-  { title: 'Top', pick: (i) => i.sub === 'T-Shirts' },
-  { title: 'Bottoms', pick: (i) => i.sub === 'Pants' || i.sub === 'Shorts' },
-  { title: 'Shoes', pick: (i) => i.sub === 'Shoes' },
-];
-const AvatarStep = ({ look, onBack, onDone }: { look: typeof DEFAULT_AVATAR; onBack: () => void; onDone: () => void }) => {
-  const insets = useSafeAreaInsets();
-  const [focus, setFocus] = useState<Focus>('body');
-  const wear = (i: AvatarItem) => {
-    if (!i.wear) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setFocus(i.focus);
-    saveAvatar(i.wear(look));
-  };
-  return (
-    <View style={styles.root}>
-      <View style={{ height: H * 0.42 }}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={focus} look="dark" />
-        <View style={[styles.header, { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top + 8 }]}>
-          <Pressable onPress={onBack} hitSlop={12} style={styles.headerX}><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>
-          <Text style={styles.headerTitle}>Make your avatar</Text>
-          <View style={styles.headerX} />
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }} showsVerticalScrollIndicator={false}>
-        {FREE_ROWS.map((row) => {
-          const items = AVATAR_ITEMS.filter((i) => i.price === 0 && !i.pieces && row.pick(i));
-          return (
-            <View key={row.title}>
-              <Text style={styles.rowTitle}>{row.title}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
-                {items.map((i) => {
-                  const on = !!i.isWorn?.(look), pic = thumbOf(i, look.body);
-                  return (
-                    <Pressable key={i.id} onPress={() => wear(i)} style={[styles.pick, on && styles.pickOn]}>
-                      {pic ? <Image source={{ uri: pic }} style={styles.pickPic} resizeMode="contain" />
-                        : <View style={[styles.skinDot, { backgroundColor: i.tint }]} />}
-                      <Text style={styles.pickName} numberOfLines={1}>{i.name}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          );
-        })}
-        <Text style={[styles.fine, { marginHorizontal: 24 }]}>More hair, clothes and outfits are in the Shop, in Me.</Text>
-      </ScrollView>
-      <View style={[styles.stepBottom, { paddingBottom: insets.bottom + 12 }]}>
-        <Pressable style={[styles.button, { marginTop: 0 }]} onPress={onDone}><Text style={styles.buttonText}>Continue</Text></Pressable>
-      </View>
-    </View>
   );
 };
 
@@ -367,13 +300,6 @@ const styles = StyleSheet.create({
   headerX: { width: 32 },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
   form: { padding: 20, paddingBottom: 60 },
-  rowTitle: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 18, marginBottom: 10, marginHorizontal: 18 },
-  pick: { width: 84, backgroundColor: FIELD, borderRadius: 14, borderWidth: 2, borderColor: 'transparent', padding: 6, alignItems: 'center' },
-  pickOn: { borderColor: ACCENT, backgroundColor: 'rgba(168,85,247,0.15)' },
-  pickPic: { width: 68, height: 68 },
-  pickName: { color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 },
-  skinDot: { width: 52, height: 52, borderRadius: 26, margin: 8 },
-  stepBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 12, backgroundColor: BG },
   label: { color: DIM, fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 6 },
   input: { backgroundColor: FIELD, borderRadius: 10, height: 48, paddingHorizontal: 14, color: '#fff', fontSize: 16, borderWidth: 1, borderColor: LINE },
   dateField: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
