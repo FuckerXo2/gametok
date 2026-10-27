@@ -29,8 +29,9 @@ import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GamesHome } from './GamesHome';
 
+import { SHOWCASE } from '../dev/showcase';
 // The games on the app for now: only No Rules FC (the backend has older games that stay off the app)
-const onTheApp = (g: any) => /no[-_ ]?rules/i.test(g.id) || /no rules/i.test(g.name || '');
+const onTheApp = (g: any) => (SHOWCASE ? !!g.thumbnail : /no[-_ ]?rules/i.test(g.id) || /no rules/i.test(g.name || ''));
 import { TokBuxSheet } from './TokBuxSheet';
 
 const PURPLE = '#a855f7';

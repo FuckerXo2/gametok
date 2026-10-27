@@ -21,9 +21,11 @@ interface AvatarStageProps {
   onHeadshot?: (png: string, of: AvatarRecord) => void;
   /** 'dark': a purple glow, no room (the Me screen) */
   look?: 'dark';
+  /** Look only: the 3D view takes no touches (behind other controls, e.g. the Games screen). */
+  passive?: boolean;
 }
 
-export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot, look }) => {
+export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot, look, passive }) => {
   const shotAsked = useRef<string | null>(null);
   const bg = look === 'dark' ? '#0d0a16' : '#dce2e8';
   const ref = useRef<WebView>(null);
@@ -53,7 +55,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   }, [ready, loading, headshotOf, avatar]);
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }, style]}>
+    <View style={[styles.container, { backgroundColor: bg }, style]} pointerEvents={passive ? 'none' : 'auto'}>
       <WebView
         ref={ref}
         source={{ uri: AVATAR_STAGE_URL + (look ? `&look=${look}` : '') }}

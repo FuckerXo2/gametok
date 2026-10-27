@@ -19,6 +19,7 @@ import { DEFAULT_AVATAR } from '../avatar/catalog';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { users as usersApi } from '../services/api';
+import { SHOWCASE, SHOWCASE_FRIENDS, SHOWCASE_RECENT } from '../dev/showcase';
 
 const BG = '#0d0a16';
 const CARD = '#1b1626';
@@ -86,7 +87,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
   }, [games]);
   const byId = (id?: string) => catalog.find((g) => g.id === id);
   const recent = useMemo(() => {
-    const r = recentIds.map((id) => byId(id)).filter(Boolean) as HomeGame[];
+    const r = (SHOWCASE ? SHOWCASE_RECENT : recentIds).map((id) => byId(id)).filter(Boolean) as HomeGame[];
     return r.length ? r : [...catalog].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 6);
   }, [recentIds, catalog]);
   const forYou = useMemo(() => [...catalog].sort((a, b) => (b.plays || 0) - (a.plays || 0)), [catalog]);
@@ -105,7 +106,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
     } catch { /* offline: no friends row */ }
   };
   useEffect(() => { loadFriends(); }, [user?.id]);
-  const online: Friend[] = useMemo(() => following.map((f: any) => {
+  const online: Friend[] = useMemo(() => SHOWCASE ? SHOWCASE_FRIENDS : following.map((f: any) => {
     const status = presenceMap.get(f.id) || seed.statuses[f.id] || 'offline';
     const gameId = status === 'in-game' ? presenceGames.get(f.id) || seed.games[f.id] : undefined;
     return { id: f.id, name: f.displayName || f.username, avatar: f.avatar, status, gameId };
@@ -156,7 +157,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
         <View style={{ height: insets.top + 286 }}>
           {/* the 3D stage fills the top, the avatar framed on its right */}
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            <AvatarStage style={StyleSheet.absoluteFill} avatar={account?.avatar ?? DEFAULT_AVATAR} look="dark" focus="lobby" />
+            <AvatarStage style={StyleSheet.absoluteFill} avatar={account?.avatar ?? DEFAULT_AVATAR} look="dark" focus="lobby" passive />
             <LinearGradient colors={['rgba(13,10,22,0)', BG]} style={styles.fade} />
           </View>
           <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
   tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 12 },
   tbText: { color: TEXT, fontWeight: '800', fontSize: 15 },
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 60 },
-  greet: { position: 'absolute', left: 18, width: '52%' },
+  greet: { position: 'absolute', left: 18, right: '42%' },
   hey: { color: TEXT, fontSize: 28, fontWeight: '900', letterSpacing: -0.6, lineHeight: 31 },
   greetSub: { color: MUTED, fontSize: 14, marginTop: 8 },
   greetSub2: { color: MUTED, fontSize: 13, flexShrink: 1 },

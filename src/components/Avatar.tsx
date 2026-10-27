@@ -12,7 +12,7 @@ interface AvatarProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const hasHeadshot = (uri?: string | null) => !!uri && /^https:\/\//i.test(uri);
+export const hasHeadshot = (uri?: string | null) => !!uri && (/^https:\/\//i.test(uri) || (__DEV__ && /^http:\/\/localhost[:/]/i.test(uri)));   // (dev: sample headshots, src/dev/showcase.ts)
 
 export const Avatar: React.FC<AvatarProps> = ({ uri, size = 40, style }) => {
   const shape = { width: size, height: size, borderRadius: size / 2 };

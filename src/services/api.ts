@@ -7,6 +7,7 @@ import {
   mockEditGame,
   mockPublish,
 } from './aiMock';
+import { SHOWCASE } from '../dev/showcase';
 import { normalizeOrientation, type Orientation } from '../constants/orientation';
 
 export const API_URL = 'https://gametok-backend-267787411422.us-central1.run.app/api';
@@ -327,6 +328,7 @@ export const NO_RULES_FC_GAME = {
 };
 
 const ensureNoRulesFC = (list: any[]) => {
+  if (SHOWCASE) return list.filter((g) => g.thumbnail);   // dev showcase: every game with a picture
   const filtered = list.filter(isNoRulesFC).map((g) => ({
     ...g,
     categories: g.categories && g.categories.length ? g.categories : ['sports', 'action', 'arcade'],
