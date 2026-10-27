@@ -50,6 +50,8 @@ interface Props {
   onJoinFriend?: (game: HomeGame, friendId: string) => void;
   onSearch: () => void;
   onFriends: () => void;
+  /** message a friend (Connect) */
+  onChat?: (userId: string) => void;
   onOpenShop?: () => void;
   refreshing: boolean;
   onRefresh: () => void;
@@ -67,19 +69,29 @@ const DEFAULT_CATALOG: HomeGame[] = [
   },
 ];
 
-interface Friend { id: string; name: string; avatar?: string; status: string; gameId?: string }
+interface Friend { id: string; name: string; avatar?: string; status: string; gameId?: string; lastAt?: string; lastGame?: string }
+
+// "2h ago", "yesterday", "3 days ago"
+const ago = (iso?: string) => {
+  if (!iso) return '';
+  const m = Math.max(0, (Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 60) return `${Math.max(1, Math.round(m))}m ago`;
+  if (m < 24 * 60) return `${Math.round(m / 60)}h ago`;
+  if (m < 48 * 60) return 'yesterday';
+  return `${Math.round(m / 1440)} days ago`;
+};
 
 const thumb = (g: HomeGame) => resolveGameThumbnail(g.thumbnail, g.id, g as any);
 const plays = (n?: number) => (!n ? '' : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K plays` : `${n} plays`);
 
-export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, onFriends, onOpenShop, refreshing, onRefresh }: Props) => {
+export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, onFriends, onChat, onOpenShop, refreshing, onRefresh }: Props) => {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const account = useAvatarAccount();
   const { user } = useAuth();
   const { presenceMap, presenceGames } = useSocket();
   const [following, setFollowing] = useState<any[]>([]);
-  const [seed, setSeed] = useState<{ statuses: Record<string, string>; games: Record<string, string> }>({ statuses: {}, games: {} });
+  const [seed, setSeed] = useState<{ statuses: Record<string, string>; games: Record<string, string>; last: Record<string, { at: string; gameId?: string }> }>({ statuses: {}, games: {}, last: {} });
   const [sheet, setSheet] = useState(false);
 
   const catalog = useMemo(() => {
@@ -103,17 +115,23 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
       setFollowing(arr);
       if (arr.length) {
         const p = await usersApi.presence(arr.map((f: any) => f.id));
-        setSeed({ statuses: p.statuses || {}, games: p.games || {} });
+        setSeed({ statuses: p.statuses || {}, games: p.games || {}, last: (p as any).last || {} });
       }
     } catch { /* offline: no friends row */ }
   };
   useEffect(() => { loadFriends(); }, [user?.id]);
-  const online: Friend[] = useMemo(() => SHOWCASE ? SHOWCASE_FRIENDS : following.map((f: any) => {
+  // everyone you follow: online ones first (in a game before just in the app), then offline by when they were last on
+  const friends: Friend[] = useMemo(() => SHOWCASE ? SHOWCASE_FRIENDS : following.map((f: any) => {
     const status = presenceMap.get(f.id) || seed.statuses[f.id] || 'offline';
     const gameId = status === 'in-game' ? presenceGames.get(f.id) || seed.games[f.id] : undefined;
-    return { id: f.id, name: f.displayName || f.username, avatar: f.avatar, status, gameId };
-  }).filter((f) => f.status === 'online' || f.status === 'in-game')
-    .sort((a, b) => Number(!!b.gameId) - Number(!!a.gameId)), [following, presenceMap, presenceGames, seed]);
+    const last = seed.last[f.id];
+    return { id: f.id, name: f.displayName || f.username, avatar: f.avatar, status, gameId, lastAt: last?.at, lastGame: last?.gameId };
+  }), [following, presenceMap, presenceGames, seed]);
+  const isOn = (f: Friend) => f.status === 'online' || f.status === 'in-game';
+  const online = useMemo(() => friends.filter(isOn).sort((a, b) => Number(!!b.gameId) - Number(!!a.gameId)), [friends]);
+  const offline = useMemo(() => friends.filter((f) => !isOn(f)).sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || '')), [friends]);
+  // all offline: the one most recently on in a game that's on GameTok ("tobi was in No Rules FC · 2h ago")
+  const lastSeen = offline.find((f) => byId(f.lastGame));
 
   const firstName = (user?.displayName || user?.username || '').split(' ')[0];
   const join = (f: Friend) => {
@@ -128,11 +146,23 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
 
   // the greeting follows who's online
   const one = online.length === 1 ? online[0] : null;
-  const greeting = !online.length ? (
+  const greeting = !friends.length ? (
+    // nobody yet
     <>
-      <Text style={styles.greetSub}>None of your friends are on right now</Text>
+      <Text style={styles.greetSub}>Games are better with friends</Text>
       <Pressable style={[styles.pill, styles.pillDim]} onPress={onFriends}><Ionicons name="person-add-outline" size={14} color={TEXT} /><Text style={styles.pillText}>Invite friends</Text></Pressable>
     </>
+  ) : !online.length ? (
+    // all offline: what they were last into
+    lastSeen ? (
+      <>
+        <View style={[styles.row, { marginTop: 10, gap: 8 }]}>
+          <Avatar uri={lastSeen.avatar} size={34} style={styles.offFace} />
+          <Text style={styles.greetSub2} numberOfLines={2}><Text style={{ fontWeight: '800', color: TEXT }}>{lastSeen.name}</Text> was in{'\n'}{byId(lastSeen.lastGame)!.name} · {ago(lastSeen.lastAt)}</Text>
+        </View>
+        <Pressable style={styles.pill} onPress={() => tap(byId(lastSeen.lastGame)!)}><Ionicons name="play" size={13} color={TEXT} /><Text style={styles.pillText}>Play {byId(lastSeen.lastGame)!.name}</Text></Pressable>
+      </>
+    ) : <Text style={styles.greetSub}>None of your friends are on right now</Text>
   ) : one ? (
     <>
       <View style={[styles.row, { marginTop: 10, gap: 8 }]}>
@@ -146,7 +176,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
       <Text style={styles.greetSub}>{online.length} friends online</Text>
       <View style={[styles.row, { marginTop: 10 }]}>
         {online.slice(0, 3).map((f, i) => <Avatar key={f.id} uri={f.avatar} size={30} style={[styles.stack, i > 0 && { marginLeft: -8 }]} />)}
-        <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSheet(true); }}><Text style={styles.pillText}>Join friends</Text></Pressable>
+        <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSheet(true); }}><Text style={styles.pillText}>{online.some((f) => byId(f.gameId)) ? 'Join friends' : 'See friends'}</Text></Pressable>
       </View>
     </>
   );
@@ -207,7 +237,8 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
         <Pressable style={styles.dim} onPress={() => setSheet(false)} />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.grabber} />
-          <Text style={[styles.heading, { marginTop: 4, marginHorizontal: 0 }]}>Friends online</Text>
+          <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false}>
+          <Text style={styles.label}>ONLINE · {online.length}</Text>
           {online.map((f) => {
             const g = byId(f.gameId);
             return (
@@ -215,13 +246,26 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
                 <Avatar uri={f.avatar} size={44} style={styles.onRing} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.friendName}>{f.name}</Text>
-                  <Text style={styles.meta}>{f.gameId ? `In ${g?.name ?? 'a game'}` : 'Online'}</Text>
+                  <Text style={styles.meta}>{f.gameId ? `In ${g?.name ?? 'a game'}` : 'In the app'}</Text>
                 </View>
                 {g ? <Image source={{ uri: thumb(g) }} style={styles.friendGame} resizeMode="cover" /> : null}
-                {g ? <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => join(f)}><Text style={styles.pillText}>Join</Text></Pressable> : null}
+                {g ? <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => join(f)}><Text style={styles.pillText}>Join</Text></Pressable>
+                  : <Pressable onPress={() => { setSheet(false); onChat?.(f.id); }} hitSlop={10}><Ionicons name="chatbubble-outline" size={22} color={MUTED} /></Pressable>}
               </View>
             );
           })}
+          {offline.length ? <Text style={styles.label}>OFFLINE · {offline.length}</Text> : null}
+          {offline.map((f) => (
+            <View key={f.id} style={[styles.row, styles.friendRow]}>
+              <Avatar uri={f.avatar} size={44} style={styles.offFace} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.friendName, { color: 'rgba(255,255,255,0.7)' }]}>{f.name}</Text>
+                {f.lastAt ? <Text style={styles.meta}>Last on {ago(f.lastAt)}{byId(f.lastGame) ? ` · ${byId(f.lastGame)!.name}` : ''}</Text> : <Text style={styles.meta}>Offline</Text>}
+              </View>
+              <Pressable onPress={() => { setSheet(false); onChat?.(f.id); }} hitSlop={10}><Ionicons name="chatbubble-outline" size={22} color={MUTED} /></Pressable>
+            </View>
+          ))}
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -241,6 +285,8 @@ const styles = StyleSheet.create({
   greetSub: { color: MUTED, fontSize: 14, marginTop: 8 },
   greetSub2: { color: MUTED, fontSize: 13, flexShrink: 1 },
   onRing: { borderWidth: 2, borderColor: GREEN },
+  offFace: { opacity: 0.45 },
+  label: { color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginTop: 12, marginBottom: 2 },
   stack: { borderWidth: 2, borderColor: BG },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: PURPLE, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, marginTop: 12 },
   pillDim: { backgroundColor: 'rgba(255,255,255,0.12)' },

@@ -107,7 +107,7 @@ export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen } = useAuthScreen();
-  const { setActiveTab, setPendingDraftId, searchModalVisible, setSearchModalVisible } = useNavigation();
+  const { setActiveTab, setPendingDraftId, searchModalVisible, setSearchModalVisible, setPendingChatUserId } = useNavigation();
 
   const [allGames, setAllGames] = useState<ExploreGame[]>([]);
   const [creators, setCreators] = useState<ExploreCreator[]>([]);
@@ -335,6 +335,7 @@ export const ExploreScreen: React.FC = () => {
         onJoinFriend={(g, friendId) => openGame(g.id, friendId)}
         onSearch={() => setSearchModalVisible(true)}
         onFriends={() => setActiveTab('connect')}
+        onChat={(userId) => { setPendingChatUserId(userId); setActiveTab('connect'); }}
         onOpenShop={() => setTokbuxOpen(true)}
         refreshing={refreshing}
         onRefresh={handleRefresh}

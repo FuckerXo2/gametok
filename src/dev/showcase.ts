@@ -4,9 +4,12 @@
 export const SHOWCASE = __DEV__ && false;
 
 const HEADS = 'http://localhost:8980/assets/thumbs';
-export const SHOWCASE_FRIENDS = [
-  { id: 'demo-tobi', name: 'tobi', avatar: `${HEADS}/head-tobi.png`, status: 'in-game', gameId: 'no-rules-fc' },
-  { id: 'demo-ada', name: 'ada', avatar: `${HEADS}/head-ada.png`, status: 'in-game', gameId: 'turbo-kart-rush' },
-  { id: 'demo-kola', name: 'kola', avatar: `${HEADS}/head-kola.png`, status: 'in-game', gameId: 'gta-lagos' },
-];
+// which friends situation to show: 'mixed' (some in games, one in the app, some offline), 'offline', 'none'
+export const SHOWCASE_STATE = 'mixed' as 'mixed' | 'offline' | 'none';
+const h = (n: number) => new Date(Date.now() - n * 3600e3).toISOString();
+const f = (name: string, status: string, extra: object = {}) => ({ id: `demo-${name}`, name, avatar: `${HEADS}/head-${name}.png`, status, ...extra });
+const OFF = [f('kola', 'offline', { lastAt: h(2), lastGame: 'gta-lagos' }), f('zee', 'offline', { lastAt: h(26), lastGame: 'backroom-escape' }), f('dami', 'offline', { lastAt: h(75) })];
+export const SHOWCASE_FRIENDS = SHOWCASE_STATE === 'none' ? []
+  : SHOWCASE_STATE === 'offline' ? OFF
+  : [f('tobi', 'in-game', { gameId: 'no-rules-fc' }), f('ada', 'online'), ...OFF];
 export const SHOWCASE_RECENT = ['no-rules-fc', 'turbo-kart-rush', 'gta-lagos'];
