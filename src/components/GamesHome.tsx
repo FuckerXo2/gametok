@@ -141,11 +141,11 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
     </>
   ) : (
     <>
+      <Text style={styles.greetSub}>{online.length} friends online</Text>
       <View style={[styles.row, { marginTop: 10 }]}>
         {online.slice(0, 3).map((f, i) => <Avatar key={f.id} uri={f.avatar} size={30} style={[styles.stack, i > 0 && { marginLeft: -8 }]} />)}
-        <Text style={[styles.greetSub2, { marginLeft: 8, color: TEXT, fontWeight: '700' }]}>{online.length} friends online</Text>
+        <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSheet(true); }}><Text style={styles.pillText}>Join friends</Text></Pressable>
       </View>
-      <Pressable style={styles.pill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSheet(true); }}><Text style={styles.pillText}>Join friends</Text></Pressable>
     </>
   );
 
@@ -154,9 +154,10 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
       <ScrollView contentContainerStyle={{ paddingBottom: 130 }} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { onRefresh(); loadFriends(); }} tintColor="#fff" />}>
         {/* you */}
-        <View style={{ height: insets.top + 286 }}>
-          {/* the 3D stage fills the top, the avatar framed on its right */}
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={{ height: insets.top + 236, zIndex: 0 }}>
+          {/* the 3D stage fills the top, the avatar framed on its right (taller than the block: it runs under the
+              first row, so the rows start right under his platform, like the mock) */}
+          <View style={[styles.stageBox, { height: insets.top + 286 }]} pointerEvents="none">
             <AvatarStage style={StyleSheet.absoluteFill} avatar={account?.avatar ?? DEFAULT_AVATAR} look="dark" focus="lobby" passive />
             <LinearGradient colors={['rgba(13,10,22,0)', BG]} style={styles.fade} />
           </View>
@@ -176,7 +177,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
         <Text style={styles.heading}>Jump back in</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 10 }}>
           {recent.map((g) => (
-            <Pressable key={g.id} style={{ width: 160 }} onPress={() => tap(g)}>
+            <Pressable key={g.id} style={{ width: 150 }} onPress={() => tap(g)}>
               <Image source={{ uri: thumb(g) }} style={styles.wide} resizeMode="cover" />
               <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
               {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
@@ -184,11 +185,14 @@ export const GamesHome = ({ games, recentIds, onOpen, onSearch, onFriends, onOpe
           ))}
         </ScrollView>
 
-        <Text style={styles.heading}>For you</Text>
+        <View style={styles.headRow}>
+          <Text style={[styles.heading, { marginHorizontal: 0 }]}>For you</Text>
+          <Pressable onPress={onSearch} hitSlop={8}><Text style={styles.seeAll}>See all</Text></Pressable>
+        </View>
         <View style={styles.grid}>
           {forYou.map((g) => (
             <Pressable key={g.id} style={{ width: cell }} onPress={() => tap(g)}>
-              <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: cell * 0.75 }]} resizeMode="cover" />
+              <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: 120 }]} resizeMode="cover" />
               <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
               {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
             </Pressable>
@@ -228,9 +232,10 @@ const styles = StyleSheet.create({
   round: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 12 },
   tbText: { color: TEXT, fontWeight: '800', fontSize: 15 },
+  stageBox: { position: 'absolute', left: 0, right: 0, top: 0 },
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 60 },
   greet: { position: 'absolute', left: 18, right: '42%' },
-  hey: { color: TEXT, fontSize: 28, fontWeight: '900', letterSpacing: -0.6, lineHeight: 31 },
+  hey: { color: TEXT, fontSize: 26, fontWeight: '900', letterSpacing: -0.6, lineHeight: 29 },
   greetSub: { color: MUTED, fontSize: 14, marginTop: 8 },
   greetSub2: { color: MUTED, fontSize: 13, flexShrink: 1 },
   onRing: { borderWidth: 2, borderColor: GREEN },
@@ -238,10 +243,12 @@ const styles = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: PURPLE, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, marginTop: 12 },
   pillDim: { backgroundColor: 'rgba(255,255,255,0.12)' },
   pillText: { color: TEXT, fontWeight: '800', fontSize: 14 },
-  heading: { color: TEXT, fontSize: 20, fontWeight: '800', marginHorizontal: PAD, marginTop: 20, marginBottom: 10 },
-  wide: { width: 160, height: 96, borderRadius: 14, backgroundColor: CARD },
+  heading: { color: TEXT, fontSize: 19, fontWeight: '800', letterSpacing: -0.2, marginHorizontal: PAD, marginTop: 20, marginBottom: 10 },
+  headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginHorizontal: PAD },
+  seeAll: { color: MUTED, fontSize: 14, fontWeight: '600' },
+  wide: { width: 150, height: 90, borderRadius: 14, backgroundColor: CARD },
   tall: { width: '100%', borderRadius: 14, backgroundColor: CARD },
-  name: { color: TEXT, fontWeight: '700', fontSize: 14, marginTop: 6 },
+  name: { color: TEXT, fontWeight: '700', fontSize: 13, marginTop: 6 },
   meta: { color: MUTED, fontSize: 12, marginTop: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: PAD },
   dim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },

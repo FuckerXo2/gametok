@@ -136,8 +136,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
   const { user } = useAuth();
 
   const tabs: TabSpec[] = [
-    { name: 'home', icon: 'game-controller-outline', iconActive: 'game-controller', label: 'Games' },
-    { name: 'connect', icon: 'chatbubble-ellipses-outline', iconActive: 'chatbubble-ellipses', label: 'Connect' },
+    { name: 'home', icon: 'game-controller-outline', iconActive: 'game-controller-outline', label: 'Games' },
+    { name: 'connect', icon: 'chatbubble-outline', iconActive: 'chatbubble-outline', label: 'Connect' },
     { name: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Me' },
   ];
 
@@ -165,7 +165,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#000', // Standard tabs remain #000
+    backgroundColor: '#0a0811',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
     paddingTop: 10,
     paddingHorizontal: 4,
     zIndex: 9999,
@@ -183,7 +185,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   label: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
     letterSpacing: 0.1,
