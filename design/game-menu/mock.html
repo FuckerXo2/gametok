@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Game menu mock</title>
+<!-- The in-game menu (the three-line button), Roblox-style: the whole game dims and blurs, the people in the game
+     with you up top, Leave · Invite · Resume along the bottom. Framed at an iPhone 16e held sideways (844x390).
+     "Now" is what ships today, for comparison. -->
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0a10; color: #fff; font-family: Inter, system-ui, sans-serif; padding: 24px; display: grid; gap: 18px; justify-content: center; }
+  h2 { font-size: 13px; letter-spacing: 2px; color: #8b8799; font-weight: 700; }
+  .phone { position: relative; width: 844px; height: 390px; border-radius: 34px; overflow: hidden; background: #000 url(lobby.jpg) center/cover; box-shadow: 0 0 0 6px #1d1b24; }
+  .bg { position: absolute; inset: 0; background: url(lobby.jpg) center/cover; filter: blur(14px) brightness(.55) saturate(1.1); transform: scale(1.08); }
+  .dim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(8,7,14,.55), rgba(8,7,14,.82)); }
+
+  /* new */
+  .menu { position: absolute; inset: 0; padding: 22px 64px 22px 64px; display: flex; flex-direction: column; }
+  .top { display: flex; align-items: center; gap: 12px; }
+  .close { width: 38px; height: 38px; border-radius: 12px; background: rgba(255,255,255,.1); display: grid; place-items: center; font-size: 20px; }
+  .game { font-family: Bungee, sans-serif; font-size: 20px; letter-spacing: .5px; }
+  .game small { display: block; font-family: Inter; font-size: 11px; font-weight: 600; color: #a7a3b5; letter-spacing: 0; margin-top: 1px; }
+  .label { margin: 18px 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; color: #8b8799; }
+  .people { display: flex; gap: 10px; }
+  .p { flex: 1; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.06); }
+  .p img { width: 40px; height: 40px; border-radius: 50%; background: #2d2540; }
+  .p b { display: block; font-size: 14px; }
+  .p span { font-size: 11px; color: #a7a3b5; }
+  .p .pill { margin-left: auto; font-size: 12px; font-weight: 700; padding: 7px 11px; border-radius: 99px; background: rgba(255,255,255,.12); white-space: nowrap; }
+  .p .pill.add { background: #fff; color: #111; }
+  .p .pill.you { background: none; color: #8b8799; padding: 0; }
+  .grow { flex: 1; }
+  .actions { display: flex; gap: 12px; }
+  .a { flex: 1; height: 58px; border-radius: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 17px; font-weight: 800; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.08); }
+  .a.leave { color: #fca5a5; }
+  .a.resume { flex: 1.4; background: linear-gradient(90deg, #7c3aed, #a855f7); border: 0; box-shadow: 0 8px 24px rgba(124,58,237,.45); }
+  .a svg { width: 20px; height: 20px; }
+
+  /* now */
+  .card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 300px; border-radius: 20px; background: #17131f; padding: 16px; display: grid; gap: 10px; }
+  .card .t { text-align: center; font-weight: 800; font-size: 18px; margin-bottom: 4px; }
+  .card .r { height: 50px; border-radius: 14px; background: rgba(255,255,255,.08); display: grid; place-items: center; font-weight: 700; font-size: 16px; }
+  .card .r.p1 { background: #7c3aed; } .card .r.l { color: #fca5a5; }
+  .nowdim { position: absolute; inset: 0; background: rgba(0,0,0,.6); }
+</style>
+</head>
+<body>
+  <h2>NEW: ROBLOX-STYLE</h2>
+  <div class="phone">
+    <div class="bg"></div><div class="dim"></div>
+    <div class="menu">
+      <div class="top">
+        <div class="close">✕</div>
+        <div class="game">No Rules FC<small>In the lobby · party 1/5</small></div>
+      </div>
+      <div class="label">IN THIS GAME WITH YOU · 3</div>
+      <div class="people">
+        <div class="p"><img src="head-jatt.png" alt=""><div><b>jatt</b><span>JattFabian#9878</span></div><div class="pill you">You</div></div>
+        <div class="p"><img src="head-ada.png" alt=""><div><b>ada</b><span>Friend</span></div><div class="pill">Chat</div></div>
+        <div class="p"><img src="head-tobi.png" alt=""><div><b>tobi</b><span>In your match</span></div><div class="pill add">+ Add</div></div>
+      </div>
+      <div class="grow"></div>
+      <div class="actions">
+        <div class="a leave"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h12"/></svg>Leave</div>
+        <div class="a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M19 8v6M16 11h6"/></svg>Invite</div>
+        <div class="a resume"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>Resume</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>NOW</h2>
+  <div class="phone">
+    <div class="nowdim"></div>
+    <div class="card"><div class="t">No Rules FC</div><div class="r p1">▶ Resume</div><div class="r">Invite friends</div><div class="r l">Leave game</div></div>
+  </div>
+</body>
+</html>
