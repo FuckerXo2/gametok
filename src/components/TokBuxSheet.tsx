@@ -1,6 +1,6 @@
 // Buying TokBux, like Roblox: the store is a web page (web/store/tokbux.html on R2, STORE_URL) shown full screen,
 // so it can change without an app release. The page only shows; the app tells it the balance and the packs at the
-// store's prices, and does the purchase (Apple / Google in-app purchase through RevenueCat) when a price is tapped.
+// store's prices, and does the purchase (Apple / Google in-app purchase, checked by the backend: src/tokbux/purchases.ts) when a price is tapped.
 // Buying an item you can't afford goes through BuyItemSheet instead (TokBux and the item in one tap).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Modal, Pressable, Alert, ActivityIndicator, Linking } from 'react-native';

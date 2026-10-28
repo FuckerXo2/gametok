@@ -531,6 +531,13 @@ export const avatarAccount = {
   headshot: async (png: string) => request('/avatar/headshot', { method: 'PUT', body: JSON.stringify({ png }) }),
 };
 
+// TokBux bought in the store: the backend checks the purchase with Apple / Google and adds the pack once
+// (backend src/tokbux-store.js). token: Apple's signed transaction, or Google's purchase token.
+export const tokbuxStore = {
+  verify: async (platform: string, productId: string, token: string) =>
+    request('/tokbux/verify', { method: 'POST', body: JSON.stringify({ platform, productId, token }) }),
+};
+
 export const gameProgress = {
   get: async (gameId: string) => {
     return request(`/games/${gameId}/progress`);

@@ -1,61 +1,30 @@
-# Selling TokBux: what to set up
+# Selling TokBux: what's set up
 
-The code is done (app 2.2.0, backend, No Rules FC). These are the account steps only you can do.
+No middleman: the app buys through expo-iap (Apple / Google directly), and the backend checks every purchase itself
+(backend `src/tokbux-store.js`) before adding TokBux. Revenue shows on the backend's `/admin/revenue` page.
 Product IDs are the same everywhere: `tokbux_80`, `tokbux_500`, `tokbux_1200`, `tokbux_3000`, `tokbux_8500`.
 Each gives exactly that many TokBux (the backend decides, not the store).
 
-## 1. Apple (App Store Connect)
-1. **Business → Agreements, Tax, and Banking**: the *Paid Apps* agreement must be active (bank + tax filled in).
-   Without it, in-app purchases never load.
-   Also apply to the **App Store Small Business Program** (developer.apple.com/app-store/small-business-program):
-   Apple then takes 15% instead of 30% while GameTok earns under $1M a year. It isn't automatic.
-2. **Your app → Monetization → In-App Purchases → +**, five times, type **Consumable**:
-   | Product ID | Name shown | Suggested price |
-   |---|---|---|
-   | tokbux_80 | 80 TokBux | $0.99 |
-   | tokbux_500 | 500 TokBux | $4.99 |
-   | tokbux_1200 | 1,200 TokBux | $9.99 |
-   | tokbux_3000 | 3,000 TokBux | $19.99 |
-   | tokbux_8500 | 8,500 TokBux | $49.99 |
-   Each needs a description and a review screenshot (a screenshot of the TokBux shop is fine).
-3. **Users and Access → Integrations → In-App Purchase → generate a key** (.p8). Download it once; RevenueCat needs it
-   (with its Key ID and your Issuer ID).
-4. **Users and Access → Sandbox → Testers**: add a test Apple ID, for buying without paying.
-5. Note the app's **Apple ID** (a number, App Information page): the "Update GameTok" button needs it.
+## Done
+- **Apple**: the five consumables, with prices and review screenshots (`gametok-backend/scripts/setup-tokbux-appstore.mjs`).
+  Bank, tax (W-8BEN) and the Paid Apps agreement are submitted.
+- **Google**: the five one-time products, active in 174 countries (`gametok-backend/scripts/setup-tokbux-play.mjs`),
+  through the service account `revenuecat@gametok1` (invited in Play Console; its key is
+  `gametok-backend/play-service-account.json`, never committed).
 
-## 2. Google (Play Console)
-1. **Setup → Payments profile**: a merchant account must exist.
-2. Upload the 2.2.0 build to a testing track first (Google only lets you create products once a build with billing
-   is uploaded).
-3. **Monetize → Products → In-app products**: the same five IDs and prices, then activate them.
-4. A **service account** for RevenueCat (follow RevenueCat's "Google Play service credentials" guide: Google Cloud
-   service account + JSON key, invited in Play Console → Users and permissions with financial access).
-5. **Setup → License testing**: add your Gmail, for test purchases.
-
-## 3. RevenueCat (revenuecat.com, free until $2,500/month)
-1. Create a project **GameTok**. Add the **App Store app** (bundle `com.olasubomi.gametok`, upload the .p8 from Apple)
-   and the **Play Store app** (package `com.olasubomi.gametok`, upload the service account JSON).
-2. **Products**: import the five products from both stores.
-3. **Offerings**: make the `default` offering *current*, with five packages, one per product
-   (each package holds the iOS and Android product of the same ID).
-4. **API keys**: copy the two public SDK keys (`appl_…` and `goog_…`). Send them to me, or put them in
-   `gametok/.env`:
-   ```
-   EXPO_PUBLIC_REVENUECAT_IOS_KEY=appl_…
-   EXPO_PUBLIC_REVENUECAT_ANDROID_KEY=goog_…
-   ```
-5. **Integrations → Webhooks → Add**:
-   - URL: `https://gametok-backend-267787411422.us-central1.run.app/api/tokbux/revenuecat`
-   - Authorization header: a long random secret. The same value goes on the backend as `REVENUECAT_WEBHOOK_AUTH`
-     (Cloud Run service `gametok-backend`). I can make the secret and set it on the backend once you say so;
-     then you paste it into RevenueCat.
-
-## 4. Build and release
-1. New native builds (EAS) for both stores: the purchase library is native, the current builds can't buy.
-2. Test with the sandbox tester / license tester: buy a pack, the TokBux arrive within seconds.
-3. Once 2.2.0 is live in **both** stores, tell me and I'll force the update (and set the App Store link):
+## Left
+1. **Apple Paid Apps agreement**: wait for it to turn *Active* (until then purchases don't load on iPhone).
+   Also apply to the **App Store Small Business Program** (15% instead of 30% under $1M a year; not automatic).
+2. **Apple refunds**: App Store Connect → the app → App Information → **App Store Server Notifications**, Version 2,
+   Production and Sandbox URL:
+   `https://gametok-backend-267787411422.us-central1.run.app/api/tokbux/apple-notifications`
+3. **Google payments profile**: Play Console → Settings → Payments profile (bank + tax), if not done.
+4. **The backend's Play key**: the live backend reads the service account from the secret `play-service-account`
+   (env `PLAY_SERVICE_ACCOUNT`); see the commands in the backend's commit or ask me.
+5. **Testers**: Apple → Users and Access → Sandbox → a test Apple ID; Google → Settings → License testing → your Gmail.
+6. **Build 2.2.0** for both stores (expo-iap is native), test a purchase with the testers, release.
+7. Once 2.2.0 is live in **both** stores, force the update (and set the App Store link):
    ```sql
    UPDATE app_config SET value = '2.2.0' WHERE key IN ('min_version_ios', 'min_version_android');
    UPDATE app_config SET value = 'https://apps.apple.com/app/id<your app id>' WHERE key = 'store_url_ios';
    ```
-   From then on, older apps show "Update GameTok", and No Rules FC opened from an old app says the same.

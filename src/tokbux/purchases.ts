@@ -1,16 +1,15 @@
-// Buying TokBux: Apple / Google in-app purchases through RevenueCat. RevenueCat checks the receipt with the store
-// and tells the GameTok backend (src/tokbux-store.js there), which adds the TokBux to the account. The app only
-// starts the purchase, then waits for the account to show the new balance.
-//
-// Keys: RevenueCat's public SDK keys (safe in the app). Set EXPO_PUBLIC_REVENUECAT_IOS_KEY /
-// EXPO_PUBLIC_REVENUECAT_ANDROID_KEY in gametok/.env before a build; without them the store says "soon".
+// Buying TokBux: Apple / Google in-app purchases through expo-iap, checked by the GameTok backend itself
+// (src/tokbux-store.js there: Apple's signature, or Google's Play API), which adds the TokBux to the account. Only
+// then is the purchase finished with the store; one that couldn't be checked yet (offline, signed out) stays
+// unfinished and comes back on the next start, so a paid pack is never lost.
 import { Platform } from 'react-native';
 import { getAvatarAccount, syncAvatar } from '../avatar/store';
+import { tokbuxStore } from '../services/api';
 
 // store product id (App Store Connect = Google Play) -> TokBux it gives; must match the backend's TOKBUX_PACKS
 export const TOKBUX_PACKS: Record<string, number> = { tokbux_80: 80, tokbux_500: 500, tokbux_1200: 1200, tokbux_3000: 3000, tokbux_8500: 8500 };
 
-// the suggested US prices (TOKBUX_SETUP.md): shown only in development, where the store isn't connected
+// the US prices: shown only in development, where the store isn't connected
 const DEV_PRICES: Record<string, string> = { tokbux_80: '$0.99', tokbux_500: '$4.99', tokbux_1200: '$9.99', tokbux_3000: '$19.99', tokbux_8500: '$49.99' };
 export const devPrice = (id: string) => (__DEV__ ? DEV_PRICES[id] : undefined);
 
@@ -19,57 +18,90 @@ export function packsCovering(short: number): string[] {
   return Object.keys(TOKBUX_PACKS).sort((a, b) => TOKBUX_PACKS[a] - TOKBUX_PACKS[b]).filter((id) => TOKBUX_PACKS[id] >= short).slice(0, 2);
 }
 
-const API_KEY = Platform.select({
-  ios: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,
-  android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY,
-}) || '';
+let IAP: typeof import('expo-iap') | null = null;
+try { IAP = require('expo-iap'); } catch { /* a build without the native module */ }
 
-let Purchases: any = null;
-try { Purchases = require('react-native-purchases').default; } catch { /* a build without the native module */ }
+let userId: string | null = null;
+let connected: Promise<boolean> | null = null;
+// a buyPack() waiting for its purchase to come back from the store
+let waiting: { sku: string; done: (r: string | null) => void } | null = null;
 
-let configuredFor: string | null = null;
-// Connect RevenueCat as this GameTok user: their purchases are credited to this account.
-export async function startPurchases(userId: string | null | undefined) {
-  if (!Purchases || !API_KEY || !userId) return;
+// Check a purchase with the backend, then finish it with the store. false: not checked yet (try again later).
+async function settle(purchase: any): Promise<boolean> {
+  if (!TOKBUX_PACKS[purchase.productId] || !purchase.purchaseToken) return false;
+  if (purchase.purchaseState === 'pending') return false;   // paid later (e.g. cash at a shop): comes back when it's done
+  if (!userId) return false;
   try {
-    if (!configuredFor) Purchases.configure({ apiKey: API_KEY, appUserID: userId });
-    else if (configuredFor !== userId) await Purchases.logIn(userId);
-    configuredFor = userId;
-  } catch (e) { console.warn('[TokBux] RevenueCat', e); }
+    await tokbuxStore.verify(Platform.OS, purchase.productId, purchase.purchaseToken);
+  } catch (e: any) {
+    // the store's purchase is bad (refused for good): finish it so it stops coming back; anything else: keep it
+    if (!(e?.status >= 400 && e?.status < 500 && e?.status !== 401)) return false;
+    console.warn('[TokBux] purchase refused', e?.message);
+  }
+  await IAP!.finishTransaction({ purchase, isConsumable: true }).catch((e) => console.warn('[TokBux] finish', e));
+  return true;
 }
 
-export interface TokbuxPack { id: string; tokbux: number; price: string; pkg: any }
+// Connect to the store as this GameTok user: their purchases are credited to this account.
+export async function startPurchases(id: string | null | undefined) {
+  userId = id || null;
+  if (!IAP || !userId) return;
+  if (!connected) {
+    connected = IAP.initConnection().then(() => true, (e) => { console.warn('[TokBux] store', e); connected = null; return false; });
+    if (!(await connected)) return;
+    IAP.purchaseUpdatedListener(async (purchase) => {
+      const ok = await settle(purchase);
+      if (waiting?.sku === purchase.productId) {
+        const w = waiting; waiting = null;
+        w.done(ok ? null : purchase.purchaseState === 'pending'
+          ? 'Your payment is pending: the TokBux will show up once it goes through.'
+          : 'Your TokBux are on the way: they will show up in a moment.');
+      }
+    });
+    IAP.purchaseErrorListener((e) => {
+      if (!waiting) return;
+      const w = waiting; waiting = null;
+      w.done(e.code === IAP!.ErrorCode.UserCancelled ? 'cancelled' : e.message || 'The purchase did not go through.');
+    });
+  }
+  if (!(await connected)) return;
+  // purchases paid for but not finished (the app closed, the network dropped): credit them now
+  try { for (const p of await IAP.getAvailablePurchases()) await settle(p); } catch (e) { console.warn('[TokBux] restore', e); }
+}
+
+export interface TokbuxPack { id: string; tokbux: number; price: string }
 
 // The packs on sale, priced by the store in the player's currency. Empty: not on sale on this build.
 export async function loadPacks(): Promise<TokbuxPack[]> {
-  if (!Purchases || !API_KEY || !configuredFor) return [];
+  if (!IAP || !connected || !(await connected)) return [];
   try {
-    const offerings = await Purchases.getOfferings();
-    const pkgs: any[] = offerings?.current?.availablePackages || [];
-    return pkgs
-      .filter((p) => TOKBUX_PACKS[p.product.identifier])
-      .map((p) => ({ id: p.product.identifier, tokbux: TOKBUX_PACKS[p.product.identifier], price: p.product.priceString, pkg: p }))
+    const products = (await IAP.fetchProducts({ skus: Object.keys(TOKBUX_PACKS), type: 'in-app' })) || [];
+    return (products as any[])
+      .filter((p) => TOKBUX_PACKS[p.id])
+      .map((p) => ({ id: p.id, tokbux: TOKBUX_PACKS[p.id], price: p.displayPrice }))
       .sort((a, b) => a.tokbux - b.tokbux);
   } catch (e) {
-    console.warn('[TokBux] offerings', e);
+    console.warn('[TokBux] products', e);
     return [];
   }
 }
 
-// Buy a pack. Resolves to null when the TokBux are on the account, 'cancelled', or an error message.
+// Buy a pack. Resolves to null when the TokBux are on the account, 'cancelled', or a message to show.
 export async function buyPack(pack: TokbuxPack): Promise<string | null> {
+  if (!IAP || !userId) return 'Sign in to buy TokBux.';
   const before = getAvatarAccount()?.tokbux ?? 0;
+  const result = new Promise<string | null>((done) => { waiting = { sku: pack.id, done }; });
   try {
-    await Purchases.purchasePackage(pack.pkg);
+    await IAP.requestPurchase({
+      request: { apple: { sku: pack.id, appAccountToken: userId }, google: { skus: [pack.id], obfuscatedAccountId: userId } },
+      type: 'in-app',
+    });
   } catch (e: any) {
-    if (e?.userCancelled) return 'cancelled';
-    return e?.message || 'The purchase did not go through.';
+    waiting = null;
+    return e?.code === IAP.ErrorCode.UserCancelled ? 'cancelled' : e?.message || 'The purchase did not go through.';
   }
-  // the store took the money; the backend adds the TokBux when RevenueCat tells it (usually a few seconds)
-  for (let i = 0; i < 15; i++) {
-    await syncAvatar();
-    if ((getAvatarAccount()?.tokbux ?? 0) >= before + pack.tokbux) return null;
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return 'Your TokBux are on the way: they will show up in a moment.';
+  const err = await result;
+  if (err) return err;
+  await syncAvatar();
+  return (getAvatarAccount()?.tokbux ?? 0) >= before + pack.tokbux ? null : 'Your TokBux are on the way: they will show up in a moment.';
 }

@@ -82,7 +82,8 @@
             "enableSceneSupport": true
           }
         }
-      ]
+      ],
+      "expo-iap"
     ],
     "extra": {
       "eas": {
