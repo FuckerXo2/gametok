@@ -77,10 +77,10 @@ const withPart = (r: AvatarRecord, slot: Slot, set: string | null): AvatarRecord
 
 // Clothing sets: one item per (set, slot). Cage fitting makes every set fit every body.
 const SETS: { set: string; name: string; price: number }[] = [
-  { set: 'Male_Peasant', name: 'Peasant', price: 25 },
-  { set: 'Male_Ranger', name: 'Ranger', price: 40 },
-  { set: 'Female_Peasant', name: 'Peasant II', price: 25 },
-  { set: 'Female_Ranger', name: 'Ranger II', price: 40 },
+  { set: 'Male_Peasant', name: 'Peasant', price: 50 },
+  { set: 'Male_Ranger', name: 'Ranger', price: 75 },
+  { set: 'Female_Peasant', name: 'Peasant II', price: 50 },
+  { set: 'Female_Ranger', name: 'Ranger II', price: 75 },
 ];
 const PIECES: { slot: Slot; suffix: string; category: AvatarItem['category']; icon: AvatarItem['icon']; focus: Focus; only?: string[]; tab: AvatarItem['tab']; sub: string }[] = [
   { slot: 'top', suffix: 'Top', category: 'clothing', icon: 'shirt-outline', focus: 'torso', tab: 'clothing', sub: 'Shirts' },
@@ -95,8 +95,8 @@ const HAIRS: { id: string; name: string; price: number }[] = [
   { id: 'Hair_Buzzed', name: 'Buzz Cut', price: 0 },
   { id: 'Hair_BuzzedFemale', name: 'Buzz Fade', price: 0 },
   { id: 'Hair_SimpleParted', name: 'Side Part', price: 0 },
-  { id: 'Hair_Long', name: 'Long Hair', price: 35 },
-  { id: 'Hair_Buns', name: 'Space Buns', price: 35 },
+  { id: 'Hair_Long', name: 'Long Hair', price: 75 },
+  { id: 'Hair_Buns', name: 'Space Buns', price: 75 },
 ];
 
 // Clothing grown from the body (games/avatar-editor/tools/make_clothing.py): one item per garment and colour, like Roblox.
@@ -104,11 +104,11 @@ const HAIRS: { id: string; name: string; price: number }[] = [
 // FREE: everyone's starter clothes (the backend's PRICES say the same).
 const FREE = ['Street_TeeWhite', 'Street_TeeBlack', 'Street_JeansBlue', 'Street_JeansBlack', 'Street_ShortsKhaki', 'Street_SneakersWhite', 'Street_SneakersBlack'];
 const STREET: { set: string; name: string; slot: Slot; price: number; sub: string }[] = [
-  ...['White', 'Black', 'Red', 'Green'].map((c) => ({ set: `Street_Tee${c}`, name: `${c} Tee`, slot: 'top' as Slot, price: 25, sub: 'T-Shirts' })),
-  ...['Grey', 'Navy', 'Cream'].map((c) => ({ set: `Street_Sweater${c}`, name: `${c} Sweater`, slot: 'top' as Slot, price: 40, sub: 'Sweaters' })),
-  ...['Blue', 'Black'].map((c) => ({ set: `Street_Jeans${c}`, name: `${c} Jeans`, slot: 'legs' as Slot, price: 35, sub: 'Pants' })),
-  ...['Khaki', 'Black'].map((c) => ({ set: `Street_Shorts${c}`, name: `${c} Shorts`, slot: 'legs' as Slot, price: 20, sub: 'Shorts' })),
-  ...['White', 'Black', 'Red'].map((c) => ({ set: `Street_Sneakers${c}`, name: `${c} Sneakers`, slot: 'feet' as Slot, price: 30, sub: 'Shoes' })),
+  ...['White', 'Black', 'Red', 'Green'].map((c) => ({ set: `Street_Tee${c}`, name: `${c} Tee`, slot: 'top' as Slot, price: 50, sub: 'T-Shirts' })),
+  ...['Grey', 'Navy', 'Cream'].map((c) => ({ set: `Street_Sweater${c}`, name: `${c} Sweater`, slot: 'top' as Slot, price: 75, sub: 'Sweaters' })),
+  ...['Blue', 'Black'].map((c) => ({ set: `Street_Jeans${c}`, name: `${c} Jeans`, slot: 'legs' as Slot, price: 75, sub: 'Pants' })),
+  ...['Khaki', 'Black'].map((c) => ({ set: `Street_Shorts${c}`, name: `${c} Shorts`, slot: 'legs' as Slot, price: 40, sub: 'Shorts' })),
+  ...['White', 'Black', 'Red'].map((c) => ({ set: `Street_Sneakers${c}`, name: `${c} Sneakers`, slot: 'feet' as Slot, price: 60, sub: 'Shoes' })),
 ].map((c) => (FREE.includes(c.set) ? { ...c, price: 0 } : c));
 
 // Outfits (Roblox's "Avatars"): whole looks. Wearing one replaces the clothes; unowned pieces go in the checkout.
@@ -144,7 +144,7 @@ export const AVATAR_ITEMS: AvatarItem[] = [
     wear: (r) => ({ ...r, hair: h.id }), isWorn: (r) => r.hair === h.id, takeOff: (r) => ({ ...r, hair: null }),
   })),
   {
-    id: 'beard', name: 'Full Beard', category: 'hair', price: 20,
+    id: 'beard', name: 'Full Beard', category: 'hair', price: 40,
     icon: 'man-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Beards',
     wear: (r) => ({ ...r, beard: true }), isWorn: (r) => r.beard, takeOff: (r) => ({ ...r, beard: false }),
   },
