@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Game menu options</title>
+<!-- Three takes on the in-game menu (the three-line button), at an iPhone 16e held sideways (844x390):
+     A: Roblox's own (full screen, tabs, a players list, a flat bottom bar)
+     B: a side panel (the game stays visible on the right)
+     C: a small drop-down from the button (barely covers the game) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0a10; color: #fff; font-family: Inter, system-ui, sans-serif; padding: 24px; display: grid; gap: 14px; justify-content: center; }
+  h2 { font-size: 14px; letter-spacing: 1.5px; color: #c9c5d6; font-weight: 800; margin-top: 10px; }
+  h2 small { color: #8b8799; font-weight: 600; letter-spacing: 0; margin-left: 8px; }
+  .phone { position: relative; width: 844px; height: 390px; border-radius: 34px; overflow: hidden; background: #000 url(lobby.jpg) center/cover; box-shadow: 0 0 0 6px #1d1b24; }
+  .ic { width: 18px; height: 18px; flex: none; }
+  .head { width: 34px; height: 34px; border-radius: 50%; background: #2d2540; flex: none; }
+
+  /* A: Roblox */
+  .A .shade { position: absolute; inset: 0; background: rgba(12,13,18,.86); }
+  .A .tabs { position: absolute; top: 18px; left: 0; right: 0; display: flex; justify-content: center; gap: 6px; }
+  .A .tab { display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; color: #b9b6c4; }
+  .A .tab.on { background: rgba(255,255,255,.12); color: #fff; }
+  .A .x { position: absolute; top: 18px; left: 60px; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.08); font-size: 18px; }
+  .A .list { position: absolute; top: 72px; left: 150px; right: 150px; display: grid; gap: 6px; }
+  .A .row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,.06); }
+  .A .row b { font-size: 14px; } .A .row span { color: #8b8799; font-size: 12px; margin-left: 4px; }
+  .A .row .r { margin-left: auto; font-size: 12px; font-weight: 700; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.1); }
+  .A .bar { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; gap: 12px; }
+  .A .b { width: 170px; height: 44px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,.7); display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .A .b.main { background: #fff; color: #111; border-color: #fff; }
+  .A .key { font-size: 11px; font-weight: 800; border: 1.5px solid currentColor; border-radius: 5px; padding: 1px 5px; opacity: .8; }
+
+  /* B: side panel */
+  .B .shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(8,7,14,.5), rgba(8,7,14,.1) 60%); }
+  .B .panel { position: absolute; top: 0; bottom: 0; left: 0; width: 300px; padding: 18px 18px 18px 56px; background: rgba(14,12,22,.94); border-right: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 6px; }
+  .B .t { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; margin-bottom: 10px; }
+  .B .t .x { margin-left: auto; color: #8b8799; font-size: 18px; }
+  .B .item { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; font-weight: 700; font-size: 15px; }
+  .B .item.on { background: #8b47f0; }
+  .B .item.leave { color: #fca5a5; }
+  .B .sep { height: 1px; background: rgba(255,255,255,.08); margin: 6px 0; }
+  .B .lbl { font-size: 10px; font-weight: 800; letter-spacing: 1.4px; color: #8b8799; margin: 2px 0 2px 4px; }
+  .B .f { display: flex; align-items: center; gap: 10px; padding: 6px 4px; font-size: 13px; font-weight: 600; }
+  .B .f span { color: #8b8799; font-size: 11px; display: block; font-weight: 500; }
+
+  /* C: drop-down */
+  .C .btn { position: absolute; top: 12px; left: 51px; width: 40px; height: 40px; border-radius: 12px; background: #fff; color: #111; display: grid; place-items: center; }
+  .C .drop { position: absolute; top: 58px; left: 51px; width: 230px; border-radius: 16px; background: rgba(18,16,26,.96); border: 1px solid rgba(255,255,255,.1); padding: 6px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+  .C .item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; font-weight: 700; font-size: 15px; }
+  .C .item + .item { border-top: 1px solid rgba(255,255,255,.06); }
+  .C .item.leave { color: #fca5a5; }
+  .C .item small { margin-left: auto; color: #8b8799; font-weight: 600; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h2>A · ROBLOX'S OWN<small>full screen, tabs, players list, flat buttons at the bottom</small></h2>
+  <div class="phone A">
+    <div class="shade"></div>
+    <div class="x">✕</div>
+    <div class="tabs">
+      <div class="tab on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><circle cx="18" cy="9" r="3"/></svg>People</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>Settings</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H8l-4 4z"/></svg>Report</div>
+    </div>
+    <div class="list">
+      <div class="row"><img class="head" src="head-jatt.png"><b>jatt fabian</b><span>you</span></div>
+      <div class="row"><img class="head" src="head-ada.png"><b>ada</b><span>friend</span><div class="r">Chat</div></div>
+      <div class="row"><img class="head" src="head-tobi.png"><b>tobi</b><div class="r">+ Add</div></div>
+    </div>
+    <div class="bar">
+      <div class="b"><span class="key">L</span>Leave</div>
+      <div class="b"><span class="key">I</span>Invite</div>
+      <div class="b main"><span class="key">ESC</span>Resume</div>
+    </div>
+  </div>
+
+  <h2>B · SIDE PANEL<small>the game stays visible; the menu slides in from the left</small></h2>
+  <div class="phone B">
+    <div class="shade"></div>
+    <div class="panel">
+      <div class="t">No Rules FC<span class="x">✕</span></div>
+      <div class="item on"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>Resume</div>
+      <div class="item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg>Invite friends</div>
+      <div class="item leave"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h12"/></svg>Leave game</div>
+      <div class="sep"></div>
+      <div class="lbl">FRIENDS IN HERE</div>
+      <div class="f"><img class="head" src="head-ada.png"><div>ada<span>In your party</span></div></div>
+    </div>
+  </div>
+
+  <h2>C · DROP-DOWN<small>a small menu under the button; the game barely covered</small></h2>
+  <div class="phone C">
+    <div class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+    <div class="drop">
+      <div class="item"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>Resume</div>
+      <div class="item"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg>Invite friends<small>1 on</small></div>
+      <div class="item leave"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h12"/></svg>Leave game</div>
+    </div>
+  </div>
+</body>
+</html>
