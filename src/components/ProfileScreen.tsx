@@ -113,7 +113,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
       buy: async () => {
         setBuying(true);
         for (const item of cartItems) {
-          const err = await buyItem(item.id);
+          const err = await buyItem(item.id, account?.prices[item.id]);
           if (err) { setBuying(false); return `${item.name}: ${err}`; }
         }
         setBuying(false);

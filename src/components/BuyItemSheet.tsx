@@ -14,6 +14,7 @@ const CARD = '#1d1727', LINE = 'rgba(255,255,255,0.12)', DIM = 'rgba(255,255,255
 export interface BuyRequest {
   name: string;
   price: number;
+  was?: number;                         // on sale: the normal price, shown crossed out
   thumb?: string | null;
   buy: () => Promise<string | null>;   // spends the TokBux: null when bought, or an error message
 }
@@ -71,7 +72,11 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
               : <View style={[styles.thumb, styles.noThumb]}><Ionicons name="bag-handle-outline" size={26} color={DIM} /></View>}
             <View style={{ flex: 1 }}>
               <Text style={styles.name} numberOfLines={2}>{request.name}</Text>
-              <View style={styles.cost}><TokBuxIcon size={15} /><Text style={styles.costText}>{request.price.toLocaleString()}</Text></View>
+              <View style={styles.cost}><TokBuxIcon size={15} />
+                {request.was ? <Text style={styles.was}>{request.was.toLocaleString()}</Text> : null}
+                <Text style={styles.costText}>{request.price.toLocaleString()}</Text>
+                {request.was ? <View style={styles.off}><Text style={styles.offText}>-{Math.round((1 - request.price / request.was) * 100)}%</Text></View> : null}
+              </View>
             </View>
           </View>
           {options.map((id, i) => {
@@ -111,6 +116,9 @@ const styles = StyleSheet.create({
   name: { color: '#fff', fontSize: 15, fontWeight: '700' },
   cost: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   costText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  was: { color: DIM, fontSize: 13, fontWeight: '600', textDecorationLine: 'line-through' },
+  off: { backgroundColor: '#ff3a6a', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, marginLeft: 2 },
+  offText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   pack: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: LINE, borderRadius: 12, height: 54, paddingHorizontal: 14, marginBottom: 10 },
   packOn: { borderColor: '#fff' },
   packAmount: { color: '#fff', fontSize: 16, fontWeight: '700' },

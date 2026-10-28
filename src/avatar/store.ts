@@ -13,7 +13,8 @@ export interface AvatarAccount {
   avatar: AvatarRecord;
   owned: string[];
   tokbux: number;
-  prices: Record<string, number>;     // the server's; the app's catalog prices until it has answered
+  prices: Record<string, number>;     // the server's (sale prices included); the app's catalog prices until it has answered
+  sales?: Record<string, { price: number; was: number; off: number; until: string }>;   // what's on sale: the crossed-out price
   signedIn: boolean;
 }
 
@@ -43,11 +44,11 @@ export async function syncAvatar() {
   try {
     const me = await avatarAccount.me();
     if (me.avatar) {
-      set({ avatar: normalizeAvatar(me.avatar), owned: me.owned, tokbux: me.tokbux, prices: me.prices, signedIn: true });
+      set({ avatar: normalizeAvatar(me.avatar), owned: me.owned, tokbux: me.tokbux, prices: me.prices, sales: me.sales, signedIn: true });
       AsyncStorage.setItem(KEY, JSON.stringify(current!.avatar)).catch(() => {});
     } else {
       const avatar = onlyOwned(current!.avatar, me.owned, me.prices);
-      set({ avatar, owned: me.owned, tokbux: me.tokbux, prices: me.prices, signedIn: true });
+      set({ avatar, owned: me.owned, tokbux: me.tokbux, prices: me.prices, sales: me.sales, signedIn: true });
       avatarAccount.save(avatar).catch(() => {});
     }
   } catch (e: any) {
@@ -64,15 +65,16 @@ export function saveAvatar(r: AvatarRecord) {
   saveT = setTimeout(() => { avatarAccount.save(r).catch(() => syncAvatar()); }, 600);   // refused: take the account's
 }
 
-// Spend TokBux on an item. Resolves to an error message, or null when it's theirs.
-export async function buyItem(itemId: string): Promise<string | null> {
+// Spend TokBux on an item, at the price the player was shown (if a sale ended meanwhile, the server says so instead of
+// charging more). Resolves to an error message, or null when it's theirs.
+export async function buyItem(itemId: string, price?: number): Promise<string | null> {
   if (!current?.signedIn) return 'Sign in to buy items';
   try {
-    const me = await avatarAccount.buy(itemId);
-    set({ owned: me.owned, tokbux: me.tokbux, prices: me.prices });
+    const me = await avatarAccount.buy(itemId, price);
+    set({ owned: me.owned, tokbux: me.tokbux, prices: me.prices, sales: me.sales });
     return null;
   } catch (e: any) {
-    if (e?.code === 'NOT_ENOUGH_TOKBUX') return e.message;
+    if (e?.code === 'NOT_ENOUGH_TOKBUX' || e?.code === 'PRICE_CHANGED') { syncAvatar(); return e.message; }
     return 'Could not buy that. Check your connection and try again.';
   }
 }

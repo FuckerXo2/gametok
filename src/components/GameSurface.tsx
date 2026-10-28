@@ -542,7 +542,7 @@ true;
           if (!acct?.signedIn || price === undefined) { done(false, 'Not for sale'); return; }
           if (acct.owned.includes(id)) { done(true); return; }
           // the buy popup (it tops up TokBux first when short)
-          setBuyReq({ name, price, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy: () => buyItem(id), done });
+          setBuyReq({ name, price, was: acct.sales?.[id]?.was, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy: () => buyItem(id, price), done });
         });
       } else if (data.type === 'GAMETOK_OPEN_TOKBUX') {
         DeviceEventEmitter.emit('gametok:open-tokbux');   // the game player opens the TokBux store over the game
