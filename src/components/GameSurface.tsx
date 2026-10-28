@@ -17,6 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
 import { buyItem, getAvatarAccount, syncAvatar, useAvatar } from '../avatar/store';
 import { playerSessions } from '../services/api';
+import { LOCAL_GAMES } from '../dev/localGames';
 import { APP_VERSION } from './UpdateRequired';
 import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 
@@ -27,6 +28,7 @@ export const buildGameUrl = (
   game: { id: string; embedUrl?: string | null },
   apiOrigin: string,
 ): string => {
+  if (LOCAL_GAMES[game.id]) return LOCAL_GAMES[game.id];   // dev: the game from this Mac (src/dev/localGames.ts)
   const rawUrl = game.embedUrl
     ? (game.embedUrl.startsWith('/') ? `${apiOrigin}${game.embedUrl}` : game.embedUrl)
     : `${GAMES_HOST}/${game.id}/`;
