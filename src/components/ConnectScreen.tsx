@@ -27,7 +27,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuthScreen, useNavigation, useDeepLink } from '../../App';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
-import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi, ai as aiApi } from '../services/api';
+import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { SlideRightModal } from './SlideRightModal';
@@ -168,9 +168,8 @@ const MessagesTab: React.FC<{
   const { user } = useAuth();
   const { chatSocket, onlineUsers, typingUsers, joinConversation, leaveConversation, sendTyping, stopTyping } = useSocket();
   const { openSharedGame } = useDeepLink();
-  const { setActiveTab, setPendingDraftId } = useNavigation();
+  const { setActiveTab } = useNavigation();
   const insets = useSafeAreaInsets();
-  const [remixingGameId, setRemixingGameId] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -393,37 +392,6 @@ const MessagesTab: React.FC<{
     onClose?.();
     setActiveTab('home');
     openSharedGame(gameId);
-  };
-
-  // Remix a shared game: resolve its AI source id from the game record, kick off
-  // a remix draft, then drop the user straight into the create/edit flow.
-  const handleRemixShared = async (gameId?: string) => {
-    if (!gameId || remixingGameId) return;
-    setRemixingGameId(gameId);
-    try {
-      const detail = await gamesApi.get(gameId);
-      const game = detail?.game || detail;
-      const embed: string | undefined = game?.embedUrl || game?.embed_url;
-      const sourceId = embed?.includes('/api/ai/play/')
-        ? embed.split('/api/ai/play/')[1]?.split(/[?#]/)[0]
-        : (game?.id || gameId);
-      if (!sourceId) {
-        Alert.alert('Remix unavailable', "This game can't be remixed.");
-        return;
-      }
-      const res = await aiApi.remixGame(sourceId);
-      if (res?.draftId) {
-        onClose?.();
-        setPendingDraftId(res.draftId);
-        setActiveTab('create');
-      } else {
-        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
-      }
-    } catch (e: any) {
-      Alert.alert('Remix failed', e?.message || String(e));
-    } finally {
-      setRemixingGameId(null);
-    }
   };
 
   const closeChat = () => {
@@ -950,7 +918,7 @@ const MessagesTab: React.FC<{
                             </Text>
                           </View>
                         </Pressable>
-                        {/* Play / Remix actions */}
+                        {/* Play action */}
                         <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                           <TouchableOpacity
                             onPress={() => handlePlayShared(item.gameShare.id)}
@@ -959,22 +927,6 @@ const MessagesTab: React.FC<{
                             <Ionicons name="play" size={15} color="#fff" />
                             <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Play</Text>
                           </TouchableOpacity>
-                          {((item.gameShare as any)?.runtime === 'native' || (item.gameShare as any)?.runtime === 'gametok_engine') && (
-                            <TouchableOpacity
-                              onPress={() => handleRemixShared(item.gameShare.id)}
-                              disabled={remixingGameId === item.gameShare.id}
-                              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-                            >
-                              {remixingGameId === item.gameShare.id ? (
-                                <ActivityIndicator size="small" color={colors.text} />
-                              ) : (
-                                <>
-                                  <Ionicons name="git-branch" size={15} color={colors.text} />
-                                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Remix</Text>
-                                </>
-                              )}
-                            </TouchableOpacity>
-                          )}
                         </View>
                         {cleanText ? (
                           <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4, marginLeft: 4 }}>

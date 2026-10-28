@@ -15,7 +15,6 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
-import { HomeScreen } from './src/screens/HomeScreen';
 import { BottomNav } from './src/components/BottomNav';
 import { ConnectScreen } from './src/components/ConnectScreen';
 import { ProfileScreen } from './src/components/ProfileScreen';
@@ -25,7 +24,6 @@ import { AccountMenu } from './src/components/AccountMenu';
 import { UpdateRequired, useUpdateRequired } from './src/components/UpdateRequired';
 import { startPurchases } from './src/tokbux/purchases';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
-import { CreateScreen } from './src/screens/CreateScreen';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -39,7 +37,7 @@ import { startGameDownload } from './src/services/gameDownloader';
 SplashScreen.preventAutoHideAsync();
 
 
-// Deep link context - to pass shared game ID to HomeScreen
+// Deep link context - to pass a shared game ID to the games screen
 interface DeepLinkContextType {
   sharedGameId: string | null;
   clearSharedGame: () => void;
@@ -73,8 +71,6 @@ interface NavigationContextType {
   triggerGameRestart: () => void;
   gameSkipCounter: { direction: 'next' | 'prev', count: number };
   triggerGameSkip: (direction: 'next' | 'prev') => void;
-  pendingDraftId: string | null;
-  setPendingDraftId: (id: string | null) => void;
   activityRequestNonce: number;
 }
 const NavigationContext = createContext<NavigationContextType>({
@@ -92,31 +88,22 @@ const NavigationContext = createContext<NavigationContextType>({
   triggerGameRestart: () => {},
   gameSkipCounter: { direction: 'next', count: 0 },
   triggerGameSkip: () => {},
-  pendingDraftId: null,
-  setPendingDraftId: () => {},
   activityRequestNonce: 0
 });
 export const useNavigation = () => useContext(NavigationContext);
 
-type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
+type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
 const MainApp = ({
-  openCreateNonce = 0,
   notifChatUserId = null,
   onNotifChatHandled,
   notifActivityNonce = 0,
-  pendingForgeNotification = null,
-  onForgeNotificationHandled,
 }: {
-  openCreateNonce?: number;
   notifChatUserId?: string | null;
   onNotifChatHandled?: () => void;
   notifActivityNonce?: number;
-  pendingForgeNotification?: { journeyView: 'directions' | 'perspective'; sessionId?: string } | null;
-  onForgeNotificationHandled?: () => void;
 }) => {
   const [activeTab, setActiveTab] = useState<TabName>('home');   // open on Games (like Roblox's Home)
-  const [previousTab, setPreviousTab] = useState<TabName>('home');
   const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
   const [activityRequestNonce, setActivityRequestNonce] = useState(0);
@@ -125,7 +112,6 @@ const MainApp = ({
   const [isHudHidden, setIsHudHidden] = useState(false);
   const [gameRestartTrigger, setGameRestartTrigger] = useState(0);
   const [gameSkipCounter, setGameSkipCounter] = useState<{ direction: 'next' | 'prev', count: number }>({ direction: 'next', count: 0 });
-  const [pendingDraftId, setPendingDraftId] = useState<string | null>(null);
   const { isDark, colors } = useTheme();
 
   const handleTabPress = (tab: TabName) => {
@@ -133,12 +119,7 @@ const MainApp = ({
       // Already on home — trigger refresh
       setHomeRefreshTrigger(prev => prev + 1);
     }
-    
-    // Remember where we came from so the modal can slide back flawlessly
-    if (tab !== 'create') {
-      setPreviousTab(tab);
-    }
-    
+
     setActiveTab(tab);
     // Reset to standard bottom navigation when switching tabs or entering Home
     setIsGameDeckActive(false);
@@ -152,27 +133,6 @@ const MainApp = ({
   const triggerGameSkip = (direction: 'next' | 'prev') => {
     setGameSkipCounter(prev => ({ direction, count: prev.count + 1 }));
   };
-
-  useEffect(() => {
-    if (!openCreateNonce) return;
-    if (activeTab !== 'create') {
-      setPreviousTab(activeTab);
-    }
-    setIsGameDeckActive(false);
-    setIsHudHidden(false);
-    setActiveTab('create');
-  }, [openCreateNonce]);
-
-  // Push notification tap for forge directions or perspectives -> open Create tab immediately
-  useEffect(() => {
-    if (!pendingForgeNotification) return;
-    if (activeTab !== 'create') {
-      setPreviousTab(activeTab);
-    }
-    setIsGameDeckActive(false);
-    setIsHudHidden(false);
-    setActiveTab('create');
-  }, [pendingForgeNotification]);
 
   // Notification tap → open the Connect tab straight into the sender's DM.
   useEffect(() => {
@@ -214,8 +174,6 @@ const MainApp = ({
       triggerGameRestart,
       gameSkipCounter,
       triggerGameSkip,
-      pendingDraftId,
-      setPendingDraftId,
       activityRequestNonce
     }}>
       <StatusBar
@@ -243,17 +201,7 @@ const MainApp = ({
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
       {/* the account menu (the ☰ on Games and Me) */}
       <AccountMenu onMyItems={() => { setActiveTab('profile'); DeviceEventEmitter.emit('gametok:my-items'); }} />
-      
-      {/* Sliding Create Screen Modal - Overlays everything natively */}
-      <CreateScreen
-        isActive={activeTab === 'create'}
-        onClose={() => setActiveTab(previousTab)}
-        openDraftId={pendingDraftId}
-        onDraftOpened={() => setPendingDraftId(null)}
-        openForgeNotification={pendingForgeNotification}
-        onForgeNotificationHandled={onForgeNotificationHandled}
-      />
-      
+
     </NavigationContext.Provider>
   );
 };
@@ -265,8 +213,6 @@ const AppContent = () => {
   useEffect(() => { startPurchases(user?.id); }, [user?.id]);
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
-  const [creationNotificationNonce, setCreationNotificationNonce] = useState(0);
-  const [pendingForgeNotif, setPendingForgeNotif] = useState<{ journeyView: 'directions' | 'perspective'; sessionId?: string } | null>(null);
   // Notification deep-links handed down to MainApp (which owns tab state).
   const [pendingChatNotifUserId, setPendingChatNotifUserId] = useState<string | null>(null);
   const [activityNotifNonce, setActivityNotifNonce] = useState(0);
@@ -338,14 +284,6 @@ const AppContent = () => {
     if (!data) return;
     if (data.type === 'game') {
       setSharedGameId(data.gameId as string);
-    } else if (data.type === 'creation') {
-      if (data.action === 'visual_directions_ready' || data.action === 'perspectives_ready') {
-        setPendingForgeNotif({
-          journeyView: data.journeyView || (data.action === 'perspectives_ready' ? 'perspective' : 'directions'),
-          sessionId: data.sessionId,
-        });
-      }
-      setCreationNotificationNonce((value) => value + 1);
     } else if (data.type === 'message') {
       // Open the Connect tab straight into the DM with the sender.
       if (data.userId) setPendingChatNotifUserId(String(data.userId));
@@ -419,7 +357,7 @@ const AppContent = () => {
         const schemeMatch = url.match(/^gametok:\/\/([^/?&#]+)/i);
         if (schemeMatch) {
           const candidate = decodeURIComponent(schemeMatch[1]);
-          const reserved = ['home', 'explore', 'create', 'connect', 'profile', 'login', 'signup'];
+          const reserved = ['home', 'explore', 'connect', 'profile', 'login', 'signup'];
           if (!reserved.includes(candidate.toLowerCase())) {
             gameId = candidate;
           }
@@ -498,12 +436,9 @@ const AppContent = () => {
       <DeepLinkContext.Provider value={{ sharedGameId, clearSharedGame, openSharedGame }}>
         <View style={{ flex: 1 }}>
           <MainApp
-            openCreateNonce={creationNotificationNonce}
             notifChatUserId={pendingChatNotifUserId}
             onNotifChatHandled={() => setPendingChatNotifUserId(null)}
             notifActivityNonce={activityNotifNonce}
-            pendingForgeNotification={pendingForgeNotif}
-            onForgeNotificationHandled={() => setPendingForgeNotif(null)}
           />
         </View>
       </DeepLinkContext.Provider>

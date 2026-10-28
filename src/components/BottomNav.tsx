@@ -12,7 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile' | 'create';
+type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
 
 interface BottomNavProps {
   activeTab: TabName;
@@ -96,41 +96,6 @@ const NavTab = ({
   );
 };
 
-const CreateButton = ({ onPress }: { onPress: () => void }) => {
-  const scale = useSharedValue(1);
-
-  const handlePressIn = () => {
-    scale.value = withTiming(0.85, { duration: 90 });
-  };
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 12, stiffness: 220 });
-  };
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Pressable
-      style={[styles.createTab, noFocusRing]}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onPress();
-      }}
-    >
-      <Animated.View style={[styles.createButtonWrapper, animatedStyle]}>
-        <View style={[styles.createButtonGlitch, styles.createButtonGlitchCyan]} />
-        <View style={[styles.createButtonGlitch, styles.createButtonGlitchPurple]} />
-        <View style={styles.createButton}>
-          <Ionicons name="add" size={24} color="#000" />
-        </View>
-      </Animated.View>
-    </Pressable>
-  );
-};
-
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -204,39 +169,5 @@ const styles = StyleSheet.create({
   avatarRingActive: {
     borderWidth: 2,
     borderColor: BRAND_PURPLE,
-  },
-  createTab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  createButtonWrapper: {
-    width: 44,
-    height: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  createButtonGlitch: {
-    position: 'absolute',
-    width: 44,
-    height: 30,
-    borderRadius: 8,
-  },
-  createButtonGlitchCyan: {
-    left: -3,
-    backgroundColor: '#00e5ff',
-  },
-  createButtonGlitchPurple: {
-    right: -3,
-    backgroundColor: '#a855f7',
-  },
-  createButton: {
-    width: 44,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

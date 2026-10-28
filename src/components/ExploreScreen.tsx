@@ -22,9 +22,8 @@ import { isLandscape, type Orientation } from '../constants/orientation';
 import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useNavigation } from '../../App';
-import { API_URL, games as gamesApi, users as usersApi, ai as aiApi } from '../services/api';
+import { API_URL, games as gamesApi, users as usersApi } from '../services/api';
 import { Avatar } from './Avatar';
-import { RemixModal } from './RemixModal';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GamesHome } from './GamesHome';
@@ -54,7 +53,6 @@ const GAMETOK_BG = require('../../assets/gametok_bg.png');
 // Discovery categories now come from the server — see src/constants/categories.ts.
 
 const TRENDING_SEARCHES = [
-  'dream forge',
   'horror',
   'racing',
   'parkour',
@@ -107,7 +105,7 @@ export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen } = useAuthScreen();
-  const { setActiveTab, setPendingDraftId, searchModalVisible, setSearchModalVisible, setPendingChatUserId } = useNavigation();
+  const { setActiveTab, searchModalVisible, setSearchModalVisible, setPendingChatUserId } = useNavigation();
 
   const [allGames, setAllGames] = useState<ExploreGame[]>([]);
   const [creators, setCreators] = useState<ExploreCreator[]>([]);
@@ -118,8 +116,6 @@ export const ExploreScreen: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState<any>(null);
   const [playingGame, setPlayingGame] = useState<(ExploreGame & { joinFriend?: string }) | null>(null);
-  const [remixTarget, setRemixTarget] = useState<ExploreGame | null>(null);
-  const [remixLoading, setRemixLoading] = useState(false);
   // Active discovery category, or null for "Home" (all games).
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [tokbuxOpen, setTokbuxOpen] = useState(false);
@@ -192,43 +188,6 @@ export const ExploreScreen: React.FC = () => {
     }, 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
-
-  // Remix from the player's action rail. Mirrors HomeScreen: confirm first, because a stray tap
-  // would otherwise silently create a draft.
-  const handleRemix = (game: ExploreGame) => {
-    const sourceId = game.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
-    if (!sourceId) {
-      Alert.alert('Cannot remix', "This game can't be remixed.");
-      return;
-    }
-    setRemixTarget(game);
-  };
-
-  const confirmRemix = async () => {
-    if (!remixTarget || remixLoading) return;
-    const sourceId = remixTarget.embedUrl?.split('/api/ai/play/')[1]?.split(/[?#]/)[0];
-    if (!sourceId) {
-      setRemixTarget(null);
-      return;
-    }
-    setRemixLoading(true);
-    try {
-      const res = await aiApi.remixGame(sourceId);
-      if (res?.draftId) {
-        setRemixTarget(null);
-        setPlayingGame(null);
-        // Jump straight into editing the fresh remix draft.
-        setPendingDraftId(res.draftId);
-        setActiveTab('create');
-      } else {
-        Alert.alert('Remix failed', res?.error || "Couldn't remix this game.");
-      }
-    } catch (e: any) {
-      Alert.alert('Remix failed', e?.message || String(e));
-    } finally {
-      setRemixLoading(false);
-    }
-  };
 
   const openGame = async (gameOrId: string | ExploreGame, joinFriend?: string) => {
     const gameId = typeof gameOrId === 'string' ? gameOrId : gameOrId.id;
@@ -561,19 +520,7 @@ export const ExploreScreen: React.FC = () => {
         game={playingGame}
         onClose={() => setPlayingGame(null)}
         recordPlay={false}
-        onRemix={(game) => handleRemix(game as ExploreGame)}
       />
-
-      <RemixModal
-        visible={!!remixTarget}
-        gameName={remixTarget?.name}
-        gameThumbnail={remixTarget ? resolveThumbnail(remixTarget.thumbnail, remixTarget.id, remixTarget) : null}
-        loading={remixLoading}
-        onCancel={() => { if (!remixLoading) setRemixTarget(null); }}
-        onConfirm={confirmRemix}
-      />
-
-
 
       <UserProfileModal
         visible={!!selectedCreator}
