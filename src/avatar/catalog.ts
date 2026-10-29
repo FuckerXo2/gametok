@@ -63,7 +63,7 @@ export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet' | 'lobby';
 export type Tab = 'all' | 'outfits' | 'body' | 'beards' | 'clothing' | 'accessories';
 export const TABS: { id: Tab; label: string; subs: string[] }[] = [
   { id: 'all', label: 'All', subs: [] },
-  { id: 'outfits', label: 'Outfits', subs: [] },
+  { id: 'outfits', label: 'Avatars', subs: [] },
   { id: 'body', label: 'Hair', subs: [] },   // (body shape, face, skin: the Me screen's editors)
   { id: 'beards', label: 'Beards', subs: [] },
   { id: 'clothing', label: 'Clothing', subs: ['T-Shirts', 'Sweaters', 'Shirts', 'Pants', 'Shorts', 'Shoes'] },

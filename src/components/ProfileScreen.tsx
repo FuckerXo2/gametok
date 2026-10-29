@@ -212,10 +212,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   useEffect(() => { if (saved && !draft?.cart.length) setDraft(null); }, [saved]);
 
   // every change goes on the stage; with nothing unbought in it, it's also saved
+  const why = useRef('?');   // what the next save is for (the development log in saveAvatar)
   const apply = (next: Draft) => {
     next = { ...next, cart: next.cart.filter((id) => AVATAR_ITEMS.find((i) => i.id === id)?.isWorn?.(next.look)) };
     setDraft(next);
-    if (!next.cart.length) saveAvatar(next.look);
+    if (!next.cart.length) saveAvatar(next.look, why.current);
+    why.current = '?';
   };
   const change = (next: Draft) => {
     if (look) setHistory((h) => ({ undo: [...h.undo.slice(-30), { look, cart }], redo: [] }));
@@ -223,11 +225,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   };
   const undo = () => {
     const prev = history.undo[history.undo.length - 1]; if (!prev || !look) return;
-    setHistory((h) => ({ undo: h.undo.slice(0, -1), redo: [...h.redo, { look, cart }] })); apply(prev);
+    setHistory((h) => ({ undo: h.undo.slice(0, -1), redo: [...h.redo, { look, cart }] })); why.current = 'undo'; apply(prev);
   };
   const redo = () => {
     const next = history.redo[history.redo.length - 1]; if (!next || !look) return;
-    setHistory((h) => ({ undo: [...h.undo, { look, cart }], redo: h.redo.slice(0, -1) })); apply(next);
+    setHistory((h) => ({ undo: [...h.undo, { look, cart }], redo: h.redo.slice(0, -1) })); why.current = 'redo'; apply(next);
   };
 
   // a size slider: the avatar follows while dragging; on release it's one change (one undo step), saved
@@ -241,7 +243,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     const from = sizeFrom.current ?? (look ? { look, cart } : null); sizeFrom.current = null;
     if (!from) return;
     setHistory((h) => ({ undo: [...h.undo.slice(-30), from], redo: [] }));
-    apply({ look: { ...from.look, [key]: v }, cart: from.cart });
+    why.current = `slider ${key}`; apply({ look: { ...from.look, [key]: v }, cart: from.cart });
   };
 
   // the Body Size square: width and height together
@@ -254,7 +256,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     const from = sizeFrom.current ?? (look ? { look, cart } : null); sizeFrom.current = null;
     if (!from) return;
     setHistory((hs) => ({ undo: [...hs.undo.slice(-30), from], redo: [] }));
-    apply({ look: { ...from.look, width: w, height: h }, cart: from.cart });
+    why.current = 'body size'; apply({ look: { ...from.look, width: w, height: h }, cart: from.cart });
   };
 
   // the Body Type triangle: the avatar reshapes while dragging; one change (one undo step) on release
@@ -267,7 +269,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     const from = sizeFrom.current ?? (look ? { look, cart } : null); sizeFrom.current = null;
     if (!from) return;
     setHistory((h) => ({ undo: [...h.undo.slice(-30), from], redo: [] }));
-    apply({ look: { ...from.look, shapeX: x, compact: c }, cart: from.cart });
+    why.current = 'body type'; apply({ look: { ...from.look, shapeX: x, compact: c }, cart: from.cart });
   };
 
   // taking off something only being tried on puts back what you had there (your own hair, not none)
@@ -287,6 +289,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
   const tap = (item: AvatarItem) => {
     if (!look) return;
+    why.current = `tap ${item.id}`;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelected(item);
     if (item.isWorn?.(look)) {
@@ -337,10 +340,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const buyIds = useRef<string[]>([]);   // what the Buy popup is buying
   const onBought = (bought: boolean) => {
     setBuyReq(null);
-    if (bought && look) apply({ look, cart: cart.filter((id) => !buyIds.current.includes(id)) });   // owned now: saved
+    if (bought && look) { why.current = 'bought'; } if (bought && look) apply({ look, cart: cart.filter((id) => !buyIds.current.includes(id)) });   // owned now: saved
   };
   // take it off and out of the cart
-  const remove = (i: AvatarItem) => { if (look) change({ look: i.takeOff && i.isWorn?.(look) ? takeOff(i, look) : look, cart: cart.filter((id) => id !== i.id) }); };
+  const remove = (i: AvatarItem) => { why.current = `remove ${i.id}`; if (look) change({ look: i.takeOff && i.isWorn?.(look) ? takeOff(i, look) : look, cart: cart.filter((id) => id !== i.id) }); };
   const clearCart = () => { if (saved && look) { setHistory((h) => ({ undo: [...h.undo, { look, cart }], redo: [] })); setDraft(null); } };
 
   // the profile picture is a headshot of the saved look: retake it when the look changes
@@ -565,12 +568,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             </ScrollView>
           </>
         ) : <>
-        <View style={styles.tabs}>
-          {tabs.map((t) => (
-            <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); setSeeAll(false); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
-              <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
-            </Pressable>
-          ))}
+        <View style={styles.tabsBar}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
+            {tabs.map((t) => (
+              <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); setSeeAll(false); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
+                <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
         <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
         {subs.length ? (
@@ -585,7 +590,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         {outfitRow.length ? (
           <>
             <View style={styles.rowHead}>
-              <Text style={[styles.heading, { marginBottom: 0 }]}>Outfits</Text>
+              <Text style={[styles.heading, { marginBottom: 0 }]}>Avatars</Text>
               <Pressable onPress={() => { setTab('outfits'); setSub(null); setSeeAll(true); }} style={styles.seeAll} hitSlop={6}><Text style={styles.seeAllText}>See All</Text></Pressable>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
@@ -596,7 +601,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         {seeAll && tab === 'outfits' ? (
           <Pressable style={styles.backRow} onPress={() => { setTab('all'); setSeeAll(false); }} hitSlop={6}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
-            <Text style={[styles.heading, { paddingHorizontal: 10, paddingTop: 0 }]}>Outfits</Text>
+            <Text style={[styles.heading, { paddingHorizontal: 10, paddingTop: 0 }]}>Avatars</Text>
           </Pressable>
         ) : <Text style={styles.heading}>{sub || (tab === 'all' ? 'Recommended For You' : TABS.find((t) => t.id === tab)?.label)}</Text>}
         <View style={styles.grid}>
@@ -723,6 +728,8 @@ const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -22 },
   handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', marginTop: 8 },
   tabs: { flexDirection: 'row', gap: 22, paddingHorizontal: 18, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  tabsBar: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },   // (the Shop's: more tabs than fit, so it scrolls)
+  tabsRow: { gap: 22, paddingHorizontal: 18, paddingTop: 16 },
   tab: { paddingBottom: 10, borderBottomWidth: 3, borderBottomColor: 'transparent' },
   tabOn: { borderBottomColor: '#fff' },
   tabText: { color: DIM, fontSize: 16, fontWeight: '700' },

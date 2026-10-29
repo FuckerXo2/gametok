@@ -81,7 +81,13 @@ export async function syncAvatar() {
 }
 
 let saveT: ReturnType<typeof setTimeout> | null = null;
-export function saveAvatar(r: AvatarRecord) {
+export function saveAvatar(r: AvatarRecord, why = '?') {
+  // (development: what each save changed and what caused it, to catch a look that "changes by itself")
+  if (__DEV__ && current) {
+    const was = current.avatar as any, now = r as any;
+    const diff = Object.keys(now).filter((k) => JSON.stringify(was[k]) !== JSON.stringify(now[k])).map((k) => `${k}: ${JSON.stringify(was[k])} -> ${JSON.stringify(now[k])}`);
+    if (diff.length) console.log(`[Avatar] save (${why}) ${new Date().toTimeString().slice(0, 8)}: ${diff.join(', ')}`);
+  }
   set({ avatar: r });
   AsyncStorage.setItem(KEY, JSON.stringify(r)).catch(() => {});
   if (!current!.signedIn) return;
