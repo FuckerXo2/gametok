@@ -19,6 +19,7 @@ export interface AvatarAccount {
   sales?: Record<string, { price: number; was: number; off: number; until: string }>;   // what's on sale: the crossed-out price
   signedIn: boolean;
   shop?: number;                      // bumped when the Shop's items change (screens re-filter)
+  feed?: string[];                    // the Shop's front page, in the order the server picked (backend src/avatar-feed.js)
 }
 
 let current: AvatarAccount | null = null;
@@ -40,6 +41,8 @@ export async function syncShop() {
       if (current) set({ shop: (current.shop ?? 0) + 1 });
     }
   } catch {}   // offline: keep what we have
+  // (and the front page's order, which changes every few hours)
+  try { const { order } = await avatarAccount.feed() as { order: string[] }; if (current && Array.isArray(order)) set({ feed: order }); } catch {}
 }
 
 // ... and again whenever the app comes back to the front

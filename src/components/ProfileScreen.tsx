@@ -161,6 +161,19 @@ const Slider: React.FC<{ value: number; min: number; max: number; onMove: (v: nu
   );
 };
 
+// the Shop's front page until the server's order has come (offline): each kind of item in turn, one colour per
+// hairstyle, so it's not a long row of one thing
+function mixed(list: AvatarItem[]) {
+  const groups = new Map<string, AvatarItem[]>(), styles = new Set<string>();
+  for (const i of list) {
+    if (i.ownedAs) { if (styles.has(i.ownedAs)) continue; styles.add(i.ownedAs); }
+    const k = i.pieces ? 'outfits' : i.tab; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(i);
+  }
+  const out: AvatarItem[] = [], rows = [...groups.values()];
+  while (rows.some((r) => r.length)) for (const r of rows) { const i = r.shift(); if (i) out.push(i); }
+  return out;
+}
+
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
@@ -360,8 +373,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && (mode === 'shop' ? !owns(i) : owns(i))), [mode, account]);
   const tabs = TABS;
   // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
-  const items = inMode.filter((i) => (tab === 'all' ? !i.pieces : i.tab === tab) && (!sub || i.sub === sub));
-  const outfitRow = tab === 'all' ? inMode.filter((i) => i.pieces) : [];
+  // All: one mixed feed, in the order the server picked for you (it changes; backend src/avatar-feed.js). Until it
+  // has answered: everything, as listed
+  const feedIndex = useMemo(() => new Map((account?.feed ?? []).map((id, n) => [id, n])), [account?.feed]);
+  const items = tab === 'all'
+    ? (feedIndex.size ? inMode.filter((i) => feedIndex.has(i.id)).sort((a, b) => feedIndex.get(a.id)! - feedIndex.get(b.id)!) : mixed(inMode))
+    : inMode.filter((i) => i.tab === tab && (!sub || i.sub === sub));
   const subs = (TABS.find((t) => t.id === tab)?.subs ?? []).filter((s) => inMode.some((i) => i.tab === tab && i.sub === s));
   // an editor shows every choice for its part (ones not owned yet go in the checkout, like the shop)
   const edItems = editor ? AVATAR_ITEMS.filter((i) => i.tab === 'body' && i.sub === editor.sub) : [];
@@ -593,17 +610,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               </Pressable>
             ))}
           </ScrollView>
-        ) : null}
-        {outfitRow.length ? (
-          <>
-            <View style={styles.rowHead}>
-              <Text style={[styles.heading, { marginBottom: 0 }]}>Outfits</Text>
-              <Pressable onPress={() => { setTab('outfits'); setSub(null); setSeeAll(true); }} style={styles.seeAll} hitSlop={6}><Text style={styles.seeAllText}>See All</Text></Pressable>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-              {outfitRow.map((i) => <ItemTile key={i.id} i={i} width={CELL} />)}
-            </ScrollView>
-          </>
         ) : null}
         {seeAll && tab === 'outfits' ? (
           <Pressable style={styles.backRow} onPress={() => { setTab('all'); setSeeAll(false); }} hitSlop={6}>
