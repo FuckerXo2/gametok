@@ -524,6 +524,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false} scrollEnabled={!grab} bounces={false}>
               {ctab === 'avatars' ? (
                 <View style={styles.grid}>
+                  {/* yourself: one tap back from a character to your own avatar (it waited underneath, as you left it) */}
+                  <Pressable onPress={() => { if (look?.character) { why.current = 'my avatar'; change({ look: { ...look, character: null }, cart }); } }} style={styles.item}>
+                    <View style={[styles.thumb, styles.addTile, !!look && !look.character && styles.thumbSel]}><Ionicons name="person" size={34} color="#fff" /></View>
+                    <Text style={styles.itemName} numberOfLines={1}>My avatar</Text>
+                  </Pressable>
                   <Pressable onPress={saveLook} style={styles.item}>
                     <View style={[styles.thumb, styles.addTile]}><Ionicons name="add" size={34} color="#fff" /></View>
                     <Text style={styles.itemName}>Save look</Text>
