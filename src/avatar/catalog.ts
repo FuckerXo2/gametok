@@ -75,7 +75,7 @@ export const TABS: { id: Tab; label: string; subs: string[] }[] = [
 // item pictures, rendered from the 3D files (games/avatar-editor/tools/thumbs.html; faces: tools/faces.html, one
 // per build, shown on the wearer's)
 export const thumbOf = (item: AvatarItem, body: AvatarRecord['body'] = 'Male') =>
-  item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}${item.id.startsWith('face-') ? `-${body}` : ''}.webp`;
+  item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}${item.id.startsWith('face-') ? `-${body}` : ''}.webp${item.pic ? `?v=${item.pic}` : ''}`;
 
 export interface AvatarItem {
   id: string;
@@ -92,6 +92,7 @@ export interface AvatarItem {
   sub: string;
   pieces?: string[];                   // an outfit: the item ids it's made of (wearing it puts on all of them)
   whole?: boolean;                     // shown on the whole avatar (an outfit, a character), not on its own
+  pic?: number;                        // its picture's version (a new picture shows at once; phones keep them a day)
   ownedAs?: string;                    // also owned by whoever bought this older id (a hair from before colours: every colour of it)
 }
 
@@ -114,6 +115,7 @@ export interface ShopItem {
   parts?: Partial<Record<Slot, string>>;                         // outfit
   character?: string;                                            // character
   ownedAs?: string;
+  pic?: number;
 }
 const ICONS: Record<string, AvatarItem['icon']> = { character: 'person-outline', hair: 'cut-outline', beard: 'man-outline', outfit: 'body-outline', top: 'shirt-outline',
   arms: 'hand-left-outline', legs: 'walk-outline', feet: 'footsteps-outline', head: 'person-circle-outline', acc: 'shield-outline' };
@@ -123,7 +125,7 @@ const WHITE = { top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff
 // what wearing it does; null: an item this app doesn't understand (a newer kind): left out of the Shop
 function toItem(d: ShopItem): AvatarItem | null {
   if (!d || typeof d.id !== 'string' || typeof d.price !== 'number' || !TABS.some((t) => t.id === d.tab)) return null;
-  const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs,
+  const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs, pic: d.pic,
     tint: d.hairColor ?? '#e2e8f0', icon: ICONS[d.kind === 'part' ? d.slot! : d.kind] ?? 'pricetag-outline' };
   if (d.kind === 'character' && d.character) {
     const { character } = d;
