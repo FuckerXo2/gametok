@@ -63,7 +63,7 @@ export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet' | 'lobby';
 export type Tab = 'all' | 'avatars' | 'outfits' | 'body' | 'beards' | 'clothing' | 'accessories';
 export const TABS: { id: Tab; label: string; subs: string[] }[] = [
   { id: 'all', label: 'All', subs: [] },
-  { id: 'avatars', label: 'Avatars', subs: [] },   // whole characters (a superhero skin): shown once there are any
+  { id: 'avatars', label: 'Avatars', subs: [] },   // whole characters (a superhero skin)
   { id: 'outfits', label: 'Outfits', subs: [] },   // looks made of the items below
   { id: 'body', label: 'Hair', subs: [] },   // (body shape, face, skin: the Me screen's editors)
   { id: 'beards', label: 'Beards', subs: [] },

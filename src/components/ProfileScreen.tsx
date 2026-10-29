@@ -358,8 +358,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
   // body shape, face and skin colour aren't items: they're set in the avatar button's editors, not listed here
   const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && (mode === 'shop' ? !owns(i) : owns(i))), [mode, account]);
-  // a tab shows once it has something in it (Avatars, until the first character is sold)
-  const tabs = TABS.filter((t) => t.id === 'all' || inMode.some((i) => i.tab === t.id));
+  const tabs = TABS;
   // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
   const items = inMode.filter((i) => (tab === 'all' ? !i.pieces : i.tab === tab) && (!sub || i.sub === sub));
   const outfitRow = tab === 'all' ? inMode.filter((i) => i.pieces) : [];
@@ -606,7 +605,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           </Pressable>
         ) : <Text style={styles.heading}>{sub || (tab === 'all' ? 'Recommended For You' : TABS.find((t) => t.id === tab)?.label)}</Text>}
         <View style={styles.grid}>
-          {items.length ? items.map((i) => <ItemTile key={i.id} i={i} />) : <Text style={styles.empty}>You own everything here. More coming soon.</Text>}
+          {items.length ? items.map((i) => <ItemTile key={i.id} i={i} />) : <Text style={styles.empty}>{AVATAR_ITEMS.some((i) => i.tab === tab)
+            ? 'You own everything here. More coming soon.' : `No ${TABS.find((t) => t.id === tab)?.label.toLowerCase()} yet. New ones show up here.`}</Text>}
         </View>
         </ScrollView>
 
