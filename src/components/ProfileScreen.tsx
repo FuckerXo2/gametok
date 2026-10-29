@@ -356,9 +356,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   }, [saved, user?.avatar, account?.signedIn]);
   const onHeadshot = (png: string, of: AvatarRecord) => { uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); }); };
 
-  const tabs = TABS;
   // body shape, face and skin colour aren't items: they're set in the avatar button's editors, not listed here
   const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && (mode === 'shop' ? !owns(i) : owns(i))), [mode, account]);
+  // a tab shows once it has something in it (Avatars, until the first character is sold)
+  const tabs = TABS.filter((t) => t.id === 'all' || inMode.some((i) => i.tab === t.id));
   // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
   const items = inMode.filter((i) => (tab === 'all' ? !i.pieces : i.tab === tab) && (!sub || i.sub === sub));
   const outfitRow = tab === 'all' ? inMode.filter((i) => i.pieces) : [];
@@ -590,7 +591,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         {outfitRow.length ? (
           <>
             <View style={styles.rowHead}>
-              <Text style={[styles.heading, { marginBottom: 0 }]}>Avatars</Text>
+              <Text style={[styles.heading, { marginBottom: 0 }]}>Outfits</Text>
               <Pressable onPress={() => { setTab('outfits'); setSub(null); setSeeAll(true); }} style={styles.seeAll} hitSlop={6}><Text style={styles.seeAllText}>See All</Text></Pressable>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
@@ -601,7 +602,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         {seeAll && tab === 'outfits' ? (
           <Pressable style={styles.backRow} onPress={() => { setTab('all'); setSeeAll(false); }} hitSlop={6}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
-            <Text style={[styles.heading, { paddingHorizontal: 10, paddingTop: 0 }]}>Avatars</Text>
+            <Text style={[styles.heading, { paddingHorizontal: 10, paddingTop: 0 }]}>Outfits</Text>
           </Pressable>
         ) : <Text style={styles.heading}>{sub || (tab === 'all' ? 'Recommended For You' : TABS.find((t) => t.id === tab)?.label)}</Text>}
         <View style={styles.grid}>
