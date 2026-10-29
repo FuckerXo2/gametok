@@ -272,9 +272,14 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   const takeOff = (i: AvatarItem, r: AvatarRecord): AvatarRecord => {
     const off = i.takeOff!(r);
     if (!saved || i.isWorn?.(saved)) return off;
-    const back: AvatarRecord = { ...off, parts: { ...off.parts } };
-    for (const k of Object.keys(off) as (keyof AvatarRecord)[]) if (k !== 'parts' && off[k] !== r[k]) (back as any)[k] = saved[k];
-    for (const s of Object.keys(off.parts) as (keyof AvatarRecord['parts'])[]) if (off.parts[s] !== r.parts[s]) back.parts[s] = saved.parts[s];
+    // what it touches: what taking it off changes, and what putting it on changes (a hair's colour too)
+    const on = i.wear ? i.wear(saved) : saved;
+    const touched = (a: AvatarRecord, b: AvatarRecord) => (k: keyof AvatarRecord) => a[k] !== b[k];
+    const back: AvatarRecord = { ...off, parts: { ...off.parts }, colors: { ...off.colors } };
+    for (const k of Object.keys(off) as (keyof AvatarRecord)[])
+      if (k !== 'parts' && k !== 'colors' && (touched(off, r)(k) || touched(on, saved)(k))) (back as any)[k] = saved[k];
+    for (const s of Object.keys(off.parts) as (keyof AvatarRecord['parts'])[])
+      if (off.parts[s] !== r.parts[s] || on.parts[s] !== saved.parts[s]) { back.parts[s] = saved.parts[s]; back.colors[s] = saved.colors[s]; }
     return back;
   };
 

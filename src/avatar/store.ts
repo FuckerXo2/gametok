@@ -4,10 +4,11 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { avatarAccount } from '../services/api';
-import { AVATAR_ITEMS, AvatarRecord, normalizeAvatar } from './catalog';
+import { AVATAR_ITEMS, AvatarRecord, ShopItem, normalizeAvatar, setShop } from './catalog';
 
 const KEY = 'gametok.avatar.v1';
 const SHOT_KEY = 'gametok.avatar.headshotFor';   // the look the profile picture was last made from
+const SHOP_KEY = 'gametok.avatar.shop.v1';        // the server's last list of Shop items
 
 export interface AvatarAccount {
   avatar: AvatarRecord;
@@ -16,6 +17,7 @@ export interface AvatarAccount {
   prices: Record<string, number>;     // the server's (sale prices included); the app's catalog prices until it has answered
   sales?: Record<string, { price: number; was: number; off: number; until: string }>;   // what's on sale: the crossed-out price
   signedIn: boolean;
+  shop?: number;                      // bumped when the Shop's items change (screens re-filter)
 }
 
 let current: AvatarAccount | null = null;
@@ -23,19 +25,33 @@ const listeners = new Set<(a: AvatarAccount) => void>();
 const emit = () => listeners.forEach((l) => l(current!));
 const set = (patch: Partial<AvatarAccount>) => { current = { ...current!, ...patch }; emit(); };
 
-const loaded = AsyncStorage.getItem(KEY)
+// the Shop's items: this phone's last copy at once, then the server's (new items show without an app update)
+const shopLoaded = AsyncStorage.getItem(SHOP_KEY).then((s) => { if (s) setShop(JSON.parse(s)); }).catch(() => {});
+export async function syncShop() {
+  try {
+    const { items } = await avatarAccount.items() as { items: ShopItem[] };
+    if (setShop(items)) {
+      AsyncStorage.setItem(SHOP_KEY, JSON.stringify(items)).catch(() => {});
+      if (current) set({ shop: (current.shop ?? 0) + 1 });
+    }
+  } catch {}   // offline: keep what we have
+}
+
+const loaded = shopLoaded.then(() => AsyncStorage.getItem(KEY))
   .then((s) => normalizeAvatar(s ? JSON.parse(s) : null))
   .catch(() => normalizeAvatar(null))
   .then((avatar) => {
     current = { avatar, owned: [], tokbux: 0, prices: Object.fromEntries(AVATAR_ITEMS.map((i) => [i.id, i.price])), signedIn: false };
     emit();
+    syncShop();
     return syncAvatar();
   });
 
 // paid items this record wears that aren't owned: taken off
 function onlyOwned(r: AvatarRecord, owned: string[], prices: Record<string, number>): AvatarRecord {
   let out = r;
-  for (const item of AVATAR_ITEMS) if (item.isWorn?.(out) && item.takeOff && (prices[item.id] ?? item.price) > 0 && !owned.includes(item.id)) out = item.takeOff(out);
+  for (const item of AVATAR_ITEMS) if (item.isWorn?.(out) && item.takeOff && (prices[item.id] ?? item.price) > 0
+    && !owned.some((id) => id === item.id || id === item.ownedAs)) out = item.takeOff(out);
   return out;
 }
 

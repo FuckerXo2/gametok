@@ -496,6 +496,7 @@ export const playerSessions = {
 // Prices are the server's; a purchase only counts once the server says so.
 export const avatarAccount = {
   me: async () => request('/avatar/me'),
+  items: async () => request('/avatar/items'),   // the Shop's items (no sign-in needed)
   save: async (avatar: object) => request('/avatar/me', { method: 'PUT', body: JSON.stringify({ avatar }) }),
   buy: async (itemId: string, price?: number) => request('/avatar/buy', { method: 'POST', body: JSON.stringify({ itemId, price }) }),
   // the headshot of the 3D avatar (a PNG data: URL from the stage) becomes the profile picture
