@@ -17,7 +17,7 @@ import { Avatar, hasHeadshot } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
 import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
-import { ItemDetails, ItemOptions, shareItem } from './ItemDetails';
+import { Ask, ConfirmCard, ItemDetails, ItemOptions, askOrDo, shareItem } from './ItemDetails';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, TABS, Tab, thumbOf } from '../avatar/catalog';
 import { useSavedLooks } from '../avatar/looks';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadshot, useAvatarAccount } from '../avatar/store';
@@ -181,6 +181,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [cartOpen, setCartOpen] = useState(false);   // the checkout, opened from its button
   const [details, setDetails] = useState<AvatarItem | null>(null);   // an item's details page
   const [options, setOptions] = useState<AvatarItem | null>(null);   // an item's "…" options
+  const [ask, setAsk] = useState<Ask | null>(null);   // a question (Wear outfit?)
   const bar = useRef<View>(null), [barTop, setBarTop] = useState(0);   // the options card floats just above the bar
   const openOptions = (i: AvatarItem) => bar.current?.measureInWindow((_x, y) => { setBarTop(y); setOptions(i); });
   const [editor, setEditor] = useState<Editor | null>(null);   // one of its editors, open
@@ -299,10 +300,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     if (!item.wear) return;
     if (item.pieces) {   // a whole look (Roblox asks first: it replaces what you're wearing)
       const unowned = piecesOf(item).filter((p) => !ownsOne(p)).map((p) => p.id);
-      Alert.alert('Wear outfit?', 'This replaces the clothes you’re wearing.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Wear', onPress: () => change({ look: item.wear!(look), cart: [...cart.filter((id) => !unowned.includes(id)), ...unowned] }) },
-      ]);
+      askOrDo({ title: `Wear ${item.name}?`, body: 'It swaps out the clothes you’re wearing. Undo brings them back.',
+        image: thumbOf(item, look.body), yes: 'Wear', remember: 'outfit',
+        onYes: () => change({ look: item.wear!(look), cart: [...cart.filter((id) => !unowned.includes(id)), ...unowned] }) }, setAsk);
       return;
     }
     change({ look: item.wear(look), cart: owns(item) ? cart : [...cart, item.id] });
@@ -663,6 +663,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         </View>
       </Modal>
       <TokBuxSheet visible={tokbux} onClose={() => setTokbux(false)} />
+      <ConfirmCard ask={ask} onClose={() => setAsk(null)} />
       <ItemOptions visible={!!options} above={barTop} onClose={() => setOptions(null)} options={options ? [
         { label: 'View Details Page', icon: 'information-circle-outline', onPress: () => setDetails(options) },
         { label: 'Share', icon: 'share-outline', onPress: () => shareItem(options) },

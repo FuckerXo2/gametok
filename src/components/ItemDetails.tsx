@@ -2,7 +2,8 @@
 // item-view.html in a WebView), its name, maker, kind and price, and Buy / Try On (or Wear when it's owned).
 // Also the "…" options for an item (View Details, Share, Remove) and sharing it outside the app.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, Share, ActivityIndicator, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, Share, ActivityIndicator, Platform, useWindowDimensions, Image } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -108,7 +109,64 @@ export const ItemOptions: React.FC<{
   );
 };
 
+// a question in the app's own look (not the phone's system pop-up): what it's about (a picture, a name), what
+// happens, and the answer. `remember`: a "Don't ask again" box; once ticked, askOrDo() just does it
+export type Ask = { title: string; body?: string; image?: string | null; yes: string; onYes: () => void; remember?: string };
+const SKIP = 'gametok.ask.skip.';
+export async function askOrDo(ask: Ask, show: (a: Ask) => void) {
+  if (ask.remember && (await AsyncStorage.getItem(SKIP + ask.remember).catch(() => null))) ask.onYes(); else show(ask);
+}
+export const ConfirmCard: React.FC<{ ask: Ask | null; onClose: () => void }> = ({ ask, onClose }) => {
+  const [skip, setSkip] = useState(false);
+  useEffect(() => setSkip(false), [ask]);
+  const yes = () => {
+    if (!ask) return;
+    if (skip && ask.remember) AsyncStorage.setItem(SKIP + ask.remember, '1').catch(() => {});
+    onClose(); ask.onYes();
+  };
+  return (
+    <Modal visible={!!ask} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={[styles.dim, styles.center]} onPress={onClose}>
+        {ask ? (
+          <Pressable style={styles.confirm}>
+            <View style={styles.confirmHead}>
+              {ask.image ? <View style={styles.confirmPic}><Image source={{ uri: ask.image }} style={styles.confirmImg} resizeMode="contain" /></View> : null}
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={styles.confirmTitle}>{ask.title}</Text>
+                {ask.body ? <Text style={styles.confirmBody}>{ask.body}</Text> : null}
+              </View>
+            </View>
+            {ask.remember ? (
+              <Pressable style={styles.skipRow} onPress={() => setSkip(!skip)} hitSlop={6}>
+                <Ionicons name={skip ? 'checkbox' : 'square-outline'} size={20} color={skip ? '#fff' : DIM} />
+                <Text style={styles.skipText}>Don’t ask again</Text>
+              </Pressable>
+            ) : null}
+            <View style={styles.confirmRow}>
+              <Pressable style={({ pressed }) => [styles.btn, styles.ghost, pressed && { opacity: 0.7 }]} onPress={onClose}><Text style={styles.btnText}>Cancel</Text></Pressable>
+              <Pressable style={({ pressed }) => [styles.btn, styles.main, pressed && { opacity: 0.7 }]} onPress={yes}><Text style={styles.btnText}>{ask.yes}</Text></Pressable>
+            </View>
+          </Pressable>
+        ) : null}
+      </Pressable>
+    </Modal>
+  );
+};
+
 const styles = StyleSheet.create({
+  center: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  // a shade lighter than the sheets behind it, so the black answer button stands out on it
+  confirm: { alignSelf: 'stretch', backgroundColor: '#2e2c34', borderRadius: 20, padding: 18,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.12)' },
+  confirmHead: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  confirmPic: { width: 72, height: 72, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
+  confirmImg: { width: '100%', height: '100%' },
+  confirmTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  confirmBody: { color: DIM, fontSize: 14, lineHeight: 19 },
+  skipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
+  skipText: { color: DIM, fontSize: 14, fontWeight: '600' },
+  confirmRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  ghost: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   root: { flex: 1, backgroundColor: BG },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, height: 52 },
   headBtn: { width: 40, alignItems: 'center' },
