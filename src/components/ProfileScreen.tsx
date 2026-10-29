@@ -780,6 +780,7 @@ const styles = StyleSheet.create({
   cartName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cartPrice: { color: '#fff', fontSize: 14, fontWeight: '700' },
   cartX: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
-  cartBuy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: BUY, borderRadius: 12, paddingVertical: 14 },
+  cartBuy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#6c47e6',   // (the checkout's one big button: purple; the buy bar stays black)
+    borderRadius: 12, paddingVertical: 14 },
   cartBuyText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

@@ -9,7 +9,7 @@ import { TokBuxIcon } from './TokBuxIcon';
 import { getAvatarAccount, syncAvatar } from '../avatar/store';
 import { TOKBUX_PACKS, TokbuxPack, buyPack, devPrice, loadPacks, packsCovering } from '../tokbux/purchases';
 
-const CARD = '#1d1727', LINE = 'rgba(255,255,255,0.12)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7';
+const CARD = '#1d1727', LINE = 'rgba(255,255,255,0.12)', DIM = 'rgba(255,255,255,0.55)';
 
 export interface BuyRequest {
   name: string;
@@ -125,7 +125,8 @@ const styles = StyleSheet.create({
   packPrice: { marginLeft: 'auto', color: '#fff', fontSize: 16, fontWeight: '800' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
   chipText: { color: DIM, fontSize: 11, fontWeight: '700' },
-  buy: { backgroundColor: ACCENT, borderRadius: 12, height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  buy: { backgroundColor: '#6c47e6', borderRadius: 12,   // (the checkout's purple)
+    height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   buyText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   fine: { color: DIM, fontSize: 11, textAlign: 'center', marginTop: 10, lineHeight: 15 },
 });
