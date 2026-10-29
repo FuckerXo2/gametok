@@ -60,11 +60,12 @@ export type Focus = 'body' | 'head' | 'torso' | 'legs' | 'feet' | 'lobby';
 // Me screen tabs, laid out like Roblox's Marketplace: a tab, then sub-tabs inside it (a sub-tab shows only where it
 // has items: the Shop never shows your build, skin or face, they're free). Outfits are whole looks (Roblox's
 // Avatars); their pieces are also sold one by one in the other tabs.
-export type Tab = 'all' | 'outfits' | 'body' | 'clothing' | 'accessories';
+export type Tab = 'all' | 'outfits' | 'body' | 'beards' | 'clothing' | 'accessories';
 export const TABS: { id: Tab; label: string; subs: string[] }[] = [
   { id: 'all', label: 'All', subs: [] },
   { id: 'outfits', label: 'Outfits', subs: [] },
-  { id: 'body', label: 'Hair', subs: ['Hair', 'Beards'] },   // (body shape, face, skin: the Me screen's editors)
+  { id: 'body', label: 'Hair', subs: [] },   // (body shape, face, skin: the Me screen's editors)
+  { id: 'beards', label: 'Beards', subs: [] },
   { id: 'clothing', label: 'Clothing', subs: ['T-Shirts', 'Sweaters', 'Shirts', 'Pants', 'Shorts', 'Shoes'] },
   { id: 'accessories', label: 'Accessories', subs: ['Hats', 'Shoulders'] },
 ];
