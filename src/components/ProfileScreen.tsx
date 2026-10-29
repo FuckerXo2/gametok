@@ -536,6 +536,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                       <Text style={styles.itemName} numberOfLines={1}>Look {saved_.looks.length - n}</Text>
                     </Pressable>
                   ))}
+                  {/* characters you own (bought here or in a game): worn instead of your avatar */}
+                  {AVATAR_ITEMS.filter((i) => i.tab === 'avatars' && owns(i)).map((i) => <ItemTile key={i.id} i={i} />)}
                 </View>
               ) : (
                 <>

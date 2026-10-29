@@ -16,6 +16,7 @@ export interface AvatarRecord {
   shapeX?: number;                     // Body Type triangle: -1 curvy .. 1 broad (sets body)
   compact?: number;                    // ... and 0..1 toward its bottom corner (a smaller build)
   hair: string | null;
+  character?: string | null;           // a whole character worn instead (characters/<id>.glb); the rest is kept for later
   beard: boolean;
   hairColor: string;
   fit: boolean;
@@ -90,6 +91,7 @@ export interface AvatarItem {
   tab: Exclude<Tab, 'all'>;
   sub: string;
   pieces?: string[];                   // an outfit: the item ids it's made of (wearing it puts on all of them)
+  whole?: boolean;                     // shown on the whole avatar (an outfit, a character), not on its own
   ownedAs?: string;                    // also owned by whoever bought this older id (a hair from before colours: every colour of it)
 }
 
@@ -105,14 +107,15 @@ const withPart = (r: AvatarRecord, slot: Slot, set: string | null): AvatarRecord
 // list, shown until the server has answered once (then this phone keeps the last answer, avatar/store.ts).
 // Refresh it now and then:  curl -s <API_URL>/avatar/items > gametok/src/avatar/shop-fallback.json
 export interface ShopItem {
-  id: string; name: string; price: number; kind: 'part' | 'hair' | 'beard' | 'outfit';
+  id: string; name: string; price: number; kind: 'part' | 'hair' | 'beard' | 'outfit' | 'character';
   tab: Exclude<Tab, 'all'>; sub: string; category: AvatarItem['category']; focus: Focus;
   slot?: Slot; set?: string; clears?: Slot[]; plain?: boolean;   // part
   hair?: string; hairColor?: string;                             // hair
   parts?: Partial<Record<Slot, string>>;                         // outfit
+  character?: string;                                            // character
   ownedAs?: string;
 }
-const ICONS: Record<string, AvatarItem['icon']> = { hair: 'cut-outline', beard: 'man-outline', outfit: 'body-outline', top: 'shirt-outline',
+const ICONS: Record<string, AvatarItem['icon']> = { character: 'person-outline', hair: 'cut-outline', beard: 'man-outline', outfit: 'body-outline', top: 'shirt-outline',
   arms: 'hand-left-outline', legs: 'walk-outline', feet: 'footsteps-outline', head: 'person-circle-outline', acc: 'shield-outline' };
 const SLOT_NAMES: Slot[] = ['head', 'top', 'arms', 'legs', 'feet', 'acc'];
 const WHITE = { top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff' };
@@ -122,21 +125,26 @@ function toItem(d: ShopItem): AvatarItem | null {
   if (!d || typeof d.id !== 'string' || typeof d.price !== 'number' || !TABS.some((t) => t.id === d.tab)) return null;
   const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs,
     tint: d.hairColor ?? '#e2e8f0', icon: ICONS[d.kind === 'part' ? d.slot! : d.kind] ?? 'pricetag-outline' };
+  if (d.kind === 'character' && d.character) {
+    const { character } = d;
+    return { ...base, whole: true, wear: (r) => ({ ...r, character }), isWorn: (r) => r.character === character, takeOff: (r) => ({ ...r, character: null }) };
+  }
+  // (putting on anything of your own takes a character off, so you see it)
   if (d.kind === 'hair' && d.hair && d.hairColor) {
     const { hair, hairColor } = d;
-    return { ...base, wear: (r) => ({ ...r, hair, hairColor }), isWorn: (r) => r.hair === hair && r.hairColor === hairColor, takeOff: (r) => ({ ...r, hair: null }) };
+    return { ...base, wear: (r) => ({ ...r, character: null, hair, hairColor }), isWorn: (r) => r.hair === hair && r.hairColor === hairColor, takeOff: (r) => ({ ...r, hair: null }) };
   }
-  if (d.kind === 'beard') return { ...base, wear: (r) => ({ ...r, beard: true }), isWorn: (r) => r.beard, takeOff: (r) => ({ ...r, beard: false }) };
+  if (d.kind === 'beard') return { ...base, wear: (r) => ({ ...r, character: null, beard: true }), isWorn: (r) => r.beard, takeOff: (r) => ({ ...r, beard: false }) };
   if (d.kind === 'part' && d.slot && SLOT_NAMES.includes(d.slot) && d.set) {
     const { slot, set } = d, clear = Object.fromEntries((d.clears ?? []).map((k) => [k, null]));
     return { ...base,
-      wear: (r) => ({ ...r, parts: { ...r.parts, [slot]: set, ...clear }, colors: d.plain ? { ...r.colors, [slot]: '#ffffff' } : r.colors }),
+      wear: (r) => ({ ...r, character: null, parts: { ...r.parts, [slot]: set, ...clear }, colors: d.plain ? { ...r.colors, [slot]: '#ffffff' } : r.colors }),
       isWorn: (r) => r.parts[slot] === set, takeOff: (r) => withPart(r, slot, null) };
   }
   if (d.kind === 'outfit' && d.parts) {
     const parts = d.parts;
-    return { ...base, pieces: Object.entries(parts).map(([slot, set]) => `${set}-${slot}`),
-      wear: (r) => ({ ...r, parts: { ...r.parts, top: null, arms: null, legs: null, feet: null, ...parts }, colors: { ...r.colors, ...WHITE } }),
+    return { ...base, whole: true, pieces: Object.entries(parts).map(([slot, set]) => `${set}-${slot}`),
+      wear: (r) => ({ ...r, character: null, parts: { ...r.parts, top: null, arms: null, legs: null, feet: null, ...parts }, colors: { ...r.colors, ...WHITE } }),
       isWorn: (r) => Object.entries(parts).every(([slot, set]) => r.parts[slot as Slot] === set) };
   }
   return null;

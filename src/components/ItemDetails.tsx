@@ -12,12 +12,12 @@ import { AVATAR_HOST } from '../avatar/host';
 
 const BG = '#0d0a16', CARD = '#201a2b', DIM = 'rgba(255,255,255,0.55)', BUY = '#000000', GREEN = '#22c55e';
 // bump with every change to item-view.html (phones cache it)
-const VIEW_V = 1;
+const VIEW_V = 2;
 const NAKED = { head: null, top: null, arms: null, legs: null, feet: null, acc: null };
 
 // what the viewer shows: the item alone on this body; hair and beards on a grey head; an outfit on the whole avatar
 function viewUrl(item: AvatarItem, look: AvatarRecord) {
-  const whole = !!item.pieces;
+  const whole = !!item.whole;
   const base: AvatarRecord = whole ? look : { ...look, hair: null, beard: false, parts: { ...look.parts, ...NAKED } };
   const record = item.wear ? item.wear(base) : base;
   const show = whole ? 'all' : item.category === 'hair' ? 'head' : 'item';
@@ -59,7 +59,7 @@ export const ItemDetails: React.FC<{
           <View style={styles.info}>
             <Text style={styles.name}>{item.name}</Text>
             <Text style={styles.maker}>By GameTok</Text>
-            <View style={styles.tags}><Text style={styles.tag}>{item.pieces ? 'Outfit' : item.sub}</Text></View>
+            <View style={styles.tags}><Text style={styles.tag}>{item.tab === 'avatars' ? 'Avatar' : item.pieces ? 'Outfit' : item.sub}</Text></View>
             {owned ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
               : price === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
               : <View style={styles.priceRow}><TokBuxIcon size={20} /><Text style={styles.price}>{price.toLocaleString()}</Text></View>}
