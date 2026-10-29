@@ -12,7 +12,7 @@ import { AVATAR_HOST } from '../avatar/host';
 
 const BG = '#0d0a16', CARD = '#201a2b', DIM = 'rgba(255,255,255,0.55)', BUY = '#000000', GREEN = '#22c55e';
 // bump with every change to item-view.html (phones cache it)
-const VIEW_V = 6;
+const VIEW_V = 7;
 const NAKED = { head: null, top: null, arms: null, legs: null, feet: null, acc: null };
 
 // what the viewer shows: the item alone on this body; hair and beards on a grey head; an outfit on the whole avatar
