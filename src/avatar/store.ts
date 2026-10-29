@@ -2,6 +2,7 @@
 // Signed in: the GameTok account is the truth (backend src/avatar-router.js); this phone keeps a copy so the
 // avatar shows at once and offline. Signed out: the avatar lives on this phone only, and only free items.
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { avatarAccount } from '../services/api';
 import { AVATAR_ITEMS, AvatarRecord, ShopItem, normalizeAvatar, setShop } from './catalog';
@@ -26,16 +27,23 @@ const emit = () => listeners.forEach((l) => l(current!));
 const set = (patch: Partial<AvatarAccount>) => { current = { ...current!, ...patch }; emit(); };
 
 // the Shop's items: this phone's last copy at once, then the server's (new items show without an app update)
-const shopLoaded = AsyncStorage.getItem(SHOP_KEY).then((s) => { if (s) setShop(JSON.parse(s)); }).catch(() => {});
+let lastShop: string | null = null;
+const shopLoaded = AsyncStorage.getItem(SHOP_KEY).then((s) => { if (s) { lastShop = s; setShop(JSON.parse(s)); } }).catch(() => {});
 export async function syncShop() {
   try {
     const { items } = await avatarAccount.items() as { items: ShopItem[] };
+    const json = JSON.stringify(items);
+    if (json === lastShop) return;   // nothing new
+    lastShop = json;
     if (setShop(items)) {
-      AsyncStorage.setItem(SHOP_KEY, JSON.stringify(items)).catch(() => {});
+      AsyncStorage.setItem(SHOP_KEY, json).catch(() => {});
       if (current) set({ shop: (current.shop ?? 0) + 1 });
     }
   } catch {}   // offline: keep what we have
 }
+
+// ... and again whenever the app comes back to the front
+AppState.addEventListener('change', (st) => { if (st === 'active') syncShop(); });
 
 const loaded = shopLoaded.then(() => AsyncStorage.getItem(KEY))
   .then((s) => normalizeAvatar(s ? JSON.parse(s) : null))

@@ -20,7 +20,7 @@ import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 import { ItemDetails, ItemOptions, shareItem } from './ItemDetails';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, TABS, Tab, thumbOf } from '../avatar/catalog';
 import { useSavedLooks } from '../avatar/looks';
-import { buyItem, needsHeadshot, saveAvatar, syncAvatar, uploadHeadshot, useAvatarAccount } from '../avatar/store';
+import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
 const { width: W, height: H } = Dimensions.get('window');
 const CELL = Math.floor((W - 16 * 2 - 10 * 2) / 3) - 1;   // three across (floored: a fraction over and the third wraps)
@@ -161,7 +161,7 @@ const Slider: React.FC<{ value: number; min: number; max: number; onMove: (v: nu
   );
 };
 
-export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
+export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
   const account = useAvatarAccount();
@@ -206,6 +206,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = () => {
   }, []);
   // signing in or out switches whose avatar this is
   useEffect(() => { syncAvatar(); }, [user?.id]);
+  // the Shop's items, fresh each time the Me screen opens (new ones show up without restarting the app)
+  useEffect(() => { if (isActive) syncShop(); }, [isActive]);
   // the saved look changed elsewhere (another phone, a purchase): show it, unless they're mid try-on
   useEffect(() => { if (saved && !draft?.cart.length) setDraft(null); }, [saved]);
 
