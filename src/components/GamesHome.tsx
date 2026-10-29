@@ -21,7 +21,7 @@ import { useSocket } from '../context/SocketContext';
 import { users as usersApi } from '../services/api';
 import { SHOWCASE, SHOWCASE_FRIENDS, SHOWCASE_RECENT } from '../dev/showcase';
 
-const BG = '#0d0a16';
+const BG = '#0a0811';   // same as the tab bar, so the lobby runs into it
 const CARD = '#1b1626';
 const TEXT = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
@@ -191,7 +191,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
               first row, so the rows start right under his platform, like the mock) */}
           <View style={[styles.stageBox, { height: insets.top + 286 }]} pointerEvents="none">
             <AvatarStage style={StyleSheet.absoluteFill} avatar={account?.avatar ?? DEFAULT_AVATAR} look="dark" focus="lobby" passive />
-            <LinearGradient colors={['rgba(13,10,22,0)', BG]} style={styles.fade} />
+            <LinearGradient colors={['rgba(10,8,17,0)', BG]} style={styles.fade} />
           </View>
           <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
             <Pressable style={styles.round} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}><Ionicons name="menu" size={22} color={TEXT} /></Pressable>

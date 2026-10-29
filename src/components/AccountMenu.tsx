@@ -1,5 +1,5 @@
 // The account menu, like Roblox's: slides in from the left over any screen (the ☰ on Games and on Me). You at the
-// top, your TokBux, then Friends, My items, Settings, Help & Safety. Mounted once (App's MainApp); opened with
+// top, your TokBux, then Friends, Customize, Settings, Help & Safety. Mounted once (App's MainApp); opened with
 // DeviceEventEmitter.emit('gametok:open-menu').
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, DeviceEventEmitter, ScrollView, TextInput, Switch, Alert, Linking, ActivityIndicator } from 'react-native';
@@ -58,7 +58,7 @@ export const AccountMenu: React.FC<{ onMyItems: () => void }> = ({ onMyItems }) 
                   </View>
                 </View>
                 <Row icon="people-outline" label="Friends" onPress={() => to('friends')} />
-                <Row icon="shirt-outline" label="My items" onPress={() => { setOpen(false); onMyItems(); }} />
+                <Row icon="shirt-outline" label="Customize" onPress={() => { setOpen(false); onMyItems(); }} />
                 <Row icon="settings-outline" label="Settings" onPress={() => to('settings')} />
                 <Row icon="shield-checkmark-outline" label="Help & Safety" onPress={() => to('help')} />
               </ScrollView>

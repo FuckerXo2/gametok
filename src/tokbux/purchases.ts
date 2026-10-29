@@ -28,15 +28,17 @@ let waiting: { sku: string; done: (r: string | null) => void } | null = null;
 
 // Check a purchase with the backend, then finish it with the store. false: not checked yet (try again later).
 async function settle(purchase: any): Promise<boolean> {
+  if (__DEV__) console.log('[TokBux] store purchase', purchase.productId, purchase.purchaseState, purchase.id, !!purchase.purchaseToken);
   if (!TOKBUX_PACKS[purchase.productId] || !purchase.purchaseToken) return false;
   if (purchase.purchaseState === 'pending') return false;   // paid later (e.g. cash at a shop): comes back when it's done
   if (!userId) return false;
   try {
     await tokbuxStore.verify(Platform.OS, purchase.productId, purchase.purchaseToken);
   } catch (e: any) {
-    // the store's purchase is bad (refused for good): finish it so it stops coming back; anything else: keep it
-    if (!(e?.status >= 400 && e?.status < 500 && e?.status !== 401)) return false;
-    console.warn('[TokBux] purchase refused', e?.message);
+    // not credited (refused or unreachable): keep it unfinished, so it's checked again on the next start and a paid
+    // pack is never lost to a server problem
+    console.warn('[TokBux] purchase not credited yet', e?.status, e?.message);
+    return false;
   }
   await IAP!.finishTransaction({ purchase, isConsumable: true }).catch((e) => console.warn('[TokBux] finish', e));
   return true;
@@ -59,6 +61,7 @@ export async function startPurchases(id: string | null | undefined) {
       }
     });
     IAP.purchaseErrorListener((e) => {
+      if (__DEV__) console.log('[TokBux] store error', e.code, e.message);
       if (!waiting) return;
       const w = waiting; waiting = null;
       w.done(e.code === IAP!.ErrorCode.UserCancelled ? 'cancelled' : e.message || 'The purchase did not go through.');
@@ -66,7 +69,7 @@ export async function startPurchases(id: string | null | undefined) {
   }
   if (!(await connected)) return;
   // purchases paid for but not finished (the app closed, the network dropped): credit them now
-  try { for (const p of await IAP.getAvailablePurchases()) await settle(p); } catch (e) { console.warn('[TokBux] restore', e); }
+  try { const left = await IAP.getAvailablePurchases(); if (__DEV__) console.log('[TokBux] unfinished purchases', left.length); for (const p of left) await settle(p); } catch (e) { console.warn('[TokBux] restore', e); }
 }
 
 export interface TokbuxPack { id: string; tokbux: number; price: string }

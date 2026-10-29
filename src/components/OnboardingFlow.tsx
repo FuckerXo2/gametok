@@ -17,6 +17,8 @@ import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
 import { auth as authApi } from '../services/api';
+import { STARTER_AVATARS } from '../avatar/catalog';
+import { saveAvatar } from '../avatar/store';
 
 const BG = '#0d0a16', FIELD = '#1b1626', LINE = 'rgba(255,255,255,0.14)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', OK = '#22c55e';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -98,6 +100,7 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
   }, [username]);
 
   const go = (s: Step) => { setError(''); setStep(s); };
+  const [kind, setKind] = useState<'Male' | 'Female' | null>(null);   // boy or girl: the avatar's body
   const age = birthday ? Math.floor((Date.now() - new Date(birthday.y, birthday.m, birthday.d).getTime()) / 31557600000) : null;
   const rules = [
     { ok: username.length >= 3 && username.length <= 20, text: 'Is between 3 and 20 characters long' },
@@ -108,7 +111,7 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
     { ok: password.length >= 8, text: 'Is at least 8 characters long' },
     { ok: !!password && !password.toLowerCase().includes(username.toLowerCase()), text: 'Doesn’t contain your username' },
   ];
-  const canContinue = !!birthday && rules.every((r) => r.ok);
+  const canContinue = !!birthday && !!kind && rules.every((r) => r.ok);
   const canFinish = pwRules.every((r) => r.ok);
 
   const finish = async () => {
@@ -116,6 +119,8 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
     setBusy(true); setError('');
     try {
       const pad = (n: number) => String(n).padStart(2, '0');
+      // the starter avatar for the body they picked: on this phone now, uploaded to the new account when it syncs
+      if (kind) saveAvatar(STARTER_AVATARS[kind]);
       await signup(username, password, `${birthday.y}-${pad(birthday.m + 1)}-${pad(birthday.d)}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onComplete();
@@ -223,6 +228,15 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
           <Text style={{ color: birthday ? '#fff' : DIM, fontSize: 16 }}>{birthday ? `${MONTHS[birthday.m]} ${birthday.d} ${birthday.y}` : 'Date'}</Text>
           <Ionicons name="calendar-outline" size={18} color={DIM} />
         </Pressable>
+        <Text style={styles.label}>Avatar</Text>
+        <View style={styles.kinds}>
+          {(['Male', 'Female'] as const).map((k) => (
+            <Pressable key={k} onPress={() => { setKind(k); Haptics.selectionAsync(); }} style={[styles.kind, kind === k && styles.kindOn]}>
+              <Ionicons name={k === 'Male' ? 'man' : 'woman'} size={30} color="#fff" />
+              <Text style={styles.kindText}>{k === 'Male' ? 'Boy' : 'Girl'}</Text>
+            </Pressable>
+          ))}
+        </View>
         <Text style={styles.label}>Username</Text>
         <TextInput style={styles.input} value={username} onChangeText={(t) => setUsername(t.trim())} autoCapitalize="none" autoCorrect={false}
           placeholder="Don't use your real name" placeholderTextColor={DIM} textContentType="username" maxLength={20} />
@@ -289,6 +303,10 @@ const BirthdayPicker = ({ visible, value, onClose, onPick }: {
 };
 
 const styles = StyleSheet.create({
+  kinds: { flexDirection: 'row', gap: 12 },
+  kind: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 14, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 2, borderColor: 'transparent' },
+  kindOn: { borderColor: '#a855f7' },
+  kindText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   root: { flex: 1, backgroundColor: BG },
   logoWrapper: { alignItems: 'center' },
   welcomeBottom: { position: 'absolute', left: 24, right: 24, bottom: 0, gap: 12 },

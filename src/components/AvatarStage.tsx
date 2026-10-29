@@ -3,16 +3,36 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, ViewStyle, Text, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AvatarRecord, Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 11;
+const STAGE_V = 13;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads
 // when it comes back. A picture of each stage (by look, framing and avatar) covers it until the page is drawing again.
+// The pictures are kept on the phone too, so the avatar shows at once on the next app start (the 3D page takes a few
+// seconds to boot), not a spinner.
 const pictures = new Map<string, string>();
+const PICTURES_KEY = 'avatarStagePictures';
+let picturesLoaded: Promise<void> | null = null;
+const loadPictures = () => (picturesLoaded ??= AsyncStorage.getItem(PICTURES_KEY)
+  .then((v) => { for (const [k, jpg] of JSON.parse(v || '[]')) if (!pictures.has(k)) pictures.set(k, jpg); })
+  .catch(() => {}));
+// the latest picture of this look on a stage (any framing, the full body first), for a saved look's tile
+export function stagePicture(r: AvatarRecord): string | null {
+  const tail = `|${JSON.stringify(r)}`;
+  let any: string | null = null;
+  for (const [k, jpg] of pictures) if (k.endsWith(tail)) { if (k.includes('|body|')) return jpg; any = jpg; }
+  return any;
+}
+function savePicture(key: string, jpg: string) {
+  pictures.delete(key); pictures.set(key, jpg);
+  // the latest few looks (each picture is a small jpg)
+  AsyncStorage.setItem(PICTURES_KEY, JSON.stringify([...pictures].slice(-4))).catch(() => {});
+}
 
 interface AvatarStageProps {
   avatar: AvatarRecord | null;
@@ -37,7 +57,9 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);   // the page is drawing what it's been sent
-  const pictureKey = `${look}|${focus}|${JSON.stringify(avatar)}`;
+  const pictureKey = `${STAGE_V}|${look}|${focus}|${JSON.stringify(avatar)}`;
+  const [, setPicturesReady] = useState(false);
+  useEffect(() => { loadPictures().then(() => setPicturesReady(true)); }, []);
   const picture = pictures.get(pictureKey);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
@@ -81,14 +103,14 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
           if (m.type === 'LOADED') {
             setLoading(false); setError(null); onStats?.(m.stats);
             // a few frames to draw before the picture goes; once settled, picture it for the next reload
-            const pk = `${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}`;
+            const pk = `${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}`;
             timers.current.push(setTimeout(() => setLive(true), 250));
             if (!pictures.has(pk)) timers.current.push(setTimeout(() => { snapKey.current = pk; send({ type: 'SNAPSHOT' }); }, 1500));
             // the look asked for is the one on stage: picture it (once per look)
             const { avatar: a, headshotOf: h } = latest.current, key = h && JSON.stringify(h);
             if (key && a && JSON.stringify(a) === key && shotAsked.current !== key) { shotAsked.current = key; send({ type: 'HEADSHOT' }); }
           }
-          if (m.type === 'SNAPSHOT' && m.jpg && snapKey.current) pictures.set(snapKey.current, m.jpg);
+          if (m.type === 'SNAPSHOT' && m.jpg && snapKey.current) savePicture(snapKey.current, m.jpg);
           if (m.type === 'HEADSHOT' && m.png && latest.current.headshotOf) onHeadshot?.(m.png, latest.current.headshotOf);
           if (m.type === 'ERROR') { console.warn('[AvatarStage]', m.msg); setError(m.msg); }
         }}

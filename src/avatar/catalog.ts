@@ -10,6 +10,11 @@ export interface AvatarRecord {
   body: 'Male' | 'Female';
   skin: number;
   face?: number;                       // 0..5: games/avatar-editor/js/face.js FACES
+  height?: number;                     // body size, 1 = default: 0.9..1.1 (head 0.9..1.15)
+  width?: number;
+  head?: number;
+  shapeX?: number;                     // Body Type triangle: -1 curvy .. 1 broad (sets body)
+  compact?: number;                    // ... and 0..1 toward its bottom corner (a smaller build)
   hair: string | null;
   beard: boolean;
   hairColor: string;
@@ -19,15 +24,32 @@ export interface AvatarRecord {
 }
 
 export const DEFAULT_AVATAR: AvatarRecord = {
-  body: 'Male', skin: 3, face: 0, hair: 'Hair_Buzzed', beard: false, hairColor: '#2a1a12', fit: true,
+  body: 'Male', skin: 3, face: 0, hair: 'Hair_Buzzed', beard: false, hairColor: '#5a3420', fit: true,
   parts: { head: null, top: 'Street_TeeWhite', arms: null, legs: 'Street_JeansBlue', feet: 'Street_SneakersWhite', acc: null },
   colors: { head: '#ffffff', top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff', acc: '#ffffff' },
+};
+
+// the starter look for each body, picked when the account is made (onboarding): boy or girl
+export const STARTER_AVATARS: Record<AvatarRecord['body'], AvatarRecord> = {
+  Male: DEFAULT_AVATAR,
+  Female: { ...DEFAULT_AVATAR, body: 'Female', hair: 'Hair_SimpleParted', parts: { ...DEFAULT_AVATAR.parts }, colors: { ...DEFAULT_AVATAR.colors } },
 };
 
 export function normalizeAvatar(r: any): AvatarRecord {
   const d = DEFAULT_AVATAR;
   if (!r || typeof r !== 'object') return { ...d, parts: { ...d.parts }, colors: { ...d.colors } };
-  return { ...d, ...r, parts: { ...d.parts, ...(r.parts || {}) }, colors: { ...d.colors, ...(r.colors || {}) } };
+  return { ...d, ...r, hairColor: nearestHair(r.hairColor), parts: { ...d.parts, ...(r.parts || {}) }, colors: { ...d.colors, ...(r.colors || {}) } };
+}
+
+// a hair colour from before they were fixed (any colour went): the nearest one sold now
+export function nearestHair(hex: unknown): string {
+  if (typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return DEFAULT_AVATAR.hairColor;
+  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [r, g, b] = rgb(hex);
+  return HAIR_COLORS.map(([, h]) => h).reduce((best, h) => {
+    const d = (x: string) => { const [R, G, B] = rgb(x); return (R - r) ** 2 + (G - g) ** 2 + (B - b) ** 2; };
+    return d(h) < d(best) ? h : best;
+  });
 }
 
 export type Category = 'all' | 'body' | 'hair' | 'clothing' | 'shoes' | 'accessories';
@@ -40,7 +62,7 @@ export type Tab = 'all' | 'outfits' | 'body' | 'clothing' | 'accessories';
 export const TABS: { id: Tab; label: string; subs: string[] }[] = [
   { id: 'all', label: 'All', subs: [] },
   { id: 'outfits', label: 'Outfits', subs: [] },
-  { id: 'body', label: 'Body', subs: ['Hair', 'Beards', 'Build', 'Face', 'Skin'] },
+  { id: 'body', label: 'Hair', subs: ['Hair', 'Beards'] },   // (body shape, face, skin: the Me screen's editors)
   { id: 'clothing', label: 'Clothing', subs: ['T-Shirts', 'Sweaters', 'Shirts', 'Pants', 'Shorts', 'Shoes'] },
   { id: 'accessories', label: 'Accessories', subs: ['Hats', 'Shoulders'] },
 ];
@@ -61,17 +83,20 @@ export interface AvatarItem {
   wear?: (r: AvatarRecord) => AvatarRecord;
   isWorn?: (r: AvatarRecord) => boolean;
   takeOff?: (r: AvatarRecord) => AvatarRecord;
-  colorKey?: Slot | 'hair';            // what the colour swatches recolour
   tab: Exclude<Tab, 'all'>;
   sub: string;
   pieces?: string[];                   // an outfit: the item ids it's made of (wearing it puts on all of them)
+  ownedAs?: string;                    // also owned by whoever bought this older id (a hair from before colours: every colour of it)
 }
 
 const SKIN_SWATCHES = ['#f2cfb3', '#dcae8a', '#b98258', '#8a5536', '#6a3e26', '#46281a'];
 const SKIN_NAMES = ['Fair', 'Light', 'Tan', 'Brown', 'Dark', 'Deep'];
 const FACE_NAMES = ['Classic', 'Strong', 'Slim', 'Round', 'Sharp', 'Soft'];   // js/face.js FACES, in order
 export const COLOR_SWATCHES = ['#ffffff', '#2b2b33', '#e9e4da', '#d8344a', '#ff8a2b', '#ffd23f', '#2fd38a', '#3fd0ff', '#3f5bff', '#b04cff', '#ff5fb7'];
-export const HAIR_SWATCHES = ['#2a1a12', '#6b3e1f', '#c98b3c', '#f1d27a', '#e8e8e8', '#d8344a', '#3f7bff', '#9b5cff', '#2fd38a'];
+// Hair is sold by colour, like Roblox: each style in each colour is its own item, and there's no recolouring it.
+// Beards and brows take the hair's colour. (Same list in gametok-backend/src/avatar-router.js HAIR_COLORS.)
+export const HAIR_COLORS: [string, string][] = [['Black', '#141110'], ['Brown', '#5a3420'], ['Light Brown', '#9a6634'],
+  ['Blonde', '#e0b45e'], ['Ginger', '#b4521f'], ['Red', '#d8344a'], ['Blue', '#3f7bff']];
 
 const withPart = (r: AvatarRecord, slot: Slot, set: string | null): AvatarRecord => ({ ...r, parts: { ...r.parts, [slot]: set } });
 
@@ -138,14 +163,14 @@ export const AVATAR_ITEMS: AvatarItem[] = [
     icon: 'happy-outline', tint: '#e2e8f0', focus: 'head', tab: 'body', sub: 'Face',
     wear: (r) => ({ ...r, face: i }), isWorn: (r) => (r.face ?? 0) === i,
   })),
-  ...HAIRS.map((h): AvatarItem => ({
-    id: `hair-${h.id}`, name: h.name, category: 'hair', price: h.price,
-    icon: 'cut-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Hair',
-    wear: (r) => ({ ...r, hair: h.id }), isWorn: (r) => r.hair === h.id, takeOff: (r) => ({ ...r, hair: null }),
-  })),
+  ...HAIRS.flatMap((h) => HAIR_COLORS.map(([colour, hex]): AvatarItem => ({
+    id: `hair-${h.id}-${colour.replace(' ', '')}`, name: `${colour} ${h.name}`, category: 'hair', price: h.price, ownedAs: `hair-${h.id}`,
+    icon: 'cut-outline', tint: hex, focus: 'head', tab: 'body', sub: 'Hair',
+    wear: (r) => ({ ...r, hair: h.id, hairColor: hex }), isWorn: (r) => r.hair === h.id && r.hairColor === hex, takeOff: (r) => ({ ...r, hair: null }),
+  }))),
   {
     id: 'beard', name: 'Full Beard', category: 'hair', price: 40,
-    icon: 'man-outline', tint: '#e2e8f0', focus: 'head', colorKey: 'hair', tab: 'body', sub: 'Beards',
+    icon: 'man-outline', tint: '#e2e8f0', focus: 'head', tab: 'body', sub: 'Beards',
     wear: (r) => ({ ...r, beard: true }), isWorn: (r) => r.beard, takeOff: (r) => ({ ...r, beard: false }),
   },
   // street clothes first: they're what most people wear; the fantasy sets after
@@ -158,7 +183,7 @@ export const AVATAR_ITEMS: AvatarItem[] = [
   })),
   ...SETS.flatMap(({ set, name, price }) => PIECES.filter((p) => !p.only || p.only.includes(set)).map((p): AvatarItem => ({
     id: `${set}-${p.slot}`, name: `${name} ${p.suffix}`, category: p.category, price,
-    icon: p.icon, tint: '#e2e8f0', focus: p.focus, colorKey: p.slot, tab: p.tab, sub: p.sub,
+    icon: p.icon, tint: '#e2e8f0', focus: p.focus, tab: p.tab, sub: p.sub,
     wear: (r) => withPart(r, p.slot, set), isWorn: (r) => r.parts[p.slot] === set, takeOff: (r) => withPart(r, p.slot, null),
   }))),
   // outfits last: they're made of the items above

@@ -52,15 +52,6 @@ const GAMETOK_BG = require('../../assets/gametok_bg.png');
 // chips lived here. They had already been cut from the render tree but left behind as dead state.
 // Discovery categories now come from the server — see src/constants/categories.ts.
 
-const TRENDING_SEARCHES = [
-  'horror',
-  'racing',
-  'parkour',
-  'quiz',
-  'roleplay',
-  'neon',
-];
-
 interface ExploreGame {
   id: string;
   name: string;
@@ -331,76 +322,9 @@ export const ExploreScreen: React.FC = () => {
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 80 }}>
             {searchQuery.trim().length === 0 ? (
               <>
-                <Text style={styles.searchBigTitle}>Charts</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chartsRow}
-                >
-                  <View style={styles.topSearchesCard}>
-                    <View style={styles.chartCardHeader}>
-                      <Text style={styles.chartCardTitle}>Top Searches</Text>
-                      <Ionicons name="flash" size={42} color="rgba(255,255,255,0.16)" />
-                    </View>
-                    {TRENDING_SEARCHES.map((term, index) => (
-                      <Pressable
-                        key={term}
-                        style={styles.topSearchRow}
-                        onPress={() => setSearchQuery(term)}
-                      >
-                        <View style={styles.topSearchIcon}>
-                          <Ionicons name="search" size={18} color="rgba(255,255,255,0.78)" />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.topSearchTerm}>
-                            {term} {index < 3 ? '🔥' : ''}
-                          </Text>
-                          <Text style={styles.topSearchCount}>
-                            {formatCount(49400 - index * 1700)} searches
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.72)" />
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  {creators.length > 0 ? (
-                    <View style={styles.topCreatorsCard}>
-                      <Text style={styles.chartCardTitle}>Top Creators</Text>
-                      {creators.slice(0, 6).map((c, index) => (
-                        <Pressable
-                          key={`top-${c.id}`}
-                          style={styles.topCreatorRow}
-                          onPress={() => {
-                            setSearchModalVisible(false);
-                            setSelectedCreator({
-                              id: c.id,
-                              username: c.username,
-                              displayName: c.displayName,
-                              avatar: c.avatar,
-                              verified: c.verified,
-                              isFriend: false,
-                            });
-                          }}
-                        >
-                          <Avatar uri={c.avatar} userId={c.id} size={38} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.topCreatorName} numberOfLines={1}>
-                              {c.displayName || c.username}
-                            </Text>
-                            <Text style={styles.topCreatorSub} numberOfLines={1}>
-                              #{index + 1} creator
-                            </Text>
-                          </View>
-                        </Pressable>
-                      ))}
-                    </View>
-                  ) : null}
-                </ScrollView>
-
                 {topGames.length > 0 ? (
                   <>
-                    <Text style={[styles.searchBigTitle, { marginTop: 24 }]}>Top Games</Text>
+                    <Text style={styles.searchBigTitle}>Top Games</Text>
                     <View style={styles.searchGamesGrid}>
                       {topGames.map((g, index) => (
                         <Pressable
@@ -1176,79 +1100,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.55,
     marginBottom: 12,
-  },
-  chartsRow: {
-    gap: 14,
-    paddingRight: 16,
-  },
-  topSearchesCard: {
-    width: Math.min(320, SCREEN_WIDTH - 46),
-    padding: 16,
-    borderRadius: 22,
-    backgroundColor: '#202735',
-    overflow: 'hidden',
-  },
-  topCreatorsCard: {
-    width: 248,
-    padding: 16,
-    borderRadius: 22,
-    backgroundColor: '#332a7c',
-  },
-  chartCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  chartCardTitle: {
-    color: TEXT,
-    fontSize: 19,
-    fontWeight: '900',
-    letterSpacing: -0.45,
-  },
-  topSearchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 9,
-  },
-  topSearchIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topSearchTerm: {
-    color: TEXT,
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: -0.2,
-  },
-  topSearchCount: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 1,
-  },
-  topCreatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-  },
-  topCreatorName: {
-    color: TEXT,
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: -0.2,
-  },
-  topCreatorSub: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 1,
   },
   searchHint: {
     color: TEXT_MUTED,

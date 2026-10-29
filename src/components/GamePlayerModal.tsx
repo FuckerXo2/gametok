@@ -2,12 +2,12 @@
 // profile and other-user profiles open games identically instead of each rolling their own shell.
 //
 // No loading screen of the app's own: the game shows straight away and loads with its own screen (a generic
-// thumbnail-and-percent card in front of every game hid each game's look). The game's colour sits behind it
-// until its page paints, and the play is recorded.
+// thumbnail-and-percent card in front of every game hid each game's look). Until its page has loaded, the game's
+// picture covers the blank WebView (turned with the game when it's landscape), and the play is recorded.
 
 import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { View, Modal, StatusBar, StyleSheet, DeviceEventEmitter } from 'react-native';
+import { View, Modal, StatusBar, StyleSheet, DeviceEventEmitter, Image, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { games as gamesApi, API_URL } from '../services/api';
 import { GameSurface, buildGameUrl } from './GameSurface';
@@ -49,6 +49,7 @@ interface Props {
 export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: Props) => {
   const insets = useSafeAreaInsets();
   const [loaded, setLoaded] = useState(false);
+  const win = useWindowDimensions();
   // a game's "get TokBux" opens the TokBux store over it
   const [tokbuxOpen, setTokbuxOpen] = useState(false);
   useEffect(() => {
@@ -103,6 +104,12 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
             onLoadEnd={() => setLoaded(true)}
           />
         ) : null}
+        {game?.thumbnail && !loaded ? (
+          <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
+            <Image source={{ uri: game.thumbnail }} resizeMode="cover"
+              style={isLandscape(game.orientation) ? { width: win.height, height: win.width, transform: [{ rotate: '90deg' }] } : StyleSheet.absoluteFill} />
+          </View>
+        ) : null}
 
         {/* Action rail — only once the game is up, so it never sits over the loading screen.
             Skipped for landscape games for the same reason HomeScreen skips it: the rail is
@@ -126,6 +133,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
 };
 
 const styles = StyleSheet.create({
+  center: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   root: {
     flex: 1,
   },
