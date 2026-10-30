@@ -16,7 +16,7 @@ export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 // The pictures are kept on the phone too, so the avatar shows at once on the next app start (the 3D page takes a few
 // seconds to boot), not a spinner.
 const pictures = new Map<string, string>();
-const PICTURES_KEY = 'avatarStagePictures';
+const PICTURES_KEY = 'avatarStagePictures2';   // (2: the first ones could be of the look that came next)
 let picturesLoaded: Promise<void> | null = null;
 const loadPictures = () => (picturesLoaded ??= AsyncStorage.getItem(PICTURES_KEY)
   .then((v) => { for (const [k, jpg] of JSON.parse(v || '[]')) if (!pictures.has(k)) pictures.set(k, jpg); })
@@ -31,7 +31,7 @@ export function stagePicture(r: AvatarRecord): string | null {
 // the latest full-body picture of each body's own look (no character on): Customize > Avatars shows it on that
 // body's tile (male and female each keep their own look)
 const bodyPictures: Partial<Record<AvatarRecord['body'], string>> = {};
-const BODY_PICTURES_KEY = 'avatarBodyPictures';
+const BODY_PICTURES_KEY = 'avatarBodyPictures2';
 AsyncStorage.getItem(BODY_PICTURES_KEY).then((v) => { Object.assign(bodyPictures, JSON.parse(v || '{}'), { ...bodyPictures }); }).catch(() => {});
 export const bodyPicture = (body: AvatarRecord['body']) => bodyPictures[body] ?? null;
 function savePicture(key: string, jpg: string) {
@@ -116,13 +116,15 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
             // a few frames to draw before the picture goes; once settled, picture it for the next reload
             const pk = `${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}`;
             timers.current.push(setTimeout(() => setLive(true), 250));
-            if (!pictures.has(pk)) timers.current.push(setTimeout(() => { snapKey.current = pk; send({ type: 'SNAPSHOT' }); }, 1500));
+            // (only while that look is still the one on stage: one put on meanwhile would be pictured under this one's name)
+            const now = () => `${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}`;
+            if (!pictures.has(pk)) timers.current.push(setTimeout(() => { if (now() === pk) { snapKey.current = pk; send({ type: 'SNAPSHOT' }); } }, 1500));
             else savePicture(pk, pictures.get(pk)!);   // (seen before: still the latest of its body)
             // the look asked for is the one on stage: picture it (once per look)
             const { avatar: a, headshotOf: h } = latest.current, key = h && JSON.stringify(h);
             if (key && a && JSON.stringify(a) === key && shotAsked.current !== key) { shotAsked.current = key; send({ type: 'HEADSHOT' }); }
           }
-          if (m.type === 'SNAPSHOT' && m.jpg && snapKey.current) savePicture(snapKey.current, m.jpg);
+          if (m.type === 'SNAPSHOT' && m.jpg && snapKey.current === `${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}`) savePicture(snapKey.current, m.jpg);
           if (m.type === 'HEADSHOT' && m.png && latest.current.headshotOf) onHeadshot?.(m.png, latest.current.headshotOf);
           if (m.type === 'ERROR') { console.warn('[AvatarStage]', m.msg); setError(m.msg); }
         }}
