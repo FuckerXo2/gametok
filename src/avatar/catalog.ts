@@ -68,7 +68,7 @@ export const TABS: { id: Tab; label: string; subs: string[] }[] = [
   { id: 'outfits', label: 'Outfits', subs: [] },   // looks made of the items below
   { id: 'body', label: 'Hair', subs: [] },   // (body shape, face, skin: the Me screen's editors)
   { id: 'beards', label: 'Beards', subs: [] },
-  { id: 'clothing', label: 'Clothing', subs: ['T-Shirts', 'Sweaters', 'Shirts', 'Pants', 'Shorts', 'Shoes'] },
+  { id: 'clothing', label: 'Clothing', subs: ['Tops', 'T-Shirts', 'Jackets', 'Sweaters', 'Shirts', 'Pants', 'Shorts', 'Skirts', 'Shoes'] },
   { id: 'accessories', label: 'Accessories', subs: ['Hats', 'Shoulders'] },
 ];
 
@@ -94,7 +94,11 @@ export interface AvatarItem {
   whole?: boolean;                     // shown on the whole avatar (an outfit, a character), not on its own
   pic?: number;                        // its picture's version (a new picture shows at once; phones keep them a day)
   ownedAs?: string;                    // also owned by whoever bought this older id (a hair from before colours: every colour of it)
+  for?: AvatarRecord['body'];          // made for this body: shown only to avatars of it (none: for everyone)
 }
+
+// an item made for the other body is left out of the Shop and Customize
+export const fitsBody = (i: AvatarItem, body?: AvatarRecord['body']) => !i.for || !body || i.for === body;
 
 const SKIN_SWATCHES = ['#f2cfb3', '#dcae8a', '#b98258', '#8a5536', '#6a3e26', '#46281a'];
 const SKIN_NAMES = ['Fair', 'Light', 'Tan', 'Brown', 'Dark', 'Deep'];
@@ -116,6 +120,7 @@ export interface ShopItem {
   character?: string;                                            // character
   ownedAs?: string;
   pic?: number;
+  for?: 'male' | 'female';
 }
 const ICONS: Record<string, AvatarItem['icon']> = { character: 'person-outline', hair: 'cut-outline', beard: 'man-outline', outfit: 'body-outline', top: 'shirt-outline',
   arms: 'hand-left-outline', legs: 'walk-outline', feet: 'footsteps-outline', head: 'person-circle-outline', acc: 'shield-outline' };
@@ -125,7 +130,10 @@ const WHITE = { top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff
 // what wearing it does; null: an item this app doesn't understand (a newer kind): left out of the Shop
 function toItem(d: ShopItem): AvatarItem | null {
   if (!d || typeof d.id !== 'string' || typeof d.price !== 'number' || !TABS.some((t) => t.id === d.tab)) return null;
-  const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs, pic: d.pic,
+  // who it's for: as the server says, else by its set's name (the original outfits: Male_Peasant, Female_Ranger, ...)
+  const named = [d.set, ...Object.values(d.parts ?? {})].find((n) => /^(Male|Female)_/.test(n ?? ''));
+  const forBody: AvatarRecord['body'] | undefined = d.for === 'female' ? 'Female' : d.for === 'male' ? 'Male' : named ? (named.startsWith('Female_') ? 'Female' : 'Male') : d.kind === 'beard' ? 'Male' : undefined;
+  const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs, pic: d.pic, for: forBody,
     tint: d.hairColor ?? '#e2e8f0', icon: ICONS[d.kind === 'part' ? d.slot! : d.kind] ?? 'pricetag-outline' };
   if (d.kind === 'character' && d.character) {
     const { character } = d;

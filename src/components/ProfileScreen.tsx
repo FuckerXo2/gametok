@@ -18,7 +18,7 @@ import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
 import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 import { Ask, ConfirmCard, ItemDetails, ItemOptions, askOrDo, shareItem } from './ItemDetails';
-import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, TABS, Tab, thumbOf } from '../avatar/catalog';
+import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, STARTER_AVATARS, TABS, Tab, fitsBody, thumbOf } from '../avatar/catalog';
 import { useSavedLooks } from '../avatar/looks';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
@@ -39,7 +39,7 @@ type Editor = (typeof CUSTOMIZE)[number];
 type CSlot = { id: string; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; focus: Focus; subs?: string[]; panel?: 'build' | 'skin'; only?: AvatarRecord['body'] };
 const CTABS: { id: 'avatars' | 'body' | 'clothing' | 'accessories'; label: string; slots: CSlot[] }[] = [
   { id: 'avatars', label: 'Avatars', slots: [] },
-  { id: 'body', label: 'Body', slots: [   // (boy or girl is picked at sign-up: no body swapping here)
+  { id: 'body', label: 'Body', slots: [   // (male or female: switched in Build)
     { id: 'hair', label: 'Hair', icon: 'cut-outline', focus: 'head', subs: ['Hair'] },
     { id: 'beard', label: 'Beard', icon: 'man-outline', focus: 'head', subs: ['Beards'], only: 'Male' },
     { id: 'face', label: 'Face', icon: 'happy-outline', focus: 'head', subs: ['Face'] },
@@ -47,8 +47,8 @@ const CTABS: { id: 'avatars' | 'body' | 'clothing' | 'accessories'; label: strin
     { id: 'skin', label: 'Skin', icon: 'color-palette-outline', focus: 'body', panel: 'skin' },
   ] },
   { id: 'clothing', label: 'Clothing', slots: [
-    { id: 'top', label: 'Top', icon: 'shirt-outline', focus: 'torso', subs: ['T-Shirts', 'Sweaters', 'Shirts'] },
-    { id: 'bottom', label: 'Bottom', icon: 'walk-outline', focus: 'legs', subs: ['Pants', 'Shorts'] },
+    { id: 'top', label: 'Top', icon: 'shirt-outline', focus: 'torso', subs: ['T-Shirts', 'Tops', 'Shirts', 'Sweaters', 'Jackets'] },
+    { id: 'bottom', label: 'Bottom', icon: 'walk-outline', focus: 'legs', subs: ['Pants', 'Shorts', 'Skirts'] },
     { id: 'shoes', label: 'Shoes', icon: 'footsteps-outline', focus: 'feet', subs: ['Shoes'] },
   ] },
   { id: 'accessories', label: 'Accessories', slots: [
@@ -370,8 +370,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const onHeadshot = (png: string, of: AvatarRecord) => { uploadHeadshot(png, of).then((url) => { if (url) refreshUser(); }); };
 
   // body shape, face and skin colour aren't items: they're set in the avatar button's editors, not listed here
-  const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && (mode === 'shop' ? !owns(i) : owns(i))), [mode, account]);
-  const tabs = TABS;
+  // (only what's made for this avatar's body: switching to female switches the Shop to women's things)
+  const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && (mode === 'shop' ? !owns(i) : owns(i))), [mode, account, look?.body]);
+  const tabs = TABS.filter((t) => t.id !== 'beards' || look?.body !== 'Female');
   // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
   // All: one mixed feed, in the order the server picked for you (it changes; backend src/avatar-feed.js). Until it
   // has answered: everything, as listed
@@ -394,8 +395,28 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       ))}
     </View>
   );
+  // male <-> female: what's on made only for the other body comes off, and that body's starter piece goes on in its place
+  const switchBody = (body: AvatarRecord['body']) => {
+    if (!look || look.body === body) return;
+    let next: AvatarRecord = { ...look, body, beard: body === 'Male' && look.beard };
+    const off = AVATAR_ITEMS.filter((i) => !fitsBody(i, body) && i.isWorn?.(look) && i.takeOff);
+    for (const i of off) next = i.takeOff!(next);
+    const start = STARTER_AVATARS[body];
+    if (!next.hair && look.hair) next = { ...next, hair: start.hair };
+    if (off.length) for (const k of ['top', 'legs', 'feet'] as const) if (!next.parts[k]) next = { ...next, parts: { ...next.parts, [k]: start.parts[k] }, colors: { ...next.colors, [k]: '#ffffff' } };
+    why.current = 'body'; change({ look: next, cart: cart.filter((id) => { const i = AVATAR_ITEMS.find((x) => x.id === id); return !i || fitsBody(i, body); }) });
+  };
   const buildPanel = () => (
     <>
+      <Text style={styles.edLabel}>Body</Text>
+      <View style={styles.bodyRow}>
+        {(['Male', 'Female'] as const).map((b) => (
+          <Pressable key={b} onPress={() => switchBody(b)} style={[styles.bodyPill, look?.body === b && styles.bodyPillOn]}>
+            <Ionicons name={b === 'Male' ? 'male' : 'female'} size={18} color={look?.body === b ? '#000' : '#fff'} />
+            <Text style={[styles.bodyPillText, look?.body === b && { color: '#000' }]}>{b}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Text style={styles.edLabel}>Body Type</Text>
       {look ? <BodyTriangle {...shapeOf(look)} onMove={moveShape} onDone={doneShape} onGrab={setGrab} /> : null}
       <Text style={styles.edLabel}>Body Size</Text>
@@ -421,7 +442,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     if (!look) return null;
     if (sl.panel === 'skin') return <View style={[styles.slotDot, { backgroundColor: skinItems.find((i) => i.isWorn?.(look))?.tint }]} />;
     // what's worn; nothing on: the slot's first item (a picture of the kind of thing, not an icon)
-    const all = sl.subs ? AVATAR_ITEMS.filter((i) => !i.pieces && sl.subs!.includes(i.sub)) : [];
+    const all = sl.subs ? AVATAR_ITEMS.filter((i) => !i.pieces && sl.subs!.includes(i.sub) && fitsBody(i, look.body)) : [];
     const worn = all.find((i) => i.isWorn?.(look)), pic = worn ?? all[0];
     const t = pic && thumbOf(pic, look.body);
     return t ? <Image source={{ uri: t }} style={styles.slotImg} resizeMode="contain" /> : <Ionicons name={sl.icon} size={24} color="#fff" />;
@@ -572,7 +593,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                     ))}
                   </ScrollView>
                   {cslot.panel === 'build' ? buildPanel() : cslot.panel === 'skin' ? skinPanel() : (() => {
-                    const all = AVATAR_ITEMS.filter((i) => !i.pieces && cslot.subs!.includes(i.sub));
+                    const all = AVATAR_ITEMS.filter((i) => !i.pieces && cslot.subs!.includes(i.sub) && fitsBody(i, look?.body));
                     const mine = all.filter(owns), more = all.filter((i) => !owns(i));
                     return (
                       <>
@@ -711,6 +732,10 @@ const styles = StyleSheet.create({
   railBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   railOn: { backgroundColor: 'rgba(255,255,255,0.2)' },
   edLabel: { color: DIM, fontSize: 15, fontWeight: '700', paddingHorizontal: 18, paddingTop: 20 },
+  bodyRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 18, paddingTop: 10 },
+  bodyPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 23, backgroundColor: CARD },
+  bodyPillOn: { backgroundColor: '#fff' },
+  bodyPillText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, padding: 20, justifyContent: 'center' },
   swatchRing: { width: (W - 40 - 14 * 4) / 5, aspectRatio: 1, borderRadius: 999, padding: 4, borderWidth: 3, borderColor: 'transparent' },
   swatchOn: { borderColor: ACCENT },
