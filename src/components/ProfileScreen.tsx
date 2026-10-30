@@ -222,6 +222,13 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   useEffect(() => { syncAvatar(); }, [user?.id]);
   // the Shop's items, fresh each time the Me screen opens (new ones show up without restarting the app)
   useEffect(() => { if (isActive) syncShop(); }, [isActive]);
+  // a hair made for the other body's head (a man's buzz cut on her: it doesn't sit on her head) gives way to this
+  // body's starter hair
+  useEffect(() => {
+    if (!saved || saved.character) return;
+    const hair = AVATAR_ITEMS.find((i) => i.sub === 'Hair' && i.isWorn?.(saved));
+    if (hair && !fitsBody(hair, saved.body)) { why.current = 'hair for the other body'; apply({ look: { ...saved, hair: STARTER_AVATARS[saved.body].hair }, cart: [] }); }
+  }, [saved, account?.feed]);
   // the saved look changed elsewhere (another phone, a purchase): show it, unless they're mid try-on
   useEffect(() => { if (saved && !draft?.cart.length) setDraft(null); }, [saved]);
 
