@@ -378,7 +378,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
   // body shape, face and skin colour aren't items: they're set in the avatar button's editors, not listed here
   // (only what's made for this avatar's body: switching to female switches the Shop to women's things)
-  const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && (mode === 'shop' ? !owns(i) : owns(i))), [mode, account, look?.body]);
+  const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && (mode === 'shop' ? !owns(i) && !i.retired : owns(i))), [mode, account, look?.body]);
   const tabs = TABS.filter((t) => t.id !== 'beards' || look?.body !== 'Female');
   // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
   // All: one mixed feed, in the order the server picked for you (it changes; backend src/avatar-feed.js). Until it
@@ -614,7 +614,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                   </ScrollView>
                   {cslot.panel === 'build' ? buildPanel() : cslot.panel === 'skin' ? skinPanel() : (() => {
                     const all = AVATAR_ITEMS.filter((i) => !i.pieces && cslot.subs!.includes(i.sub) && fitsBody(i, look?.body));
-                    const mine = all.filter(owns), more = all.filter((i) => !owns(i));
+                    const mine = all.filter(owns), more = all.filter((i) => !owns(i) && !i.retired);
                     return (
                       <>
                         {mine.length ? <View style={styles.grid}>{mine.map((i) => <ItemTile key={i.id} i={i} />)}</View>
