@@ -395,16 +395,22 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       ))}
     </View>
   );
-  // male <-> female: what's on made only for the other body comes off, and that body's starter piece goes on in its place
+  // male <-> female: two characters, each with its own look. The one you leave is kept (as you own it, not what's only
+  // being tried on) and the other comes back as you left it. The first time, it starts from this one with that body's
+  // starter hair: what's on made only for the other body comes off, and that body's starter piece goes on in its place.
   const switchBody = (body: AvatarRecord['body']) => {
-    if (!look || look.body === body) return;
-    let next: AvatarRecord = { ...look, body, beard: body === 'Male' && look.beard };
-    const off = AVATAR_ITEMS.filter((i) => !fitsBody(i, body) && i.isWorn?.(look) && i.takeOff);
+    if (!look) return;
+    if (look.body === body) { if (look.character) { why.current = 'my avatar'; change({ look: { ...look, character: null }, cart }); } return; }
+    const mine = saved ?? look, me: AvatarRecord = { ...mine, other: undefined };
+    why.current = 'body';
+    if (mine.other?.body === body) { change({ look: { ...mine.other, character: null, other: me }, cart: [] }); return; }
+    let next: AvatarRecord = { ...me, body, character: null, beard: body === 'Male' && me.beard, other: me };
+    const off = AVATAR_ITEMS.filter((i) => !fitsBody(i, body) && i.isWorn?.(me) && i.takeOff);
     for (const i of off) next = i.takeOff!(next);
     const start = STARTER_AVATARS[body];
-    if (!next.hair && look.hair) next = { ...next, hair: start.hair };
+    next = { ...next, hair: start.hair };   // (a man's cut doesn't sit right on her head, nor hers on his)
     if (off.length) for (const k of ['top', 'legs', 'feet'] as const) if (!next.parts[k]) next = { ...next, parts: { ...next.parts, [k]: start.parts[k] }, colors: { ...next.colors, [k]: '#ffffff' } };
-    why.current = 'body'; change({ look: next, cart: cart.filter((id) => { const i = AVATAR_ITEMS.find((x) => x.id === id); return !i || fitsBody(i, body); }) });
+    change({ look: next, cart: [] });
   };
   const buildPanel = () => (
     <>
@@ -435,7 +441,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     saved_.save(look, stagePicture(look));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
-  const wearLook = (r: AvatarRecord) => { if (look) change({ look: r, cart: [] }); };
+  // (the other body's look stays kept: a saved look of the other body swaps them)
+  const wearLook = (r: AvatarRecord) => {
+    if (!look) return;
+    const mine = saved ?? look;
+    change({ look: { ...r, other: r.body === mine.body ? mine.other : { ...mine, other: undefined } }, cart: [] });
+  };
 
   // what's on in a slot: its picture in the slot row
   const slotThumb = (sl: CSlot) => {
@@ -562,11 +573,13 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false} scrollEnabled={!grab} bounces={false}>
               {ctab === 'avatars' ? (
                 <View style={styles.grid}>
-                  {/* yourself: one tap back from a character to your own avatar (it waited underneath, as you left it) */}
-                  <Pressable onPress={() => { if (look?.character) { why.current = 'my avatar'; change({ look: { ...look, character: null }, cart }); } }} style={styles.item}>
-                    <View style={[styles.thumb, styles.addTile, !!look && !look.character && styles.thumbSel]}><Ionicons name="person" size={34} color="#fff" /></View>
-                    <Text style={styles.itemName} numberOfLines={1}>My avatar</Text>
-                  </Pressable>
+                  {/* yourself, male and female: each keeps its own look; one tap back from a character too (it waited underneath) */}
+                  {(['Male', 'Female'] as const).map((b) => (
+                    <Pressable key={b} onPress={() => switchBody(b)} style={styles.item}>
+                      <View style={[styles.thumb, styles.addTile, !!look && !look.character && look.body === b && styles.thumbSel]}><Ionicons name={b === 'Male' ? 'man' : 'woman'} size={40} color="#fff" /></View>
+                      <Text style={styles.itemName} numberOfLines={1}>{b}</Text>
+                    </Pressable>
+                  ))}
                   <Pressable onPress={saveLook} style={styles.item}>
                     <View style={[styles.thumb, styles.addTile]}><Ionicons name="add" size={34} color="#fff" /></View>
                     <Text style={styles.itemName}>Save look</Text>

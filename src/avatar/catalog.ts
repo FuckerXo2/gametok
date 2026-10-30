@@ -22,6 +22,7 @@ export interface AvatarRecord {
   fit: boolean;
   parts: Record<Slot, string | null>;
   colors: Record<Slot, string>;
+  other?: AvatarRecord;                // the look of their other body: male and female each keep their own (switching swaps them)
 }
 
 export const DEFAULT_AVATAR: AvatarRecord = {
