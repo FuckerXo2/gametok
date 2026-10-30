@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { useAuth } from '../context/AuthContext';
-import { AvatarStage, stagePicture } from './AvatarStage';
+import { AvatarStage, bodyPicture, stagePicture } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
 import { openAccountMenu } from './AccountMenu';
 import { Avatar, hasHeadshot } from './Avatar';
@@ -583,7 +583,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                   {/* yourself, male and female: each keeps its own look; one tap back from a character too (it waited underneath) */}
                   {(['Male', 'Female'] as const).map((b) => (
                     <Pressable key={b} onPress={() => switchBody(b)} style={styles.item}>
-                      <View style={[styles.thumb, styles.addTile, !!look && !look.character && look.body === b && styles.thumbSel]}><Ionicons name={b === 'Male' ? 'man' : 'woman'} size={40} color="#fff" /></View>
+                      <View style={[styles.thumb, { overflow: 'hidden' }, !bodyPicture(b) && styles.addTile, !!look && !look.character && look.body === b && styles.thumbSel]}>
+                        {/* (the stage's picture, zoomed onto the avatar standing in its middle) */}
+                        {bodyPicture(b) ? <Image source={{ uri: bodyPicture(b)! }} style={[styles.thumbImg, { transform: [{ scale: 1.55 }, { translateY: 4 }] }]} resizeMode="cover" /> : <Ionicons name={b === 'Male' ? 'man' : 'woman'} size={40} color="#fff" />}
+                      </View>
                       <Text style={styles.itemName} numberOfLines={1}>{b}</Text>
                     </Pressable>
                   ))}

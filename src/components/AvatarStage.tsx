@@ -8,7 +8,7 @@ import type { AvatarRecord, Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 21;
+const STAGE_V = 22;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads
@@ -28,7 +28,18 @@ export function stagePicture(r: AvatarRecord): string | null {
   for (const [k, jpg] of pictures) if (k.endsWith(tail)) { if (k.includes('|body|')) return jpg; any = jpg; }
   return any;
 }
+// the latest full-body picture of each body's own look (no character on): Customize > Avatars shows it on that
+// body's tile (male and female each keep their own look)
+const bodyPictures: Partial<Record<AvatarRecord['body'], string>> = {};
+const BODY_PICTURES_KEY = 'avatarBodyPictures';
+AsyncStorage.getItem(BODY_PICTURES_KEY).then((v) => { Object.assign(bodyPictures, JSON.parse(v || '{}'), { ...bodyPictures }); }).catch(() => {});
+export const bodyPicture = (body: AvatarRecord['body']) => bodyPictures[body] ?? null;
 function savePicture(key: string, jpg: string) {
+  const [, , focus, ...rest] = key.split('|');
+  try {
+    const r = JSON.parse(rest.join('|')) as AvatarRecord | null;
+    if (r && focus === 'body' && !r.character) { bodyPictures[r.body] = jpg; AsyncStorage.setItem(BODY_PICTURES_KEY, JSON.stringify(bodyPictures)).catch(() => {}); }
+  } catch {}
   pictures.delete(key); pictures.set(key, jpg);
   // the latest few looks (each picture is a small jpg)
   AsyncStorage.setItem(PICTURES_KEY, JSON.stringify([...pictures].slice(-4))).catch(() => {});
@@ -106,6 +117,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
             const pk = `${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}`;
             timers.current.push(setTimeout(() => setLive(true), 250));
             if (!pictures.has(pk)) timers.current.push(setTimeout(() => { snapKey.current = pk; send({ type: 'SNAPSHOT' }); }, 1500));
+            else savePicture(pk, pictures.get(pk)!);   // (seen before: still the latest of its body)
             // the look asked for is the one on stage: picture it (once per look)
             const { avatar: a, headshotOf: h } = latest.current, key = h && JSON.stringify(h);
             if (key && a && JSON.stringify(a) === key && shotAsked.current !== key) { shotAsked.current = key; send({ type: 'HEADSHOT' }); }
