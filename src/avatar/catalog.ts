@@ -37,6 +37,14 @@ export const STARTER_AVATARS: Record<AvatarRecord['body'], AvatarRecord> = {
   Female: { ...DEFAULT_AVATAR, body: 'Female', hair: 'Hair_SimpleParted', parts: { ...DEFAULT_AVATAR.parts }, colors: { ...DEFAULT_AVATAR.colors } },
 };
 
+// a look's identity: what it wears on what body, in any field order (the other body's look aside); two looks are the
+// same look when these match
+export function lookKey(r: AvatarRecord): string {
+  const norm = (v: any): any => (Array.isArray(v) ? v.map(norm) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).filter((k) => v[k] !== undefined && v[k] !== null && k !== 'other').sort().map((k) => [k, norm(v[k])])) : v);
+  return JSON.stringify(norm(r));
+}
+
 export function normalizeAvatar(r: any): AvatarRecord {
   const d = DEFAULT_AVATAR;
   if (!r || typeof r !== 'object') return { ...d, parts: { ...d.parts }, colors: { ...d.colors } };

@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, ViewStyle, Text, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AvatarRecord, Focus } from '../avatar/catalog';
+import { lookKey, type AvatarRecord, type Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
@@ -30,15 +30,17 @@ export function stagePicture(r: AvatarRecord): string | null {
 }
 // the latest full-body picture of each body's own look (no character on): Customize > Avatars shows it on that
 // body's tile (male and female each keep their own look)
-const bodyPictures: Partial<Record<AvatarRecord['body'], string>> = {};
-const BODY_PICTURES_KEY = 'avatarBodyPictures2';
+const bodyPictures: Partial<Record<AvatarRecord['body'], { jpg: string; of: string }>> = {};
+const BODY_PICTURES_KEY = 'avatarBodyPictures3';
 AsyncStorage.getItem(BODY_PICTURES_KEY).then((v) => { Object.assign(bodyPictures, JSON.parse(v || '{}'), { ...bodyPictures }); }).catch(() => {});
-export const bodyPicture = (body: AvatarRecord['body']) => bodyPictures[body] ?? null;
+export const bodyPicture = (body: AvatarRecord['body']) => bodyPictures[body]?.jpg ?? null;
+// ... and a picture of exactly this look, if that's the latest one taken
+export const bodyPictureOf = (r: AvatarRecord) => (bodyPictures[r.body]?.of === lookKey(r) ? bodyPictures[r.body]!.jpg : null);
 function savePicture(key: string, jpg: string) {
   const [, , focus, ...rest] = key.split('|');
   try {
     const r = JSON.parse(rest.join('|')) as AvatarRecord | null;
-    if (r && focus === 'body' && !r.character) { bodyPictures[r.body] = jpg; AsyncStorage.setItem(BODY_PICTURES_KEY, JSON.stringify(bodyPictures)).catch(() => {}); }
+    if (r && focus === 'body' && !r.character) { bodyPictures[r.body] = { jpg, of: lookKey(r) }; AsyncStorage.setItem(BODY_PICTURES_KEY, JSON.stringify(bodyPictures)).catch(() => {}); }
   } catch {}
   pictures.delete(key); pictures.set(key, jpg);
   // the latest few looks (each picture is a small jpg)
@@ -91,6 +93,14 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   useEffect(() => { if (ready && avatar) send({ type: 'SET', avatar }); }, [ready, avatar]);
   useEffect(() => { if (ready && anim) send({ type: 'ANIM', name: anim }); }, [ready, anim]);
   useEffect(() => { if (ready) send({ type: 'FOCUS', part: focus }); }, [ready, focus]);
+  // a new framing of the look on stage (the full body, say): picture that too, once it's settled
+  useEffect(() => {
+    if (!ready || loading || !avatar || pictures.has(pictureKey)) return;
+    const pk = pictureKey, t = setTimeout(() => {
+      if (`${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}` === pk) { snapKey.current = pk; send({ type: 'SNAPSHOT' }); }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [ready, loading, pictureKey]);
   // asked for a headshot of the look already on stage
   useEffect(() => {
     const key = headshotOf && JSON.stringify(headshotOf);

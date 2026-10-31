@@ -499,6 +499,8 @@ export const avatarAccount = {
   items: async () => request('/avatar/items'),   // the Shop's items (no sign-in needed)
   feed: async () => request('/avatar/feed'),     // the Shop's front page order, for you (signed in or not)
   save: async (avatar: object) => request('/avatar/me', { method: 'PUT', body: JSON.stringify({ avatar }) }),
+  looks: async () => request('/avatar/looks'),   // saved looks [{ id, name, look }]
+  saveLooks: async (looks: object[]) => request('/avatar/looks', { method: 'PUT', body: JSON.stringify({ looks }) }),
   buy: async (itemId: string, price?: number) => request('/avatar/buy', { method: 'POST', body: JSON.stringify({ itemId, price }) }),
   // the headshot of the 3D avatar (a PNG data: URL from the stage) becomes the profile picture
   headshot: async (png: string) => request('/avatar/headshot', { method: 'PUT', body: JSON.stringify({ png }) }),
