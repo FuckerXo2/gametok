@@ -564,6 +564,11 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
           </Pressable>
         </View>
+        {/* save this look (top right, under the TokBux: in sight whatever the camera's showing) */}
+        <Pressable style={[styles.saveLook, { top: insets.top + 62 }, !!whyNotSave() && !savedAs && { opacity: 0.5 }]} onPress={saveLook} hitSlop={6}>
+          <Ionicons name={savedAs ? 'bookmark' : 'bookmark-outline'} size={17} color="#fff" />
+          <Text style={styles.saveLookText}>{savedAs ? 'Saved' : 'Save look'}</Text>
+        </Pressable>
         <Pressable style={[styles.mePill, { top: insets.top + 62, zIndex: 21 }]} onPress={() => setCustomize(!customize)} hitSlop={6}>
           <Avatar uri={user?.avatar} userId={user?.id} size={44} />
           {customize ? <View style={styles.pillX}><Ionicons name="close" size={20} color="#fff" /></View>
@@ -572,8 +577,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         <View style={styles.undo}>
           <Pressable style={styles.undoBtn} onPress={undo} hitSlop={6}><Ionicons name="arrow-undo" size={19} color={history.undo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
           <Pressable style={styles.undoBtn} onPress={redo} hitSlop={6}><Ionicons name="arrow-redo" size={19} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
-          {/* save this look (filled: it's saved) */}
-          <Pressable style={styles.undoBtn} onPress={saveLook} hitSlop={6}><Ionicons name={savedAs ? 'bookmark' : 'bookmark-outline'} size={19} color={whyNotSave() && !savedAs ? 'rgba(255,255,255,0.3)' : '#fff'} /></Pressable>
         </View>
         {toast ? <View style={styles.toast} pointerEvents="none"><Text style={styles.toastText}>{toast}</Text></View> : null}
         </>}
@@ -647,7 +650,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                       );
                     })}
                   </View>
-                ) : <Text style={styles.hint}>Put a look together, then tap <Ionicons name="bookmark-outline" size={14} color={DIM} /> by undo to keep it here.</Text>}
+                ) : <Text style={styles.hint}>Put a look together, then tap Save look (top right) to keep it here.</Text>}
                 </>
               ) : (
                 <>
@@ -847,6 +850,8 @@ const styles = StyleSheet.create({
   pillX: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
   tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 6, paddingLeft: 6, paddingRight: 12 },
   tbText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  saveLook: { position: 'absolute', right: 16, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14 },
+  saveLookText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   mePill: { position: 'absolute', left: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 30, paddingTop: 6, paddingBottom: 10, paddingHorizontal: 6 },
   undo: { position: 'absolute', left: 16, bottom: 30, flexDirection: 'row', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 4 },
   undoBtn: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center' },
