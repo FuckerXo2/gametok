@@ -535,7 +535,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     <View style={styles.root}>
       {/* the avatar, with the controls floating over it (like Roblox's Me) */}
       <View style={[styles.stage, editor && { height: H * 0.56 }]}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look="dark" headshotOf={shotOf} onHeadshot={onHeadshot} />
+        <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look="studio" headshotOf={shotOf} onHeadshot={onHeadshot} />
         {editor ? (
           <>
             {/* an editor: back, its name, the other editors down the left, undo / redo under them */}
@@ -801,10 +801,10 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  stage: { height: H * 0.47, backgroundColor: BG },
+  stage: { height: H * 0.47, backgroundColor: '#dce2e8' },
   topRow: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  round: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  seg: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, padding: 4 },
+  round: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(18,13,30,0.9)', alignItems: 'center', justifyContent: 'center' },
+  seg: { flexDirection: 'row', backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 999, padding: 4 },
   segBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999 },
   segOn: { backgroundColor: '#fff' },
   segText: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' },
@@ -814,10 +814,10 @@ const styles = StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 20 },
   menuText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   edHead: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  edTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  rail: { position: 'absolute', left: 16, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 26, padding: 4, gap: 2 },
+  edTitle: { color: '#111', fontSize: 20, fontWeight: '800' },
+  rail: { position: 'absolute', left: 16, backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 26, padding: 4, gap: 2 },
   railBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  railOn: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  railOn: { backgroundColor: 'rgba(255,255,255,0.22)' },
   edLabel: { color: DIM, fontSize: 15, fontWeight: '700', paddingHorizontal: 18, paddingTop: 20 },
   bodyRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 18, paddingTop: 10 },
   bodyPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 23, backgroundColor: CARD },
@@ -847,10 +847,10 @@ const styles = StyleSheet.create({
   trackOn: { height: 5, backgroundColor: '#fff' },
   knob: { position: 'absolute', width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', marginLeft: -11, top: 9 },
   pillX: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
-  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 6, paddingLeft: 6, paddingRight: 12 },
+  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 999, paddingVertical: 6, paddingLeft: 6, paddingRight: 12 },
   tbText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  mePill: { position: 'absolute', left: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 30, paddingTop: 6, paddingBottom: 10, paddingHorizontal: 6 },
-  undo: { position: 'absolute', left: 16, bottom: 30, flexDirection: 'row', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 4 },
+  mePill: { position: 'absolute', left: 16, alignItems: 'center', backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 30, paddingTop: 6, paddingBottom: 10, paddingHorizontal: 6 },
+  undo: { position: 'absolute', left: 16, bottom: 30, flexDirection: 'row', gap: 6, backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 4 },
   undoBtn: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center' },
   toast: { position: 'absolute', alignSelf: 'center', bottom: 84, backgroundColor: 'rgba(0,0,0,0.75)', borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9, maxWidth: W - 40 },
   toastText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },

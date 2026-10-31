@@ -179,7 +179,7 @@ const MainApp = ({
       activityRequestNonce
     }}>
       <StatusBar
-        style={isDark ? 'light' : 'dark'}
+        style={activeTab === 'profile' ? 'dark' : isDark ? 'light' : 'dark'}   // Me: the avatar in the light studio
         hidden={activeTab === 'home' && isGameDeckActive}
         animated
       />
