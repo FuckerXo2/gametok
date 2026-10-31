@@ -59,10 +59,9 @@ const NavTab = ({
     scale.value = withSpring(isActive ? 1.05 : 1, { damping: 14, stiffness: 220 });
   };
   const handlePress = () => {
-    if (!isActive) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onPress();
-    }
+    if (!isActive) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // the tab you're on gets the press too (Me again turns the avatar back to face you)
+    onPress();
   };
 
   const color = isActive ? BRAND_PURPLE : INACTIVE;

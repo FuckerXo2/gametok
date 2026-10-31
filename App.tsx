@@ -119,6 +119,8 @@ const MainApp = ({
       // Already on home — trigger refresh
       setHomeRefreshTrigger(prev => prev + 1);
     }
+    // Me again: the avatar turns back to face you
+    if (tab === 'profile' && activeTab === 'profile') DeviceEventEmitter.emit('gametok:stage-reset');
 
     setActiveTab(tab);
     // Reset to standard bottom navigation when switching tabs or entering Home

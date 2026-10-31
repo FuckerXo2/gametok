@@ -1,14 +1,14 @@
 // 3D avatar stage: the avatar-core page (games/avatar-editor/app-stage.html) in a WebView.
 // The app owns the record and draws all the UI; the page only renders what it's sent.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, ViewStyle, Text, Image } from 'react-native';
+import { View, StyleSheet, DeviceEventEmitter, ActivityIndicator, ViewStyle, Text, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lookKey, type AvatarRecord, type Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 22;
+const STAGE_V = 23;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads
@@ -97,6 +97,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   useEffect(() => { if (ready && avatar) send({ type: 'SET', avatar }); }, [ready, avatar]);
   useEffect(() => { if (ready && anim) send({ type: 'ANIM', name: anim }); }, [ready, anim]);
   useEffect(() => { if (ready) send({ type: 'FOCUS', part: focus }); }, [ready, focus]);
+  useEffect(() => { const sub = DeviceEventEmitter.addListener('gametok:stage-reset', () => send({ type: 'RESET' })); return () => sub.remove(); }, []);
   // a new framing of the look on stage (the full body, say): picture that too, once it's settled
   useEffect(() => {
     if (!ready || loading || !avatar || pictures.has(pictureKey)) return;
