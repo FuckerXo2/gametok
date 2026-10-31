@@ -105,6 +105,7 @@ export interface AvatarItem {
   ownedAs?: string;                    // also owned by whoever bought this older id (a hair from before colours: every colour of it)
   for?: AvatarRecord['body'];          // made for this body: shown only to avatars of it (none: for everyone)
   retired?: boolean;                   // not sold any more: shown only to whoever owns it
+  alsoTab?: Exclude<Tab, 'all'>;       // shown under a second tab too (a floor-length cloak: Jackets and Outfits)
 }
 
 // an item made for the other body is left out of the Shop and Customize
@@ -131,7 +132,7 @@ export interface ShopItem {
   ownedAs?: string;
   pic?: number;
   for?: 'male' | 'female';
-  retired?: boolean;
+  retired?: boolean; alsoTab?: Exclude<Tab, 'all'>;
 }
 const ICONS: Record<string, AvatarItem['icon']> = { character: 'person-outline', hair: 'cut-outline', beard: 'man-outline', outfit: 'body-outline', top: 'shirt-outline',
   arms: 'hand-left-outline', legs: 'walk-outline', feet: 'footsteps-outline', head: 'person-circle-outline', acc: 'shield-outline' };
@@ -144,7 +145,7 @@ function toItem(d: ShopItem): AvatarItem | null {
   // who it's for: as the server says, else by its set's name (the original outfits: Male_Peasant, Female_Ranger, ...)
   const named = [d.set, ...Object.values(d.parts ?? {})].find((n) => /^(Male|Female)_/.test(n ?? ''));
   const forBody: AvatarRecord['body'] | undefined = d.for === 'female' ? 'Female' : d.for === 'male' ? 'Male' : named ? (named.startsWith('Female_') ? 'Female' : 'Male') : d.kind === 'beard' ? 'Male' : undefined;
-  const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs, pic: d.pic, for: forBody, retired: d.retired,
+  const base = { id: d.id, name: d.name, price: d.price, category: d.category, focus: d.focus, tab: d.tab, sub: d.sub, ownedAs: d.ownedAs, pic: d.pic, for: forBody, retired: d.retired, alsoTab: d.alsoTab,
     tint: d.hairColor ?? '#e2e8f0', icon: ICONS[d.kind === 'part' ? d.slot! : d.kind] ?? 'pricetag-outline' };
   if (d.kind === 'character' && d.character) {
     const { character } = d;

@@ -390,7 +390,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const feedIndex = useMemo(() => new Map((account?.feed ?? []).map((id, n) => [id, n])), [account?.feed]);
   const items = tab === 'all'
     ? (feedIndex.size ? inMode.filter((i) => feedIndex.has(i.id)).sort((a, b) => feedIndex.get(a.id)! - feedIndex.get(b.id)!) : mixed(inMode))
-    : inMode.filter((i) => i.tab === tab && (!sub || i.sub === sub));
+    : inMode.filter((i) => (i.tab === tab && (!sub || i.sub === sub)) || (i.alsoTab === tab && !sub));
   const subs = (TABS.find((t) => t.id === tab)?.subs ?? []).filter((s) => inMode.some((i) => i.tab === tab && i.sub === s));
   // an editor shows every choice for its part (ones not owned yet go in the checkout, like the shop)
   const edItems = editor ? AVATAR_ITEMS.filter((i) => i.tab === 'body' && i.sub === editor.sub) : [];
