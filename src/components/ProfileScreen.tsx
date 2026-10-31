@@ -19,7 +19,7 @@ import { TokBuxSheet } from './TokBuxSheet';
 import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 import { Ask, ConfirmCard, ItemDetails, ItemOptions, askOrDo, shareItem } from './ItemDetails';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, STARTER_AVATARS, TABS, Tab, fitsBody, thumbOf } from '../avatar/catalog';
-import { MAX_LOOKS, sameLook, useSavedLooks } from '../avatar/looks';
+import { sameLook, useSavedLooks } from '../avatar/looks';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -202,7 +202,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [ctab, setCtab] = useState<(typeof CTABS)[number]['id']>('body');   // Customize's tab
   const [cslot, setCslot] = useState<CSlot>(CTABS[1].slots[0]);   // ... and its slot
   const saved_ = useSavedLooks(user?.id);
-  const [naming, setNaming] = useState<{ id?: string; name: string } | null>(null);   // the save sheet (or rename: id)
+  const [naming, setNaming] = useState<{ id: string; name: string } | null>(null);   // renaming a saved look
   const [toast, setToast] = useState<string | null>(null);
   const toastT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const say = (t: string) => { setToast(t); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(null), 2600); };
@@ -445,9 +445,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     </>
   );
 
-  // Saved looks: what's on now, named, if it's a look worth keeping: your own avatar (not a character), all of it
-  // owned, not the starter look, not one already saved, and room for it. The save button (by undo / redo) says
-  // why not; otherwise it opens the sheet to name it.
+  // Saved looks keep themselves: what you leave Customize wearing (switching to the Shop, or leaving Me) is saved,
+  // if it's a look worth keeping: your own avatar (not a character), all of it owned, not the starter look, not one
+  // already saved. The latest 24 are kept; hold one to rename or remove it.
   // (the full-body picture: the one on stage now, if it's this look)
   const lookPicture = (r: AvatarRecord) => bodyPictureOf(r) || stagePicture(r);
   const savedAs = look ? saved_.looks.find((l) => sameLook(l.look, look)) : undefined;
@@ -462,24 +462,31 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     if (savedAs) return `Already saved as “${savedAs.name}”`;
     const start = STARTER_AVATARS[look.body];
     if ((['top', 'arms', 'legs', 'feet', 'head', 'acc'] as const).every((k) => look.parts[k] === start.parts[k]) && look.hair === start.hair) return 'That’s the starter look: put something on first';
-    if (saved_.looks.length >= MAX_LOOKS) return `You have ${MAX_LOOKS} looks: delete one to save another`;
     return null;
   };
-  const saveLook = () => {
-    const why = whyNotSave();
-    if (why) { say(why); return; }
-    setNaming({ name: `Look ${saved_.looks.length + 1}` });
+  const autoSave = useRef<(say?: boolean) => void>(() => {});
+  autoSave.current = (tell = false) => {
+    if (!look || whyNotSave()) return;
+    const n = Math.max(0, ...saved_.looks.map((l) => +(/^Look (\d+)$/.exec(l.name)?.[1] ?? 0))) + 1;
+    saved_.save(look, `Look ${n}`, lookPicture(look));
+    if (tell) say('Look saved to Avatars');
   };
+  // leaving Customize: for the Shop, or leaving Me altogether
+  const wasMine = useRef(false);
+  useEffect(() => {
+    const mine = mode === 'mine' && !!isActive;
+    if (wasMine.current && !mine) autoSave.current(!!isActive);
+    wasMine.current = mine;
+  }, [mode, isActive]);
   const doneNaming = () => {
     if (!naming || !look) return;
     const name = naming.name.trim().slice(0, 24) || `Look ${saved_.looks.length + 1}`;
     if (naming.id) saved_.rename(naming.id, name);
-    else { saved_.save(look, name, lookPicture(look)); say('Look saved'); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
     setNaming(null);
   };
   const lookOptions = (id: string, name: string) => Alert.alert(name, '', [
     { text: 'Rename', onPress: () => setNaming({ id, name }) },
-    { text: 'Delete', style: 'destructive', onPress: () => saved_.remove(id) },
+    { text: 'Remove', style: 'destructive', onPress: () => saved_.remove(id) },
     { text: 'Cancel', style: 'cancel' },
   ]);
   // (the other body's look stays kept: a saved look of the other body swaps them)
@@ -564,11 +571,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
           </Pressable>
         </View>
-        {/* save this look (top right, under the TokBux: in sight whatever the camera's showing) */}
-        <Pressable style={[styles.saveLook, { top: insets.top + 62 }, !!whyNotSave() && !savedAs && { opacity: 0.5 }]} onPress={saveLook} hitSlop={6}>
-          <Ionicons name={savedAs ? 'bookmark' : 'bookmark-outline'} size={17} color="#fff" />
-          <Text style={styles.saveLookText}>{savedAs ? 'Saved' : 'Save look'}</Text>
-        </Pressable>
         <Pressable style={[styles.mePill, { top: insets.top + 62, zIndex: 21 }]} onPress={() => setCustomize(!customize)} hitSlop={6}>
           <Avatar uri={user?.avatar} userId={user?.id} size={44} />
           {customize ? <View style={styles.pillX}><Ionicons name="close" size={20} color="#fff" /></View>
@@ -650,7 +652,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                       );
                     })}
                   </View>
-                ) : <Text style={styles.hint}>Put a look together, then tap Save look (top right) to keep it here.</Text>}
+                ) : <Text style={styles.hint}>Looks you put together here save themselves when you leave Customize.</Text>}
                 </>
               ) : (
                 <>
@@ -781,10 +783,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetWrap}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setNaming(null)} />
           <View style={[styles.nameSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.sheetTitle}>{naming?.id ? 'Rename look' : 'Save look'}</Text>
-            {!naming?.id && look && lookPicture(look) ? (
-              <View style={styles.sheetPic}><Image source={{ uri: lookPicture(look)! }} style={[StyleSheet.absoluteFill, { transform: [{ scale: 1.55 }, { translateY: 6 }] }]} resizeMode="cover" /></View>
-            ) : null}
+            <Text style={styles.sheetTitle}>Rename look</Text>
             <TextInput value={naming?.name ?? ''} onChangeText={(name) => setNaming((n) => (n ? { ...n, name } : n))} maxLength={24} autoFocus selectTextOnFocus
               placeholder="Name" placeholderTextColor={DIM} style={styles.sheetInput} returnKeyType="done" onSubmitEditing={doneNaming} />
             <View style={styles.sheetRow}>
@@ -850,8 +849,6 @@ const styles = StyleSheet.create({
   pillX: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
   tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 6, paddingLeft: 6, paddingRight: 12 },
   tbText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  saveLook: { position: 'absolute', right: 16, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14 },
-  saveLookText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   mePill: { position: 'absolute', left: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 30, paddingTop: 6, paddingBottom: 10, paddingHorizontal: 6 },
   undo: { position: 'absolute', left: 16, bottom: 30, flexDirection: 'row', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 4 },
   undoBtn: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center' },
@@ -862,7 +859,6 @@ const styles = StyleSheet.create({
   sheetWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   nameSheet: { backgroundColor: PANEL, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, gap: 14 },
   sheetTitle: { color: '#fff', fontSize: 20, fontWeight: '800', textAlign: 'center' },
-  sheetPic: { alignSelf: 'center', width: 130, height: 170, borderRadius: 14, overflow: 'hidden', backgroundColor: CARD },
   sheetInput: { backgroundColor: CARD, color: '#fff', fontSize: 17, fontWeight: '700', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
   sheetRow: { flexDirection: 'row', gap: 10 },
   sheetBtn: { flex: 1, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
