@@ -31,8 +31,12 @@ export function stagePicture(r: AvatarRecord): string | null {
 // the latest full-body picture of each body's own look (no character on): Customize > Avatars shows it on that
 // body's tile (male and female each keep their own look)
 const bodyPictures: Partial<Record<AvatarRecord['body'], { jpg: string; of: string }>> = {};
-const BODY_PICTURES_KEY = 'avatarBodyPictures3';
-AsyncStorage.getItem(BODY_PICTURES_KEY).then((v) => { Object.assign(bodyPictures, JSON.parse(v || '{}'), { ...bodyPictures }); }).catch(() => {});
+const BODY_PICTURES_KEY = 'avatarBodyPictures2';
+AsyncStorage.getItem(BODY_PICTURES_KEY).then((v) => {
+  // (kept before they said what look they're of: the picture, of no look in particular)
+  const kept = Object.fromEntries(Object.entries(JSON.parse(v || '{}')).map(([b, p]: [string, any]) => [b, typeof p === 'string' ? { jpg: p, of: '' } : p]));
+  Object.assign(bodyPictures, kept, { ...bodyPictures });
+}).catch(() => {});
 export const bodyPicture = (body: AvatarRecord['body']) => bodyPictures[body]?.jpg ?? null;
 // ... and a picture of exactly this look, if that's the latest one taken
 export const bodyPictureOf = (r: AvatarRecord) => (bodyPictures[r.body]?.of === lookKey(r) ? bodyPictures[r.body]!.jpg : null);

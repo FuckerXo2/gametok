@@ -628,6 +628,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                       <Text style={styles.itemName} numberOfLines={1}>{b}</Text>
                     </Pressable>
                   ))}
+                  {/* characters you own (bought here or in a game): worn instead of your avatar */}
+                  {AVATAR_ITEMS.filter((i) => i.tab === 'avatars' && owns(i)).map((i) => <ItemTile key={i.id} i={i} />)}
                 </View>
                 {/* this character's saved looks (hold one: rename, delete) */}
                 <Text style={styles.section}>Saved looks</Text>
@@ -646,11 +648,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                     })}
                   </View>
                 ) : <Text style={styles.hint}>Put a look together, then tap <Ionicons name="bookmark-outline" size={14} color={DIM} /> by undo to keep it here.</Text>}
-                {AVATAR_ITEMS.some((i) => i.tab === 'avatars' && owns(i)) ? <Text style={styles.section}>Characters</Text> : null}
-                <View style={styles.grid}>
-                  {/* characters you own (bought here or in a game): worn instead of your avatar */}
-                  {AVATAR_ITEMS.filter((i) => i.tab === 'avatars' && owns(i)).map((i) => <ItemTile key={i.id} i={i} />)}
-                </View>
                 </>
               ) : (
                 <>
