@@ -278,6 +278,9 @@ const isNoRulesFC = (game: any) => {
   const name = String(game.name || '').toLowerCase();
   return id === 'no-rules-fc' || id === 'street-5s' || /no rules fc/i.test(name) || /rules/i.test(name);
 };
+// the games the app lists (the server's catalog has many more; these are the ones made for GameTok)
+const LISTED = new Set(['knockout']);
+export const isListed = (game: any) => isNoRulesFC(game) || LISTED.has(String(game?.id || '').toLowerCase());
 
 export const NO_RULES_FC_GAME = {
   id: 'no-rules-fc',
@@ -300,7 +303,7 @@ export const NO_RULES_FC_GAME = {
 
 const ensureNoRulesFC = (list: any[]) => {
   if (SHOWCASE) return list.filter((g) => g.thumbnail);   // dev showcase: every game with a picture
-  const filtered = list.filter(isNoRulesFC).map((g) => ({
+  const filtered = list.filter(isListed).map((g) => ({
     ...g,
     categories: g.categories && g.categories.length ? g.categories : ['sports', 'action', 'arcade'],
   }));

@@ -22,7 +22,7 @@ import { isLandscape, type Orientation } from '../constants/orientation';
 import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { useAuth } from '../context/AuthContext';
 import { useAuthScreen, useNavigation } from '../../App';
-import { API_URL, games as gamesApi, users as usersApi } from '../services/api';
+import { API_URL, games as gamesApi, isListed, users as usersApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
@@ -30,7 +30,7 @@ import { GamesHome } from './GamesHome';
 
 import { SHOWCASE } from '../dev/showcase';
 // The games on the app for now: only No Rules FC (the backend has older games that stay off the app)
-const onTheApp = (g: any) => (SHOWCASE ? !!g.thumbnail : /no[-_ ]?rules/i.test(g.id) || /no rules/i.test(g.name || ''));
+const onTheApp = (g: any) => (SHOWCASE ? !!g.thumbnail : isListed(g));
 import { TokBuxSheet } from './TokBuxSheet';
 
 const PURPLE = '#a855f7';
