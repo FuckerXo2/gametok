@@ -8,7 +8,7 @@ import { lookKey, type AvatarRecord, type Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 24;
+const STAGE_V = 29;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads
@@ -60,7 +60,7 @@ interface AvatarStageProps {
   /** Take a headshot once this look is on the stage (the profile picture). */
   headshotOf?: AvatarRecord | null;
   onHeadshot?: (png: string, of: AvatarRecord) => void;
-  /** 'dark': a purple glow, no room (the Me screen) */
+  /** 'dark': a teal glow, no room (the Me screen) */
   look?: 'dark' | 'studio';
   /** Look only: the 3D view takes no touches (behind other controls, e.g. the Games screen). */
   passive?: boolean;
@@ -68,7 +68,7 @@ interface AvatarStageProps {
 
 export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot, look, passive }) => {
   const shotAsked = useRef<string | null>(null);
-  const bg = look === 'dark' ? '#0d0a16' : look === 'studio' ? '#dce2e8' : '#dce2e8';
+  const bg = look === 'dark' ? '#0b0c0d' : look === 'studio' ? '#dce2e8' : '#dce2e8';
   const ref = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -152,7 +152,7 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
         <View style={StyleSheet.absoluteFill} pointerEvents="none"><Image source={{ uri: picture }} style={StyleSheet.absoluteFill} resizeMode="cover" /></View>
       ) : loading && (
         <View style={[styles.overlay, { backgroundColor: bg }]} pointerEvents="none">
-          {error ? <Text style={styles.errorText}>Avatar couldn't load</Text> : <ActivityIndicator size="small" color="#A855F7" />}
+          {error ? <Text style={styles.errorText}>Avatar couldn't load</Text> : <ActivityIndicator size="small" color="#47ab9a" />}
         </View>
       )}
     </View>
