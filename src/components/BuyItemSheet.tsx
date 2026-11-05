@@ -5,12 +5,14 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, Image, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { ALL_ORIENTATIONS } from '../utils/orientationHelper';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { TokBuxIcon } from './TokBuxIcon';
 import { getAvatarAccount, syncAvatar } from '../avatar/store';
 import { TOKBUX_PACKS, TokbuxPack, buyPack, devPrice, loadPacks, packsCovering } from '../tokbux/purchases';
 
-const CARD = '#1d1727', LINE = 'rgba(255,255,255,0.12)', DIM = 'rgba(255,255,255,0.55)';
+// black and gold, like the TokBux coin
+const CARD = '#0c0b09', GOLD = '#dcb664', GOLD_LINE = 'rgba(220,182,100,0.22)', LINE = 'rgba(255,255,255,0.12)', DIM = 'rgba(255,255,255,0.55)';
 
 export interface BuyRequest {
   name: string;
@@ -86,13 +88,15 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
               <Pressable key={id} style={[styles.pack, pick === i && styles.packOn]} onPress={() => setPick(i)}>
                 <TokBuxIcon size={18} />
                 <Text style={styles.packAmount}>{TOKBUX_PACKS[id].toLocaleString()}</Text>
-                {i === 1 ? <View style={styles.chip}><Ionicons name="pricetag-outline" size={11} color={DIM} /><Text style={styles.chipText}>Better value</Text></View> : null}
+                {i === 1 ? <View style={styles.chip}><Ionicons name="pricetag-outline" size={10} color={GOLD} /><Text style={styles.chipText}>Better value</Text></View> : null}
                 <Text style={styles.packPrice}>{packs === null ? '' : price ?? 'Soon'}</Text>
               </Pressable>
             );
           })}
           <Pressable style={[styles.buy, busy && { opacity: 0.6 }]} onPress={go}>
-            {busy ? <ActivityIndicator color="#fff" /> : short > 0
+            {/* metallic gold: light at the top, deeper at the bottom, with a thin highlight */}
+            <LinearGradient colors={['#f5dc9a', '#dcb35f', '#b88a3c']} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
+            {busy ? <ActivityIndicator color="#000" /> : short > 0
               ? <Text style={styles.buyText}>Buy</Text>
               : <View style={styles.cost}><TokBuxIcon size={18} /><Text style={styles.buyText}>{request.price.toLocaleString()}</Text></View>}
           </Pressable>
@@ -108,11 +112,12 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 22 },
-  card: { backgroundColor: CARD, borderRadius: 20, padding: 18 },
+  card: { backgroundColor: CARD, borderRadius: 22, padding: 20, borderWidth: StyleSheet.hairlineWidth * 2, borderColor: GOLD_LINE,
+    shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30, shadowOffset: { width: 0, height: 16 } },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { color: '#fff', fontSize: 19, fontWeight: '800' },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 16 },
-  thumb: { width: 64, height: 64, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)' },
+  thumb: { width: 64, height: 64, borderRadius: 14, backgroundColor: '#17161a' },
   noThumb: { alignItems: 'center', justifyContent: 'center' },
   name: { color: '#fff', fontSize: 15, fontWeight: '700' },
   cost: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
@@ -120,14 +125,14 @@ const styles = StyleSheet.create({
   was: { color: DIM, fontSize: 13, fontWeight: '600', textDecorationLine: 'line-through' },
   off: { backgroundColor: '#ff3a6a', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, marginLeft: 2 },
   offText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  pack: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: LINE, borderRadius: 12, height: 54, paddingHorizontal: 14, marginBottom: 10 },
-  packOn: { borderColor: '#fff' },
+  pack: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: '#131215', borderRadius: 14, height: 54, paddingHorizontal: 14, marginBottom: 10 },
+  packOn: { borderColor: GOLD, shadowColor: GOLD, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 0 } },
   packAmount: { color: '#fff', fontSize: 16, fontWeight: '700' },
   packPrice: { marginLeft: 'auto', color: '#fff', fontSize: 16, fontWeight: '800' },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
-  chipText: { color: DIM, fontSize: 11, fontWeight: '700' },
-  buy: { backgroundColor: '#6c47e6', borderRadius: 12,   // (the checkout's purple)
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: 'rgba(220,182,100,0.45)', borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 },
+  chipText: { color: '#ead08f', fontSize: 11, fontWeight: '700' },
+  buy: { borderRadius: 14, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.45)',
     height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  buyText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  fine: { color: DIM, fontSize: 11, textAlign: 'center', marginTop: 10, lineHeight: 15 },
+  buyText: { color: '#1a1408', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  fine: { color: 'rgba(255,255,255,0.4)', fontSize: 11, textAlign: 'center', marginTop: 10, lineHeight: 15 },
 });
