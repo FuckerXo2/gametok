@@ -1,3 +1,7 @@
+// Native screen orientation. The app is portrait; a landscape game locks the phone to landscape (either way round, so it
+// flips when the phone is turned over) while it's open, and the OS turns everything with it.
+import type { ModalProps } from 'react-native';
+
 let ScreenOrientation: typeof import('expo-screen-orientation') | null = null;
 
 try {
@@ -8,29 +12,21 @@ try {
   ScreenOrientation = null;
 }
 
-export async function lockToPortrait() {
-  if (!ScreenOrientation?.lockAsync) return;
+/** For a Modal that can show over a landscape game (an iOS Modal is portrait-only unless told otherwise). */
+export const ALL_ORIENTATIONS: ModalProps['supportedOrientations'] = ['portrait', 'landscape-left', 'landscape-right'];
+
+/** Lock the phone. Resolves false when it can't (no native module, or the platform refused). */
+async function lock(to: 'portrait' | 'landscape'): Promise<boolean> {
+  if (!ScreenOrientation?.lockAsync) return false;
   try {
-    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    await ScreenOrientation.lockAsync(to === 'landscape'
+      ? ScreenOrientation.OrientationLock.LANDSCAPE
+      : ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    return true;
   } catch (e) {
-    // Non-fatal if platform or device doesn't support orientation locking
+    return false;
   }
 }
 
-export async function lockToLandscape() {
-  if (!ScreenOrientation?.lockAsync) return;
-  try {
-    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-  } catch (e) {
-    // Non-fatal
-  }
-}
-
-export async function unlockOrientation() {
-  if (!ScreenOrientation?.unlockAsync) return;
-  try {
-    await ScreenOrientation.unlockAsync();
-  } catch (e) {
-    // Non-fatal
-  }
-}
+export const lockToPortrait = () => lock('portrait');
+export const lockToLandscape = () => lock('landscape');

@@ -4,6 +4,7 @@
 // Buying an item you can't afford goes through BuyItemSheet instead (TokBux and the item in one tap).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Modal, Pressable, Alert, ActivityIndicator, Linking } from 'react-native';
+import { ALL_ORIENTATIONS } from '../utils/orientationHelper';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +13,7 @@ import { useAvatarAccount } from '../avatar/store';
 import { STORE_URL } from '../avatar/host';
 import { TOKBUX_PACKS, TokbuxPack, buyPack, devPrice, loadPacks } from '../tokbux/purchases';
 
-const BG = '#0d0a16';
+const BG = '#0b0c0d';
 const FOR_YOU = 'tokbux_500';
 
 export const TokBuxSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
@@ -57,7 +58,7 @@ export const TokBuxSheet: React.FC<{ visible: boolean; onClose: () => void }> = 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={onClose}>
       <View style={styles.root}>
         <WebView
           ref={web}

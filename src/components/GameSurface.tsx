@@ -1,21 +1,16 @@
-// GameSurface — the one place a game is sized and rotated for playback.
+// GameSurface — the one place a game is sized for playback.
 //
-// Landscape games are played by rotating an integer-aligned container View 90 degrees inside
-// a portrait box. The device stays portrait-locked; the player turns the phone. The game is laid out
-// at the transposed size from its very first layout (e.g. 874x402), so it boots straight into a full-screen
-// landscape viewport with no letterbox, no resize, no orientationchange, and no flash of portrait.
-//
-// To prevent bilinear texture blur ("fog") on iOS WKWebView, the rotation is applied to an intermediate
-// native UIView container with exact integer offsets Math.round((evenW - evenH)/2) rather than non-integer
-// floating points or direct WKWebView layer rotation. The WebView itself remains unrotated at full native 3x
-// Retina resolution with hardware acceleration (-webkit-transform: translateZ(0)) and WebGL fog patching.
+// Orientation is native: GamePlayerModal locks the phone to landscape (either way round) for a landscape game and back
+// to portrait after, so the OS turns everything (keyboard, alerts, store sheets, status bar) and the WebView is simply
+// the screen's real shape. Nothing here rotates, spoofs sizes or remaps touches.
 
 import React, { forwardRef, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform, Alert, DeviceEventEmitter, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewProps } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { isLandscape, DEFAULT_ORIENTATION, type Orientation } from '../constants/orientation';
-import { buyItem, getAvatarAccount, syncAvatar, useAvatar } from '../avatar/store';
+import { buyItem, getAvatarAccount, saveAvatar, syncAvatar, useAvatar } from '../avatar/store';
+import { AVATAR_ITEMS } from '../avatar/catalog';
 import { playerSessions } from '../services/api';
 import { LOCAL_GAMES } from '../dev/localGames';
 import { APP_VERSION } from './UpdateRequired';
@@ -55,12 +50,9 @@ type Props = WebViewProps & {
   joinFriend?: string | null;
 };
 
-const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
+const CRISP_VIEWPORT_SCRIPT = `
 (function() {
   try {
-    var LW = ${w};
-    var LH = ${h};
-    var isRot = ${isRotated ? 'true' : 'false'};
 
     // 1. Precise viewport: keep device-width unscaled at native 1.0 scale
     var meta = document.querySelector('meta[name="viewport"]');
@@ -95,10 +87,6 @@ const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
           matches = false;
         } else if (q.indexOf('hover: none') !== -1 || q.indexOf('hover:none') !== -1) {
           matches = true;
-        } else if (isRot && (q.indexOf('orientation: landscape') !== -1 || q.indexOf('orientation:landscape') !== -1)) {
-          matches = true;
-        } else if (isRot && (q.indexOf('orientation: portrait') !== -1 || q.indexOf('orientation:portrait') !== -1)) {
-          matches = false;
         } else if (origMatchMedia) {
           return origMatchMedia.call(window, query);
         }
@@ -115,201 +103,6 @@ const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
       };
     } catch(e) {}
 
-    // 3. Transposed dimension overrides & input mapping for rotated landscape
-    if (isRot) {
-      try {
-        Object.defineProperty(window, 'innerWidth',  { get: function() { return LW; }, configurable: true });
-        Object.defineProperty(window, 'innerHeight', { get: function() { return LH; }, configurable: true });
-        Object.defineProperty(screen, 'width',       { get: function() { return LW; }, configurable: true });
-        Object.defineProperty(screen, 'height',      { get: function() { return LH; }, configurable: true });
-        Object.defineProperty(screen, 'availWidth',  { get: function() { return LW; }, configurable: true });
-        Object.defineProperty(screen, 'availHeight', { get: function() { return LH; }, configurable: true });
-        if (window.visualViewport) {
-          Object.defineProperty(window.visualViewport, 'width',  { get: function() { return LW; }, configurable: true });
-          Object.defineProperty(window.visualViewport, 'height', { get: function() { return LH; }, configurable: true });
-          Object.defineProperty(window.visualViewport, 'scale',  { get: function() { return 1.0; }, configurable: true });
-        }
-        if (document.documentElement) {
-          Object.defineProperty(document.documentElement, 'clientWidth',  { get: function() { return LW; }, configurable: true });
-          Object.defineProperty(document.documentElement, 'clientHeight', { get: function() { return LH; }, configurable: true });
-        }
-        Object.defineProperty(window, 'orientation', { get: function() { return 90; }, configurable: true });
-        if (screen.orientation) {
-          try {
-            Object.defineProperty(screen.orientation, 'type', { get: function() { return 'landscape-primary'; }, configurable: true });
-            Object.defineProperty(screen.orientation, 'angle', { get: function() { return 90; }, configurable: true });
-          } catch(e) {}
-        }
-      } catch(e) {}
-
-      // Element rect overrides for rotated coordinate space
-      try {
-        var origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-        Element.prototype.getBoundingClientRect = function() {
-          var r = origGetBoundingClientRect.call(this);
-          if (!r) return r;
-          if (this === document.documentElement || this === document.body) {
-            if (typeof DOMRect !== 'undefined') {
-              return new DOMRect(0, 0, LW, LH);
-            }
-            return { left: 0, top: 0, right: LW, bottom: LH, x: 0, y: 0, width: LW, height: LH, toJSON: function() { return this; } };
-          }
-          var lsLeft = r.top;
-          var lsTop = LH - r.right;
-          var lsWidth = r.height;
-          var lsHeight = r.width;
-          if (typeof DOMRect !== 'undefined') {
-            return new DOMRect(lsLeft, lsTop, lsWidth, lsHeight);
-          }
-          return {
-            left: lsLeft,
-            top: lsTop,
-            right: lsLeft + lsWidth,
-            bottom: lsTop + lsHeight,
-            x: lsLeft,
-            y: lsTop,
-            width: lsWidth,
-            height: lsHeight,
-            toJSON: function() { return this; }
-          };
-        };
-      } catch(e) {}
-
-      // Coordinate mapping for rotated touch/pointer events (Physical Y -> Landscape X, LH - Physical X -> Landscape Y)
-      try {
-        var mapX = function(origX, origY) { return origY; };
-        var mapY = function(origX, origY) { return LH - origX; };
-
-        var patchProto = function(Proto) {
-          if (!Proto) return;
-          var descX = Object.getOwnPropertyDescriptor(Proto, 'clientX');
-          var descY = Object.getOwnPropertyDescriptor(Proto, 'clientY');
-          var descPX = Object.getOwnPropertyDescriptor(Proto, 'pageX');
-          var descPY = Object.getOwnPropertyDescriptor(Proto, 'pageY');
-          var descSX = Object.getOwnPropertyDescriptor(Proto, 'screenX');
-          var descSY = Object.getOwnPropertyDescriptor(Proto, 'screenY');
-          var descMX = Object.getOwnPropertyDescriptor(Proto, 'movementX');
-          var descMY = Object.getOwnPropertyDescriptor(Proto, 'movementY');
-
-          if (descX && descY && descX.get && descY.get) {
-            Object.defineProperty(Proto, 'clientX', {
-              get: function() {
-                var ox = descX.get.call(this);
-                var oy = descY.get.call(this);
-                return mapX(ox, oy);
-              },
-              configurable: true
-            });
-            Object.defineProperty(Proto, 'clientY', {
-              get: function() {
-                var ox = descX.get.call(this);
-                var oy = descY.get.call(this);
-                return mapY(ox, oy);
-              },
-              configurable: true
-            });
-          }
-          if (descPX && descPY && descPX.get && descPY.get) {
-            Object.defineProperty(Proto, 'pageX', {
-              get: function() {
-                var ox = descPX.get.call(this);
-                var oy = descPY.get.call(this);
-                return mapX(ox, oy);
-              },
-              configurable: true
-            });
-            Object.defineProperty(Proto, 'pageY', {
-              get: function() {
-                var ox = descPX.get.call(this);
-                var oy = descPY.get.call(this);
-                return mapY(ox, oy);
-              },
-              configurable: true
-            });
-          }
-          if (descSX && descSY && descSX.get && descSY.get) {
-            Object.defineProperty(Proto, 'screenX', {
-              get: function() {
-                var ox = descSX.get.call(this);
-                var oy = descSY.get.call(this);
-                return mapX(ox, oy);
-              },
-              configurable: true
-            });
-            Object.defineProperty(Proto, 'screenY', {
-              get: function() {
-                var ox = descSX.get.call(this);
-                var oy = descSY.get.call(this);
-                return mapY(ox, oy);
-              },
-              configurable: true
-            });
-          }
-          if (descMX && descMY && descMX.get && descMY.get) {
-            Object.defineProperty(Proto, 'movementX', {
-              get: function() {
-                var oy = descMY.get.call(this);
-                return oy;
-              },
-              configurable: true
-            });
-            Object.defineProperty(Proto, 'movementY', {
-              get: function() {
-                var ox = descMX.get.call(this);
-                return -ox;
-              },
-              configurable: true
-            });
-          }
-        };
-
-        if (typeof Touch !== 'undefined') patchProto(Touch.prototype);
-        if (typeof MouseEvent !== 'undefined') patchProto(MouseEvent.prototype);
-        if (typeof PointerEvent !== 'undefined') patchProto(PointerEvent.prototype);
-      } catch(e) {}
-
-      // Adapt existing and dynamic <style> blocks so CSS media queries activate mobile controls
-      function patchCSS(txt) {
-        if (!txt || typeof txt !== 'string') return txt;
-        return txt
-          .replace(/\\(orientation\\s*:\\s*portrait\\)/gi, '(max-width: 0px)')
-          .replace(/\\(orientation\\s*:\\s*landscape\\)/gi, '(min-width: 0px)')
-          .replace(/\\(pointer\\s*:\\s*fine\\)/gi, '(max-width: 0px)')
-          .replace(/\\(hover\\s*:\\s*hover\\)/gi, '(max-width: 0px)')
-          .replace(/\\(pointer\\s*:\\s*coarse\\)/gi, '(min-width: 0px)')
-          .replace(/\\(hover\\s*:\\s*none\\)/gi, '(min-width: 0px)')
-          .replace(/\\(max-height\\s*:\\s*([0-9]+)px\\)/gi, function(match, val) {
-            return Number(val) >= LH ? '(min-width: 0px)' : match;
-          });
-      }
-
-      function patchAllStyles() {
-        try {
-          var styles = document.querySelectorAll('style');
-          for (var i = 0; i < styles.length; i++) {
-            var s = styles[i];
-            if (s.id === 'gametok-surface-crisp') continue;
-            var original = s.textContent;
-            if (original && (original.indexOf('orientation') !== -1 || original.indexOf('max-height') !== -1 || original.indexOf('pointer') !== -1 || original.indexOf('hover') !== -1)) {
-              var patched = patchCSS(original);
-              if (patched !== original) {
-                s.textContent = patched;
-              }
-            }
-          }
-        } catch(e) {}
-      }
-
-      patchAllStyles();
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', patchAllStyles, { once: true });
-      }
-      try {
-        var obs = new MutationObserver(patchAllStyles);
-        obs.observe(document.documentElement || document, { childList: true, subtree: true });
-      } catch(e) {}
-    }
-
     // 4. Retina crisp style enforcement & full mobile control availability
     function applyCrispStyles() {
       try {
@@ -324,16 +117,9 @@ const buildCrispViewportScript = (w: number, h: number, isRotated: boolean) => `
           'html { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; -webkit-text-size-adjust: 100% !important; background: #000 !important; touch-action: manipulation !important; }'
         ];
 
-        if (isRot) {
-          cssRules.push(
-            // 'html body' outranks any plain 'body' rule a game (or bridge.js: html, body { width: 100% !important }) adds later
-            'html body { position: fixed !important; top: 0 !important; left: 0 !important; width: ' + LW + 'px !important; height: ' + LH + 'px !important; margin: 0 !important; padding: 0 !important; transform-origin: 0 0 !important; transform: rotate(90deg) translateY(-' + LH + 'px) !important; -webkit-transform: rotate(90deg) translateY(-' + LH + 'px) !important; overflow: hidden !important; -webkit-text-size-adjust: 100% !important; background: #000 !important; touch-action: manipulation !important; }'
-          );
-        } else {
-          cssRules.push(
-            'body { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; -webkit-text-size-adjust: 100% !important; background: #000 !important; touch-action: manipulation !important; }'
-          );
-        }
+        cssRules.push(
+          'body { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; -webkit-text-size-adjust: 100% !important; background: #000 !important; touch-action: manipulation !important; }'
+        );
 
         cssRules.push(
           '#app, #canvas-wrap, #root, #game, #game-container, .game-container { width: 100% !important; height: 100% !important; transform: translateZ(0) !important; -webkit-transform: translateZ(0) !important; }',
@@ -396,14 +182,7 @@ export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
   const avatar = useAvatar();
   const wantsLandscape = isLandscape(orientation);
 
-  // Only rotate when the box is actually portrait. On a tablet already held in landscape the box
-  // is the right shape, and rotating would turn the game back into a portrait letterbox.
-  const rotate = wantsLandscape && !!box && box.height >= box.width;
-
-  const evenW = box ? Math.round(box.width / 2) * 2 : 0;
-  const evenH = box ? Math.round(box.height / 2) * 2 : 0;
-
-  // A landscape game must not paint before it has been measured, or it flashes portrait first.
+  // A landscape game must not paint before it has been measured (the player waits for the phone to turn first).
   const waitingForMeasure = wantsLandscape && !box;
 
   const GAMETOK_HARDWARE_BRIDGE = `
@@ -492,14 +271,8 @@ export const GameSurface = forwardRef<WebView, Props>(function GameSurface(
 true;
 `;
 
-  const viewportScript = buildCrispViewportScript(
-    rotate ? evenH : evenW,
-    rotate ? evenW : evenH,
-    rotate,
-  );
-
   const finalInjectedJS =
-    viewportScript +
+    CRISP_VIEWPORT_SCRIPT +
     '\n' +
     GAMETOK_HARDWARE_BRIDGE +
     '\n' +
@@ -542,7 +315,16 @@ true;
           if (!acct?.signedIn || price === undefined) { done(false, 'Not for sale'); return; }
           if (acct.owned.includes(id)) { done(true); return; }
           // the buy popup (it tops up TokBux first when short)
-          setBuyReq({ name, price, was: acct.sales?.[id]?.was, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy: () => buyItem(id, price), done });
+          // a character bought in a game (a No Rules FC hero) becomes the player's avatar across the app until they
+          // change it; their own look stays underneath for when they take it off
+          const buy = async () => {
+            const err = await buyItem(id, price);
+            const char = AVATAR_ITEMS.find((i) => i.ownedAs === id && i.whole && i.wear);
+            const now = getAvatarAccount()?.avatar;
+            if (!err && char && now) saveAvatar(char.wear!(now), 'bought in a game');
+            return err;
+          };
+          setBuyReq({ name, price, was: acct.sales?.[id]?.was, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy, done });
         });
       } else if (data.type === 'GAMETOK_OPEN_TOKBUX') {
         DeviceEventEmitter.emit('gametok:open-tokbux');   // the game player opens the TokBux store over the game
@@ -620,7 +402,7 @@ true;
           />
         </View>
       )}
-      <BuyItemSheet request={buyReq} sideways={rotate} onDone={(ok) => { buyReq?.done(ok, ok ? undefined : 'CANCELLED'); setBuyReq(null); }} />
+      <BuyItemSheet request={buyReq} onDone={(ok) => { buyReq?.done(ok, ok ? undefined : 'CANCELLED'); setBuyReq(null); }} />
     </View>
   );
 });

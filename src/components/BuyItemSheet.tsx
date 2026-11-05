@@ -3,6 +3,7 @@
 // for the pack, then the item. Used by Me's checkout and by games (GameSurface's purchase requests).
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, Image, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { ALL_ORIENTATIONS } from '../utils/orientationHelper';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { TokBuxIcon } from './TokBuxIcon';
@@ -19,9 +20,9 @@ export interface BuyRequest {
   buy: () => Promise<string | null>;   // spends the TokBux: null when bought, or an error message
 }
 
-// sideways: over a game turned to landscape inside the portrait app, the popup turns with it (the player is holding
-// the phone sideways)
-export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bought: boolean) => void; sideways?: boolean }> = ({ request, onDone, sideways }) => {
+// Shown over a game, which may have the phone locked to landscape: the modal allows every orientation so iOS doesn't
+// spin the screen back to portrait to show it.
+export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bought: boolean) => void }> = ({ request, onDone }) => {
   const win = useWindowDimensions();
   const [balance, setBalance] = useState(0);
   const [packs, setPacks] = useState<TokbuxPack[] | null>(null);
@@ -59,9 +60,9 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={close}>
+    <Modal visible transparent animationType="fade" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={close}>
       <Pressable style={styles.backdrop} onPress={close}>
-        <Pressable style={[styles.card, sideways && { width: Math.min(win.height - 80, 420), alignSelf: 'center', transform: [{ rotate: '90deg' }] }]} onPress={() => {}}>
+        <Pressable style={[styles.card, win.width > win.height && { width: 420, alignSelf: 'center' }]} onPress={() => {}}>
           <View style={styles.head}>
             <Text style={styles.title}>{short > 0 ? 'Buy TokBux and item' : 'Buy item'}</Text>
             <Pressable onPress={close} hitSlop={12}><Ionicons name="close" size={24} color="#fff" /></Pressable>

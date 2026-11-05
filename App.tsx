@@ -25,6 +25,7 @@ import { UpdateRequired, useUpdateRequired } from './src/components/UpdateRequir
 import { startPurchases } from './src/tokbux/purchases';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { lockToPortrait } from './src/utils/orientationHelper';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
@@ -450,6 +451,8 @@ const AppContent = () => {
 
 export default function App() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+  // the app is portrait; only a landscape game turns the phone (GamePlayerModal)
+  useEffect(() => { lockToPortrait(); }, []);
 
   // Load Graphik (legacy) + Inter (V2 design system) fonts
   const [fontsLoaded] = useFonts({

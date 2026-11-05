@@ -1,8 +1,8 @@
 // The in-game menu: a small menu (three-line) button in the game's top-left corner. Tapping it slides a panel in
 // from the left, like a console game's pause menu: Resume / Invite friends / Leave game, and the friends who are
 // playing this game too. The game stays in view on the right (tapping it resumes). Leaving asks first, so a stray
-// tap can't end a match. A landscape game is drawn turned 90° inside the portrait screen (GameSurface), so the
-// button and the panel turn with it: they read the right way up while the phone is held sideways.
+// tap can't end a match. A landscape game has the phone itself turned (GamePlayerModal locks it), so the menu just
+// keeps clear of the notch, which is then on the left or right edge.
 // (Mock: design/game-menu/options.html, B.)
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Share, Animated, Easing, useWindowDimensions } from 'react-native';
@@ -50,14 +50,13 @@ export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: b
     ...here.map((f) => ({ id: f.id, name: f.displayName || f.username, avatar: f.avatar, note: 'Friend' })),
   ];
 
-  // the game's own frame: turned like the game (its left edge is the phone's top, where the notch is)
-  const frame = landscape
-    ? { width: H, height: W, left: (W - H) / 2, top: (H - W) / 2, transform: [{ rotate: '90deg' }] }
-    : { width: W, height: H, left: 0, top: 0 };
-  const corner = landscape ? { top: 12, left: insets.top + 4 } : { top: insets.top + 8, left: 12 };
-  const pad = landscape ? { paddingLeft: insets.top + 8, paddingTop: 16, paddingBottom: 16 }
+  // sideways = the screen really is landscape right now (a landscape game, once the phone has turned)
+  const sideways = landscape && W > H;
+  const frame = { width: W, height: H, left: 0, top: 0 };
+  const corner = sideways ? { top: 12, left: insets.left + 4 } : { top: insets.top + 8, left: 12 };
+  const pad = sideways ? { paddingLeft: insets.left + 8, paddingTop: 16, paddingBottom: insets.bottom + 16 }
     : { paddingLeft: 18, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 18 };
-  const panelW = (landscape ? 250 : Math.min(300, W * 0.8)) + (landscape ? insets.top : 0);
+  const panelW = sideways ? 250 + insets.left : Math.min(300, W * 0.8);
 
   // the panel slides in from the left
   const slide = useRef(new Animated.Value(0)).current;

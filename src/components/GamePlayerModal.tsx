@@ -3,18 +3,22 @@
 //
 // No loading screen of the app's own: the game shows straight away and loads with its own screen (a generic
 // thumbnail-and-percent card in front of every game hid each game's look). Until its page has loaded, the game's
-// picture covers the blank WebView (turned with the game when it's landscape), and the play is recorded.
+// picture covers the blank WebView, and the play is recorded.
+//
+// A landscape game locks the phone to landscape (natively, either way round) and the game only mounts once the screen
+// has turned, so it boots at its real size; leaving locks back to portrait.
 
 import React, { useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { View, Modal, StatusBar, StyleSheet, DeviceEventEmitter, Image, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { games as gamesApi, API_URL } from '../services/api';
 import { GameSurface, buildGameUrl } from './GameSurface';
 import { TokBuxSheet } from './TokBuxSheet';
 import { GameActionRail } from './GameActionRail';
 import { GameMenu } from './GameMenu';
 import { isLandscape, type Orientation } from '../constants/orientation';
+import { ALL_ORIENTATIONS, lockToLandscape, lockToPortrait } from '../utils/orientationHelper';
 
 const API_ORIGIN = API_URL.replace(/\/api$/, '');
 
@@ -65,6 +69,19 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
     return () => setMyStatus('online');
   }, [game?.id]);
 
+  // turn the phone for the game, and back when it closes
+  const wantsLandscape = !!game && isLandscape(game.orientation);
+  const [gaveUp, setGaveUp] = useState(false);   // the phone couldn't be turned: play in whatever shape it is
+  useEffect(() => {
+    if (!game) return;
+    setGaveUp(false);
+    let live = true;
+    const timer = setTimeout(() => live && setGaveUp(true), 1500);
+    (wantsLandscape ? lockToLandscape() : lockToPortrait()).then((ok) => { if (!ok && live) setGaveUp(true); });
+    return () => { live = false; clearTimeout(timer); lockToPortrait(); };
+  }, [game?.id, wantsLandscape]);
+  const turned = !wantsLandscape || win.width > win.height || gaveUp;
+
   // Keyed on the game id so a second game opened from the same surface starts fresh rather than
   // flashing the previous game's finished state.
   const key = game?.id || 'none';
@@ -79,14 +96,18 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
       visible={!!game}
       animationType="slide"
       presentationStyle="fullScreen"
+      supportedOrientations={ALL_ORIENTATIONS}
       onRequestClose={close}
       onShow={() => {
         if (game && recordPlay) gamesApi.recordPlay(game.id).catch(() => {});
       }}
     >
+      {/* its own safe-area provider: the app's root one doesn't follow the phone turning inside this modal, so the
+          menu would sit under the notch / Dynamic Island in landscape */}
+      <SafeAreaProvider>
       <View style={[styles.root, { backgroundColor: game?.color || '#000' }]}>
         <StatusBar hidden />
-        {game ? (
+        {game && turned ? (
           <GameSurface
             key={key}
             gameId={game.id}
@@ -106,15 +127,12 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
         ) : null}
         {game?.thumbnail && !loaded ? (
           <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
-            <Image source={{ uri: game.thumbnail }} resizeMode="cover"
-              style={isLandscape(game.orientation) ? { width: win.height, height: win.width, transform: [{ rotate: '90deg' }] } : StyleSheet.absoluteFill} />
+            <Image source={{ uri: game.thumbnail }} resizeMode="cover" style={StyleSheet.absoluteFill} />
           </View>
         ) : null}
 
-        {/* Action rail — only once the game is up, so it never sits over the loading screen.
-            Skipped for landscape games for the same reason HomeScreen skips it: the rail is
-            positioned against portrait-relative insets, and the game's content is rotated 90deg
-            inside the portrait frame, so an un-rotated rail would print sideways across the game. */}
+        {/* Action rail — only once the game is up, so it never sits over the loading screen. Not on landscape games:
+            it's a portrait column that would cover the game's own controls. */}
         {game && loaded && !isLandscape(game.orientation) ? (
           <GameActionRail
             gameId={game.id}
@@ -125,9 +143,10 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
           />
         ) : null}
 
-        {game ? <GameMenu key={`menu-${key}`} gameId={game.id} gameName={game.name} landscape={isLandscape(game.orientation)} onLeave={close} /> : null}
+        {game ? <GameMenu key={`menu-${key}`} gameId={game.id} gameName={game.name} landscape={wantsLandscape} onLeave={close} /> : null}
         <TokBuxSheet visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} />
       </View>
+      </SafeAreaProvider>
     </Modal>
   );
 };
