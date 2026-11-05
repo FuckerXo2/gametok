@@ -7,6 +7,7 @@ import { View, Text, ScrollView, Alert, Dimensions, StyleSheet, Pressable, Image
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Polygon } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +25,9 @@ import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadsho
 
 const { width: W, height: H } = Dimensions.get('window');
 const CELL = Math.floor((W - 16 * 2 - 10 * 2) / 3) - 1;   // three across (floored: a fraction over and the third wraps)
-const BG = '#0d0a16', PANEL = '#17121f', CARD = '#201a2b', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', BUY = '#000000', GREEN = '#22c55e';
+// the shop (where you buy) is black and gold like the TokBux coin: warm black sheet, gold selection, metallic gold buy
+const GOLD = '#dcb664', GOLD_LINE = 'rgba(220,182,100,0.25)', GOLD_METAL = ['#f5dc9a', '#dcb35f', '#b88a3c'] as const;
+const BG = '#0d0a16', PANEL = '#0c0b09', CARD = '#161519', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', GREEN = '#22c55e';
 
 // the avatar button's editors (like Roblox's Body Shape / Head / Skin Color screens): each is a screen of its own
 const CUSTOMIZE: { label: string; sub: string; icon: React.ComponentProps<typeof Ionicons>['name']; focus: 'body' | 'head' }[] = [
@@ -721,6 +724,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         {cart.length && !editor ? (
           <View ref={bar} style={[styles.buyBar, { paddingBottom: 10 }]}>
             <Pressable style={styles.buyMain} onPress={() => (cart.length === 1 ? checkout() : setCartOpen(true))} disabled={buying}>
+              <LinearGradient colors={GOLD_METAL} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
               {cart.length === 1
                 ? <><TokBuxIcon size={18} /><Text style={styles.buyMainText}>{total.toLocaleString()}</Text></>
                 : <Text style={styles.buyMainText}>View Checkout ({cart.length})</Text>}
@@ -761,6 +765,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               <View style={styles.priceRow}><TokBuxIcon size={18} /><Text style={styles.coTotalText}>{total.toLocaleString()}</Text></View>
             </View>
             <Pressable style={styles.cartBuy} onPress={() => { setCartOpen(false); checkout(); }} disabled={buying}>
+              <LinearGradient colors={GOLD_METAL} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
               <Text style={styles.cartBuyText}>Buy</Text>
             </Pressable>
           </View>
@@ -863,13 +868,13 @@ const styles = StyleSheet.create({
   sheetRow: { flexDirection: 'row', gap: 10 },
   sheetBtn: { flex: 1, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   sheetBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -22 },
+  sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -22, borderTopWidth: 1, borderColor: GOLD_LINE },
   handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', marginTop: 8 },
   tabs: { flexDirection: 'row', gap: 22, paddingHorizontal: 18, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   tabsBar: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },   // (the Shop's: more tabs than fit, so it scrolls)
   tabsRow: { gap: 22, paddingHorizontal: 18, paddingTop: 16 },
   tab: { paddingBottom: 10, borderBottomWidth: 3, borderBottomColor: 'transparent' },
-  tabOn: { borderBottomColor: '#fff' },
+  tabOn: { borderBottomColor: GOLD },
   tabText: { color: DIM, fontSize: 16, fontWeight: '700' },
   tabTextOn: { color: '#fff' },
   subs: { gap: 20, paddingHorizontal: 18, paddingTop: 12 },
@@ -885,10 +890,10 @@ const styles = StyleSheet.create({
   seeAll: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginTop: 18 },
   seeAllText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   row: { columnGap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
-  onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: GREEN, color: '#052e12', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: GOLD, color: '#1a1408', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   thumb: { width: CELL, height: CELL, backgroundColor: CARD, borderRadius: 14, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
-  thumbSel: { borderColor: ACCENT },
-  detailsBtn: { position: 'absolute', left: 4, right: 4, bottom: 4, height: 28, borderRadius: 8, backgroundColor: 'rgba(13,10,22,0.85)', alignItems: 'center', justifyContent: 'center' },
+  thumbSel: { borderColor: GOLD },
+  detailsBtn: { position: 'absolute', left: 4, right: 4, bottom: 4, height: 28, borderRadius: 8, backgroundColor: 'rgba(12,11,9,0.85)', alignItems: 'center', justifyContent: 'center' },
   detailsText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   thumbImg: { width: '84%', height: '84%' },
   skinDot: { width: CELL * 0.45, height: CELL * 0.45, borderRadius: CELL },
@@ -898,8 +903,8 @@ const styles = StyleSheet.create({
   price: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 4 },
   empty: { color: DIM, fontWeight: '600', padding: 20 },
   buyBar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 8, backgroundColor: PANEL },
-  buyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, height: 46, borderRadius: 12, backgroundColor: BUY },
-  buyMainText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, height: 46, borderRadius: 12, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.45)' },
+  buyMainText: { color: '#1a1408', fontSize: 16, fontWeight: '800' },
   buySide: { width: 50, height: 46, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   co: { flex: 1, backgroundColor: BG },
   coHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, height: 52 },
@@ -914,7 +919,7 @@ const styles = StyleSheet.create({
   cartName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cartPrice: { color: '#fff', fontSize: 14, fontWeight: '700' },
   cartX: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
-  cartBuy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#6c47e6',   // (the checkout's one big button: purple; the buy bar stays black)
-    borderRadius: 12, paddingVertical: 14 },
-  cartBuyText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  cartBuy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden',
+    borderRadius: 12, paddingVertical: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.45)' },
+  cartBuyText: { color: '#1a1408', fontSize: 16, fontWeight: '800' },
 });
