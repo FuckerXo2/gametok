@@ -724,7 +724,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         {cart.length && !editor ? (
           <View ref={bar} style={[styles.buyBar, { paddingBottom: 10 }]}>
             <Pressable style={styles.buyMain} onPress={() => (cart.length === 1 ? checkout() : setCartOpen(true))} disabled={buying}>
-              <LinearGradient colors={GOLD_METAL} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
+              {/* champagne gold with a soft sheen: light top, gentle fall-off, no mustard */}
+              <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
               {cart.length === 1
                 ? <><TokBuxIcon size={18} /><Text style={styles.buyMainText}>{total.toLocaleString()}</Text></>
                 : <Text style={styles.buyMainText}>View Checkout ({cart.length})</Text>}
@@ -890,7 +891,7 @@ const styles = StyleSheet.create({
   seeAll: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginTop: 18 },
   seeAllText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   row: { columnGap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
-  onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: GOLD, color: '#1a1408', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  onTag: { position: 'absolute', top: 7, left: 7, zIndex: 2, backgroundColor: 'rgba(12,11,9,0.8)', color: '#ead08f', borderWidth: 1, borderColor: 'rgba(220,182,100,0.6)', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, overflow: 'hidden' },
   thumb: { width: CELL, height: CELL, backgroundColor: CARD, borderRadius: 14, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
   thumbSel: { borderColor: GOLD },
   detailsBtn: { position: 'absolute', left: 4, right: 4, bottom: 4, height: 28, borderRadius: 8, backgroundColor: 'rgba(12,11,9,0.85)', alignItems: 'center', justifyContent: 'center' },
@@ -903,9 +904,10 @@ const styles = StyleSheet.create({
   price: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 4 },
   empty: { color: DIM, fontWeight: '600', padding: 20 },
   buyBar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 8, backgroundColor: PANEL },
-  buyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, height: 46, borderRadius: 12, overflow: 'hidden', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.45)' },
-  buyMainText: { color: '#1a1408', fontSize: 16, fontWeight: '800' },
-  buySide: { width: 50, height: 46, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  buyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, height: 44, borderRadius: 12, overflow: 'hidden',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,248,225,0.7)', borderBottomWidth: 1, borderBottomColor: '#8f6f33' },
+  buyMainText: { color: '#2a1f0a', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
+  buySide: { width: 50, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   co: { flex: 1, backgroundColor: BG },
   coHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, height: 52 },
   coBack: { width: 40, alignItems: 'center' },
