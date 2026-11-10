@@ -208,7 +208,6 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const [store, setStore] = useState<'front' | 'show'>('front');
   const [showCat, setShowCat] = useState<ShopCat>('avatars');   // the category being swiped through up close
   const [showAt, setShowAt] = useState(0);
-  const showScroll = useRef<ScrollView>(null);
   const [tab, setTab] = useState<Tab>('all');
   const [sub, setSub] = useState<string | null>(null);
   const [seeAll, setSeeAll] = useState(false);   // came from All's "See All": the heading is a way back
@@ -618,9 +617,8 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const openShow = (c: ShopCat, i?: AvatarItem) => {
     const n = i ? Math.max(0, catItems(c).findIndex((x) => x.id === i.id)) : 0;
     setShowCat(c); setShowAt(n); setStore('show');
-    setTimeout(() => showScroll.current?.scrollTo({ x: n * W, animated: false }), 0);
   };
-  const toShow = (n: number) => { const k = Math.max(0, Math.min(showList.length - 1, n)); setShowAt(k); showScroll.current?.scrollTo({ x: k * W, animated: true }); };
+  const toShow = (n: number) => { const k = Math.max(0, Math.min(showList.length - 1, n)); setShowAt(k); };
   // keep it on (it goes in the bag with whatever else is on), or take it back off
   const keepOn = (i: AvatarItem) => {
     if (!look || !i.wear) return;
@@ -961,16 +959,12 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         </View>
       ) : null}
 
-      {/* up close (like the mock's screen 3): the category's chips on top, the item on you on the stage, swipe through
-          the category; Try on keeps it on (in the bag), Buy gets it */}
+      {/* up close (like the mock's screen 3): the category's chips on top, the item on you on the stage (drag to turn it),
+          the arrows go through the category; Try on keeps it on (in the bag), Buy gets it */}
       {atShow && shown ? (
-        <View style={[[styles.sPage, lt && L.sPage], { backgroundColor: 'transparent', zIndex: 32 }]}>
+        <View pointerEvents="box-none" style={[[styles.sPage, lt && L.sPage], { backgroundColor: 'transparent', zIndex: 32 }]}>
           <View style={[[styles.sHeroBg, lt && L.sHeroBg], { top: SHOW_TOP + SHOW_H }]} />
           <View style={[[styles.sHeroBg, lt && L.sHeroBg], { top: 0, bottom: undefined, height: SHOW_TOP }]} />
-          <ScrollView key={showCat} ref={showScroll} horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(e) => setShowAt(Math.round(e.nativeEvent.contentOffset.x / W))} style={{ position: 'absolute', top: SHOW_TOP, height: SHOW_H, left: 0, right: 0 }}>
-            {showList.map((i) => <View key={i.id} style={{ width: W, height: SHOW_H }} />)}
-          </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.sCats, { top: insets.top + 58 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
             {SHOP_CATS.filter(([c]) => catItems(c).length).map(([c, label]) => (
               <Pressable key={c} onPress={() => openShow(c)} style={[[styles.sChip, lt && L.sChip], showCat === c && [styles.sChipOn, lt && L.sChipOn]]}>
