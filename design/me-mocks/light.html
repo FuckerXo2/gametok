@@ -1,0 +1,157 @@
+<!doctype html>
+<!-- Me + Shop in light mode (390x844). Real stage in iframes (?look=light; the Shop's sends TINT gold).
+     Opened from disk it uses the avatar server on :8980. -->
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#1d1f22}
+body{font-family:-apple-system,"SF Pro Display",system-ui,sans-serif;color:#111827;padding:24px;display:flex;gap:28px;width:max-content;align-items:flex-start}
+.col h1{font-size:20px;font-weight:800;margin-bottom:4px;color:#fff}.col p{font-size:13px;color:rgba(255,255,255,.6);width:390px;min-height:72px;margin-bottom:12px;line-height:1.4}
+.ph{width:390px;height:844px;background:#f8f9fa;position:relative;overflow:hidden;border-radius:44px;box-shadow:0 0 0 10px #000}
+.status{position:absolute;top:0;left:0;right:0;height:47px;display:flex;align-items:center;justify-content:space-between;padding:0 30px 0 34px;font-weight:600;font-size:16px;z-index:9}
+.status i{font-size:17px;margin-left:5px}
+iframe{border:0;position:absolute;display:block}
+.round{width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.06);display:flex;align-items:center;justify-content:center;font-size:21px}
+.tb{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.06);border-radius:999px;padding:5px 12px 5px 5px;font-weight:800;font-size:15px}
+.tb img{width:24px;height:24px}
+.nav{position:absolute;left:0;right:0;bottom:0;height:84px;background:#fff;border-top:.5px solid rgba(0,0,0,.08);display:flex;justify-content:space-around;padding-top:9px;z-index:8}
+.nav div{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:#9ca3af;width:80px}
+.nav i{font-size:26px}.nav .on{color:#47ab9a}
+.nav .me{width:28px;height:28px;border-radius:50%;border:2px solid #47ab9a;background:#e5e7eb url(../games-mocks/head-tobi.png) center/cover}
+.home{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:#111;z-index:9}
+.thumb{border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.thumb img{width:86%;height:86%;object-fit:contain}
+.sub{font-size:11px;color:#6b7280;margin-top:1px}
+.dim{color:#6b7280}
+/* gold that reads on white: deeper than the dark mode's */
+.gtxt{color:#a8792c}
+.price{display:flex;align-items:center;gap:4px;font-size:13px;font-weight:800;color:#a8792c;margin-top:3px}.price img{width:14px;height:14px}
+.chip{flex:none;height:34px;padding:0 14px;border-radius:17px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.07);display:flex;align-items:center;font-size:14px;font-weight:700;color:#4b5563}
+.chip.on{background:#1a1408;color:#f3e2b3}
+.chips{display:flex;gap:8px;padding:0 16px;overflow:hidden}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 16px}
+.card .thumb{width:100%;aspect-ratio:1}
+.nm{font-size:13px;font-weight:700;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{border-radius:14px;height:50px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:800;font-size:16px}
+.gold{background:linear-gradient(#f3e2b3,#dcbc78 50%,#c39d58);color:#1a1408}
+.slot{display:flex;align-items:center;gap:9px;background:#fff;border-radius:14px;padding:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.slot .thumb{width:48px;height:48px;background:#f3f4f6;box-shadow:none}
+.slot b{font-weight:700;font-size:13px;display:block}
+</style></head>
+<body>
+
+<!-- ============ LOCKER ============ -->
+<div class="col">
+<h1>Me · light</h1>
+<p>The same mint stage as the Games screen. White slot cards with a soft shadow, dark text, teal for anything that's yours. The Shop banner stays dark-and-gold so it pops as the way into the Shop.</p>
+<div class="ph">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <iframe class="stage" data-look="light" style="left:0;top:104px;width:234px;height:476px"></iframe>
+  <div style="position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:3">
+    <div><div style="font-size:24px;font-weight:900;letter-spacing:-.4px">meswar</div><div class="dim" style="font-size:13px;font-weight:600">@meswar</div></div>
+    <div style="display:flex;gap:8px"><div class="tb"><img src="../games-mocks/tokbux.png">0</div><div class="round"><i class="ti ti-settings"></i></div></div>
+  </div>
+  <div style="position:absolute;right:14px;top:116px;display:flex;flex-direction:column;gap:8px;z-index:3;width:146px">
+    <div class="slot"><div class="thumb"><i class="ti ti-bolt" style="font-size:22px;color:#9ca3af"></i></div><div><div class="sub">Hero</div><b>None</b></div></div>
+    <div class="slot"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/hair-Hair_Buzzed-Black.webp"></div><div><div class="sub">Hair</div><b>Blonde Side Part</b></div></div>
+    <div class="slot"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeBlack-top.webp"></div><div><div class="sub">Top</div><b>Black Tee</b></div></div>
+    <div class="slot"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_JeansBlack-legs.webp"></div><div><div class="sub">Bottom</div><b>Black Jeans</b></div></div>
+    <div class="slot"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_SneakersWhite-feet.webp"></div><div><div class="sub">Shoes</div><b>White Sneakers</b></div></div>
+    <div class="slot"><div class="thumb"><span style="width:30px;height:30px;border-radius:15px;background:#b98258"></span></div><div><div class="sub">Body</div><b>Build · Face · Skin</b></div></div>
+  </div>
+  <div style="position:absolute;top:590px;left:0;right:0;z-index:3">
+    <div style="display:flex;justify-content:space-between;padding:0 16px;margin-bottom:9px"><b style="font-size:17px">Looks</b><span style="font-size:14px;font-weight:700;color:#47ab9a">Save current</span></div>
+    <div style="display:flex;gap:10px;padding:0 16px">
+      <div class="thumb" style="width:64px;height:64px;box-shadow:inset 0 0 0 2px #47ab9a"><img src="../../../games/avatar-editor/assets/thumbs/outfit-AllBlack.webp"></div>
+      <div class="thumb" style="width:64px;height:64px"><img src="../../../games/avatar-editor/assets/thumbs/outfit-Summer.webp"></div>
+    </div>
+    <div style="margin:14px 16px 0;height:62px;border-radius:16px;background:linear-gradient(100deg,#2a2114,#14120d);display:flex;align-items:center;padding:0 14px;gap:12px;color:#fff">
+      <img src="../../../games/avatar-editor/assets/thumbs/char-spiderman.webp" style="width:46px;height:46px;object-fit:contain">
+      <div style="flex:1"><div style="font-weight:800;font-size:15px;color:#f3e2b3">Shop</div><div style="font-size:12px;color:rgba(255,255,255,.6)">New: Spyder-Man · 107 items to try on</div></div>
+      <i class="ti ti-chevron-right" style="font-size:20px;color:#dcb664"></i>
+    </div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<!-- ============ SHOP FRONT ============ -->
+<div class="col">
+<h1>Shop · light</h1>
+<p>Warm ivory instead of white, so it still feels like the gold shop. The new-hero banner stays dark gold (it's the poster). Picked chip = black with gold text; prices in a deeper gold that reads on white.</p>
+<div class="ph" style="background:#faf7f1">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <div style="position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:5">
+    <div style="display:flex;align-items:center;gap:10px"><div class="round"><i class="ti ti-arrow-left"></i></div><div style="font-size:22px;font-weight:900" class="gtxt">Shop</div></div>
+    <div class="tb"><img src="../games-mocks/tokbux.png">0</div>
+  </div>
+  <div class="chips" style="position:absolute;top:104px;left:0;right:0">
+    <div class="chip">Heroes</div><div class="chip">Outfits</div><div class="chip">Hair</div><div class="chip">Clothes</div><div class="chip">Accessories</div>
+  </div>
+  <div style="position:absolute;top:152px;left:16px;right:16px;height:206px;border-radius:22px;background:radial-gradient(circle at 75% 40%,#6a4814,#1b140a 72%);overflow:hidden;color:#fff">
+    <img src="../../../games/avatar-editor/assets/thumbs/char-spiderman.webp" style="position:absolute;right:-6px;bottom:-8px;height:224px">
+    <div style="position:absolute;left:16px;top:16px;font-size:11px;font-weight:900;color:#1a1408;background:#f3e2b3;border-radius:6px;padding:3px 7px">NEW HERO</div>
+    <div style="position:absolute;left:16px;bottom:16px">
+      <div style="font-size:30px;font-weight:900;letter-spacing:-.5px">Spyder-Man</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.65);margin-bottom:10px">Web swing + Web Pull</div>
+      <div class="btn gold" style="height:38px;width:130px;font-size:15px"><img src="../games-mocks/tokbux.png" style="width:16px">500</div>
+    </div>
+  </div>
+  <div style="position:absolute;top:372px;right:16px;font-size:14px;font-weight:700;color:#6b7280">See all</div>
+  <div class="grid" style="position:absolute;top:400px;left:0;right:0">
+    <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeRed-top.webp"></div><div class="nm">Red Tee</div><div class="price"><img src="../games-mocks/tokbux.png">50</div></div>
+    <div class="card"><div class="thumb" style="background:#e8f3f0"><img src="../../../games/avatar-editor/assets/thumbs/char-goku.webp"></div><div class="nm">Gokv</div><div class="price"><img src="../games-mocks/tokbux.png">800</div></div>
+    <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Male_Ranger-top.webp"></div><div class="nm">Ranger Top</div><div class="price"><img src="../games-mocks/tokbux.png">75</div></div>
+    <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/outfit-Summer.webp"></div><div class="nm">Summer</div><div class="price"><img src="../games-mocks/tokbux.png">160</div></div>
+    <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_SneakersRed-feet.webp"></div><div class="nm">Red Kicks</div><div class="price"><img src="../games-mocks/tokbux.png">75</div></div>
+    <div class="card"><div class="thumb" style="background:#e8f3f0"><img src="../../../games/avatar-editor/assets/thumbs/char-batman.webp"></div><div class="nm">Batmvn</div><div class="price"><img src="../games-mocks/tokbux.png">500</div></div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<!-- ============ UP CLOSE ============ -->
+<div class="col">
+<h1>Up close · light</h1>
+<p>The stage's light look in gold: a cream wash with a warm glow behind you and a gold ring on the floor. White info area underneath, same buttons (Try on light grey, Buy gold).</p>
+<div class="ph" style="background:#faf7f1">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <iframe class="stage" data-look="light" data-tint="gold" data-top="Street_TeeRed" style="left:0;top:148px;width:390px;height:424px"></iframe>
+  <div style="position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:5">
+    <div style="display:flex;align-items:center;gap:10px"><div class="round"><i class="ti ti-arrow-left"></i></div><div style="font-size:22px;font-weight:900" class="gtxt">Shop</div></div>
+    <div class="tb"><img src="../games-mocks/tokbux.png">0</div>
+  </div>
+  <div class="chips" style="position:absolute;top:104px;left:0;right:0">
+    <div class="chip on">All</div><div class="chip">Heroes</div><div class="chip">Outfits</div><div class="chip">Hair</div><div class="chip">Clothes</div>
+  </div>
+  <div class="round" style="position:absolute;right:10px;top:350px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12)"><i class="ti ti-chevron-right"></i></div>
+  <div style="position:absolute;left:16px;right:16px;top:582px">
+    <div style="font-size:32px;font-weight:900;letter-spacing:-.5px">Red Tee</div>
+    <div style="display:flex;gap:8px;margin:8px 0 14px"><div class="chip" style="height:28px;font-size:12px">T-Shirts</div></div>
+    <div style="display:flex;gap:10px"><div class="btn" style="flex:1;background:#eceae5">Try on</div><div class="btn gold" style="flex:1.4">Buy · <img src="../games-mocks/tokbux.png" style="width:18px">50</div></div>
+    <div style="text-align:center;margin-top:12px;font-size:13px;font-weight:700" class="dim">1 / 107</div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<script>
+const base = { body:'Female', skin:2, face:0, hair:'Hair_Buzzed', beard:false, hairColor:'#d8b45a', fit:true,
+  parts:{ head:null, top:'Street_TeeBlack', arms:null, legs:'Street_JeansBlack', feet:'Street_SneakersWhite', acc:null },
+  colors:{ head:'#ffffff', top:'#ffffff', arms:'#ffffff', legs:'#ffffff', feet:'#ffffff', acc:'#ffffff' } };
+document.querySelectorAll('iframe.stage').forEach((f) => {
+  const LOOK = JSON.parse(JSON.stringify(base));
+  if (f.dataset.top) LOOK.parts.top = f.dataset.top;
+  f.src = (location.protocol === 'file:' ? 'http://localhost:8980/app-stage.html' : '/games/avatar-editor/app-stage.html') + '?look=' + f.dataset.look;
+  const send = () => { f.contentWindow.postMessage(JSON.stringify({ type:'SET', avatar:LOOK }), '*');
+    f.contentWindow.postMessage(JSON.stringify({ type:'FOCUS', part:'body' }), '*');
+    if (f.dataset.tint) f.contentWindow.postMessage(JSON.stringify({ type:'TINT', name:f.dataset.tint }), '*'); };
+  addEventListener('message', (e) => { if (e.source !== f.contentWindow) return; try { if (JSON.parse(e.data).type === 'READY') send(); } catch {} });
+  f.addEventListener('load', () => setTimeout(send, 400));
+});
+</script>
+</body></html>

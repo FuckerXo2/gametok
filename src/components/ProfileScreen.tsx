@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { AvatarStage, bodyPicture, bodyPictureOf, stagePicture } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
 import { openAccountMenu } from './AccountMenu';
@@ -37,8 +38,8 @@ const HERO_POWERS: Record<string, string[]> = {
   flash: ['Super speed', 'Speed Surge', 'Phase'], batman: ['Glide', 'Batarang', 'Grapple'], rambo: ['Frag Out', 'M60'], lantern: ['Flight', 'Construct Wall', 'Shield'],
 };
 // the Shop's categories, front and up close
-type ShopCat = 'avatars' | 'outfits' | 'body' | 'clothing' | 'accessories';
-const SHOP_CATS: [ShopCat, string][] = [['avatars', 'Heroes'], ['outfits', 'Outfits'], ['body', 'Hair'], ['clothing', 'Clothes'], ['accessories', 'Accessories']];
+type ShopCat = 'all' | 'avatars' | 'outfits' | 'body' | 'clothing' | 'accessories';
+const SHOP_CATS: [ShopCat, string][] = [['all', 'All'], ['avatars', 'Heroes'], ['outfits', 'Outfits'], ['body', 'Hair'], ['clothing', 'Clothes'], ['accessories', 'Accessories']];
 const powersOf = (i: AvatarItem) => HERO_POWERS[i.id.replace(/^char-/, '')] ?? [];
 
 // the avatar button's editors (like Roblox's Body Shape / Head / Skin Color screens): each is a screen of its own
@@ -192,6 +193,9 @@ function mixed(list: AvatarItem[]) {
 export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
+  const { isDark } = useTheme();
+  const lt = !isDark;   // light mode: Me and the Shop in light (design/me-mocks/light.html)
+  const ink = lt ? '#111827' : '#fff';
   const account = useAvatarAccount();
   const saved = account?.avatar ?? null;
 
@@ -563,15 +567,15 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     setCtab(tabId); setCslot(t.slots.find((s) => s.id === slotId) ?? t.slots[0] ?? CTABS[1].slots[0]);
     setMode('mine'); setSelected(null); setLocker(false);
   };
-  const openShop = () => { setStore('front'); setFeedAll(false); setMode('shop'); setTab('all'); setSub(null); setSelected(null); setSeeAll(false); setLocker(false); };
+  const openShop = () => { setStore('front'); setMode('shop'); setTab('all'); setSub(null); setSelected(null); setSeeAll(false); setLocker(false); };
   const slotOf = (tabId: string, id: string) => CTABS.find((t) => t.id === tabId)!.slots.find((s) => s.id === id)!;
   // (a function, not a component: a component made here is a new one each render, and a re-render mid-tap lost the tap)
   const lockerSlot = ({ key, label, name, thumb, onPress, dimmed }: { key: string; label: string; name: string; thumb: React.ReactNode; onPress: () => void; dimmed?: boolean }) => (
-    <Pressable key={key} onPress={onPress} style={({ pressed }) => [styles.lSlot, pressed && { opacity: 0.7 }]}>
-      <View style={[styles.lSlotThumb, dimmed && { opacity: 0.45 }]}>{thumb}</View>
+    <Pressable key={key} onPress={onPress} style={({ pressed }) => [[styles.lSlot, lt && L.lSlot], pressed && { opacity: 0.7 }]}>
+      <View style={[[styles.lSlotThumb, lt && L.lSlotThumb], dimmed && { opacity: 0.45 }]}>{thumb}</View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.lSlotLabel}>{label}</Text>
-        <Text style={styles.lSlotName} numberOfLines={2}>{name}</Text>
+        <Text style={[styles.lSlotLabel, lt && L.lSlotLabel]}>{label}</Text>
+        <Text style={[styles.lSlotName, lt && L.lSlotName]} numberOfLines={2}>{name}</Text>
       </View>
     </Pressable>
   );
@@ -591,7 +595,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           : <Text style={styles.buyMainText}>View Checkout ({cart.length})</Text>}
       </Pressable>
       <Pressable style={styles.buySide} onPress={() => (cart.length === 1 ? openOptions(cartItems[0]) : clearCart())} hitSlop={4} accessibilityLabel={cart.length === 1 ? 'More' : 'Clear'}>
-        <Ionicons name={cart.length === 1 ? 'ellipsis-horizontal' : 'trash-outline'} size={20} color="#fff" />
+        <Ionicons name={cart.length === 1 ? 'ellipsis-horizontal' : 'trash-outline'} size={20} color={ink} />
       </Pressable>
     </View>
   );
@@ -599,7 +603,13 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const allHeroes = AVATAR_ITEMS.filter((i) => i.tab === 'avatars' && !i.retired);
   const heroes = [...allHeroes.filter((i) => !owns(i)), ...allHeroes.filter(owns)];   // ones to get first
   const featured = heroes.find((i) => !owns(i));
+  const frontItems = useMemo(() => {
+    const cats = SHOP_CATS.map(([c]) => c).filter((c) => c !== 'all') as string[];
+    const all = AVATAR_ITEMS.filter((i) => cats.includes(i.tab) && !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && !owns(i) && !i.retired);
+    return feedIndex.size ? [...all.filter((i) => feedIndex.has(i.id)).sort((x, y) => feedIndex.get(x.id)! - feedIndex.get(y.id)!), ...all.filter((i) => !feedIndex.has(i.id))] : mixed(all);
+  }, [account, look?.body, feedIndex]);
   const catItems = (c: ShopCat) => {
+    if (c === 'all') return frontItems;
     if (c === 'avatars') return heroes;
     const all = AVATAR_ITEMS.filter((i) => (i.tab === c || i.alsoTab === c) && !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && (!i.retired || owns(i)));
     return [...all.filter((i) => !owns(i)), ...all.filter(owns)];
@@ -619,41 +629,35 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     const unowned = i.pieces ? piecesOf(i).filter((p) => !ownsOne(p)).map((p) => p.id) : owns(i) ? [] : [i.id];
     change({ look: i.wear(look), cart: [...cart.filter((id) => !unowned.includes(id)), ...unowned] });
   };
-  const [feedAll, setFeedAll] = useState(false);
-  const frontItems = useMemo(() => {
-    const cats = SHOP_CATS.map(([c]) => c) as string[];
-    const all = AVATAR_ITEMS.filter((i) => cats.includes(i.tab) && !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && !owns(i) && !i.retired);
-    return feedIndex.size ? [...all.filter((i) => feedIndex.has(i.id)).sort((x, y) => feedIndex.get(x.id)! - feedIndex.get(y.id)!), ...all.filter((i) => !feedIndex.has(i.id))] : mixed(all);
-  }, [account, look?.body, feedIndex]);
-  const priceTag = (i: AvatarItem) => (owns(i) ? <Text style={[styles.sPrice, { color: ACCENT }]}>Owned</Text>
-    : <View style={styles.priceRow}><TokBuxIcon size={14} /><Text style={styles.sPrice}>{priceOf(i).toLocaleString()}</Text></View>);
+  const priceTag = (i: AvatarItem) => (owns(i) ? <Text style={[[styles.sPrice, lt && L.sPrice], { color: ACCENT }]}>Owned</Text>
+    : <View style={styles.priceRow}><TokBuxIcon size={14} /><Text style={[styles.sPrice, lt && L.sPrice]}>{priceOf(i).toLocaleString()}</Text></View>);
   // one box on the front (the same size as the try-on grid's)
   const storeTile = (i: AvatarItem, onPress: () => void) => {
     const t = thumbOf(i, look?.body);
     return (
       <Pressable key={i.id} onPress={onPress} style={({ pressed }) => [styles.item, pressed && { opacity: 0.75 }]}>
-        <View style={[styles.thumb, i.tab === 'avatars' && { backgroundColor: '#14231f' }]}>
+        <View style={[[styles.thumb, lt && L.thumb], i.tab === 'avatars' && { backgroundColor: lt ? '#e8f3f0' : '#14231f' }]}>
           {t ? <Image source={{ uri: t }} style={styles.thumbImg} resizeMode="contain" /> : null}
           {owns(i) ? <View style={styles.sTick}><Ionicons name="checkmark" size={13} color="#fff" /></View> : null}
         </View>
-        <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
+        <Text style={[styles.itemName, lt && L.itemName]} numberOfLines={1}>{i.name}</Text>
         {priceTag(i)}
       </Pressable>
     );
   };
   const shopHead = (onBack: () => void) => (
     <View style={[styles.sHead, { top: insets.top + 6 }]}>
-      <Pressable style={styles.round} onPress={onBack} hitSlop={6} accessibilityLabel="Back"><Ionicons name="arrow-back" size={22} color="#fff" /></Pressable>
-      <Text style={styles.sTitle}>Shop</Text>
+      <Pressable style={[styles.round, lt && L.round]} onPress={onBack} hitSlop={6} accessibilityLabel="Back"><Ionicons name="arrow-back" size={22} color={ink} /></Pressable>
+      <Text style={[styles.sTitle, lt && L.sTitle]}>Shop</Text>
       {/* what's kept on and not bought yet */}
       {cart.length ? (
         <Pressable style={styles.sBag} onPress={() => (cart.length === 1 ? checkout() : setCartOpen(true))} hitSlop={6}>
           <Ionicons name="bag-handle" size={18} color="#1a1408" /><Text style={styles.sBagText}>{cart.length}</Text>
         </Pressable>
       ) : null}
-      <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
+      <Pressable style={[styles.tb, lt && L.tb]} onPress={() => setTokbux(true)} hitSlop={6}>
         <TokBuxIcon size={22} />
-        <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
+        <Text style={[styles.tbText, lt && L.tbText]}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
       </Pressable>
     </View>
   );
@@ -668,13 +672,13 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const STAGE_H = editor ? H * 0.56 : H * 0.47;
 
   return (
-    <View style={styles.root} onLayout={(e) => setRootH(e.nativeEvent.layout.height)}>
+    <View style={[styles.root, lt && L.root]} onLayout={(e) => setRootH(e.nativeEvent.layout.height)}>
       {/* the avatar, with the controls floating over it (like Roblox's Me); in the locker it stands on the left */}
       {/* (always placed absolutely: one view switching between absolute and in-flow layout didn't come back) */}
-      <View style={[styles.stage, atShow ? { top: SHOW_TOP, left: 0, width: W, height: SHOW_H, zIndex: 31 }
+      <View style={[styles.stage, lt && L.stage, atShow ? { top: SHOW_TOP, left: 0, width: W, height: SHOW_H, zIndex: 31 }
         : atLocker ? { top: LOCKER_TOP, left: 0, width: W * 0.6, height: Math.max(0, rootH - LOCKER_TOP - LOCKER_BOTTOM) }
         : { top: 0, left: 0, width: W, height: STAGE_H }]}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={stageLook} focus={atLocker || shown ? 'body' : editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look="dark" tint={atShow ? 'gold' : null} headshotOf={shotOf} onHeadshot={onHeadshot} />
+        <AvatarStage style={StyleSheet.absoluteFill} avatar={stageLook} focus={atLocker || shown ? 'body' : editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look={lt ? 'light' : 'dark'} tint={atShow ? 'gold' : null} headshotOf={shotOf} onHeadshot={onHeadshot} />
         {editor ? (
           <>
             {/* an editor: back, its name, the other editors down the left, undo / redo under them */}
@@ -728,19 +732,19 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           {/* you, your TokBux, the account menu */}
           <View style={[styles.lHead, { top: insets.top + 6 }]}>
             <Pressable onPress={() => setEditProfile(true)} style={{ flex: 1 }} hitSlop={6}>
-              <Text style={styles.lName} numberOfLines={1}>{user?.displayName || user?.username || 'Me'}</Text>
-              {user?.username ? <Text style={styles.lHandle} numberOfLines={1}>@{user.username}</Text> : null}
+              <Text style={[styles.lName, lt && L.lName]} numberOfLines={1}>{user?.displayName || user?.username || 'Me'}</Text>
+              {user?.username ? <Text style={[styles.lHandle, lt && L.lHandle]} numberOfLines={1}>@{user.username}</Text> : null}
             </Pressable>
-            <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
+            <Pressable style={[styles.tb, lt && L.tb]} onPress={() => setTokbux(true)} hitSlop={6}>
               <TokBuxIcon size={22} />
-              <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
+              <Text style={[styles.tbText, lt && L.tbText]}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
             </Pressable>
-            <Pressable style={styles.round} onPress={openAccountMenu} hitSlop={6}><Ionicons name="settings-outline" size={21} color="#fff" /></Pressable>
+            <Pressable style={[styles.round, lt && L.round]} onPress={openAccountMenu} hitSlop={6}><Ionicons name="settings-outline" size={21} color={ink} /></Pressable>
           </View>
           {/* what's on, slot by slot */}
           <ScrollView style={[styles.lSlots, { top: LOCKER_TOP + 8, bottom: LOCKER_BOTTOM }]} contentContainerStyle={{ gap: 8, paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
             {lockerSlot({ key: 'hero', label: 'Hero', name: hero?.name ?? 'None', dimmed: !hero, onPress: () => openSlot('avatars'),
-              thumb: heroPic || ownedHeroes[0] ? <Image source={{ uri: (heroPic || thumbOf(ownedHeroes[0], look?.body))! }} style={styles.lSlotImg} resizeMode="contain" /> : <Ionicons name="flash-outline" size={22} color="#fff" /> })}
+              thumb: heroPic || ownedHeroes[0] ? <Image source={{ uri: (heroPic || thumbOf(ownedHeroes[0], look?.body))! }} style={styles.lSlotImg} resizeMode="contain" /> : <Ionicons name="flash-outline" size={22} color={ink} /> })}
             {([['body', 'hair', 'Hair'], ['clothing', 'top', 'Top'], ['clothing', 'bottom', 'Bottom'], ['clothing', 'shoes', 'Shoes']] as const).map(([t, id, label]) => {
               const sl = slotOf(t, id), on = wornIn(sl.subs!);
               return lockerSlot({ key: id, label, name: on?.name ?? 'None', dimmed: !on, onPress: () => openSlot(t, id), thumb: slotThumb(sl) });
@@ -750,7 +754,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           {/* looks you saved and heroes you own, then the Shop */}
           <View style={[styles.lBottom, { height: LOCKER_BOTTOM }]}>
             <View style={styles.lRowHead}>
-              <Text style={styles.lTitle}>Looks</Text>
+              <Text style={[styles.lTitle, lt && L.lTitle]}>Looks</Text>
               <Pressable onPress={saveNow} hitSlop={8}><Text style={styles.lAction}>Save current</Text></Pressable>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
@@ -758,17 +762,17 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 const pic = bodyPictureOf(l.look) || l.picture || stagePicture(l.look);
                 const on = !!look && !look.character && sameLook(look, l.look);
                 return (
-                  <Pressable key={l.id} onPress={() => wearLook(l.look)} onLongPress={() => lookOptions(l.id, l.name)} style={[styles.lLook, on && styles.lLookOn]}>
+                  <Pressable key={l.id} onPress={() => wearLook(l.look)} onLongPress={() => lookOptions(l.id, l.name)} style={[[styles.lLook, lt && L.lLook], on && styles.lLookOn]}>
                     {pic ? <Image source={{ uri: pic }} style={[styles.thumbImg, { width: '100%', height: '100%', transform: [{ scale: 1.55 }, { translateY: 3 }] }]} resizeMode="cover" /> : <Ionicons name="shirt-outline" size={26} color={DIM} />}
                   </Pressable>
                 );
               })}
               {ownedHeroes.map((i) => (
-                <Pressable key={i.id} onPress={() => tap(i)} style={[styles.lLook, { backgroundColor: '#14231f' }, !!look && !!i.isWorn?.(look) && styles.lLookOn]}>
+                <Pressable key={i.id} onPress={() => tap(i)} style={[[styles.lLook, lt && L.lLook], { backgroundColor: '#14231f' }, !!look && !!i.isWorn?.(look) && styles.lLookOn]}>
                   {thumbOf(i, look?.body) ? <Image source={{ uri: thumbOf(i, look?.body)! }} style={styles.lSlotImg} resizeMode="contain" /> : null}
                 </Pressable>
               ))}
-              {!myLooks.length && !ownedHeroes.length ? <Text style={[styles.hint, { paddingHorizontal: 0 }]}>Put a look together and save it here.</Text> : null}
+              {!myLooks.length && !ownedHeroes.length ? <Text style={[[styles.hint, lt && L.hint], { paddingHorizontal: 0 }]}>Put a look together and save it here.</Text> : null}
             </ScrollView>
             <Pressable onPress={openShop} style={({ pressed }) => [styles.lShop, pressed && { opacity: 0.8 }]}>
               <LinearGradient colors={['#2a2114', '#14120d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -923,7 +927,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
       {/* the Shop's front: the new hero, then heroes, outfits, hair, clothes (tap: try it on, a hero: up close) */}
       {!locker && mode === 'shop' && store === 'front' ? (
-        <View style={styles.sPage}>
+        <View style={[styles.sPage, lt && L.sPage]}>
           <ScrollView contentContainerStyle={{ paddingTop: insets.top + 110, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
             {featured ? (
               <Pressable onPress={() => openShow('avatars', featured)} style={({ pressed }) => [styles.sFeat, pressed && { opacity: 0.85 }]}>
@@ -942,15 +946,15 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             ) : null}
             {/* everything, mixed (the server's order for you once it has answered), no headings */}
             <View style={styles.sSeeRow}>
-              {frontItems.length > 12 ? <Pressable onPress={() => setFeedAll(!feedAll)} hitSlop={8}><Text style={styles.sSeeAll}>{feedAll ? 'Show less' : 'See all'}</Text></Pressable> : null}
+              {frontItems.length > 12 ? <Pressable onPress={() => openShow('all')} hitSlop={8}><Text style={[styles.sSeeAll, lt && L.sSeeAll]}>See all</Text></Pressable> : null}
             </View>
-            <View style={styles.grid}>{(feedAll ? frontItems : frontItems.slice(0, 12)).map((i) => storeTile(i, () => openShow(i.tab as ShopCat, i)))}</View>
+            <View style={styles.grid}>{frontItems.slice(0, 12).map((i) => storeTile(i, () => openShow('all', i)))}</View>
           </ScrollView>
-          <View style={[styles.sHeroBg, { top: 0, bottom: undefined, height: insets.top + 104 }]} />
+          <View style={[[styles.sHeroBg, lt && L.sHeroBg], { top: 0, bottom: undefined, height: insets.top + 104 }]} />
           {/* every category one tap away (Heroes: up close; the rest: tried on, on its tab) */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.sCats, { top: insets.top + 58 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-            {SHOP_CATS.filter(([c]) => catItems(c).length).map(([c, label]) => (
-              <Pressable key={c} onPress={() => openShow(c)} style={styles.sChip}><Text style={styles.sChipText}>{label}</Text></Pressable>
+            {SHOP_CATS.filter(([c]) => c !== 'all' && catItems(c).length).map(([c, label]) => (
+              <Pressable key={c} onPress={() => openShow(c)} style={[styles.sChip, lt && L.sChip]}><Text style={[styles.sChipText, lt && L.sChipText]}>{label}</Text></Pressable>
             ))}
           </ScrollView>
           {shopHead(() => setLocker(true))}
@@ -960,40 +964,40 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       {/* up close (like the mock's screen 3): the category's chips on top, the item on you on the stage, swipe through
           the category; Try on keeps it on (in the bag), Buy gets it */}
       {atShow && shown ? (
-        <View style={[styles.sPage, { backgroundColor: 'transparent', zIndex: 32 }]}>
-          <View style={[styles.sHeroBg, { top: SHOW_TOP + SHOW_H }]} />
-          <View style={[styles.sHeroBg, { top: 0, bottom: undefined, height: SHOW_TOP }]} />
+        <View style={[[styles.sPage, lt && L.sPage], { backgroundColor: 'transparent', zIndex: 32 }]}>
+          <View style={[[styles.sHeroBg, lt && L.sHeroBg], { top: SHOW_TOP + SHOW_H }]} />
+          <View style={[[styles.sHeroBg, lt && L.sHeroBg], { top: 0, bottom: undefined, height: SHOW_TOP }]} />
           <ScrollView key={showCat} ref={showScroll} horizontal pagingEnabled showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={(e) => setShowAt(Math.round(e.nativeEvent.contentOffset.x / W))} style={{ position: 'absolute', top: SHOW_TOP, height: SHOW_H, left: 0, right: 0 }}>
             {showList.map((i) => <View key={i.id} style={{ width: W, height: SHOW_H }} />)}
           </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.sCats, { top: insets.top + 58 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
             {SHOP_CATS.filter(([c]) => catItems(c).length).map(([c, label]) => (
-              <Pressable key={c} onPress={() => openShow(c)} style={[styles.sChip, showCat === c && styles.sChipOn]}>
-                <Text style={[styles.sChipText, showCat === c && styles.sChipTextOn]}>{label}</Text>
+              <Pressable key={c} onPress={() => openShow(c)} style={[[styles.sChip, lt && L.sChip], showCat === c && [styles.sChipOn, lt && L.sChipOn]]}>
+                <Text style={[[styles.sChipText, lt && L.sChipText], showCat === c && [styles.sChipTextOn, lt && L.sChipTextOn]]}>{label}</Text>
               </Pressable>
             ))}
           </ScrollView>
-          {showAt > 0 ? <Pressable style={[styles.round, styles.sArrow, { left: 10, top: SHOW_TOP + SHOW_H / 2 - 22 }]} onPress={() => toShow(showAt - 1)} hitSlop={8}><Ionicons name="chevron-back" size={22} color="#fff" /></Pressable> : null}
-          {showAt < showList.length - 1 ? <Pressable style={[styles.round, styles.sArrow, { right: 10, top: SHOW_TOP + SHOW_H / 2 - 22 }]} onPress={() => toShow(showAt + 1)} hitSlop={8}><Ionicons name="chevron-forward" size={22} color="#fff" /></Pressable> : null}
+          {showAt > 0 ? <Pressable style={[[styles.round, lt && L.round], styles.sArrow, { left: 10, top: SHOW_TOP + SHOW_H / 2 - 22 }]} onPress={() => toShow(showAt - 1)} hitSlop={8}><Ionicons name="chevron-back" size={22} color={ink} /></Pressable> : null}
+          {showAt < showList.length - 1 ? <Pressable style={[[styles.round, lt && L.round], styles.sArrow, { right: 10, top: SHOW_TOP + SHOW_H / 2 - 22 }]} onPress={() => toShow(showAt + 1)} hitSlop={8}><Ionicons name="chevron-forward" size={22} color={ink} /></Pressable> : null}
           {(() => {
             const mine = owns(shown), on = !!look && !!shown.isWorn?.(look);
             const tags = shown.tab === 'avatars' ? powersOf(shown) : shown.pieces ? [`Whole look · ${shown.pieces.length} pieces`] : [shown.sub];
             return (
               <View style={styles.sHeroInfo}>
-                <Text style={styles.sHeroName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{shown.name}</Text>
+                <Text style={[styles.sHeroName, lt && L.sHeroName]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{shown.name}</Text>
                 <View style={styles.sPowers}>
-                  {tags.map((p) => <View key={p} style={styles.sPower}>{shown.tab === 'avatars' ? <Ionicons name="flash" size={12} color={GOLD} /> : null}<Text style={styles.sPowerText}>{p}</Text></View>)}
+                  {tags.map((p) => <View key={p} style={[styles.sPower, lt && L.sPower]}>{shown.tab === 'avatars' ? <Ionicons name="flash" size={12} color={GOLD} /> : null}<Text style={[styles.sPowerText, lt && L.sPowerText]}>{p}</Text></View>)}
                 </View>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   {mine ? (
-                    <Pressable style={[styles.sBtn, { backgroundColor: on ? CARD : ACCENT }]} onPress={() => { if (!on) keepOn(shown); }}>
-                      <Text style={styles.sBtnText}>{on ? 'Wearing' : 'Wear'}</Text>
+                    <Pressable style={[styles.sBtn, { backgroundColor: on ? (lt ? '#eceae5' : CARD) : ACCENT }]} onPress={() => { if (!on) keepOn(shown); }}>
+                      <Text style={[styles.sBtnText, lt && on && L.sBtnText]}>{on ? 'Wearing' : 'Wear'}</Text>
                     </Pressable>
                   ) : (
                     <>
-                      <Pressable style={[styles.sBtn, { backgroundColor: CARD }, on && { borderWidth: 1.5, borderColor: GOLD }]} onPress={() => keepOn(shown)}>
-                        <Text style={styles.sBtnText}>{on ? 'Take off' : 'Try on'}</Text>
+                      <Pressable style={[styles.sBtn, { backgroundColor: lt ? '#eceae5' : CARD }, on && { borderWidth: 1.5, borderColor: GOLD }]} onPress={() => keepOn(shown)}>
+                        <Text style={[styles.sBtnText, lt && L.sBtnText]}>{on ? 'Take off' : 'Try on'}</Text>
                       </Pressable>
                       <Pressable style={[styles.sBtn, { flex: 1.4, overflow: 'hidden' }]} onPress={() => buyNow(shown)} disabled={buying}>
                         <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
@@ -1004,9 +1008,9 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 </View>
                 {showList.length <= 14 ? (
                   <View style={styles.sDots}>
-                    {showList.map((x, n) => <View key={x.id} style={[styles.sDot, n === showAt && styles.sDotOn]} />)}
+                    {showList.map((x, n) => <View key={x.id} style={[[styles.sDot, lt && L.sDot], n === showAt && styles.sDotOn]} />)}
                   </View>
-                ) : <Text style={styles.sCount}>{showAt + 1} / {showList.length}</Text>}
+                ) : <Text style={[styles.sCount, lt && L.sCount]}>{showAt + 1} / {showList.length}</Text>}
               </View>
             );
           })()}
@@ -1081,6 +1085,42 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   );
 };
 
+
+// light mode (design/me-mocks/light.html): Me on the Games screen's light, the Shop on warm ivory; the deeper gold reads on white
+const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } };
+const L = StyleSheet.create({
+  root: { backgroundColor: '#f8f9fa' },
+  stage: { backgroundColor: '#f8f9fa' },
+  lName: { color: '#111827' },
+  lHandle: { color: '#6b7280' },
+  lSlot: { backgroundColor: '#fff', ...CARD_SHADOW },
+  lSlotThumb: { backgroundColor: '#f3f4f6' },
+  lSlotLabel: { color: '#6b7280' },
+  lSlotName: { color: '#111827' },
+  lTitle: { color: '#111827' },
+  lLook: { backgroundColor: '#fff', ...CARD_SHADOW },
+  hint: { color: '#6b7280' },
+  round: { backgroundColor: 'rgba(0,0,0,0.06)' },
+  tb: { backgroundColor: 'rgba(0,0,0,0.06)' },
+  tbText: { color: '#111827' },
+  sPage: { backgroundColor: '#faf7f1' },
+  sHeroBg: { backgroundColor: '#faf7f1' },
+  sTitle: { color: '#a8792c' },
+  sChip: { backgroundColor: '#fff', ...CARD_SHADOW },
+  sChipOn: { backgroundColor: '#1a1408' },
+  sChipText: { color: '#4b5563' },
+  sChipTextOn: { color: '#f3e2b3' },
+  sSeeAll: { color: '#6b7280' },
+  sPrice: { color: '#a8792c' },
+  thumb: { backgroundColor: '#fff', ...CARD_SHADOW },
+  itemName: { color: '#111827' },
+  sHeroName: { color: '#111827' },
+  sPower: { backgroundColor: '#fff', ...CARD_SHADOW },
+  sPowerText: { color: '#374151' },
+  sBtnText: { color: '#111827' },
+  sCount: { color: '#6b7280' },
+  sDot: { backgroundColor: 'rgba(0,0,0,0.18)' },
+});
 
 const styles = StyleSheet.create({
   // the Shop's front and heroes
