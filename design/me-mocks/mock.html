@@ -1,0 +1,189 @@
+<!doctype html>
+<!-- Three directions for the Me tab at iPhone size (390x844). Avatar = the real stage (games/avatar-editor/app-stage.html)
+     in an iframe. Serve the repo root (launch config "me-mocks", port 8951) and open /gametok/design/me-mocks/mock.html -->
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#1d1f22}
+body{font-family:-apple-system,"SF Pro Display",system-ui,sans-serif;color:#fff;padding:24px;display:flex;gap:28px;width:max-content}
+.col h1{font-size:20px;font-weight:800;margin-bottom:4px}.col p{font-size:13px;color:rgba(255,255,255,.6);width:390px;margin-bottom:12px;line-height:1.4}
+.ph{width:390px;height:844px;background:#0b0c0d;position:relative;overflow:hidden;border-radius:44px;box-shadow:0 0 0 10px #000}
+.status{position:absolute;top:0;left:0;right:0;height:47px;display:flex;align-items:center;justify-content:space-between;padding:0 30px 0 34px;font-weight:600;font-size:16px;z-index:9}
+.status i{font-size:17px;margin-left:5px}
+iframe{border:0;position:absolute;display:block}
+.dim{color:rgba(255,255,255,.55)}
+.round{width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.35);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:21px}
+.tb{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.4);backdrop-filter:blur(8px);border-radius:999px;padding:5px 12px 5px 5px;font-weight:800;font-size:15px}
+.tb img{width:24px;height:24px}
+.nav{position:absolute;left:0;right:0;bottom:0;height:84px;background:#0a0b0c;border-top:.5px solid rgba(255,255,255,.08);display:flex;justify-content:space-around;padding-top:9px;z-index:8}
+.nav div{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:rgba(255,255,255,.5);width:80px}
+.nav i{font-size:26px}.nav .on{color:#47ab9a}
+.nav .me{width:28px;height:28px;border-radius:50%;border:2px solid #47ab9a;background:#2a2d30 url(../games-mocks/head-tobi.png) center/cover}
+.home{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:#fff;z-index:9}
+.thumb{border-radius:14px;background:#17191b;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+.thumb img{width:86%;height:86%;object-fit:contain}
+.lbl{font-size:12px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:1px}
+.price{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#dcb664;margin-top:2px}.price img{width:13px;height:13px}
+.btn{border-radius:14px;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;font-size:15px}
+.teal{background:#47ab9a;color:#fff}.gold{background:linear-gradient(#f3e2b3,#dcbc78 50%,#c39d58);color:#1a1408}
+.ghost{background:rgba(255,255,255,.08)}
+.hd{display:flex;justify-content:space-between;align-items:baseline;padding:0 16px;margin:18px 0 9px}
+.hd b{font-size:17px;font-weight:800}.hd span{font-size:13px;font-weight:600;color:rgba(255,255,255,.5)}
+.row{display:flex;gap:10px;padding:0 16px;overflow:hidden}
+.on-ring{box-shadow:inset 0 0 0 2px #47ab9a}
+.tag{position:absolute;top:6px;left:6px;font-size:10px;font-weight:800;background:#47ab9a;border-radius:6px;padding:2px 5px}
+</style></head>
+<body>
+
+<!-- ============ A: PROFILE FIRST ============ -->
+<div class="col">
+<h1>A · Profile first</h1>
+<p>Me is about <b>you</b>: avatar, name, level, stats, heroes, looks. Editing and the shop become two clear buttons that open full-screen. No Shop/Customize toggle on the main page.</p>
+<div class="ph">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <iframe class="stage" data-look="studio" style="left:0;top:0;width:390px;height:410px"></iframe>
+  <div style="position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;z-index:3">
+    <div class="round"><i class="ti ti-menu-2"></i></div>
+    <div style="display:flex;gap:8px"><div class="tb"><img src="../games-mocks/tokbux.png">1,250</div><div class="round"><i class="ti ti-share-2"></i></div></div>
+  </div>
+  <div style="position:absolute;top:290px;left:0;right:0;height:120px;background:linear-gradient(rgba(11,12,13,0),#0b0c0d 85%);z-index:2"></div>
+  <div style="position:absolute;top:400px;left:0;right:0;bottom:84px;overflow:hidden;z-index:3">
+    <div style="padding:0 16px;display:flex;align-items:flex-end;justify-content:space-between">
+      <div><div style="font-size:26px;font-weight:900;letter-spacing:-.4px">Tobi K</div>
+        <div class="dim" style="font-size:14px;font-weight:600">@tobik · <span style="color:#47ab9a">Level 14</span></div></div>
+      <div style="display:flex;gap:14px;text-align:center">
+        <div><div style="font-weight:900;font-size:17px">128</div><div class="sub">Games</div></div>
+        <div><div style="font-weight:900;font-size:17px">46</div><div class="sub">Wins</div></div>
+        <div><div style="font-weight:900;font-size:17px">23</div><div class="sub">Friends</div></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;padding:14px 16px 0">
+      <div class="btn teal" style="flex:1"><i class="ti ti-pencil"></i>Edit Avatar</div>
+      <div class="btn gold" style="flex:1"><i class="ti ti-shopping-bag"></i>Shop</div>
+    </div>
+    <div class="hd"><b>My Looks</b><span>See all</span></div>
+    <div class="row">
+      <div><div class="thumb on-ring" style="width:84px;height:84px;position:relative"><img src="../../../games/avatar-editor/assets/thumbs/outfit-StreetClassic.webp"><div class="tag">ON</div></div><div class="lbl">Everyday</div></div>
+      <div><div class="thumb" style="width:84px;height:84px"><img src="../../../games/avatar-editor/assets/thumbs/outfit-NightOut.webp"></div><div class="lbl">Night Out</div></div>
+      <div><div class="thumb" style="width:84px;height:84px"><img src="../../../games/avatar-editor/assets/thumbs/outfit-Cozy.webp"></div><div class="lbl">Cozy</div></div>
+      <div><div class="thumb" style="width:84px;height:84px;border:1.5px dashed rgba(255,255,255,.2);background:none"><i class="ti ti-plus" style="font-size:26px;color:rgba(255,255,255,.5)"></i></div><div class="lbl dim">Save look</div></div>
+    </div>
+    <div class="hd"><b>My Heroes</b><span>2 owned</span></div>
+    <div class="row">
+      <div><div class="thumb" style="width:84px;height:84px;background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-hulk.webp"></div><div class="lbl">Hulk</div></div>
+      <div><div class="thumb" style="width:84px;height:84px;background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-spiderman.webp"></div><div class="lbl">Spider-Man</div></div>
+      <div><div class="thumb" style="width:84px;height:84px"><img src="../../../games/avatar-editor/assets/thumbs/char-goku.webp" style="opacity:.35"></div><div class="lbl dim">Get more</div></div>
+    </div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<!-- ============ B: ONE WARDROBE ============ -->
+<div class="col">
+<h1>B · One wardrobe</h1>
+<p>Keep the avatar big, but kill the Shop/Customize split. Pick a slot (it shows what you're wearing); you see what you own first, then the rest of the store with prices, in one list. Try on anything, buy from the gold bar.</p>
+<div class="ph">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <iframe class="stage" data-look="studio" data-focus="torso" style="left:0;top:0;width:390px;height:400px"></iframe>
+  <div style="position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:3">
+    <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.4);backdrop-filter:blur(8px);border-radius:999px;padding:4px 12px 4px 4px">
+      <div style="width:32px;height:32px;border-radius:50%;background:#2a2d30 url(../games-mocks/head-tobi.png) center/cover"></div>
+      <div><div style="font-weight:800;font-size:14px;line-height:1.1">Tobi K</div><div style="font-size:11px;color:#47ab9a;font-weight:700">Lvl 14</div></div>
+    </div>
+    <div class="tb"><img src="../games-mocks/tokbux.png">1,250</div>
+  </div>
+  <div style="position:absolute;right:16px;top:110px;display:flex;flex-direction:column;gap:10px;z-index:3">
+    <div class="round"><i class="ti ti-arrow-back-up"></i></div><div class="round"><i class="ti ti-arrow-forward-up"></i></div><div class="round"><i class="ti ti-bookmark"></i></div>
+  </div>
+  <div style="position:absolute;top:378px;left:0;right:0;bottom:84px;background:#0b0c0d;border-radius:22px 22px 0 0;z-index:4;overflow:hidden">
+    <div style="width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.2);margin:8px auto 10px"></div>
+    <div class="row" style="gap:8px">
+      <div style="text-align:center;width:58px"><div class="thumb" style="width:58px;height:58px"><img src="../../../games/avatar-editor/assets/thumbs/body-Male.webp"></div><div class="lbl dim" style="font-size:11px">Body</div></div>
+      <div style="text-align:center;width:58px"><div class="thumb" style="width:58px;height:58px"><img src="../../../games/avatar-editor/assets/thumbs/hair-Hair_Buzzed-Black.webp"></div><div class="lbl dim" style="font-size:11px">Hair</div></div>
+      <div style="text-align:center;width:58px"><div class="thumb on-ring" style="width:58px;height:58px"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterNavy-top.webp"></div><div class="lbl" style="font-size:11px">Top</div></div>
+      <div style="text-align:center;width:58px"><div class="thumb" style="width:58px;height:58px"><img src="../../../games/avatar-editor/assets/thumbs/Street_JeansBlack-legs.webp"></div><div class="lbl dim" style="font-size:11px">Bottom</div></div>
+      <div style="text-align:center;width:58px"><div class="thumb" style="width:58px;height:58px"><img src="../../../games/avatar-editor/assets/thumbs/Street_SneakersRed-feet.webp"></div><div class="lbl dim" style="font-size:11px">Shoes</div></div>
+      <div style="text-align:center;width:58px"><div class="thumb" style="width:58px;height:58px;background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-hulk.webp"></div><div class="lbl dim" style="font-size:11px">Hero</div></div>
+    </div>
+    <div style="height:.5px;background:rgba(255,255,255,.08);margin:12px 0 0"></div>
+    <div class="hd" style="margin-top:12px"><b>Yours</b><span>4</span></div>
+    <div class="row">
+      <div style="width:80px"><div class="thumb on-ring" style="width:80px;height:80px;position:relative"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterNavy-top.webp"><div class="tag">ON</div></div></div>
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeWhite-top.webp"></div></div>
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeBlack-top.webp"></div></div>
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px"><img src="../../../games/avatar-editor/assets/thumbs/Male_Ranger-top.webp"></div></div>
+    </div>
+    <div class="hd"><b>Get more</b><span>Store</span></div>
+    <div class="row">
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterCream-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">150</div></div>
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px;box-shadow:inset 0 0 0 2px #dcb664"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeRed-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">80</div></div>
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeGreen-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">80</div></div>
+      <div style="width:80px"><div class="thumb" style="width:80px;height:80px"><img src="../../../games/avatar-editor/assets/thumbs/Male_Peasant-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">200</div></div>
+    </div>
+  </div>
+  <div style="position:absolute;left:16px;right:16px;bottom:94px;z-index:6;display:flex;gap:10px">
+    <div class="btn gold" style="flex:1;box-shadow:0 6px 20px rgba(0,0,0,.5)">Buy Red Tee · <img src="../games-mocks/tokbux.png" style="width:18px">80</div>
+    <div class="btn ghost" style="width:46px;background:#1c1e20"><i class="ti ti-x"></i></div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<!-- ============ C: LOCKER ============ -->
+<div class="col">
+<h1>C · Locker</h1>
+<p>Game-style locker: dark stage, avatar on the left, what you're wearing as a column of slots on the right. Tap a slot → its picker slides up. Looks + Shop below. Everything visible at a glance, no tabs.</p>
+<div class="ph">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <iframe class="stage" data-look="dark" style="left:-50px;top:70px;width:330px;height:500px"></iframe>
+  <div style="position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:3">
+    <div><div style="font-size:24px;font-weight:900;letter-spacing:-.4px">Tobi K</div><div class="dim" style="font-size:13px;font-weight:600">@tobik · <span style="color:#47ab9a">Lvl 14</span></div></div>
+    <div style="display:flex;gap:8px"><div class="tb"><img src="../games-mocks/tokbux.png">1,250</div><div class="round"><i class="ti ti-settings"></i></div></div>
+  </div>
+  <div style="position:absolute;right:14px;top:128px;display:flex;flex-direction:column;gap:8px;z-index:3;width:148px">
+    <!-- slots -->
+    <div style="display:flex;align-items:center;gap:9px;background:#141618;border-radius:14px;padding:6px"><div class="thumb" style="width:48px;height:48px;background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-hulk.webp" style="opacity:.4"></div><div><div class="sub">Hero</div><div style="font-weight:700;font-size:13px">None</div></div></div>
+    <div style="display:flex;align-items:center;gap:9px;background:#141618;border-radius:14px;padding:6px"><div class="thumb" style="width:48px;height:48px"><img src="../../../games/avatar-editor/assets/thumbs/hair-Hair_Buzzed-Black.webp"></div><div><div class="sub">Hair</div><div style="font-weight:700;font-size:13px">Buzzed</div></div></div>
+    <div style="display:flex;align-items:center;gap:9px;background:#141618;border-radius:14px;padding:6px"><div class="thumb" style="width:48px;height:48px"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterNavy-top.webp"></div><div><div class="sub">Top</div><div style="font-weight:700;font-size:13px">Navy Sweater</div></div></div>
+    <div style="display:flex;align-items:center;gap:9px;background:#141618;border-radius:14px;padding:6px"><div class="thumb" style="width:48px;height:48px"><img src="../../../games/avatar-editor/assets/thumbs/Street_JeansBlack-legs.webp"></div><div><div class="sub">Bottom</div><div style="font-weight:700;font-size:13px">Black Jeans</div></div></div>
+    <div style="display:flex;align-items:center;gap:9px;background:#141618;border-radius:14px;padding:6px"><div class="thumb" style="width:48px;height:48px"><img src="../../../games/avatar-editor/assets/thumbs/Street_SneakersRed-feet.webp"></div><div><div class="sub">Shoes</div><div style="font-weight:700;font-size:13px">Red Kicks</div></div></div>
+    <div style="display:flex;align-items:center;gap:9px;background:#141618;border-radius:14px;padding:6px"><div class="thumb" style="width:48px;height:48px"><img src="../../../games/avatar-editor/assets/thumbs/body-Male.webp"></div><div><div class="sub">Body</div><div style="font-weight:700;font-size:13px">Face · Skin</div></div></div>
+  </div>
+  <div style="position:absolute;top:560px;left:0;right:0;z-index:3">
+    <div class="hd" style="margin-top:0"><b>Looks</b><span>Save current</span></div>
+    <div class="row">
+      <div class="thumb on-ring" style="width:64px;height:64px"><img src="../../../games/avatar-editor/assets/thumbs/outfit-StreetClassic.webp"></div>
+      <div class="thumb" style="width:64px;height:64px"><img src="../../../games/avatar-editor/assets/thumbs/outfit-NightOut.webp"></div>
+      <div class="thumb" style="width:64px;height:64px"><img src="../../../games/avatar-editor/assets/thumbs/outfit-Cozy.webp"></div>
+      <div class="thumb" style="width:64px;height:64px;background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-hulk.webp"></div>
+      <div class="thumb" style="width:64px;height:64px;background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-spiderman.webp"></div>
+    </div>
+    <div style="margin:14px 16px 0;height:62px;border-radius:16px;background:linear-gradient(100deg,#2a2114,#14120d);border:1px solid rgba(220,182,100,.3);display:flex;align-items:center;padding:0 14px;gap:12px">
+      <img src="../../../games/avatar-editor/assets/thumbs/char-goku.webp" style="width:46px;height:46px;object-fit:contain">
+      <div style="flex:1"><div style="font-weight:800;font-size:15px;color:#f3e2b3">Shop</div><div class="sub">New: Goku · 12 new items</div></div>
+      <i class="ti ti-chevron-right" style="font-size:20px;color:#dcb664"></i>
+    </div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<script>
+const LOOK = { body:'Male', skin:3, face:0, hair:'Hair_Buzzed', beard:false, hairColor:'#1a1a1a', fit:true,
+  parts:{ head:null, top:'Street_SweaterNavy', arms:null, legs:'Street_JeansBlack', feet:'Street_SneakersRed', acc:null },
+  colors:{ head:'#ffffff', top:'#ffffff', arms:'#ffffff', legs:'#ffffff', feet:'#ffffff', acc:'#ffffff' } };
+document.querySelectorAll('iframe.stage').forEach((f) => {
+  f.src = '/games/avatar-editor/app-stage.html?look=' + f.dataset.look;
+  const send = () => { f.contentWindow.postMessage(JSON.stringify({ type:'SET', avatar:LOOK }), '*');
+    f.contentWindow.postMessage(JSON.stringify({ type:'FOCUS', part:'body' }), '*'); };
+  addEventListener('message', (e) => { if (e.source !== f.contentWindow) return; try { if (JSON.parse(e.data).type === 'READY') send(); } catch {} });
+  f.addEventListener('load', () => setTimeout(send, 400));
+});
+</script>
+</body></html>

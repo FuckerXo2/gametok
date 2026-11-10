@@ -1,0 +1,166 @@
+<!doctype html>
+<!-- What opens when you tap Shop in the Me locker. One shop, three screens at 390x844, real stage in iframes.
+     Serve the repo root (launch config "me-mocks", port 8951) and open /gametok/design/me-mocks/shop.html -->
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#1d1f22}
+body{font-family:-apple-system,"SF Pro Display",system-ui,sans-serif;color:#fff;padding:24px;display:flex;gap:28px;width:max-content}
+.col h1{font-size:20px;font-weight:800;margin-bottom:4px}.col p{font-size:13px;color:rgba(255,255,255,.6);width:390px;margin-bottom:12px;line-height:1.4}
+.ph{width:390px;height:844px;background:#0b0c0d;position:relative;overflow:hidden;border-radius:44px;box-shadow:0 0 0 10px #000}
+.status{position:absolute;top:0;left:0;right:0;height:47px;display:flex;align-items:center;justify-content:space-between;padding:0 30px 0 34px;font-weight:600;font-size:16px;z-index:9}
+.status i{font-size:17px;margin-left:5px}
+iframe{border:0;position:absolute;display:block}
+.dim{color:rgba(255,255,255,.55)}
+.round{width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.35);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:21px}
+.tb{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.4);backdrop-filter:blur(8px);border-radius:999px;padding:5px 12px 5px 5px;font-weight:800;font-size:15px}
+.tb img{width:24px;height:24px}
+.nav{position:absolute;left:0;right:0;bottom:0;height:84px;background:#0a0b0c;border-top:.5px solid rgba(255,255,255,.08);display:flex;justify-content:space-around;padding-top:9px;z-index:8}
+.nav div{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:rgba(255,255,255,.5);width:80px}
+.nav i{font-size:26px}.nav .on{color:#47ab9a}
+.nav .me{width:28px;height:28px;border-radius:50%;border:2px solid #47ab9a;background:#2a2d30 url(../games-mocks/head-tobi.png) center/cover}
+.home{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:#fff;z-index:9}
+.thumb{border-radius:14px;background:#17191b;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+.thumb img{width:86%;height:86%;object-fit:contain}
+.lbl{font-size:12px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:1px}
+.price{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#dcb664;margin-top:2px}.price img{width:13px;height:13px}
+.btn{border-radius:14px;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;font-size:15px}
+.teal{background:#47ab9a;color:#fff}.gold{background:linear-gradient(#f3e2b3,#dcbc78 50%,#c39d58);color:#1a1408}
+.ghost{background:rgba(255,255,255,.08)}
+.hd{display:flex;justify-content:space-between;align-items:baseline;padding:0 16px;margin:18px 0 9px}
+.hd b{font-size:17px;font-weight:800}.hd span{font-size:13px;font-weight:600;color:rgba(255,255,255,.5)}
+.row{display:flex;gap:10px;padding:0 16px;overflow:hidden}
+.on-ring{box-shadow:inset 0 0 0 2px #47ab9a}
+.tag{position:absolute;top:6px;left:6px;font-size:10px;font-weight:800;background:#47ab9a;border-radius:6px;padding:2px 5px}
+
+.chips{display:flex;gap:8px;padding:0 16px;overflow:hidden}
+.chip{flex:none;height:34px;padding:0 14px;border-radius:17px;background:#17191b;display:flex;align-items:center;font-size:13px;font-weight:700;color:rgba(255,255,255,.7)}
+.chip.on{background:#f3e2b3;color:#1a1408}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 16px}
+.card .thumb{width:100%;aspect-ratio:1;position:relative}
+.owned{position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:10px;background:#47ab9a;display:flex;align-items:center;justify-content:center;font-size:13px}
+.trying{box-shadow:inset 0 0 0 2px #dcb664}
+.hdr{position:absolute;top:52px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:5}
+.ttl{font-size:22px;font-weight:900;letter-spacing:-.3px}
+.goldtxt{color:#f3e2b3}
+.col p{min-height:54px}
+</style></head>
+<body>
+
+<!-- ============ A: STOREFRONT ============ -->
+<div class="col">
+<h1>1 · Tap Shop → the store</h1>
+<p>Opens on the store: the new drop up top, then Heroes and Outfits, boxes the same size as the try-on grid. Tap a hero → screen 3. Tap clothes or an outfit → screen 2.</p>
+<div class="ph">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <div class="hdr"><div style="display:flex;align-items:center;gap:10px"><div class="round"><i class="ti ti-arrow-left"></i></div><div class="ttl goldtxt">Shop</div></div>
+    <div class="tb"><img src="../games-mocks/tokbux.png">1,250</div></div>
+  <div style="position:absolute;top:104px;left:0;right:0;bottom:84px;overflow:hidden">
+    <div style="margin:0 16px;height:220px;border-radius:22px;background:radial-gradient(circle at 70% 40%,#5a3d12,#1b140a 70%);position:relative;overflow:hidden;border:1px solid rgba(220,182,100,.35)">
+      <img src="../../../games/avatar-editor/assets/thumbs/char-goku.webp" style="position:absolute;right:-10px;bottom:-10px;height:240px">
+      <div style="position:absolute;left:16px;top:16px;font-size:11px;font-weight:800;color:#1a1408;background:#f3e2b3;border-radius:6px;padding:3px 7px">NEW HERO</div>
+      <div style="position:absolute;left:16px;bottom:16px">
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.5px">Goku</div>
+        <div class="sub" style="width:170px;margin-bottom:10px">Flight + energy blast in every game</div>
+        <div class="btn gold" style="height:38px;width:130px;font-size:14px"><img src="../games-mocks/tokbux.png" style="width:16px">800</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:center;gap:5px;margin-top:8px"><span style="width:16px;height:5px;border-radius:3px;background:#dcb664"></span><span style="width:5px;height:5px;border-radius:3px;background:rgba(255,255,255,.25)"></span><span style="width:5px;height:5px;border-radius:3px;background:rgba(255,255,255,.25)"></span></div>
+    <div class="hd" style="margin-top:12px"><b>Heroes</b><span>See all</span></div>
+    <div class="grid">
+      <div class="card"><div class="thumb" style="background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-batman.webp"></div><div class="lbl">Batman</div><div class="price"><img src="../games-mocks/tokbux.png">800</div></div>
+      <div class="card"><div class="thumb" style="background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-thor.webp"></div><div class="lbl">Thor</div><div class="price"><img src="../games-mocks/tokbux.png">800</div></div>
+      <div class="card"><div class="thumb" style="background:#1d2a27"><img src="../../../games/avatar-editor/assets/thumbs/char-flash.webp"></div><div class="lbl">Flash</div><div class="price"><img src="../games-mocks/tokbux.png">800</div></div>
+    </div>
+    <div class="hd"><b>Outfits</b><span>Whole look, one price</span></div>
+    <div class="grid">
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/outfit-Summer.webp"></div><div class="lbl">Summer</div><div class="price"><img src="../games-mocks/tokbux.png">300</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/outfit-AllBlack.webp"></div><div class="lbl">All Black</div><div class="price"><img src="../games-mocks/tokbux.png">300</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/outfit-MaleRanger.webp"></div><div class="lbl">Ranger</div><div class="price"><img src="../games-mocks/tokbux.png">350</div></div>
+    </div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<!-- ============ B: TRY-ON SHOP ============ -->
+<div class="col">
+<h1>2 · Try it on</h1>
+<p>Your avatar wears it right away. Categories on top, priced items below; keep tapping to build a whole look, then one gold bar buys it all. Teal tick = you own it.</p>
+<div class="ph">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <iframe class="stage" data-look="dark" data-top="Street_TeeRed" data-feet="Street_SneakersWhite" style="left:0;top:96px;width:390px;height:330px"></iframe>
+  <div class="hdr"><div style="display:flex;align-items:center;gap:10px"><div class="round"><i class="ti ti-arrow-left"></i></div><div class="ttl goldtxt">Shop</div></div>
+    <div class="tb"><img src="../games-mocks/tokbux.png">1,250</div></div>
+  <div style="position:absolute;right:16px;top:110px;display:flex;flex-direction:column;gap:10px;z-index:3">
+    <div class="round"><i class="ti ti-arrow-back-up"></i></div><div class="round"><i class="ti ti-rotate-clockwise"></i></div>
+  </div>
+  <div style="position:absolute;top:410px;left:0;right:0;bottom:84px;background:#0b0c0d;border-radius:22px 22px 0 0;z-index:4;overflow:hidden;padding-top:14px">
+    <div class="chips">
+      <div class="chip">New</div><div class="chip">Heroes</div><div class="chip">Outfits</div><div class="chip on">Tops</div><div class="chip">Bottoms</div><div class="chip">Shoes</div>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><div class="thumb trying"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeRed-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">80</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterCream-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">150</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_TeeGreen-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">80</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterNavy-top.webp"><div class="owned"><i class="ti ti-check"></i></div></div><div class="price" style="color:#47ab9a">Owned</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Male_Ranger-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">200</div></div>
+      <div class="card"><div class="thumb"><img src="../../../games/avatar-editor/assets/thumbs/Street_SweaterGrey-top.webp"></div><div class="price"><img src="../games-mocks/tokbux.png">150</div></div>
+    </div>
+  </div>
+  <div style="position:absolute;left:16px;right:16px;bottom:94px;z-index:6;display:flex;gap:10px">
+    <div class="btn gold" style="flex:1;box-shadow:0 6px 20px rgba(0,0,0,.6)">Buy 2 items · <img src="../games-mocks/tokbux.png" style="width:18px">180</div>
+    <div class="btn" style="width:46px;background:#1c1e20"><i class="ti ti-x"></i></div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<!-- ============ C: HERO SHOWCASE ============ -->
+<div class="col">
+<h1>3 · Heroes up close</h1>
+<p>A hero opens full screen with its powers. Swipe sideways to see the next hero. Try on sends it to screen 2; Buy gets it.</p>
+<div class="ph" style="background:radial-gradient(circle at 50% 35%,#3a2a10,#0b0c0d 65%)">
+  <div class="status"><span>9:41</span><span><i class="ti ti-antenna-bars-5"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-4"></i></span></div>
+  <img src="../../../games/avatar-editor/assets/thumbs/char-goku.webp" style="position:absolute;left:45px;top:110px;width:300px;height:420px;object-fit:contain">
+  <div class="hdr"><div style="display:flex;align-items:center;gap:10px"><div class="round"><i class="ti ti-arrow-left"></i></div><div class="ttl goldtxt">Shop</div></div>
+    <div class="tb"><img src="../games-mocks/tokbux.png">1,250</div></div>
+  <div style="position:absolute;top:110px;left:16px;display:flex;gap:8px;z-index:4"><div class="chip on">Heroes</div><div class="chip">Outfits</div><div class="chip">Items</div></div>
+  <div class="round" style="position:absolute;left:10px;top:330px"><i class="ti ti-chevron-left"></i></div>
+  <div class="round" style="position:absolute;right:10px;top:330px"><i class="ti ti-chevron-right"></i></div>
+  <div style="position:absolute;left:16px;right:16px;top:540px;z-index:4">
+    <div style="font-size:32px;font-weight:900;letter-spacing:-.5px">Goku</div>
+    <div style="display:flex;gap:8px;margin:8px 0 16px;flex-wrap:wrap">
+      <div class="chip" style="height:28px;font-size:12px"><i class="ti ti-rocket" style="margin-right:5px"></i>Flight</div>
+      <div class="chip" style="height:28px;font-size:12px"><i class="ti ti-bolt" style="margin-right:5px"></i>Energy blast</div>
+      <div class="chip" style="height:28px;font-size:12px"><i class="ti ti-arrows-maximize" style="margin-right:5px"></i>Dash</div>
+    </div>
+    <div style="display:flex;gap:10px"><div class="btn ghost" style="flex:1">Try on</div><div class="btn gold" style="flex:1.4">Buy · <img src="../games-mocks/tokbux.png" style="width:18px">800</div></div>
+    <div style="display:flex;justify-content:center;gap:5px;margin-top:14px"><span style="width:16px;height:5px;border-radius:3px;background:#dcb664"></span><span style="width:5px;height:5px;border-radius:3px;background:rgba(255,255,255,.25)"></span><span style="width:5px;height:5px;border-radius:3px;background:rgba(255,255,255,.25)"></span><span style="width:5px;height:5px;border-radius:3px;background:rgba(255,255,255,.25)"></span></div>
+  </div>
+  <div class="nav"><div><i class="ti ti-device-gamepad-2"></i>Games</div><div><i class="ti ti-message-circle"></i>Connect</div><div class="on"><span class="me"></span>Me</div></div>
+  <div class="home"></div>
+</div>
+</div>
+
+<script>
+const base = { body:'Male', skin:3, face:0, hair:'Hair_Buzzed', beard:false, hairColor:'#1a1a1a', fit:true,
+  parts:{ head:null, top:'Street_SweaterNavy', arms:null, legs:'Street_JeansBlack', feet:'Street_SneakersRed', acc:null },
+  colors:{ head:'#ffffff', top:'#ffffff', arms:'#ffffff', legs:'#ffffff', feet:'#ffffff', acc:'#ffffff' } };
+document.querySelectorAll('iframe.stage').forEach((f) => {
+  const LOOK = JSON.parse(JSON.stringify(base));
+  if (f.dataset.top) LOOK.parts.top = f.dataset.top;
+  if (f.dataset.feet) LOOK.parts.feet = f.dataset.feet;
+  f.src = (location.protocol === 'file:' ? 'http://localhost:8980/app-stage.html' : '/games/avatar-editor/app-stage.html') + '?look=' + f.dataset.look;
+  const send = () => { f.contentWindow.postMessage(JSON.stringify({ type:'SET', avatar:LOOK }), '*');
+    f.contentWindow.postMessage(JSON.stringify({ type:'FOCUS', part:'body' }), '*'); };
+  addEventListener('message', (e) => { if (e.source !== f.contentWindow) return; try { if (JSON.parse(e.data).type === 'READY') send(); } catch {} });
+  f.addEventListener('load', () => setTimeout(send, 400));
+});
+</script>
+</body></html>

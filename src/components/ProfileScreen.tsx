@@ -19,7 +19,7 @@ import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
 import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 import { Ask, ConfirmCard, ItemDetails, ItemOptions, askOrDo, shareItem } from './ItemDetails';
-import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, STARTER_AVATARS, TABS, Tab, fitsBody, thumbOf } from '../avatar/catalog';
+import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, STARTER_AVATARS, TABS, Tab, fitsBody, isStarterLook, thumbOf } from '../avatar/catalog';
 import { sameLook, useSavedLooks } from '../avatar/looks';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
@@ -27,7 +27,19 @@ const { width: W, height: H } = Dimensions.get('window');
 const CELL = Math.floor((W - 16 * 2 - 10 * 2) / 3) - 1;   // three across (floored: a fraction over and the third wraps)
 // the shop (where you buy) is black and gold like the TokBux coin: warm black sheet, gold selection, metallic gold buy
 const GOLD = '#dcb664', GOLD_LINE = 'rgba(220,182,100,0.25)', GOLD_METAL = ['#f5dc9a', '#dcb35f', '#b88a3c'] as const;
-const BG = '#0d0a16', PANEL = '#0c0b09', CARD = '#161519', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', GREEN = '#22c55e';
+const BG = '#0b0c0d', PANEL = '#0c0b09', CARD = '#161519', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#47ab9a', GREEN = '#22c55e';
+
+// what each hero can do (the same in every game, adapted to it: knockout/js/sim.js, street-5s/js/sim.js)
+const HERO_POWERS: Record<string, string[]> = {
+  spiderman: ['Web swing', 'Web Pull', 'Web Zip'], baki: ['Demon Rush', 'Demon Rage'], yujiro: ['Ogre Stomp', 'Ogre Throw'],
+  hulk: ['Giant', 'Thunderclap', 'Hulk Smash'], goku: ['Flight', 'Kamehameha', 'Instant Step'], vegeta: ['Flight', 'Final Flash', 'Big Bang'],
+  superman: ['Flight', 'Heat Vision', 'Super Punch'], ironman: ['Flight', 'Unibeam', 'Micro Missiles'], thor: ['Flight', 'Thunder Strike', 'Hammer Throw'],
+  flash: ['Super speed', 'Speed Surge', 'Phase'], batman: ['Glide', 'Batarang', 'Grapple'], rambo: ['Frag Out', 'M60'], lantern: ['Flight', 'Construct Wall', 'Shield'],
+};
+// the Shop's categories, front and up close
+type ShopCat = 'avatars' | 'outfits' | 'body' | 'clothing' | 'accessories';
+const SHOP_CATS: [ShopCat, string][] = [['avatars', 'Heroes'], ['outfits', 'Outfits'], ['body', 'Hair'], ['clothing', 'Clothes'], ['accessories', 'Accessories']];
+const powersOf = (i: AvatarItem) => HERO_POWERS[i.id.replace(/^char-/, '')] ?? [];
 
 // the avatar button's editors (like Roblox's Body Shape / Head / Skin Color screens): each is a screen of its own
 const CUSTOMIZE: { label: string; sub: string; icon: React.ComponentProps<typeof Ionicons>['name']; focus: 'body' | 'head' }[] = [
@@ -184,6 +196,15 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   const saved = account?.avatar ?? null;
 
   const [mode, setMode] = useState<'shop' | 'mine'>('shop');
+  // the locker (Me's front page): the avatar on the left, what's on as a column of slots on the right, looks and the
+  // Shop below. A slot opens Customize on it, the Shop banner the Shop; back comes home here.
+  const [locker, setLocker] = useState(true);
+  // the Shop opens on its front ('front': the new drop, then heroes, outfits, clothes); a hero opens up close ('hero');
+  // anything else is tried on (null: the avatar and the Shop's grid)
+  const [store, setStore] = useState<'front' | 'show'>('front');
+  const [showCat, setShowCat] = useState<ShopCat>('avatars');   // the category being swiped through up close
+  const [showAt, setShowAt] = useState(0);
+  const showScroll = useRef<ScrollView>(null);
   const [tab, setTab] = useState<Tab>('all');
   const [sub, setSub] = useState<string | null>(null);
   const [seeAll, setSeeAll] = useState(false);   // came from All's "See All": the heading is a way back
@@ -222,7 +243,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
   // the account menu's "My items"
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('gametok:my-items', () => { setMode('mine'); setTab('all'); setSub(null); });
+    const sub = DeviceEventEmitter.addListener('gametok:my-items', () => { setLocker(false); setMode('mine'); setTab('all'); setSub(null); });
     return () => sub.remove();
   }, []);
   // signing in or out switches whose avatar this is
@@ -387,6 +408,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
   // (only what's made for this avatar's body: switching to female switches the Shop to women's things)
   const inMode = useMemo(() => AVATAR_ITEMS.filter((i) => !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && (mode === 'shop' ? !owns(i) && !i.retired : owns(i))), [mode, account, look?.body]);
   const tabs = TABS.filter((t) => t.id !== 'beards' || look?.body !== 'Female');
+  const tabName = (t: Tab) => (t === 'avatars' ? 'Heroes' : t === 'clothing' ? 'Clothes' : TABS.find((x) => x.id === t)?.label ?? '');
   // All: outfits get their own row at the top (like Roblox's Explore Styles), the grid is single items
   // All: one mixed feed, in the order the server picked for you (it changes; backend src/avatar-feed.js). Until it
   // has answered: everything, as listed
@@ -463,8 +485,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     if (look.character) return 'Switch back to your avatar to save a look';
     if (cart.length) return 'Buy what you’re trying on first';
     if (savedAs) return `Already saved as “${savedAs.name}”`;
-    const start = STARTER_AVATARS[look.body];
-    if ((['top', 'arms', 'legs', 'feet', 'head', 'acc'] as const).every((k) => look.parts[k] === start.parts[k]) && look.hair === start.hair) return 'That’s the starter look: put something on first';
+    if (isStarterLook(look)) return 'That’s the starter look: put something on first';
     return null;
   };
   const autoSave = useRef<(say?: boolean) => void>(() => {});
@@ -472,15 +493,15 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
     if (!look || whyNotSave()) return;
     const n = Math.max(0, ...saved_.looks.map((l) => +(/^Look (\d+)$/.exec(l.name)?.[1] ?? 0))) + 1;
     saved_.save(look, `Look ${n}`, lookPicture(look));
-    if (tell) say('Look saved to Avatars');
+    if (tell) say('Look saved');
   };
   // leaving Customize: for the Shop, or leaving Me altogether
   const wasMine = useRef(false);
   useEffect(() => {
-    const mine = mode === 'mine' && !!isActive;
+    const mine = mode === 'mine' && !locker && !!isActive;
     if (wasMine.current && !mine) autoSave.current(!!isActive);
     wasMine.current = mine;
-  }, [mode, isActive]);
+  }, [mode, locker, isActive]);
   const doneNaming = () => {
     if (!naming || !look) return;
     const name = naming.name.trim().slice(0, 24) || `Look ${saved_.looks.length + 1}`;
@@ -525,20 +546,135 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           ) : null}
         </View>
         <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
-        {i.category === 'body' ? null : <Text style={styles.maker} numberOfLines={1}>GameTok</Text>}
+        {i.category === 'body' || mode === 'shop' ? null : <Text style={styles.maker} numberOfLines={1}>GameTok</Text>}
         {i.category === 'body' ? null   /* your body: not an item, no price */
           : owned && (i.pieces ? piecesOf(i).some((p) => (account?.prices[p.id] ?? p.price) > 0) : priceOf(i) > 0) ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
           : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>
-          : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={styles.price}>{priceOf(i)}</Text></View>}
+          : <View style={styles.priceRow}><TokBuxIcon size={16} /><Text style={[styles.price, { color: GOLD, fontWeight: '800' }]}>{priceOf(i)}</Text></View>}
       </Pressable>
     );
   };
 
+  // the locker's slots: what's on in each, a tap opens Customize there
+  const wornIn = (subs: string[]) => (look ? AVATAR_ITEMS.find((i) => !i.pieces && subs.includes(i.sub) && i.isWorn?.(look)) : undefined);
+  const hero = look?.character ? AVATAR_ITEMS.find((i) => i.tab === 'avatars' && i.isWorn?.(look)) : undefined;
+  const openSlot = (tabId: (typeof CTABS)[number]['id'], slotId?: string) => {
+    const t = CTABS.find((x) => x.id === tabId)!;
+    setCtab(tabId); setCslot(t.slots.find((s) => s.id === slotId) ?? t.slots[0] ?? CTABS[1].slots[0]);
+    setMode('mine'); setSelected(null); setLocker(false);
+  };
+  const openShop = () => { setStore('front'); setFeedAll(false); setMode('shop'); setTab('all'); setSub(null); setSelected(null); setSeeAll(false); setLocker(false); };
+  const slotOf = (tabId: string, id: string) => CTABS.find((t) => t.id === tabId)!.slots.find((s) => s.id === id)!;
+  // (a function, not a component: a component made here is a new one each render, and a re-render mid-tap lost the tap)
+  const lockerSlot = ({ key, label, name, thumb, onPress, dimmed }: { key: string; label: string; name: string; thumb: React.ReactNode; onPress: () => void; dimmed?: boolean }) => (
+    <Pressable key={key} onPress={onPress} style={({ pressed }) => [styles.lSlot, pressed && { opacity: 0.7 }]}>
+      <View style={[styles.lSlotThumb, dimmed && { opacity: 0.45 }]}>{thumb}</View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.lSlotLabel}>{label}</Text>
+        <Text style={styles.lSlotName} numberOfLines={2}>{name}</Text>
+      </View>
+    </Pressable>
+  );
+  const heroPic = hero ? thumbOf(hero, look?.body) : null;
+  const ownedHeroes = AVATAR_ITEMS.filter((i) => i.tab === 'avatars' && owns(i));
+  const myLooks = look ? saved_.looks.filter((l) => l.look.body === look.body) : [];
+  const shopNew = AVATAR_ITEMS.filter((i) => !owns(i) && !i.retired && fitsBody(i, look?.body));
+  const shopFace = shopNew.find((i) => i.tab === 'avatars') ?? shopNew[0];
+  const saveNow = () => { const no = whyNotSave(); if (no) say(no); else autoSave.current(true); };
+  const buyBarView = () => (
+    <View ref={bar} style={[styles.buyBar, { paddingBottom: 10 }, locker && { backgroundColor: 'transparent' }]}>
+      <Pressable style={styles.buyMain} onPress={() => (cart.length === 1 ? checkout() : setCartOpen(true))} disabled={buying}>
+        {/* champagne gold with a soft sheen: light top, gentle fall-off, no mustard */}
+        <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+        {cart.length === 1
+          ? <><TokBuxIcon size={18} /><Text style={styles.buyMainText}>{total.toLocaleString()}</Text></>
+          : <Text style={styles.buyMainText}>View Checkout ({cart.length})</Text>}
+      </Pressable>
+      <Pressable style={styles.buySide} onPress={() => (cart.length === 1 ? openOptions(cartItems[0]) : clearCart())} hitSlop={4} accessibilityLabel={cart.length === 1 ? 'More' : 'Clear'}>
+        <Ionicons name={cart.length === 1 ? 'ellipsis-horizontal' : 'trash-outline'} size={20} color="#fff" />
+      </Pressable>
+    </View>
+  );
+  // the Shop: its front, and every item up close (on the stage, swiped through by category; Try on keeps it on)
+  const allHeroes = AVATAR_ITEMS.filter((i) => i.tab === 'avatars' && !i.retired);
+  const heroes = [...allHeroes.filter((i) => !owns(i)), ...allHeroes.filter(owns)];   // ones to get first
+  const featured = heroes.find((i) => !owns(i));
+  const catItems = (c: ShopCat) => {
+    if (c === 'avatars') return heroes;
+    const all = AVATAR_ITEMS.filter((i) => (i.tab === c || i.alsoTab === c) && !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && (!i.retired || owns(i)));
+    return [...all.filter((i) => !owns(i)), ...all.filter(owns)];
+  };
+  const showList = catItems(showCat);
+  const openShow = (c: ShopCat, i?: AvatarItem) => {
+    const n = i ? Math.max(0, catItems(c).findIndex((x) => x.id === i.id)) : 0;
+    setShowCat(c); setShowAt(n); setStore('show');
+    setTimeout(() => showScroll.current?.scrollTo({ x: n * W, animated: false }), 0);
+  };
+  const toShow = (n: number) => { const k = Math.max(0, Math.min(showList.length - 1, n)); setShowAt(k); showScroll.current?.scrollTo({ x: k * W, animated: true }); };
+  // keep it on (it goes in the bag with whatever else is on), or take it back off
+  const keepOn = (i: AvatarItem) => {
+    if (!look || !i.wear) return;
+    why.current = `try ${i.id}`; Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (i.isWorn?.(look)) { remove(i); return; }
+    const unowned = i.pieces ? piecesOf(i).filter((p) => !ownsOne(p)).map((p) => p.id) : owns(i) ? [] : [i.id];
+    change({ look: i.wear(look), cart: [...cart.filter((id) => !unowned.includes(id)), ...unowned] });
+  };
+  const [feedAll, setFeedAll] = useState(false);
+  const frontItems = useMemo(() => {
+    const cats = SHOP_CATS.map(([c]) => c) as string[];
+    const all = AVATAR_ITEMS.filter((i) => cats.includes(i.tab) && !EDITOR_SUBS.includes(i.sub) && fitsBody(i, look?.body) && !owns(i) && !i.retired);
+    return feedIndex.size ? [...all.filter((i) => feedIndex.has(i.id)).sort((x, y) => feedIndex.get(x.id)! - feedIndex.get(y.id)!), ...all.filter((i) => !feedIndex.has(i.id))] : mixed(all);
+  }, [account, look?.body, feedIndex]);
+  const priceTag = (i: AvatarItem) => (owns(i) ? <Text style={[styles.sPrice, { color: ACCENT }]}>Owned</Text>
+    : <View style={styles.priceRow}><TokBuxIcon size={14} /><Text style={styles.sPrice}>{priceOf(i).toLocaleString()}</Text></View>);
+  // one box on the front (the same size as the try-on grid's)
+  const storeTile = (i: AvatarItem, onPress: () => void) => {
+    const t = thumbOf(i, look?.body);
+    return (
+      <Pressable key={i.id} onPress={onPress} style={({ pressed }) => [styles.item, pressed && { opacity: 0.75 }]}>
+        <View style={[styles.thumb, i.tab === 'avatars' && { backgroundColor: '#14231f' }]}>
+          {t ? <Image source={{ uri: t }} style={styles.thumbImg} resizeMode="contain" /> : null}
+          {owns(i) ? <View style={styles.sTick}><Ionicons name="checkmark" size={13} color="#fff" /></View> : null}
+        </View>
+        <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
+        {priceTag(i)}
+      </Pressable>
+    );
+  };
+  const shopHead = (onBack: () => void) => (
+    <View style={[styles.sHead, { top: insets.top + 6 }]}>
+      <Pressable style={styles.round} onPress={onBack} hitSlop={6} accessibilityLabel="Back"><Ionicons name="arrow-back" size={22} color="#fff" /></Pressable>
+      <Text style={styles.sTitle}>Shop</Text>
+      {/* what's kept on and not bought yet */}
+      {cart.length ? (
+        <Pressable style={styles.sBag} onPress={() => (cart.length === 1 ? checkout() : setCartOpen(true))} hitSlop={6}>
+          <Ionicons name="bag-handle" size={18} color="#1a1408" /><Text style={styles.sBagText}>{cart.length}</Text>
+        </Pressable>
+      ) : null}
+      <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
+        <TokBuxIcon size={22} />
+        <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
+      </Pressable>
+    </View>
+  );
+  const LOCKER_TOP = insets.top + 58, LOCKER_BOTTOM = 196 + (cart.length ? 54 : 0);
+  const atLocker = locker && !editor;
+  const atShow = !locker && mode === 'shop' && store === 'show' && !!showList.length;
+  const shown = atShow ? showList[Math.min(showAt, showList.length - 1)] : null;
+  // up close it's on you (a piece of clothing on yourself, not on a hero you're trying)
+  const stageLook = shown?.wear && look ? shown.wear(shown.tab !== 'avatars' && look.character ? { ...look, character: null } : look) : look;
+  const [rootH, setRootH] = useState(H - 84);   // the screen above the tab bar (measured)
+  const SHOW_TOP = insets.top + 104, SHOW_H = rootH * 0.56;
+  const STAGE_H = editor ? H * 0.56 : H * 0.47;
+
   return (
-    <View style={styles.root}>
-      {/* the avatar, with the controls floating over it (like Roblox's Me) */}
-      <View style={[styles.stage, editor && { height: H * 0.56 }]}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={look} focus={editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look="studio" headshotOf={shotOf} onHeadshot={onHeadshot} />
+    <View style={styles.root} onLayout={(e) => setRootH(e.nativeEvent.layout.height)}>
+      {/* the avatar, with the controls floating over it (like Roblox's Me); in the locker it stands on the left */}
+      {/* (always placed absolutely: one view switching between absolute and in-flow layout didn't come back) */}
+      <View style={[styles.stage, atShow ? { top: SHOW_TOP, left: 0, width: W, height: SHOW_H, zIndex: 31 }
+        : atLocker ? { top: LOCKER_TOP, left: 0, width: W * 0.6, height: Math.max(0, rootH - LOCKER_TOP - LOCKER_BOTTOM) }
+        : { top: 0, left: 0, width: W, height: STAGE_H }]}>
+        <AvatarStage style={StyleSheet.absoluteFill} avatar={stageLook} focus={atLocker || shown ? 'body' : editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look="dark" tint={atShow ? 'gold' : null} headshotOf={shotOf} onHeadshot={onHeadshot} />
         {editor ? (
           <>
             {/* an editor: back, its name, the other editors down the left, undo / redo under them */}
@@ -559,33 +695,94 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
               <Pressable style={styles.railBtn} onPress={redo} hitSlop={4}><Ionicons name="arrow-redo" size={19} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
             </View>
           </>
-        ) : <>
+        ) : atLocker || atShow ? (toast ? <View style={styles.toast} pointerEvents="none"><Text style={styles.toastText}>{toast}</Text></View> : null) : <>
         <View style={[styles.topRow, { top: insets.top + 6 }]}>
-          <Pressable style={styles.round} onPress={openAccountMenu} hitSlop={6}><Ionicons name="menu" size={22} color="#fff" /></Pressable>
-          <View style={styles.seg}>
+          <Pressable style={styles.round} onPress={() => { if (mode === 'shop') setStore('front'); else setLocker(true); setSelected(null); }} hitSlop={6} accessibilityLabel="Back"><Ionicons name="arrow-back" size={22} color="#fff" /></Pressable>
+          {mode === 'shop' ? <Text style={[styles.sTitle, { marginLeft: 10 }]}>Shop</Text> : <View style={styles.seg}>
             {(['shop', 'mine'] as const).map((m) => (
-              <Pressable key={m} onPress={() => { setMode(m); setSub(null); }} style={[styles.segBtn, mode === m && styles.segOn]}>
+              <Pressable key={m} onPress={() => { setMode(m); setSub(null); if (m === 'shop') setStore('front'); }} style={[styles.segBtn, mode === m && styles.segOn]}>
                 <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === 'shop' ? 'Shop' : 'Customize'}</Text>
               </Pressable>
             ))}
-          </View>
+          </View>}
           <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
             <TokBuxIcon size={22} />
             <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
           </Pressable>
         </View>
-        <Pressable style={[styles.mePill, { top: insets.top + 62, zIndex: 21 }]} onPress={() => setCustomize(!customize)} hitSlop={6}>
+        {mode === 'shop' ? null : <Pressable style={[styles.mePill, { top: insets.top + 62, zIndex: 21 }]} onPress={() => setCustomize(!customize)} hitSlop={6}>
           <Avatar uri={user?.avatar} userId={user?.id} size={44} />
           {customize ? <View style={styles.pillX}><Ionicons name="close" size={20} color="#fff" /></View>
             : <Ionicons name="pencil" size={15} color="#fff" style={{ marginTop: 8 }} />}
-        </Pressable>
-        <View style={styles.undo}>
-          <Pressable style={styles.undoBtn} onPress={undo} hitSlop={6}><Ionicons name="arrow-undo" size={19} color={history.undo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
-          <Pressable style={styles.undoBtn} onPress={redo} hitSlop={6}><Ionicons name="arrow-redo" size={19} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
+        </Pressable>}
+        <View style={mode === 'shop' ? [styles.sUndo, { top: insets.top + 62 }] : styles.undo}>
+          <Pressable style={mode === 'shop' ? styles.round : styles.undoBtn} onPress={undo} hitSlop={6}><Ionicons name="arrow-undo" size={19} color={history.undo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
+          <Pressable style={mode === 'shop' ? styles.round : styles.undoBtn} onPress={redo} hitSlop={6}><Ionicons name="arrow-redo" size={19} color={history.redo.length ? '#fff' : 'rgba(255,255,255,0.3)'} /></Pressable>
         </View>
         {toast ? <View style={styles.toast} pointerEvents="none"><Text style={styles.toastText}>{toast}</Text></View> : null}
         </>}
       </View>
+
+      {atLocker ? (
+        <>
+          {/* you, your TokBux, the account menu */}
+          <View style={[styles.lHead, { top: insets.top + 6 }]}>
+            <Pressable onPress={() => setEditProfile(true)} style={{ flex: 1 }} hitSlop={6}>
+              <Text style={styles.lName} numberOfLines={1}>{user?.displayName || user?.username || 'Me'}</Text>
+              {user?.username ? <Text style={styles.lHandle} numberOfLines={1}>@{user.username}</Text> : null}
+            </Pressable>
+            <Pressable style={styles.tb} onPress={() => setTokbux(true)} hitSlop={6}>
+              <TokBuxIcon size={22} />
+              <Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text>
+            </Pressable>
+            <Pressable style={styles.round} onPress={openAccountMenu} hitSlop={6}><Ionicons name="settings-outline" size={21} color="#fff" /></Pressable>
+          </View>
+          {/* what's on, slot by slot */}
+          <ScrollView style={[styles.lSlots, { top: LOCKER_TOP + 8, bottom: LOCKER_BOTTOM }]} contentContainerStyle={{ gap: 8, paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
+            {lockerSlot({ key: 'hero', label: 'Hero', name: hero?.name ?? 'None', dimmed: !hero, onPress: () => openSlot('avatars'),
+              thumb: heroPic || ownedHeroes[0] ? <Image source={{ uri: (heroPic || thumbOf(ownedHeroes[0], look?.body))! }} style={styles.lSlotImg} resizeMode="contain" /> : <Ionicons name="flash-outline" size={22} color="#fff" /> })}
+            {([['body', 'hair', 'Hair'], ['clothing', 'top', 'Top'], ['clothing', 'bottom', 'Bottom'], ['clothing', 'shoes', 'Shoes']] as const).map(([t, id, label]) => {
+              const sl = slotOf(t, id), on = wornIn(sl.subs!);
+              return lockerSlot({ key: id, label, name: on?.name ?? 'None', dimmed: !on, onPress: () => openSlot(t, id), thumb: slotThumb(sl) });
+            })}
+            {lockerSlot({ key: 'body', label: 'Body', name: 'Build · Face · Skin', onPress: () => openSlot('body', 'build'), thumb: slotThumb(slotOf('body', 'skin')) })}
+          </ScrollView>
+          {/* looks you saved and heroes you own, then the Shop */}
+          <View style={[styles.lBottom, { height: LOCKER_BOTTOM }]}>
+            <View style={styles.lRowHead}>
+              <Text style={styles.lTitle}>Looks</Text>
+              <Pressable onPress={saveNow} hitSlop={8}><Text style={styles.lAction}>Save current</Text></Pressable>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
+              {myLooks.map((l) => {
+                const pic = bodyPictureOf(l.look) || l.picture || stagePicture(l.look);
+                const on = !!look && !look.character && sameLook(look, l.look);
+                return (
+                  <Pressable key={l.id} onPress={() => wearLook(l.look)} onLongPress={() => lookOptions(l.id, l.name)} style={[styles.lLook, on && styles.lLookOn]}>
+                    {pic ? <Image source={{ uri: pic }} style={[styles.thumbImg, { width: '100%', height: '100%', transform: [{ scale: 1.55 }, { translateY: 3 }] }]} resizeMode="cover" /> : <Ionicons name="shirt-outline" size={26} color={DIM} />}
+                  </Pressable>
+                );
+              })}
+              {ownedHeroes.map((i) => (
+                <Pressable key={i.id} onPress={() => tap(i)} style={[styles.lLook, { backgroundColor: '#14231f' }, !!look && !!i.isWorn?.(look) && styles.lLookOn]}>
+                  {thumbOf(i, look?.body) ? <Image source={{ uri: thumbOf(i, look?.body)! }} style={styles.lSlotImg} resizeMode="contain" /> : null}
+                </Pressable>
+              ))}
+              {!myLooks.length && !ownedHeroes.length ? <Text style={[styles.hint, { paddingHorizontal: 0 }]}>Put a look together and save it here.</Text> : null}
+            </ScrollView>
+            <Pressable onPress={openShop} style={({ pressed }) => [styles.lShop, pressed && { opacity: 0.8 }]}>
+              <LinearGradient colors={['#2a2114', '#14120d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              {shopFace && thumbOf(shopFace, look?.body) ? <Image source={{ uri: thumbOf(shopFace, look?.body)! }} style={{ width: 46, height: 46 }} resizeMode="contain" /> : <Ionicons name="bag-handle-outline" size={28} color={GOLD} />}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.lShopTitle}>Shop</Text>
+                <Text style={styles.lShopSub} numberOfLines={1}>{shopFace ? `New: ${shopFace.name} · ${shopNew.length} items to try on` : 'Clothes, hair and heroes'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={GOLD} />
+            </Pressable>
+            {cart.length ? buyBarView() : null}
+          </View>
+        </>
+      ) : null}
 
       {/* the avatar button's menu: the editors, and the profile */}
       {customize ? (
@@ -606,7 +803,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       ) : null}
 
       {/* items */}
-      <View style={styles.sheet}>
+      {atLocker || mode === 'shop' ? null : <View style={[styles.sheet, { marginTop: STAGE_H - 22 }]}>
         <View style={styles.handle} />
         {editor ? (
           <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false} scrollEnabled={!grab} bounces={false}>
@@ -691,13 +888,13 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         <View style={styles.tabsBar}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
             {tabs.map((t) => (
-              <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); setSeeAll(false); }} style={[styles.tab, tab === t.id && styles.tabOn]}>
-                <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
+              <Pressable key={t.id} onPress={() => { setTab(t.id); setSub(null); setSelected(null); setSeeAll(false); }} style={[styles.sChip, tab === t.id && styles.sChipOn]}>
+                <Text style={[styles.sChipText, tab === t.id && styles.sChipTextOn]}>{tabName(t.id)}</Text>
               </Pressable>
             ))}
           </ScrollView>
         </View>
-        <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+        <ScrollView key={tab} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
         {subs.length ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subs}>
             {subs.map((s) => (
@@ -712,7 +909,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             <Ionicons name="arrow-back" size={22} color="#fff" />
             <Text style={[styles.heading, { paddingHorizontal: 10, paddingTop: 0 }]}>Outfits</Text>
           </Pressable>
-        ) : <Text style={styles.heading}>{sub || (tab === 'all' ? 'Recommended For You' : TABS.find((t) => t.id === tab)?.label)}</Text>}
+        ) : tab === 'all' || sub ? <Text style={styles.heading}>{sub || 'Recommended For You'}</Text> : <View style={{ height: 14 }} />}
         <View style={styles.grid}>
           {items.length ? items.map((i) => <ItemTile key={i.id} i={i} />) : <Text style={styles.empty}>{AVATAR_ITEMS.some((i) => i.tab === tab)
             ? 'You own everything here. More coming soon.' : `No ${TABS.find((t) => t.id === tab)?.label.toLowerCase()} yet. New ones show up here.`}</Text>}
@@ -721,21 +918,101 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
         </>}
         {/* checkout bar (like Roblox's): one thing on trial is bought straight from it; more open the checkout */}
-        {cart.length && !editor ? (
-          <View ref={bar} style={[styles.buyBar, { paddingBottom: 10 }]}>
-            <Pressable style={styles.buyMain} onPress={() => (cart.length === 1 ? checkout() : setCartOpen(true))} disabled={buying}>
-              {/* champagne gold with a soft sheen: light top, gentle fall-off, no mustard */}
-              <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
-              {cart.length === 1
-                ? <><TokBuxIcon size={18} /><Text style={styles.buyMainText}>{total.toLocaleString()}</Text></>
-                : <Text style={styles.buyMainText}>View Checkout ({cart.length})</Text>}
-            </Pressable>
-            <Pressable style={styles.buySide} onPress={() => (cart.length === 1 ? openOptions(cartItems[0]) : clearCart())} hitSlop={4} accessibilityLabel={cart.length === 1 ? 'More' : 'Clear'}>
-              <Ionicons name={cart.length === 1 ? 'ellipsis-horizontal' : 'trash-outline'} size={20} color="#fff" />
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
+        {cart.length && !editor ? buyBarView() : null}
+      </View>}
+
+      {/* the Shop's front: the new hero, then heroes, outfits, hair, clothes (tap: try it on, a hero: up close) */}
+      {!locker && mode === 'shop' && store === 'front' ? (
+        <View style={styles.sPage}>
+          <ScrollView contentContainerStyle={{ paddingTop: insets.top + 110, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+            {featured ? (
+              <Pressable onPress={() => openShow('avatars', featured)} style={({ pressed }) => [styles.sFeat, pressed && { opacity: 0.85 }]}>
+                <LinearGradient colors={['#5a3d12', '#1b140a']} start={{ x: 0.9, y: 0.2 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
+                {thumbOf(featured, look?.body) ? <Image source={{ uri: thumbOf(featured, look?.body)! }} style={styles.sFeatImg} resizeMode="contain" /> : null}
+                <View style={styles.sFeatTag}><Text style={styles.sFeatTagText}>NEW HERO</Text></View>
+                <View style={styles.sFeatBody}>
+                  <Text style={styles.sFeatName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{featured.name}</Text>
+                  <Text style={styles.sFeatSub} numberOfLines={2}>{powersOf(featured).slice(0, 2).join(' + ') || 'A hero for every game'}</Text>
+                  <View style={styles.sFeatBtn}>
+                    <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+                    <TokBuxIcon size={16} /><Text style={styles.buyMainText}>{priceOf(featured).toLocaleString()}</Text>
+                  </View>
+                </View>
+              </Pressable>
+            ) : null}
+            {/* everything, mixed (the server's order for you once it has answered), no headings */}
+            <View style={styles.sSeeRow}>
+              {frontItems.length > 12 ? <Pressable onPress={() => setFeedAll(!feedAll)} hitSlop={8}><Text style={styles.sSeeAll}>{feedAll ? 'Show less' : 'See all'}</Text></Pressable> : null}
+            </View>
+            <View style={styles.grid}>{(feedAll ? frontItems : frontItems.slice(0, 12)).map((i) => storeTile(i, () => openShow(i.tab as ShopCat, i)))}</View>
+          </ScrollView>
+          <View style={[styles.sHeroBg, { top: 0, bottom: undefined, height: insets.top + 104 }]} />
+          {/* every category one tap away (Heroes: up close; the rest: tried on, on its tab) */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.sCats, { top: insets.top + 58 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+            {SHOP_CATS.filter(([c]) => catItems(c).length).map(([c, label]) => (
+              <Pressable key={c} onPress={() => openShow(c)} style={styles.sChip}><Text style={styles.sChipText}>{label}</Text></Pressable>
+            ))}
+          </ScrollView>
+          {shopHead(() => setLocker(true))}
+        </View>
+      ) : null}
+
+      {/* up close (like the mock's screen 3): the category's chips on top, the item on you on the stage, swipe through
+          the category; Try on keeps it on (in the bag), Buy gets it */}
+      {atShow && shown ? (
+        <View style={[styles.sPage, { backgroundColor: 'transparent', zIndex: 32 }]}>
+          <View style={[styles.sHeroBg, { top: SHOW_TOP + SHOW_H }]} />
+          <View style={[styles.sHeroBg, { top: 0, bottom: undefined, height: SHOW_TOP }]} />
+          <ScrollView key={showCat} ref={showScroll} horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(e) => setShowAt(Math.round(e.nativeEvent.contentOffset.x / W))} style={{ position: 'absolute', top: SHOW_TOP, height: SHOW_H, left: 0, right: 0 }}>
+            {showList.map((i) => <View key={i.id} style={{ width: W, height: SHOW_H }} />)}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.sCats, { top: insets.top + 58 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+            {SHOP_CATS.filter(([c]) => catItems(c).length).map(([c, label]) => (
+              <Pressable key={c} onPress={() => openShow(c)} style={[styles.sChip, showCat === c && styles.sChipOn]}>
+                <Text style={[styles.sChipText, showCat === c && styles.sChipTextOn]}>{label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          {showAt > 0 ? <Pressable style={[styles.round, styles.sArrow, { left: 10, top: SHOW_TOP + SHOW_H / 2 - 22 }]} onPress={() => toShow(showAt - 1)} hitSlop={8}><Ionicons name="chevron-back" size={22} color="#fff" /></Pressable> : null}
+          {showAt < showList.length - 1 ? <Pressable style={[styles.round, styles.sArrow, { right: 10, top: SHOW_TOP + SHOW_H / 2 - 22 }]} onPress={() => toShow(showAt + 1)} hitSlop={8}><Ionicons name="chevron-forward" size={22} color="#fff" /></Pressable> : null}
+          {(() => {
+            const mine = owns(shown), on = !!look && !!shown.isWorn?.(look);
+            const tags = shown.tab === 'avatars' ? powersOf(shown) : shown.pieces ? [`Whole look · ${shown.pieces.length} pieces`] : [shown.sub];
+            return (
+              <View style={styles.sHeroInfo}>
+                <Text style={styles.sHeroName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{shown.name}</Text>
+                <View style={styles.sPowers}>
+                  {tags.map((p) => <View key={p} style={styles.sPower}>{shown.tab === 'avatars' ? <Ionicons name="flash" size={12} color={GOLD} /> : null}<Text style={styles.sPowerText}>{p}</Text></View>)}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {mine ? (
+                    <Pressable style={[styles.sBtn, { backgroundColor: on ? CARD : ACCENT }]} onPress={() => { if (!on) keepOn(shown); }}>
+                      <Text style={styles.sBtnText}>{on ? 'Wearing' : 'Wear'}</Text>
+                    </Pressable>
+                  ) : (
+                    <>
+                      <Pressable style={[styles.sBtn, { backgroundColor: CARD }, on && { borderWidth: 1.5, borderColor: GOLD }]} onPress={() => keepOn(shown)}>
+                        <Text style={styles.sBtnText}>{on ? 'Take off' : 'Try on'}</Text>
+                      </Pressable>
+                      <Pressable style={[styles.sBtn, { flex: 1.4, overflow: 'hidden' }]} onPress={() => buyNow(shown)} disabled={buying}>
+                        <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+                        <Text style={styles.buyMainText}>Buy ·</Text><TokBuxIcon size={18} /><Text style={styles.buyMainText}>{priceOf(shown).toLocaleString()}</Text>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
+                {showList.length <= 14 ? (
+                  <View style={styles.sDots}>
+                    {showList.map((x, n) => <View key={x.id} style={[styles.sDot, n === showAt && styles.sDotOn]} />)}
+                  </View>
+                ) : <Text style={styles.sCount}>{showAt + 1} / {showList.length}</Text>}
+              </View>
+            );
+          })()}
+          {shopHead(() => setStore('front'))}
+        </View>
+      ) : null}
 
       {/* checkout (like Roblox's): a page of what's being tried on and not owned yet, each removable, the total, Buy */}
       <Modal visible={cartOpen && !!cart.length && !buyReq} animationType="slide" onRequestClose={() => setCartOpen(false)}>
@@ -806,8 +1083,64 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 
 
 const styles = StyleSheet.create({
+  // the Shop's front and heroes
+  sPage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: BG, zIndex: 30 },
+  sHead: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 10, zIndex: 5 },
+  sTitle: { flex: 1, color: '#f3e2b3', fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
+  sFeat: { marginHorizontal: 16, height: 220, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(220,182,100,0.35)' },
+  sFeatImg: { position: 'absolute', right: -6, bottom: -8, width: 190, height: 236 },
+  sFeatTag: { position: 'absolute', left: 16, top: 16, backgroundColor: '#f3e2b3', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  sFeatTagText: { color: '#1a1408', fontSize: 11, fontWeight: '900' },
+  sFeatBody: { position: 'absolute', left: 16, bottom: 16, width: 200 },
+  sFeatName: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
+  sFeatSub: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginBottom: 10 },
+  sFeatBtn: { height: 38, width: 130, borderRadius: 12, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  sSeeAll: { color: DIM, fontSize: 13, fontWeight: '700' },
+  sPrice: { color: GOLD, fontSize: 13, fontWeight: '800' },
+  sTick: { position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: 10, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
+  sBar: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  sHeroBg: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: BG },
+  sCats: { position: 'absolute', left: 0, right: 0, height: 34, zIndex: 5 },
+  sUndo: { position: 'absolute', right: 16, gap: 10 },
+  sBag: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 11, borderRadius: 17, backgroundColor: '#f3e2b3' },
+  sBagText: { color: '#1a1408', fontSize: 14, fontWeight: '900' },
+  sCount: { color: DIM, fontSize: 13, fontWeight: '700', textAlign: 'center', marginTop: 12 },
+  sSeeRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, marginTop: 20, marginBottom: 10, minHeight: 18 },
+  sChip: { height: 34, paddingHorizontal: 15, borderRadius: 17, backgroundColor: '#17191b', justifyContent: 'center' },
+  sChipOn: { backgroundColor: '#f3e2b3' },
+  sChipText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '700' },
+  sChipTextOn: { color: '#1a1408' },
+  sArrow: { position: 'absolute', zIndex: 4 },
+  sHeroInfo: { position: 'absolute', left: 16, right: 16, bottom: 22 },
+  sHeroName: { color: '#fff', fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
+  sPowers: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 16 },
+  sPower: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#17191b', borderRadius: 14, paddingHorizontal: 11, height: 28 },
+  sPowerText: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '700' },
+  sBtn: { flex: 1, height: 50, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  sBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  sDots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 14 },
+  sDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)' },
+  sDotOn: { width: 16, backgroundColor: GOLD },
   root: { flex: 1, backgroundColor: BG },
-  stage: { height: H * 0.47, backgroundColor: '#dce2e8' },
+  stage: { position: 'absolute', backgroundColor: BG },
+  lHead: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', gap: 8, zIndex: 3 },
+  lName: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: -0.4 },
+  lHandle: { color: DIM, fontSize: 13, fontWeight: '600', marginTop: 1 },
+  lSlots: { position: 'absolute', right: 14, width: W * 0.4 - 10, zIndex: 3 },
+  lSlot: { flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: '#141618', borderRadius: 14, padding: 6 },
+  lSlotThumb: { width: 48, height: 48, borderRadius: 11, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  lSlotImg: { width: 42, height: 42 },
+  lSlotLabel: { color: DIM, fontSize: 11, fontWeight: '600' },
+  lSlotName: { color: '#fff', fontSize: 13, fontWeight: '700', marginTop: 1 },
+  lBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 3 },
+  lRowHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 6, paddingBottom: 9 },
+  lTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  lAction: { color: ACCENT, fontSize: 13, fontWeight: '700' },
+  lLook: { width: 64, height: 64, borderRadius: 14, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 2, borderColor: 'transparent' },
+  lLookOn: { borderColor: ACCENT },
+  lShop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 14, marginBottom: 10, height: 62, borderRadius: 16, paddingHorizontal: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(220,182,100,0.3)' },
+  lShopTitle: { color: '#f3e2b3', fontSize: 15, fontWeight: '800' },
+  lShopSub: { color: DIM, fontSize: 12, fontWeight: '600', marginTop: 1 },
   topRow: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   round: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(18,13,30,0.9)', alignItems: 'center', justifyContent: 'center' },
   seg: { flexDirection: 'row', backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 999, padding: 4 },
@@ -820,7 +1153,7 @@ const styles = StyleSheet.create({
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 20 },
   menuText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   edHead: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  edTitle: { color: '#111', fontSize: 20, fontWeight: '800' },
+  edTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
   rail: { position: 'absolute', left: 16, backgroundColor: 'rgba(18,13,30,0.9)', borderRadius: 26, padding: 4, gap: 2 },
   railBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   railOn: { backgroundColor: 'rgba(255,255,255,0.22)' },
@@ -872,8 +1205,8 @@ const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: PANEL, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -22, borderTopWidth: 1, borderColor: GOLD_LINE },
   handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', marginTop: 8 },
   tabs: { flexDirection: 'row', gap: 22, paddingHorizontal: 18, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
-  tabsBar: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },   // (the Shop's: more tabs than fit, so it scrolls)
-  tabsRow: { gap: 22, paddingHorizontal: 18, paddingTop: 16 },
+  tabsBar: {},   // (the Shop's: more tabs than fit, so it scrolls)
+  tabsRow: { gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12 },
   tab: { paddingBottom: 10, borderBottomWidth: 3, borderBottomColor: 'transparent' },
   tabOn: { borderBottomColor: GOLD },
   tabText: { color: DIM, fontSize: 16, fontWeight: '700' },

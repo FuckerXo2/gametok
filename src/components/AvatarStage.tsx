@@ -8,7 +8,7 @@ import { lookKey, type AvatarRecord, type Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 29;
+const STAGE_V = 34;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads
@@ -60,21 +60,23 @@ interface AvatarStageProps {
   /** Take a headshot once this look is on the stage (the profile picture). */
   headshotOf?: AvatarRecord | null;
   onHeadshot?: (png: string, of: AvatarRecord) => void;
-  /** 'dark': a teal glow, no room (the Me screen) */
-  look?: 'dark' | 'studio';
+  /** 'dark': a teal glow, no room (the Me screen); 'light'/'mint': clean soft mint-teal ambient glow */
+  look?: 'dark' | 'studio' | 'light' | 'mint';
+  /** 'gold': the dark look in the Shop's gold instead of teal (switched without reloading) */
+  tint?: 'gold' | null;
   /** Look only: the 3D view takes no touches (behind other controls, e.g. the Games screen). */
   passive?: boolean;
 }
 
-export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot, look, passive }) => {
+export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 'body', style, onStats, headshotOf, onHeadshot, look, passive, tint }) => {
   const shotAsked = useRef<string | null>(null);
-  const bg = look === 'dark' ? '#0b0c0d' : look === 'studio' ? '#dce2e8' : '#dce2e8';
+  const bg = look === 'dark' ? '#0b0c0d' : (look === 'light' || look === 'mint') ? '#f8f9fa' : '#dce2e8';
   const ref = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);   // the page is drawing what it's been sent
-  const pictureKey = `${STAGE_V}|${look}|${focus}|${JSON.stringify(avatar)}`;
+  const pictureKey = `${STAGE_V}|${look}${tint ? `-${tint}` : ''}|${focus}|${JSON.stringify(avatar)}`;
   const [, setPicturesReady] = useState(false);
   useEffect(() => { loadPictures().then(() => setPicturesReady(true)); }, []);
   const picture = pictures.get(pictureKey);
@@ -82,8 +84,8 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const snapKey = useRef<string | null>(null);
-  const latest = useRef({ avatar, anim, focus, headshotOf });
-  latest.current = { avatar, anim, focus, headshotOf };
+  const latest = useRef({ avatar, anim, focus, headshotOf, tint });
+  latest.current = { avatar, anim, focus, headshotOf, tint };
 
   const send = (m: object) => ref.current?.postMessage(JSON.stringify(m));
   // the page says READY on every (re)load: hand it everything it should be showing
@@ -92,17 +94,19 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
     if (l.avatar) send({ type: 'SET', avatar: l.avatar });
     if (l.anim) send({ type: 'ANIM', name: l.anim });
     send({ type: 'FOCUS', part: l.focus });
+    if (l.tint) send({ type: 'TINT', name: l.tint });
   };
 
   useEffect(() => { if (ready && avatar) send({ type: 'SET', avatar }); }, [ready, avatar]);
   useEffect(() => { if (ready && anim) send({ type: 'ANIM', name: anim }); }, [ready, anim]);
   useEffect(() => { if (ready) send({ type: 'FOCUS', part: focus }); }, [ready, focus]);
+  useEffect(() => { if (ready) send({ type: 'TINT', name: tint ?? 'teal' }); }, [ready, tint]);
   useEffect(() => { const sub = DeviceEventEmitter.addListener('gametok:stage-reset', () => send({ type: 'RESET' })); return () => sub.remove(); }, []);
   // a new framing of the look on stage (the full body, say): picture that too, once it's settled
   useEffect(() => {
     if (!ready || loading || !avatar || pictures.has(pictureKey)) return;
     const pk = pictureKey, t = setTimeout(() => {
-      if (`${STAGE_V}|${look}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}` === pk) { snapKey.current = pk; send({ type: 'SNAPSHOT' }); }
+      if (`${STAGE_V}|${look}${latest.current.tint ? `-${latest.current.tint}` : ''}|${latest.current.focus}|${JSON.stringify(latest.current.avatar)}` === pk) { snapKey.current = pk; send({ type: 'SNAPSHOT' }); }
     }, 1500);
     return () => clearTimeout(t);
   }, [ready, loading, pictureKey]);
