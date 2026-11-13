@@ -10,6 +10,8 @@ import { AVATAR_HOST } from './host';
 import type { AvatarRecord, AvatarItem } from './catalog';
 
 export const AVATAR_V2 = __DEV__ && true;
+// published: v2/ beside v1/ on R2 (games/avatar-editor/tools/publish_stage.mjs --v2); on the Mac: the folder itself
+const V2_HOST = AVATAR_HOST.startsWith('https:') ? `${AVATAR_HOST}/v2` : AVATAR_HOST;
 
 export type Kind = 'top' | 'bottom' | 'shoes' | 'hands' | 'full';
 export interface SkLook {
@@ -53,7 +55,7 @@ interface Colorway { id: string; name: string; channels: Record<string, string> 
 interface CatItem { id: string; name: string; kind: Kind; parts: string[]; channels: Record<string, string>; colorways?: Colorway[]; premium?: boolean }
 let catalog: { face: Record<string, number>; items: CatItem[]; hairColors?: Record<string, string>; hairNames?: string[] } | null = null;
 let loading: Promise<boolean> | null = null;
-export const loadV2Catalog = () => (loading ??= fetch(`${AVATAR_HOST}/assets/sidekick/catalog.json?t=${Date.now()}`)
+export const loadV2Catalog = () => (loading ??= fetch(`${V2_HOST}/assets/sidekick/catalog.json?t=${Date.now()}`)
   .then((r) => r.json()).then((c) => { catalog = c; return true; }).catch(() => { loading = null; return false; }));
 
 const PLACE: Record<Kind, Pick<AvatarItem, 'category' | 'tab' | 'sub' | 'focus' | 'icon'>> = {
@@ -112,4 +114,4 @@ export function v2Beards(): AvatarItem[] {
   }));
 }
 // item pictures: rendered per v2 item (games/avatar-editor/tools/sk_thumbs.py)
-export const v2Thumb = (id: string) => `${AVATAR_HOST}/assets/sidekick/thumbs/${id}.webp`;
+export const v2Thumb = (id: string) => `${V2_HOST}/assets/sidekick/thumbs/${id}.webp`;
