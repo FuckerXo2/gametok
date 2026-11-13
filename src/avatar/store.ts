@@ -5,11 +5,17 @@ import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { avatarAccount } from '../services/api';
-import { AVATAR_ITEMS, AvatarRecord, ShopItem, normalizeAvatar, setShop } from './catalog';
+import { AVATAR_ITEMS, AvatarRecord, ShopItem, normalizeAvatar, setShop, refreshShop } from './catalog';
+import { AVATAR_V2, loadV2Catalog } from './v2';
 
 const KEY = 'gametok.avatar.v1';
 const SHOT_KEY = 'gametok.avatar.headshotFor';   // the look the profile picture was last made from
 const SHOP_KEY = 'gametok.avatar.shop.v1';        // the server's last list of Shop items
+const SK_KEY = 'gametok.avatar.sk';               // v2 (development): the v2 choices, which the server doesn't keep yet
+let localSk: any = null;
+const skLoaded = AsyncStorage.getItem(SK_KEY).then((v) => { localSk = v ? JSON.parse(v) : null; }).catch(() => {});
+// a record from the server has no `sk`: this phone's goes back on (v2 development only)
+const withLocalSk = (r: AvatarRecord): AvatarRecord => (AVATAR_V2 && !r.sk && localSk ? { ...r, sk: localSk } : r);
 
 export interface AvatarAccount {
   avatar: AvatarRecord;
@@ -48,13 +54,14 @@ export async function syncShop() {
 // ... and again whenever the app comes back to the front
 AppState.addEventListener('change', (st) => { if (st === 'active') syncShop(); });
 
-const loaded = shopLoaded.then(() => AsyncStorage.getItem(KEY))
-  .then((s) => normalizeAvatar(s ? JSON.parse(s) : null))
+const loaded = shopLoaded.then(() => skLoaded).then(() => AsyncStorage.getItem(KEY))
+  .then((s) => withLocalSk(normalizeAvatar(s ? JSON.parse(s) : null)))
   .catch(() => normalizeAvatar(null))
   .then((avatar) => {
     current = { avatar, owned: [], tokbux: 0, prices: Object.fromEntries(AVATAR_ITEMS.map((i) => [i.id, i.price])), signedIn: false };
     emit();
     syncShop();
+    if (AVATAR_V2) loadV2Catalog().then((ok) => { if (ok && refreshShop() && current) set({ shop: (current.shop ?? 0) + 1 }); });
     return syncAvatar();
   });
 
@@ -71,7 +78,7 @@ export async function syncAvatar() {
   try {
     const me = await avatarAccount.me();
     if (me.avatar) {
-      set({ avatar: normalizeAvatar(me.avatar), owned: me.owned, tokbux: me.tokbux, prices: me.prices, sales: me.sales, signedIn: true });
+      set({ avatar: withLocalSk(normalizeAvatar(me.avatar)), owned: me.owned, tokbux: me.tokbux, prices: me.prices, sales: me.sales, signedIn: true });
       AsyncStorage.setItem(KEY, JSON.stringify(current!.avatar)).catch(() => {});
     } else {
       const avatar = onlyOwned(current!.avatar, me.owned, me.prices);
@@ -93,6 +100,7 @@ export function saveAvatar(r: AvatarRecord, why = '?') {
   }
   set({ avatar: r });
   AsyncStorage.setItem(KEY, JSON.stringify(r)).catch(() => {});
+  if (AVATAR_V2 && r.sk) { localSk = r.sk; AsyncStorage.setItem(SK_KEY, JSON.stringify(r.sk)).catch(() => {}); }
   if (!current!.signedIn) return;
   if (saveT) clearTimeout(saveT);
   saveT = setTimeout(() => { avatarAccount.save(r).catch(() => syncAvatar()); }, 600);   // refused: take the account's

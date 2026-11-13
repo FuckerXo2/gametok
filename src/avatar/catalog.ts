@@ -3,6 +3,7 @@
 // Item ids match the files there: hair/<Hair_*>.glb, parts/<Set>_<suffix>.glb.
 import type { Ionicons } from '@expo/vector-icons';
 import { AVATAR_HOST } from './host';
+import { AVATAR_V2, v2Items, v2Faces, v2Thumb, type SkLook } from './v2';
 
 export type Slot = 'head' | 'top' | 'arms' | 'legs' | 'feet' | 'acc';
 
@@ -22,20 +23,33 @@ export interface AvatarRecord {
   fit: boolean;
   parts: Record<Slot, string | null>;
   colors: Record<Slot, string>;
+  sk?: Partial<SkLook>;                // v2 (Sidekick) choices, development only (avatar/v2.ts)
   other?: AvatarRecord;                // the look of their other body: male and female each keep their own (switching swaps them)
 }
 
 export const DEFAULT_AVATAR: AvatarRecord = {
   body: 'Male', skin: 3, face: 0, hair: 'Hair_Buzzed', beard: false, hairColor: '#5a3420', fit: true,
-  parts: { head: null, top: 'Street_TeeWhite', arms: null, legs: 'Street_JeansBlue', feet: 'Street_SneakersWhite', acc: null },
+  parts: { head: null, top: 'Street_TeeWhite', arms: null, legs: 'Street_ShortsKhaki', feet: 'Street_SneakersWhite', acc: null },
   colors: { head: '#ffffff', top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff', acc: '#ffffff' },
 };
 
-// the starter look for each body, picked when the account is made (onboarding): boy or girl
+// the starter look for each body: boy or girl
 export const STARTER_AVATARS: Record<AvatarRecord['body'], AvatarRecord> = {
   Male: DEFAULT_AVATAR,
   Female: { ...DEFAULT_AVATAR, body: 'Female', hair: 'Hair_SimpleParted', parts: { ...DEFAULT_AVATAR.parts }, colors: { ...DEFAULT_AVATAR.colors } },
 };
+
+// what a new account starts in, mixed at random (all of it free, so theirs): a white or black tee, khaki or black
+// shorts, white sneakers
+const STARTER_PICKS = { top: ['Street_TeeWhite', 'Street_TeeBlack'], legs: ['Street_ShortsKhaki', 'Street_ShortsBlack'], feet: ['Street_SneakersWhite'] };
+const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+export function randomStarter(body: AvatarRecord['body']): AvatarRecord {
+  const s = STARTER_AVATARS[body];
+  return { ...s, parts: { ...s.parts, top: pick(STARTER_PICKS.top), legs: pick(STARTER_PICKS.legs), feet: pick(STARTER_PICKS.feet) }, colors: { ...s.colors } };
+}
+// still in a starter look: nothing on but the starter pieces, and the starter hair
+export const isStarterLook = (r: AvatarRecord) => r.hair === STARTER_AVATARS[r.body].hair && !r.parts.head && !r.parts.arms && !r.parts.acc
+  && (['top', 'legs', 'feet'] as const).every((k) => STARTER_PICKS[k].includes(r.parts[k] as string));
 
 // a look's identity: what it wears on what body, in any field order (the other body's look aside); two looks are the
 // same look when these match
@@ -84,7 +98,7 @@ export const TABS: { id: Tab; label: string; subs: string[] }[] = [
 // item pictures, rendered from the 3D files (games/avatar-editor/tools/thumbs.html; faces: tools/faces.html, one
 // per build, shown on the wearer's)
 export const thumbOf = (item: AvatarItem, body: AvatarRecord['body'] = 'Male') =>
-  item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}${item.id.startsWith('face-') ? `-${body}` : ''}.webp${item.pic ? `?v=${item.pic}` : ''}`;
+  item.id.startsWith('sk-') ? v2Thumb(item.id) : item.id.startsWith('skin-') ? null : `${AVATAR_HOST}/assets/thumbs/${item.id}${item.id.startsWith('face-') ? `-${body}` : ''}.webp${item.pic ? `?v=${item.pic}` : ''}`;
 
 export interface AvatarItem {
   id: string;
@@ -193,10 +207,17 @@ const BODY_ITEMS: AvatarItem[] = [
 
 // every item: one array, changed in place when the Shop's list arrives (setShop), so its importers see the new one
 export const AVATAR_ITEMS: AvatarItem[] = [];
+let lastList: ShopItem[] = [];
+// v2: rebuild the list once its catalog has arrived (avatar/store.ts)
+export const refreshShop = () => setShop(lastList);
 export function setShop(list: ShopItem[]) {
-  const shop = (Array.isArray(list) ? list : []).map(toItem).filter((i): i is AvatarItem => !!i);
+  lastList = Array.isArray(list) ? list : lastList;
+  const shop = lastList.map(toItem).filter((i): i is AvatarItem => !!i);
   if (!shop.length) return false;
-  AVATAR_ITEMS.splice(0, AVATAR_ITEMS.length, ...BODY_ITEMS, ...shop);
+  // v2 (development): heroes stay; v1 clothes, hair and beards give way to the v2 pieces; v1 faces to v2 heads
+  if (AVATAR_V2) AVATAR_ITEMS.splice(0, AVATAR_ITEMS.length, ...BODY_ITEMS.filter((i) => i.sub !== 'Face'), ...v2Faces(),
+    ...shop.filter((i) => i.tab === 'avatars'), ...v2Items());
+  else AVATAR_ITEMS.splice(0, AVATAR_ITEMS.length, ...BODY_ITEMS, ...shop);
   return true;
 }
 setShop(require('./shop-fallback.json').items);

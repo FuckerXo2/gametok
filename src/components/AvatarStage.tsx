@@ -6,9 +6,10 @@ import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lookKey, type AvatarRecord, type Focus } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
+import { toStage } from '../avatar/v2';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 45;
+const STAGE_V = 46;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads
@@ -91,13 +92,13 @@ export const AvatarStage: React.FC<AvatarStageProps> = ({ avatar, anim, focus = 
   // the page says READY on every (re)load: hand it everything it should be showing
   const sync = () => {
     const l = latest.current;
-    if (l.avatar) send({ type: 'SET', avatar: l.avatar });
+    if (l.avatar) send({ type: 'SET', avatar: toStage(l.avatar) });
     if (l.anim) send({ type: 'ANIM', name: l.anim });
     send({ type: 'FOCUS', part: l.focus });
     if (l.tint) send({ type: 'TINT', name: l.tint });
   };
 
-  useEffect(() => { if (ready && avatar) send({ type: 'SET', avatar }); }, [ready, avatar]);
+  useEffect(() => { if (ready && avatar) send({ type: 'SET', avatar: toStage(avatar) }); }, [ready, avatar]);
   useEffect(() => { if (ready && anim) send({ type: 'ANIM', name: anim }); }, [ready, anim]);
   useEffect(() => { if (ready) send({ type: 'FOCUS', part: focus }); }, [ready, focus]);
   useEffect(() => { if (ready) send({ type: 'TINT', name: tint ?? 'teal' }); }, [ready, tint]);
