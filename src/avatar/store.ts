@@ -77,6 +77,7 @@ function onlyOwned(r: AvatarRecord, owned: string[], prices: Record<string, numb
 export async function syncAvatar() {
   try {
     const me = await avatarAccount.me();
+    if (__DEV__ && AVATAR_V2) console.log(`[Avatar] server keeps the v2 look: ${!!(me.avatar as any)?.sk}`);
     if (me.avatar) {
       set({ avatar: withLocalSk(normalizeAvatar(me.avatar)), owned: me.owned, tokbux: me.tokbux, prices: me.prices, sales: me.sales, signedIn: true });
       AsyncStorage.setItem(KEY, JSON.stringify(current!.avatar)).catch(() => {});
