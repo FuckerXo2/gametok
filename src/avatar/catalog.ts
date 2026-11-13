@@ -3,7 +3,7 @@
 // Item ids match the files there: hair/<Hair_*>.glb, parts/<Set>_<suffix>.glb.
 import type { Ionicons } from '@expo/vector-icons';
 import { AVATAR_HOST } from './host';
-import { AVATAR_V2, v2Items, v2Faces, v2Thumb, type SkLook } from './v2';
+import { AVATAR_V2, v2Items, v2Faces, v2Beards, v2Thumb, type SkLook } from './v2';
 
 export type Slot = 'head' | 'top' | 'arms' | 'legs' | 'feet' | 'acc';
 
@@ -216,7 +216,7 @@ export function setShop(list: ShopItem[]) {
   if (!shop.length) return false;
   // v2 (development): heroes stay; v1 clothes, hair and beards give way to the v2 pieces; v1 faces to v2 heads
   if (AVATAR_V2) AVATAR_ITEMS.splice(0, AVATAR_ITEMS.length, ...BODY_ITEMS.filter((i) => i.sub !== 'Face'), ...v2Faces(),
-    ...shop.filter((i) => i.tab === 'avatars'), ...v2Items());
+    ...shop.filter((i) => i.tab === 'avatars'), ...v2Items(), ...v2Beards());
   else AVATAR_ITEMS.splice(0, AVATAR_ITEMS.length, ...BODY_ITEMS, ...shop);
   return true;
 }

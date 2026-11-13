@@ -9,7 +9,7 @@ import { AVATAR_HOST } from '../avatar/host';
 import { toStage } from '../avatar/v2';
 
 // STAGE_V: bump with every change to the stage files (app-stage.html imports them with the same ?v=), phones cache them.
-const STAGE_V = 46;
+const STAGE_V = 47;
 export const AVATAR_STAGE_URL = `${AVATAR_HOST}/app-stage.html?v=${STAGE_V}`;
 
 // The app has more than one stage (Games, Me) and iOS keeps only the one on screen alive: the other's page reloads

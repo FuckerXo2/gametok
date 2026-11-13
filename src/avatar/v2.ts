@@ -40,9 +40,10 @@ export function toStage(r: AvatarRecord | null): any {
   const width = r.width ?? 1, shapeX = r.shapeX ?? 0, compact = r.compact ?? 0;
   const clamp = (v: number, lo: number, hi: number) => Math.round(Math.max(lo, Math.min(hi, v)));
   return {
-    v: 2, head: s.head, hair: s.hair, brows: s.brows, nose: s.nose, ears: s.ears, facial: r.beard ? Math.max(1, s.facial) : s.facial,
+    v: 2, head: s.head, hair: s.hair, brows: s.brows, nose: s.nose, ears: s.ears, facial: s.facial,
     skin: V2_TONES[TONE_OF_V1[r.skin] ?? 3], hairColor: (r.hairColor || '#2b1e16').slice(1).toUpperCase(), browColor: '', eyeColor: s.eyeColor,
     body: { fem: r.body === 'Female' ? 100 : 0, size: clamp((width - 1) * 700 - compact * 40, -100, 100), buff: clamp(Math.max(0, shapeX) * 80, 0, 100) },
+    height: r.height ?? 1, headScale: r.head ?? 1,
     wear: s.wear, colors: s.colors, expr: 'Neutral',
   };
 }
@@ -81,12 +82,19 @@ export function v2Items(): AvatarItem[] {
   }));
   return [...pieces, ...hairs];
 }
-// the Face editor: v2 heads instead of v1's six face shapes
+// the Face editor: v2 heads, noses, ears and brows instead of v1's six face shapes (all free; one of each is always on)
+const FACE_PARTS: [keyof SkLook & ('head' | 'nose' | 'ears' | 'brows'), string][] = [['head', 'Head'], ['nose', 'Nose'], ['ears', 'Ears'], ['brows', 'Brows']];
 export function v2Faces(): AvatarItem[] {
-  const n = catalog?.face.head ?? 2;
-  return Array.from({ length: n }, (_, i): AvatarItem => ({
-    id: `sk-head-${i + 1}`, name: `Head ${i + 1}`, price: 0, tint: '#e2e8f0', category: 'body', tab: 'body', sub: 'Face', focus: 'head', icon: 'happy-outline',
-    wear: (r) => withSk(r, { head: i + 1 }), isWorn: (r) => skOf(r).head === i + 1,
+  return FACE_PARTS.flatMap(([k, label]) => Array.from({ length: catalog?.face[k] ?? (k === 'head' ? 2 : 0) }, (_, i): AvatarItem => ({
+    id: `sk-${k}-${i + 1}`, name: `${label} ${i + 1}`, price: 0, tint: '#e2e8f0', category: 'body', tab: 'body', sub: 'Face', focus: 'head', icon: 'happy-outline',
+    wear: (r) => withSk(r, { [k]: i + 1 } as Partial<SkLook>), isWorn: (r) => skOf(r)[k] === i + 1,
+  })));
+}
+// beards: the v2 facial hair styles (male only, like v1's beard), coloured with the hair
+export function v2Beards(): AvatarItem[] {
+  return Array.from({ length: catalog?.face.facial ?? 0 }, (_, i): AvatarItem => ({
+    id: `sk-beard-${i + 1}`, name: `Beard ${i + 1}`, price: 0, tint: '#e2e8f0', category: 'hair', tab: 'beards', sub: 'Beards', focus: 'head', icon: 'man-outline', for: 'Male',
+    wear: (r) => withSk(r, { facial: i + 1 }), isWorn: (r) => !r.character && skOf(r).facial === i + 1, takeOff: (r) => withSk(r, { facial: 0 }),
   }));
 }
 // item pictures: rendered per v2 item (games/avatar-editor/tools/sk_thumbs.py)
