@@ -22,6 +22,7 @@ import { BuyItemSheet, BuyRequest } from './BuyItemSheet';
 import { Ask, ConfirmCard, ItemDetails, ItemOptions, askOrDo, shareItem } from './ItemDetails';
 import { AVATAR_ITEMS, AvatarItem, AvatarRecord, Focus, STARTER_AVATARS, TABS, Tab, fitsBody, isStarterLook, thumbOf } from '../avatar/catalog';
 import { sameLook, useSavedLooks } from '../avatar/looks';
+import { AVATAR_V2 } from '../avatar/v2';
 import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadshot, useAvatarAccount } from '../avatar/store';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -53,12 +54,19 @@ type Editor = (typeof CUSTOMIZE)[number];
 // Customize (like Roblox's): its own tabs, each a row of slots showing what's on; a slot lists what you own for it, then
 // shop picks ("You May Also Like"). Build and Skin open their controls right in the sheet.
 type CSlot = { id: string; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; focus: Focus; subs?: string[]; panel?: 'build' | 'skin'; only?: AvatarRecord['body'] };
+// v2 (development): the face is parts, each with its own slot (avatar/v2.ts FACE_SUB)
+const V2_FACE_SLOTS: CSlot[] = [
+  { id: 'nose', label: 'Nose', icon: 'happy-outline', focus: 'head', subs: ['Nose'] },
+  { id: 'ears', label: 'Ears', icon: 'ear-outline', focus: 'head', subs: ['Ears'] },
+  { id: 'brows', label: 'Brows', icon: 'eye-outline', focus: 'head', subs: ['Brows'] },
+];
 const CTABS: { id: 'avatars' | 'body' | 'clothing' | 'accessories'; label: string; slots: CSlot[] }[] = [
   { id: 'avatars', label: 'Avatars', slots: [] },
   { id: 'body', label: 'Body', slots: [   // (male or female: switched in Build)
     { id: 'hair', label: 'Hair', icon: 'cut-outline', focus: 'head', subs: ['Hair'] },
     { id: 'beard', label: 'Beard', icon: 'man-outline', focus: 'head', subs: ['Beards'], only: 'Male' },
-    { id: 'face', label: 'Face', icon: 'happy-outline', focus: 'head', subs: ['Face'] },
+    { id: 'face', label: AVATAR_V2 ? 'Head' : 'Face', icon: 'happy-outline', focus: 'head', subs: ['Face'] },
+    ...(AVATAR_V2 ? V2_FACE_SLOTS : []),
     { id: 'build', label: 'Build', icon: 'resize-outline', focus: 'body', panel: 'build' },
     { id: 'skin', label: 'Skin', icon: 'color-palette-outline', focus: 'body', panel: 'skin' },
   ] },
@@ -72,7 +80,7 @@ const CTABS: { id: 'avatars' | 'body' | 'clothing' | 'accessories'; label: strin
     { id: 'shoulders', label: 'Shoulder', icon: 'shield-outline', focus: 'torso', subs: ['Shoulders'] },
   ] },
 ];
-const EDITOR_SUBS: (string | undefined)[] = ['Build', 'Face', 'Skin'];
+const EDITOR_SUBS: (string | undefined)[] = ['Build', 'Face', 'Skin', 'Nose', 'Ears', 'Brows'];
 
 type Draft = { look: AvatarRecord; cart: string[] };   // on the stage, and the items in it not owned yet
 

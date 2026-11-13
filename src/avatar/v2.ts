@@ -49,8 +49,9 @@ export function toStage(r: AvatarRecord | null): any {
 }
 
 // ---------- the v2 items (fetched once from beside the stage)
-interface CatItem { id: string; name: string; kind: Kind; parts: string[]; channels: Record<string, string>; premium?: boolean }
-let catalog: { face: Record<string, number>; items: CatItem[] } | null = null;
+interface Colorway { id: string; name: string; channels: Record<string, string> }
+interface CatItem { id: string; name: string; kind: Kind; parts: string[]; channels: Record<string, string>; colorways?: Colorway[]; premium?: boolean }
+let catalog: { face: Record<string, number>; items: CatItem[]; hairColors?: Record<string, string>; hairNames?: string[] } | null = null;
 let loading: Promise<boolean> | null = null;
 export const loadV2Catalog = () => (loading ??= fetch(`${AVATAR_HOST}/assets/sidekick/catalog.json?t=${Date.now()}`)
   .then((r) => r.json()).then((c) => { catalog = c; return true; }).catch(() => { loading = null; return false; }));
@@ -64,29 +65,42 @@ const PLACE: Record<Kind, Pick<AvatarItem, 'category' | 'tab' | 'sub' | 'focus' 
 };
 const NO_WEAR: Record<Kind, null> = { top: null, bottom: null, shoes: null, hands: null, full: null };
 
+// Sold by colour, like v1: one item per colourway of each piece (sk-<id>~<colourway>) and per colour of each hairstyle
+// (sk-hair-<n>-<Colour>). No colour picker: putting one on sets the piece and its colours together.
+const sameColors = (a: Record<string, string> | undefined, b: Record<string, string>) => !!a && Object.keys(b).every((k) => (a[k] || '').toUpperCase() === b[k].toUpperCase());
 export function v2Items(): AvatarItem[] {
   if (!catalog) return [];
-  const pieces = catalog.items.map((it): AvatarItem => {
-    const k = it.kind, id = `sk-${it.id}`;
-    return {
-      id, name: it.name, price: 0, tint: `#${Object.values(it.channels)[0] ?? 'e2e8f0'}`, ...PLACE[k],
+  const pieces = catalog.items.flatMap((it) => {
+    const k = it.kind, ways = it.colorways?.length ? it.colorways : [{ id: 'default', name: '', channels: it.channels }];
+    return ways.map((cw, n): AvatarItem => ({
+      id: `sk-${it.id}~${cw.id}`, name: ways.length > 1 ? `${it.name} · ${cw.name}` : it.name, price: 0, tint: `#${Object.values(cw.channels)[0] ?? 'e2e8f0'}`, ...PLACE[k],
       ...(k === 'full' ? { whole: true } : {}),
-      wear: (r) => withSk(r, { wear: k === 'full' ? { ...NO_WEAR, full: it.id } : { ...skOf(r).wear, full: null, [k]: it.id } }),
-      isWorn: (r) => !r.character && skOf(r).wear[k] === it.id,
+      wear: (r) => {
+        const s = skOf(r);
+        return withSk(r, { wear: k === 'full' ? { ...NO_WEAR, full: it.id } : { ...s.wear, full: null, [k]: it.id }, colors: { ...s.colors, [it.id]: cw.channels } });
+      },
+      // worn: this piece in these colours (an old look without its colours saved wears the first colourway)
+      isWorn: (r) => { const s = skOf(r); return !r.character && s.wear[k] === it.id && (sameColors(s.colors[it.id], cw.channels) || (!s.colors[it.id] && n === 0)); },
       takeOff: (r) => withSk(r, { wear: { ...skOf(r).wear, [k]: null } }),
-    };
+    }));
   });
-  const hairs = Array.from({ length: catalog.face.hair ?? 0 }, (_, i): AvatarItem => ({
-    id: `sk-hair-${i + 1}`, name: `Hairstyle ${i + 1}`, price: 0, tint: '#e2e8f0', category: 'hair', tab: 'body', sub: 'Hair', focus: 'head', icon: 'cut-outline',
-    wear: (r) => withSk(r, { hair: i + 1 }), isWorn: (r) => !r.character && skOf(r).hair === i + 1, takeOff: (r) => withSk(r, { hair: 0 }),
-  }));
+  const colours = Object.entries(catalog.hairColors ?? { Brown: '5A3420' });
+  const hairs = Array.from({ length: catalog.face.hair ?? 0 }, (_, i) => colours.map(([cname, hex]): AvatarItem => ({
+    id: `sk-hair-${i + 1}-${cname}`, name: `${catalog!.hairNames?.[i] ?? `Hairstyle ${i + 1}`} · ${cname.replace(/([a-z])([A-Z])/g, '$1 $2')}`, price: 0, tint: `#${hex}`,
+    category: 'hair', tab: 'body', sub: 'Hair', focus: 'head', icon: 'cut-outline',
+    wear: (r) => ({ ...withSk(r, { hair: i + 1 }), hairColor: `#${hex.toLowerCase()}` }),
+    isWorn: (r) => !r.character && skOf(r).hair === i + 1 && (r.hairColor || '').toLowerCase() === `#${hex.toLowerCase()}`,
+    takeOff: (r) => withSk(r, { hair: 0 }),
+  }))).flat();
   return [...pieces, ...hairs];
 }
 // the Face editor: v2 heads, noses, ears and brows instead of v1's six face shapes (all free; one of each is always on)
 const FACE_PARTS: [keyof SkLook & ('head' | 'nose' | 'ears' | 'brows'), string][] = [['head', 'Head'], ['nose', 'Nose'], ['ears', 'Ears'], ['brows', 'Brows']];
+// each has its own slot in Customize > Body (ProfileScreen V2_FACE_SLOTS); heads keep v1's 'Face'
+export const FACE_SUB = { head: 'Face', nose: 'Nose', ears: 'Ears', brows: 'Brows' } as const;
 export function v2Faces(): AvatarItem[] {
   return FACE_PARTS.flatMap(([k, label]) => Array.from({ length: catalog?.face[k] ?? (k === 'head' ? 2 : 0) }, (_, i): AvatarItem => ({
-    id: `sk-${k}-${i + 1}`, name: `${label} ${i + 1}`, price: 0, tint: '#e2e8f0', category: 'body', tab: 'body', sub: 'Face', focus: 'head', icon: 'happy-outline',
+    id: `sk-${k}-${i + 1}`, name: `${label} ${i + 1}`, price: 0, tint: '#e2e8f0', category: 'body', tab: 'body', sub: FACE_SUB[k], focus: 'head', icon: 'happy-outline',
     wear: (r) => withSk(r, { [k]: i + 1 } as Partial<SkLook>), isWorn: (r) => skOf(r)[k] === i + 1,
   })));
 }
