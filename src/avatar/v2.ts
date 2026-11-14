@@ -53,7 +53,9 @@ export function toStage(r: AvatarRecord | null): any {
 // ---------- the v2 items (fetched once from beside the stage)
 interface Colorway { id: string; name: string; channels: Record<string, string> }
 interface CatItem { id: string; name: string; kind: Kind; parts: string[]; channels: Record<string, string>; colorways?: Colorway[]; premium?: boolean }
-let catalog: { face: Record<string, number>; items: CatItem[]; hairColors?: Record<string, string>; hairNames?: string[] } | null = null;
+let catalog: { face: Record<string, number>; items: CatItem[]; hairColors?: Record<string, string>; hairNames?: string[]; prices?: Record<string, number> } | null = null;
+// prices in TokBux (the catalog's, the same list the backend charges by; the server's answer wins in the Shop)
+const priceOf = (id: string) => catalog?.prices?.[id] ?? 0;
 let loading: Promise<boolean> | null = null;
 export const loadV2Catalog = () => (loading ??= fetch(`${V2_HOST}/assets/sidekick/catalog.json?t=${Date.now()}`)
   .then((r) => r.json()).then((c) => { catalog = c; return true; }).catch(() => { loading = null; return false; }));
@@ -75,7 +77,7 @@ export function v2Items(): AvatarItem[] {
   const pieces = catalog.items.flatMap((it) => {
     const k = it.kind, ways = it.colorways?.length ? it.colorways : [{ id: 'default', name: '', channels: it.channels }];
     return ways.map((cw, n): AvatarItem => ({
-      id: `sk-${it.id}~${cw.id}`, name: ways.length > 1 ? `${it.name} · ${cw.name}` : it.name, price: 0, tint: `#${Object.values(cw.channels)[0] ?? 'e2e8f0'}`, ...PLACE[k],
+      id: `sk-${it.id}~${cw.id}`, name: ways.length > 1 ? `${it.name} · ${cw.name}` : it.name, price: priceOf(`sk-${it.id}~${cw.id}`), tint: `#${Object.values(cw.channels)[0] ?? 'e2e8f0'}`, ...PLACE[k],
       ...(k === 'full' ? { whole: true } : {}),
       wear: (r) => {
         const s = skOf(r);
@@ -88,7 +90,7 @@ export function v2Items(): AvatarItem[] {
   });
   const colours = Object.entries(catalog.hairColors ?? { Brown: '5A3420' });
   const hairs = Array.from({ length: catalog.face.hair ?? 0 }, (_, i) => colours.map(([cname, hex]): AvatarItem => ({
-    id: `sk-hair-${i + 1}-${cname}`, name: `${catalog!.hairNames?.[i] ?? `Hairstyle ${i + 1}`} · ${cname.replace(/([a-z])([A-Z])/g, '$1 $2')}`, price: 0, tint: `#${hex}`,
+    id: `sk-hair-${i + 1}-${cname}`, name: `${catalog!.hairNames?.[i] ?? `Hairstyle ${i + 1}`} · ${cname.replace(/([a-z])([A-Z])/g, '$1 $2')}`, price: priceOf(`sk-hair-${i + 1}-${cname}`), tint: `#${hex}`,
     category: 'hair', tab: 'body', sub: 'Hair', focus: 'head', icon: 'cut-outline',
     wear: (r) => ({ ...withSk(r, { hair: i + 1 }), hairColor: `#${hex.toLowerCase()}` }),
     isWorn: (r) => !r.character && skOf(r).hair === i + 1 && (r.hairColor || '').toLowerCase() === `#${hex.toLowerCase()}`,
