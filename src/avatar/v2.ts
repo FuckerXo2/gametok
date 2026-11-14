@@ -5,11 +5,11 @@
 // v1 fields that mean the same thing (body = feminine, skin tone, hair colour, the body-type pad = heavy / muscle).
 // Heroes (record.character) still go to the stage as v1. The v2 items come from games/avatar-editor's
 // assets/sidekick/catalog.json (tools/sidekick_catalog.py), served beside the stage.
-// Server: cleanAvatar drops `sk`, so on a phone it is kept locally (avatar/store.ts) until the backend learns v2.
+// Server: the backend keeps `sk` (gametok-backend cleanAvatar, since 2026-11-13); store.ts also keeps a local copy.
 import { AVATAR_HOST } from './host';
 import type { AvatarRecord, AvatarItem } from './catalog';
 
-export const AVATAR_V2 = __DEV__ && true;
+export const AVATAR_V2 = true;
 // published: v2/ beside v1/ on R2 (games/avatar-editor/tools/publish_stage.mjs --v2); on the Mac: the folder itself
 const V2_HOST = AVATAR_HOST.startsWith('https:') ? `${AVATAR_HOST}/v2` : AVATAR_HOST;
 
