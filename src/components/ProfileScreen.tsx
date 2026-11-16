@@ -33,10 +33,10 @@ const BG = '#0b0c0d', PANEL = '#0c0b09', CARD = '#161519', DIM = 'rgba(255,255,2
 
 // what each hero can do (the same in every game, adapted to it: knockout/js/sim.js, street-5s/js/sim.js)
 const HERO_POWERS: Record<string, string[]> = {
-  spiderman: ['Web swing', 'Web Pull', 'Web Zip'], baki: ['Demon Rush', 'Demon Rage'], yujiro: ['Ogre Stomp', 'Ogre Throw'],
-  hulk: ['Giant', 'Thunderclap', 'Hulk Smash'], goku: ['Flight', 'Kamehameha', 'Instant Step'], vegeta: ['Flight', 'Final Flash', 'Big Bang'],
-  superman: ['Flight', 'Heat Vision', 'Super Punch'], ironman: ['Flight', 'Unibeam', 'Micro Missiles'], thor: ['Flight', 'Thunder Strike', 'Hammer Throw'],
-  flash: ['Super speed', 'Speed Surge', 'Phase'], batman: ['Glide', 'Batarang', 'Grapple'], rambo: ['Frag Out', 'M60'], lantern: ['Flight', 'Construct Wall', 'Shield'],
+  webster: ['Web swing', 'Web Pull', 'Web Zip'], bako: ['Demon Rush', 'Demon Rage'], yujin: ['Ogre Stomp', 'Ogre Throw'],
+  bulk: ['Giant', 'Thunderclap', 'Hulk Smash'], koku: ['Flight', 'Kamehameha', 'Instant Step'], vegar: ['Flight', 'Final Flash', 'Big Bang'],
+  supremo: ['Flight', 'Heat Vision', 'Super Punch'], ironclad: ['Flight', 'Unibeam', 'Micro Missiles'], thorn: ['Flight', 'Thunder Strike', 'Hammer Throw'],
+  flare: ['Super speed', 'Speed Surge', 'Phase'], nightbat: ['Glide', 'Batarang', 'Grapple'], ramrod: ['Frag Out', 'M60'], lanthorn: ['Flight', 'Construct Wall', 'Shield'],
 };
 // the Shop's categories, front and up close
 type ShopCat = 'all' | 'avatars' | 'outfits' | 'body' | 'clothing' | 'accessories';
