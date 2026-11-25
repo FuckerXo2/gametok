@@ -101,7 +101,7 @@ export const OnboardingTooltip: React.FC<OnboardingTooltipProps> = ({
     
     return (
       <Animated.View style={[styles.arrowContainer, getArrowStyle()]}>
-        <Ionicons name="arrow-down" size={32} color="#a855f7" />
+        <Ionicons name="arrow-down" size={32} color="#47ab9a" />
       </Animated.View>
     );
   };
@@ -133,7 +133,7 @@ export const OnboardingTooltip: React.FC<OnboardingTooltipProps> = ({
           {/* Icon */}
           {step.icon && (
             <View style={styles.iconWrap}>
-              <Ionicons name={step.icon as any} size={32} color="#a855f7" />
+              <Ionicons name={step.icon as any} size={32} color="#47ab9a" />
             </View>
           )}
 
@@ -154,7 +154,7 @@ export const OnboardingTooltip: React.FC<OnboardingTooltipProps> = ({
           {/* Next button */}
           <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
             <LinearGradient
-              colors={['#a855f7', '#7c3aed']}
+              colors={['#47ab9a', '#2f8a7a']}
               style={styles.nextBtnGradient}
             >
               <Text style={styles.nextBtnText}>
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.3)',
+    borderColor: 'rgba(71,171,154,0.3)',
   },
   skipBtn: {
     position: 'absolute',
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(168,85,247,0.2)',
+    backgroundColor: 'rgba(71,171,154,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
   dotActive: {
-    backgroundColor: '#a855f7',
+    backgroundColor: '#47ab9a',
     width: 24,
   },
   nextBtn: {

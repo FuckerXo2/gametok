@@ -17,8 +17,8 @@ import { users as usersApi } from '../services/api';
 
 interface Person { id: string; name: string; avatar?: string | null; note: string }
 
-export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: boolean; onLeave: () => void }> = ({
-  gameId, gameName, landscape, onLeave,
+export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: boolean; onLeave: () => void; onOpenChange?: (open: boolean) => void }> = ({
+  gameId, gameName, landscape, onLeave, onOpenChange,
 }) => {
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -64,8 +64,8 @@ export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: b
     if (open) Animated.timing(slide, { toValue: 1, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, [open]);
 
-  const show = () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setConfirming(false); slide.setValue(0); setOpen(true); };
-  const resume = () => Animated.timing(slide, { toValue: 0, duration: 140, useNativeDriver: true }).start(() => setOpen(false));
+  const show = () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setConfirming(false); slide.setValue(0); setOpen(true); onOpenChange?.(true); };
+  const resume = () => { onOpenChange?.(false); Animated.timing(slide, { toValue: 0, duration: 140, useNativeDriver: true }).start(() => setOpen(false)); };
   const invite = () => {
     const url = `https://gametok.co/game/${encodeURIComponent(gameId)}`;
     Share.share({ message: `Play ${gameName} with me on GameTok! ${url}` }).catch(() => {});
@@ -82,13 +82,13 @@ export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: b
         <View style={StyleSheet.absoluteFill}>
           <Animated.View style={[StyleSheet.absoluteFill, { opacity: slide }]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={resume} accessibilityLabel="Resume">
-              <LinearGradient colors={['rgba(8,7,14,0.55)', 'rgba(8,7,14,0.1)']} start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0 }} style={StyleSheet.absoluteFill} />
+              <LinearGradient colors={['rgba(8,9,10,0.55)', 'rgba(8,9,10,0.1)']} start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0 }} style={StyleSheet.absoluteFill} />
             </Pressable>
           </Animated.View>
           <Animated.View style={[styles.panel, pad, { width: panelW, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [-panelW, 0] }) }] }]}>
             <View style={styles.top}>
               <Text style={styles.game} numberOfLines={1}>{gameName}</Text>
-              <Pressable onPress={resume} hitSlop={10} accessibilityLabel="Close menu"><Ionicons name="close" size={22} color="#8b8799" /></Pressable>
+              <Pressable onPress={resume} hitSlop={10} accessibilityLabel="Close menu"><Ionicons name="close" size={22} color="#8a8f94" /></Pressable>
             </View>
 
             {confirming ? (
@@ -142,18 +142,18 @@ const styles = StyleSheet.create({
   },
   panel: {
     position: 'absolute', left: 0, top: 0, bottom: 0, paddingRight: 16, gap: 4,
-    backgroundColor: 'rgba(14,12,22,0.95)', borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(14,15,16,0.95)', borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.08)',
   },
   top: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   game: { flex: 1, color: '#fff', fontSize: 17, fontWeight: '800' },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, height: 46, borderRadius: 12 },
   itemText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  resume: { backgroundColor: '#8b47f0' },
+  resume: { backgroundColor: '#47ab9a' },
   leaveNow: { backgroundColor: '#dc2626', marginTop: 8 },
   sep: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 8 },
-  label: { color: '#8b8799', fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginLeft: 4, marginBottom: 4 },
+  label: { color: '#8a8f94', fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginLeft: 4, marginBottom: 4 },
   friend: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, paddingHorizontal: 4 },
   name: { flex: 1, color: '#fff', fontSize: 13, fontWeight: '600' },
   confirmTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginTop: 4 },
-  confirmSub: { color: '#a7a3b5', fontSize: 13, marginTop: 4 },
+  confirmSub: { color: '#a3a8ad', fontSize: 13, marginTop: 4 },
 });

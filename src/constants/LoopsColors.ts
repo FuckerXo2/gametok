@@ -91,9 +91,9 @@ export const LoopsColors = {
   color3: '#16213e',  // Medium dark blue
   color4: '#0f3460',  // Deep blue
   color5: '#3e99d2',  // Blue
-  color6: '#a855f7',  // Purple (main accent)
+  color6: '#47ab9a',  // Purple (main accent)
   color7: '#6366f1',  // Indigo
-  color8: '#7c3aed',  // Deep purple
+  color8: '#2f8a7a',  // Deep purple
   color9: '#0891b2',  // Cyan
   color10: '#db2777',  // Deep pink
   color11: '#4f46e5',  // Indigo blue

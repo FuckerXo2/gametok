@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Animated, Image, Easing } from 'react-native';
+import { View, StyleSheet, Animated, Image, Easing, Dimensions } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const splashImage = require('../../assets/splash.png');
 const iconImage = require('../../assets/icon.png');
 
 interface AnimatedSplashProps {
+  isReady?: boolean;
   onAnimationComplete: () => void;
 }
 
@@ -15,21 +18,32 @@ export const AnimatedSplash: React.FC<AnimatedSplashProps> = ({ onAnimationCompl
   const bgOpacity = useRef(new Animated.Value(1)).current;
   const logoScale = useRef(new Animated.Value(0)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
+  const animationStarted = useRef(false);
 
   useEffect(() => {
-    if (imageLoaded) {
-      // Add a slight delay to ensure the native view manager has fully drawn the React view buffer
-      // before hiding the OS-level native splash screen, preventing brief flashes/blinks.
+    if (imageLoaded && !animationStarted.current) {
+      animationStarted.current = true;
       setTimeout(() => {
-        SplashScreen.hideAsync().then(() => {
-          runAnimation();
-        });
+        SplashScreen.hideAsync().catch(() => {});
+        runAnimation();
       }, 50);
     }
   }, [imageLoaded]);
 
+  // Fallback timeout in case image load event is delayed
+  useEffect(() => {
+    const fallback = setTimeout(() => {
+      if (!animationStarted.current) {
+        animationStarted.current = true;
+        SplashScreen.hideAsync().catch(() => {});
+        runAnimation();
+      }
+    }, 1500);
+    return () => clearTimeout(fallback);
+  }, []);
+
   const runAnimation = () => {
-    // Phase 1: Background zooms in and fades out
+    // Phase 1: Background collage zooms in and fades out
     Animated.parallel([
       Animated.timing(bgScale, {
         toValue: 1.2,
@@ -43,7 +57,7 @@ export const AnimatedSplash: React.FC<AnimatedSplashProps> = ({ onAnimationCompl
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // Phase 2: Logo bounces in
+      // Phase 2: GameTOK logo bounces in
       Animated.parallel([
         Animated.spring(logoScale, {
           toValue: 1,
@@ -57,7 +71,7 @@ export const AnimatedSplash: React.FC<AnimatedSplashProps> = ({ onAnimationCompl
           useNativeDriver: true,
         }),
       ]).start(() => {
-        // Phase 3: Hold briefly then fade out
+        // Phase 3: Hold briefly then fade out to reveal the home feed
         Animated.sequence([
           Animated.delay(400),
           Animated.timing(logoOpacity, {
@@ -112,9 +126,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   background: {
-    ...StyleSheet.absoluteFill,
-    width: undefined,
-    height: undefined,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   logoContainer: {
     ...StyleSheet.absoluteFill,
@@ -124,6 +140,5 @@ const styles = StyleSheet.create({
   logo: {
     width: 120,
     height: 120,
-    borderRadius: 24,
   },
 });

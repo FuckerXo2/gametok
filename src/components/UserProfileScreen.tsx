@@ -59,7 +59,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ user, onCl
     <View style={styles.container}>
       {/* Purple gradient header */}
       <LinearGradient
-        colors={['#8B5CF6', '#A78BFA', '#C4B5FD']}
+        colors={['#47ab9a', '#7fd1c2', '#a8e2d8']}
         style={[styles.header, { paddingTop: insets.top }]}
       >
         {/* Top buttons */}
@@ -107,7 +107,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ user, onCl
             <Ionicons 
               name={isAdded ? "checkmark" : "person-add"} 
               size={20} 
-              color={isAdded ? '#8B5CF6' : '#000'} 
+              color={isAdded ? '#47ab9a' : '#000'} 
             />
             <Text style={[styles.addButtonText, isAdded && styles.addedButtonText]}>
               {isAdded ? 'Added' : 'Add'}
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#4CD964',
     borderWidth: 2,
-    borderColor: '#8B5CF6',
+    borderColor: '#47ab9a',
   },
   userInfo: {
     flex: 1,
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   addedButtonText: {
-    color: '#8B5CF6',
+    color: '#47ab9a',
   },
   content: {
     flex: 1,

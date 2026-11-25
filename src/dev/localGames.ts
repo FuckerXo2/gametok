@@ -3,5 +3,7 @@
 // server, see .claude/launch.json). Keep it empty when committing.
 // No Rules FC: launch config "street-5s"; ?server= keeps it on the live game server (your real account).
 export const LOCAL_GAMES: Record<string, string> = __DEV__ ? {
-  // 'no-rules-fc': 'http://localhost:8970/?server=wss://nrfc-online-267787411422.europe-west2.run.app',
+  'supreme-fight-club': 'http://localhost:8960',
+  'knockout': 'http://localhost:8990',
+  'who-among-us': 'http://localhost:8998',
 } : {};

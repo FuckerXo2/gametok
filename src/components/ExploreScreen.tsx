@@ -21,20 +21,21 @@ import { GamePlayerModal } from './GamePlayerModal';
 import { isLandscape, type Orientation } from '../constants/orientation';
 import { CATEGORIES, categoryLabel } from '../constants/categories';
 import { useAuth } from '../context/AuthContext';
-import { useAuthScreen, useNavigation } from '../../App';
+import { useAuthScreen, useNavigation, useDeepLink } from '../context/NavigationContext';
 import { API_URL, games as gamesApi, isListed, users as usersApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { UserProfileModal } from './UserProfileModal';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { GamesHome } from './GamesHome';
+import { useTheme } from '../context/ThemeContext';
 
 import { SHOWCASE } from '../dev/showcase';
 // The games on the app for now: only No Rules FC (the backend has older games that stay off the app)
 const onTheApp = (g: any) => (SHOWCASE ? !!g.thumbnail : isListed(g));
 import { TokBuxSheet } from './TokBuxSheet';
 
-const PURPLE = '#a855f7';
-const PURPLE_DEEP = '#7c3aed';
+const TEAL = '#47ab9a';
+const TEAL_DEEP = '#2f8a7a';
 const BG = '#000000';
 const TEXT = '#ffffff';
 const TEXT_MUTED = '#9a9aa8';
@@ -57,7 +58,7 @@ interface ExploreGame {
   name: string;
   description?: string;
   embedUrl?: string;
-  /** 'portrait' (default) or 'landscape' — GameSurface rotates the latter. */
+  /** 'portrait' (default) or 'landscape' — the player locks the phone to landscape for the latter. */
   orientation?: Orientation | null;
   /** Discovery categories (multi-label) from the game_categories join table. */
   categories?: string[];
@@ -94,6 +95,7 @@ const formatCount = (n?: number) => {
 
 export const ExploreScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const { isDark, colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
   const { showAuthScreen } = useAuthScreen();
   const { setActiveTab, searchModalVisible, setSearchModalVisible, setPendingChatUserId } = useNavigation();
@@ -111,6 +113,15 @@ export const ExploreScreen: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [tokbuxOpen, setTokbuxOpen] = useState(false);
   const [recentGameIds, setRecentGameIds] = useState<string[]>([]);
+
+  const { sharedGameId, clearSharedGame } = useDeepLink();
+  useEffect(() => {
+    if (sharedGameId) {
+      const g = allGames.find((x) => x.id === sharedGameId) || { id: sharedGameId, name: sharedGameId };
+      setPlayingGame(g as any);
+      clearSharedGame();
+    }
+  }, [sharedGameId, allGames]);
 
   // Games in the current category. Multi-label: a game shows under every category it carries.
   const categoryGames = useMemo(() => {
@@ -275,7 +286,7 @@ export const ExploreScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <GamesHome
         games={allGames}
         recentIds={recentGameIds}
@@ -296,24 +307,24 @@ export const ExploreScreen: React.FC = () => {
 
       {/* Search modal */}
       <Modal visible={searchModalVisible} animationType="slide" onRequestClose={() => setSearchModalVisible(false)}>
-        <View style={[styles.searchModal, { paddingTop: insets.top + 8 }]}>
-          <View style={styles.searchHeader}>
+        <View style={[styles.searchModal, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
+          <View style={[styles.searchHeader, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
             <Pressable onPress={() => { setSearchModalVisible(false); setSearchQuery(''); }} hitSlop={8}>
-              <Ionicons name="chevron-back" size={22} color={TEXT} />
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
             </Pressable>
-            <View style={styles.searchInputWrap}>
-              <Ionicons name="search" size={16} color={TEXT_DIM} />
+            <View style={[styles.searchInputWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}>
+              <Ionicons name="search" size={16} color={colors.textSecondary} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: colors.text }]}
                 placeholder="Search games and creators"
-                placeholderTextColor={TEXT_DIM}
+                placeholderTextColor={colors.textSecondary}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 autoFocus
               />
               {searchQuery.length > 0 ? (
                 <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
-                  <Ionicons name="close-circle" size={16} color={TEXT_DIM} />
+                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
                 </Pressable>
                 ) : null}
                   </View>
@@ -520,7 +531,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     backgroundColor: 'rgba(34,25,52,0.9)',
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.22)',
+    borderColor: 'rgba(71,171,154,0.22)',
   },
   tabActiveDot: {
     width: 6,
@@ -535,7 +546,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   tabLabelActive: {
-    color: PURPLE,
+    color: TEAL,
     fontWeight: '800',
   },
   heroWrap: {
@@ -552,7 +563,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#1a1a22',
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.42)',
+    borderColor: 'rgba(71,171,154,0.42)',
   },
   heroCardImage: {
     borderRadius: 22,
@@ -570,11 +581,11 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.42)',
+    borderColor: 'rgba(71,171,154,0.42)',
     backgroundColor: 'rgba(8,10,22,0.7)',
   },
   heroPillText: {
-    color: PURPLE,
+    color: TEAL,
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 12,
     fontWeight: '900',
@@ -621,7 +632,7 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   heroTitleAccent: {
-    color: PURPLE,
+    color: TEAL,
   },
   heroSubtitle: {
     color: 'rgba(255,255,255,0.82)',
@@ -642,9 +653,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 15,
-    backgroundColor: PURPLE,
+    backgroundColor: TEAL,
     alignSelf: 'flex-start',
-    shadowColor: PURPLE,
+    shadowColor: TEAL,
     shadowOpacity: 0.42,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 5 },
@@ -670,7 +681,7 @@ const styles = StyleSheet.create({
   },
   heroDotActive: {
     width: 18,
-    backgroundColor: PURPLE,
+    backgroundColor: TEAL,
   },
   section: {
     marginTop: 28,
@@ -689,7 +700,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   sectionSeeAll: {
-    color: PURPLE,
+    color: TEAL,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -817,7 +828,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#171720',
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.22)',
+    borderColor: 'rgba(71,171,154,0.22)',
   },
   cinemaBody: {
     position: 'absolute',
@@ -904,7 +915,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: PURPLE,
+    backgroundColor: TEAL,
   },
   roomJoinText: {
     color: TEXT,
@@ -1018,13 +1029,13 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.18)',
+    borderColor: 'rgba(71,171,154,0.18)',
   },
   quizIconBubble: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(168,85,247,0.14)',
+    backgroundColor: 'rgba(71,171,154,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -1052,7 +1063,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: PURPLE,
+    backgroundColor: TEAL,
   },
   quizStartText: {
     color: TEXT,
@@ -1190,7 +1201,7 @@ const styles = StyleSheet.create({
   createBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#a855f7',
+    backgroundColor: '#47ab9a',
     borderRadius: 20,
     paddingVertical: 7,
     paddingHorizontal: 13,

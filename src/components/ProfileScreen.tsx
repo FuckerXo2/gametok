@@ -12,7 +12,8 @@ import * as Haptics from 'expo-haptics';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { AvatarStage, bodyPicture, bodyPictureOf, stagePicture } from './AvatarStage';
+import { StageSlot } from './SharedStage';
+import { bodyPicture, bodyPictureOf, stagePicture } from './AvatarStage';
 import { EditProfileModal } from './EditProfileModal';
 import { openAccountMenu } from './AccountMenu';
 import { Avatar, hasHeadshot } from './Avatar';
@@ -684,7 +685,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       <View style={[styles.stage, lt && L.stage, atShow ? { top: SHOW_TOP, left: 0, width: W, height: SHOW_H, zIndex: 31 }
         : atLocker ? { top: LOCKER_TOP, left: 0, width: W * 0.6, height: Math.max(0, rootH - LOCKER_TOP - LOCKER_BOTTOM) }
         : { top: 0, left: 0, width: W, height: STAGE_H }]}>
-        <AvatarStage style={StyleSheet.absoluteFill} avatar={stageLook} focus={atLocker || shown ? 'body' : editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look={lt ? 'light' : 'dark'} tint={atShow ? 'gold' : null} headshotOf={shotOf} onHeadshot={onHeadshot} />
+        <StageSlot name="me" avatar={stageLook} focus={atLocker || shown ? 'body' : editor?.focus || selected?.focus || (mode === 'mine' && ctab !== 'avatars' ? cslot.focus : 'body')} look={lt ? 'light' : 'dark'} tint={atShow ? 'gold' : null} headshotOf={shotOf} onHeadshot={onHeadshot} />
         {editor ? (
           <>
             {/* an editor: back, its name, the other editors down the left, undo / redo under them */}

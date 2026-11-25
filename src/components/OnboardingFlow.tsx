@@ -17,10 +17,10 @@ import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
 import { auth as authApi } from '../services/api';
-import { STARTER_AVATARS } from '../avatar/catalog';
+import { randomStarter } from '../avatar/catalog';
 import { saveAvatar } from '../avatar/store';
 
-const BG = '#0d0a16', FIELD = '#1b1626', LINE = 'rgba(255,255,255,0.14)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#a855f7', OK = '#22c55e';
+const BG = '#0b0c0d', FIELD = '#181a1c', LINE = 'rgba(255,255,255,0.14)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#47ab9a', OK = '#22c55e';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const USERNAME_RULE = /^(?=.{3,20}$)[A-Za-z0-9]+(_[A-Za-z0-9]+)?$/;   // the backend's (src/index.js)
 
@@ -120,7 +120,7 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
     try {
       const pad = (n: number) => String(n).padStart(2, '0');
       // the starter avatar for the body they picked: on this phone now, uploaded to the new account when it syncs
-      if (kind) saveAvatar(STARTER_AVATARS[kind]);
+      if (kind) saveAvatar(randomStarter(kind));
       await signup(username, password, `${birthday.y}-${pad(birthday.m + 1)}-${pad(birthday.d)}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onComplete();
@@ -305,7 +305,7 @@ const BirthdayPicker = ({ visible, value, onClose, onPick }: {
 const styles = StyleSheet.create({
   kinds: { flexDirection: 'row', gap: 12 },
   kind: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 14, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 2, borderColor: 'transparent' },
-  kindOn: { borderColor: '#a855f7' },
+  kindOn: { borderColor: '#47ab9a' },
   kindText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   root: { flex: 1, backgroundColor: BG },
   logoWrapper: { alignItems: 'center' },
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   error: { color: '#f87171', fontSize: 14, marginTop: 12 },
   fine: { color: DIM, fontSize: 12, lineHeight: 17, marginTop: 14, textAlign: 'center' },
   link: { color: '#fff', fontWeight: '700', textDecorationLine: 'underline' },
-  sheet: { backgroundColor: '#17121f', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12 },
+  sheet: { backgroundColor: '#141617', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
   wheelBand: { position: 'absolute', left: 12, right: 12, top: ROW * 2, height: ROW, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' },
   confirm: { backgroundColor: '#fff', borderRadius: 12, height: 50, alignItems: 'center', justifyContent: 'center', margin: 16 },

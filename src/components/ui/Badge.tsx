@@ -13,7 +13,7 @@ interface BadgeProps {
 }
 
 const tones: Record<BadgeTone, { bg: string; border: string; fg: string }> = {
-  purple: { bg: 'rgba(168,85,247,0.14)', border: 'rgba(168,85,247,0.4)', fg: '#d8b4fe' },
+  purple: { bg: 'rgba(71,171,154,0.14)', border: 'rgba(71,171,154,0.4)', fg: '#d8b4fe' },
   pink: { bg: 'rgba(236,72,153,0.14)', border: 'rgba(236,72,153,0.4)', fg: '#f9a8d4' },
   cyan: { bg: 'rgba(34,211,238,0.14)', border: 'rgba(34,211,238,0.4)', fg: '#67e8f9' },
   amber: { bg: 'rgba(245,158,11,0.14)', border: 'rgba(245,158,11,0.4)', fg: '#fcd34d' },

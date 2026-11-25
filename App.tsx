@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Text, Linking, ActivityIndicator, Platform, DeviceEventEmitter } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { PortalProvider } from 'react-native-teleport';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
@@ -25,6 +26,7 @@ import { UpdateRequired, useUpdateRequired } from './src/components/UpdateRequir
 import { startPurchases } from './src/tokbux/purchases';
 import { AnimatedSplash } from './src/components/AnimatedSplash';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { SharedStage, setStageSlot } from './src/components/SharedStage';
 import { lockToPortrait } from './src/utils/orientationHelper';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -38,62 +40,25 @@ import { startGameDownload } from './src/services/gameDownloader';
 SplashScreen.preventAutoHideAsync();
 
 
-// Deep link context - to pass a shared game ID to the games screen
-interface DeepLinkContextType {
-  sharedGameId: string | null;
-  clearSharedGame: () => void;
-  openSharedGame: (gameId: string) => void;
-}
-const DeepLinkContext = createContext<DeepLinkContextType>({ sharedGameId: null, clearSharedGame: () => { }, openSharedGame: () => { } });
-export const useDeepLink = () => useContext(DeepLinkContext);
+import {
+  TabName,
+  DeepLinkContext,
+  useDeepLink,
+  AuthScreenContext,
+  useAuthScreen,
+  NavigationContext,
+  useNavigation,
+} from './src/context/NavigationContext';
 
-// Auth screen context - to show login/signup from anywhere
-interface AuthScreenContextType {
-  showAuthScreen: () => void;
-  showLoginScreen: () => void;
-  hideAuthScreen: () => void;
-}
-const AuthScreenContext = createContext<AuthScreenContextType>({ showAuthScreen: () => { }, showLoginScreen: () => { }, hideAuthScreen: () => { } });
-export const useAuthScreen = () => useContext(AuthScreenContext);
-
-// Navigation context - to switch tabs from anywhere (e.g., notification taps)
-interface NavigationContextType {
-  activeTab: TabName;
-  setActiveTab: (tab: TabName) => void;
-  pendingChatUserId: string | null;
-  setPendingChatUserId: (userId: string | null) => void;
-  searchModalVisible: boolean;
-  setSearchModalVisible: (visible: boolean) => void;
-  isGameDeckActive: boolean;
-  setIsGameDeckActive: (active: boolean) => void;
-  isHudHidden: boolean;
-  setIsHudHidden: (hidden: boolean) => void;
-  gameRestartTrigger: number;
-  triggerGameRestart: () => void;
-  gameSkipCounter: { direction: 'next' | 'prev', count: number };
-  triggerGameSkip: (direction: 'next' | 'prev') => void;
-  activityRequestNonce: number;
-}
-const NavigationContext = createContext<NavigationContextType>({
-  activeTab: 'home', 
-  setActiveTab: () => {}, 
-  pendingChatUserId: null,
-  setPendingChatUserId: () => {},
-  searchModalVisible: false,
-  setSearchModalVisible: () => {},
-  isGameDeckActive: false,
-  setIsGameDeckActive: () => {},
-  isHudHidden: false,
-  setIsHudHidden: () => {},
-  gameRestartTrigger: 0,
-  triggerGameRestart: () => {},
-  gameSkipCounter: { direction: 'next', count: 0 },
-  triggerGameSkip: () => {},
-  activityRequestNonce: 0
-});
-export const useNavigation = () => useContext(NavigationContext);
-
-type TabName = 'home' | 'explore' | 'rewards' | 'connect' | 'profile';
+export {
+  TabName,
+  DeepLinkContext,
+  useDeepLink,
+  AuthScreenContext,
+  useAuthScreen,
+  NavigationContext,
+  useNavigation,
+};
 
 const MainApp = ({
   notifChatUserId = null,
@@ -105,36 +70,16 @@ const MainApp = ({
   notifActivityNonce?: number;
 }) => {
   const [activeTab, setActiveTab] = useState<TabName>('home');   // open on Games (like Roblox's Home)
-  const [homeRefreshTrigger, setHomeRefreshTrigger] = useState(0);
   const [pendingChatUserId, setPendingChatUserId] = useState<string | null>(null);
   const [activityRequestNonce, setActivityRequestNonce] = useState(0);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
-  const [isGameDeckActive, setIsGameDeckActive] = useState(false);
-  const [isHudHidden, setIsHudHidden] = useState(false);
-  const [gameRestartTrigger, setGameRestartTrigger] = useState(0);
-  const [gameSkipCounter, setGameSkipCounter] = useState<{ direction: 'next' | 'prev', count: number }>({ direction: 'next', count: 0 });
   const { isDark, colors } = useTheme();
 
   const handleTabPress = (tab: TabName) => {
-    if (tab === 'home' && activeTab === 'home') {
-      // Already on home — trigger refresh
-      setHomeRefreshTrigger(prev => prev + 1);
-    }
     // Me again: the avatar turns back to face you
     if (tab === 'profile' && activeTab === 'profile') DeviceEventEmitter.emit('gametok:stage-reset');
 
     setActiveTab(tab);
-    // Reset to standard bottom navigation when switching tabs or entering Home
-    setIsGameDeckActive(false);
-    setIsHudHidden(false);
-  };
-
-  const triggerGameRestart = () => {
-    setGameRestartTrigger(prev => prev + 1);
-  };
-
-  const triggerGameSkip = (direction: 'next' | 'prev') => {
-    setGameSkipCounter(prev => ({ direction, count: prev.count + 1 }));
   };
 
   // Notification tap → open the Connect tab straight into the sender's DM.
@@ -160,8 +105,15 @@ const MainApp = ({
     }
   }, [sharedGameId, activeTab]);
 
+  // the one 3D avatar goes to the tab on screen (Connect has none: it stays where it was)
+  useEffect(() => {
+    if (activeTab === 'profile') setStageSlot('me');
+    else if (activeTab === 'home' || activeTab === 'explore') setStageSlot('games');
+  }, [activeTab]);
+
   // Keep all screens mounted, just hide/show them
   return (
+    <PortalProvider>
     <NavigationContext.Provider value={{ 
       activeTab, 
       setActiveTab, 
@@ -169,19 +121,10 @@ const MainApp = ({
       setPendingChatUserId, 
       searchModalVisible, 
       setSearchModalVisible,
-      isGameDeckActive,
-      setIsGameDeckActive,
-      isHudHidden,
-      setIsHudHidden,
-      gameRestartTrigger,
-      triggerGameRestart,
-      gameSkipCounter,
-      triggerGameSkip,
       activityRequestNonce
     }}>
       <StatusBar
-        style={activeTab === 'profile' ? 'dark' : isDark ? 'light' : 'dark'}   // Me: the avatar in the light studio
-        hidden={activeTab === 'home' && isGameDeckActive}
+        style={activeTab === 'profile' ? 'dark' : isDark ? 'light' : 'dark'}
         animated
       />
       <View style={[styles.content, { backgroundColor: colors.background }]}>
@@ -204,17 +147,26 @@ const MainApp = ({
       <BottomNav activeTab={activeTab} onTabPress={handleTabPress} />
       {/* the account menu (the ☰ on Games and Me) */}
       <AccountMenu onMyItems={() => { setActiveTab('profile'); DeviceEventEmitter.emit('gametok:my-items'); }} />
-
+      {/* the one avatar stage, shown in the slot of the tab on screen */}
+      <SharedStage />
     </NavigationContext.Provider>
+    </PortalProvider>
   );
 };
 
-const AppContent = () => {
+const AppContent = ({ onReady }: { onReady?: () => void }) => {
   const { isLoading: authLoading, isAuthenticated, user } = useAuth();
   const updateStoreUrl = useUpdateRequired();
+
+  useEffect(() => {
+    if (!authLoading) {
+      onReady?.();
+    }
+  }, [authLoading, onReady]);
+
   // TokBux purchases are credited to whoever is signed in
   useEffect(() => { startPurchases(user?.id); }, [user?.id]);
-  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [sharedGameId, setSharedGameId] = useState<string | null>(null);
   // Notification deep-links handed down to MainApp (which owns tab state).
   const [pendingChatNotifUserId, setPendingChatNotifUserId] = useState<string | null>(null);
@@ -323,8 +275,6 @@ const AppContent = () => {
   // Re-check onboarding when user logs out
   useEffect(() => {
     if (!isAuthenticated && !authLoading) {
-      // Force re-check by resetting state first
-      setShowOnboarding(null);
       checkOnboarding();
     }
   }, [isAuthenticated, authLoading]);
@@ -386,21 +336,9 @@ const AppContent = () => {
     setShowOnboarding(false);
   };
 
-  // Still loading auth check
-  if (showOnboarding === null || authLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#140e1d', justifyContent: 'center', alignItems: 'center' }}>
-        <View style={{
-          position: 'absolute',
-          width: 70,
-          height: 70,
-          borderRadius: 35,
-          backgroundColor: '#a855f7',
-          opacity: 0.15,
-        }} />
-        <ActivityIndicator size="large" color="#a855f7" />
-      </View>
-    );
+  // Still loading auth check (held smoothly underneath the splash screen)
+  if (authLoading) {
+    return <View style={{ flex: 1, backgroundColor: '#08090a' }} />;
   }
 
   // Too old to keep working: update first
@@ -451,6 +389,7 @@ const AppContent = () => {
 
 export default function App() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+  const [isAppReady, setIsAppReady] = useState(false);
   // the app is portrait; only a landscape game turns the phone (GamePlayerModal)
   useEffect(() => { lockToPortrait(); }, []);
 
@@ -468,7 +407,7 @@ export default function App() {
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#140e1d' }}>
+    <View style={{ flex: 1, backgroundColor: '#08090a' }}>
       {fontsLoaded && (
         <ErrorBoundary>
           <SafeAreaProvider>
@@ -476,7 +415,7 @@ export default function App() {
               <ThemeProvider>
                 <AuthProvider>
                   <SocketProvider>
-                    <AppContent />
+                    <AppContent onReady={() => setIsAppReady(true)} />
                   </SocketProvider>
                 </AuthProvider>
               </ThemeProvider>
@@ -486,8 +425,11 @@ export default function App() {
       )}
 
       {showAnimatedSplash && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 99999, elevation: 99999 }]}>
-          <AnimatedSplash onAnimationComplete={() => setShowAnimatedSplash(false)} />
+        <View style={[StyleSheet.absoluteFill, { zIndex: 99999, elevation: 99999 }]} pointerEvents="none">
+          <AnimatedSplash
+            isReady={isAppReady && fontsLoaded}
+            onAnimationComplete={() => setShowAnimatedSplash(false)}
+          />
         </View>
       )}
     </View>

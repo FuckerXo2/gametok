@@ -307,24 +307,38 @@ true;
           .catch((e: any) => reply({ type: 'GAMETOK_PLAYER_SESSION', requestId: data.requestId, ok: false, code: e?.code, error: e?.message }));
       } else if (data.type === 'GAMETOK_PURCHASE_REQUEST' && gameId) {
         // a game sells its own items for TokBux: the player confirms here, at the server's price
-        const item = String(data.item || ''), id = `${gameId}:${item}`;
+        const item = String(data.item || '');
+        const nrfcAlias = `no-rules-fc:${item}`;
+        const charAlias = `char-${item}`;
         const done = (ok: boolean, error?: string) => reply({ type: 'GAMETOK_PURCHASE', requestId: data.requestId, ok, item, error });
         const name = String(data.name || item).slice(0, 40);
         syncAvatar().then(() => {   // the balance as it is now (TokBux may have been bought elsewhere)
-          const acct = getAvatarAccount(), price = acct?.prices[id];
+          const acct = getAvatarAccount();
+          const targetId = (acct?.prices?.[`${gameId}:${item}`] !== undefined)
+            ? `${gameId}:${item}`
+            : (acct?.prices?.[nrfcAlias] !== undefined)
+              ? nrfcAlias
+              : (acct?.prices?.[charAlias] !== undefined)
+                ? charAlias
+                : `${gameId}:${item}`;
+          const fallbackPrice = item === 'revive' ? 100 : (item === 'yujin' || item === 'bulk' ? 1200 : 800);
+          const price = acct?.prices?.[targetId] ?? fallbackPrice;
           if (!acct?.signedIn || price === undefined) { done(false, 'Not for sale'); return; }
-          if (acct.owned.includes(id)) { done(true); return; }
+          if (item !== 'revive' && (acct.owned.includes(targetId) || acct.owned.includes(`${gameId}:${item}`) || acct.owned.includes(nrfcAlias) || acct.owned.includes(charAlias))) {
+            done(true);
+            return;
+          }
           // the buy popup (it tops up TokBux first when short)
           // a character bought in a game (a No Rules FC hero) becomes the player's avatar across the app until they
           // change it; their own look stays underneath for when they take it off
           const buy = async () => {
-            const err = await buyItem(id, price);
-            const char = AVATAR_ITEMS.find((i) => i.ownedAs === id && i.whole && i.wear);
+            const err = await buyItem(targetId, price);
+            const char = AVATAR_ITEMS.find((i) => (i.ownedAs === targetId || i.id === targetId || i.ownedAs === nrfcAlias) && i.whole && i.wear);
             const now = getAvatarAccount()?.avatar;
             if (!err && char && now) saveAvatar(char.wear!(now), 'bought in a game');
             return err;
           };
-          setBuyReq({ name, price, was: acct.sales?.[id]?.was, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy, done });
+          setBuyReq({ name, price, was: acct.sales?.[targetId]?.was, thumb: typeof data.thumb === 'string' ? data.thumb : null, buy, done });
         });
       } else if (data.type === 'GAMETOK_OPEN_TOKBUX') {
         DeviceEventEmitter.emit('gametok:open-tokbux');   // the game player opens the TokBux store over the game

@@ -3,6 +3,7 @@ import { View, StyleSheet, Pressable, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { Avatar } from './Avatar';
 import Animated, {
   useSharedValue,
@@ -20,7 +21,7 @@ interface BottomNavProps {
 }
 
 const NAV_WHITE = '#ffffff';
-const BRAND_PURPLE = '#a855f7';
+const BRAND_TEAL = '#47ab9a';
 const INACTIVE = 'rgba(255,255,255,0.55)';
 const noFocusRing = { outlineStyle: 'none' } as any;
 
@@ -64,7 +65,9 @@ const NavTab = ({
     onPress();
   };
 
-  const color = isActive ? BRAND_PURPLE : INACTIVE;
+  const { isDark } = useTheme();
+  const inactiveColor = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
+  const color = isActive ? BRAND_TEAL : inactiveColor;
 
   return (
     <Pressable
@@ -98,6 +101,7 @@ const NavTab = ({
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { isDark } = useTheme();
 
   const tabs: TabSpec[] = [
     { name: 'home', icon: 'game-controller-outline', iconActive: 'game-controller-outline', label: 'Games' },
@@ -110,7 +114,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
     <View
       style={[
         styles.container,
-        { paddingBottom: insets.bottom || 8 },
+        {
+          paddingBottom: insets.bottom || 8,
+          backgroundColor: isDark ? '#08090a' : '#ffffff',
+          borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+        },
       ]}
     >
       {tabs.map((tab) => (
@@ -129,7 +137,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabPress }) =
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#0a0811',
+    backgroundColor: '#08090a',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.08)',
     paddingTop: 10,
@@ -161,12 +169,12 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',   // (always a border: Android blanked the picture when it came and went)
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarRingActive: {
-    borderWidth: 2,
-    borderColor: BRAND_PURPLE,
+    borderColor: BRAND_TEAL,
   },
 });

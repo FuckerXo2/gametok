@@ -13,31 +13,38 @@ const CLIENT_ID_STORAGE_KEY = 'clientId';
 // pass 0 to disable the timeout entirely.
 const DEFAULT_TIMEOUT_MS = 45000;
 
+let memoryToken: string | null | undefined = undefined;
+let memoryClientId: string | null = null;
+
 const createClientId = () => `gtk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 
 const getClientId = async () => {
+  if (memoryClientId) return memoryClientId;
   let clientId = await AsyncStorage.getItem(CLIENT_ID_STORAGE_KEY);
   if (!clientId) {
     clientId = createClientId();
     await AsyncStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
   }
+  memoryClientId = clientId;
   return clientId;
 };
 
-// Token management - always read from AsyncStorage to avoid stale cache
+// Token management - cached in memory, persisted to AsyncStorage
 export const setToken = async (token: string | null) => {
+  memoryToken = token;
   if (token) {
-    console.log('[API] Saving token to AsyncStorage');
     await AsyncStorage.setItem('authToken', token);
   } else {
-    console.log('[API] Clearing token from AsyncStorage');
     await AsyncStorage.removeItem('authToken');
   }
 };
 
 export const getToken = async () => {
+  if (memoryToken !== undefined) {
+    return memoryToken;
+  }
   const token = await AsyncStorage.getItem('authToken');
-  console.log('[API] Got token from AsyncStorage:', token ? 'found' : 'not found');
+  memoryToken = token;
   return token;
 };
 
@@ -279,7 +286,7 @@ const isNoRulesFC = (game: any) => {
   return id === 'no-rules-fc' || id === 'street-5s' || /no rules fc/i.test(name) || /rules/i.test(name);
 };
 // the games the app lists (the server's catalog has many more; these are the ones made for GameTok)
-const LISTED = new Set(['knockout']);
+const LISTED = new Set(['knockout', 'supreme-fight-club', 'who-among-us', 'tennis', 'hide-and-seek', 'power-clash']);
 export const isListed = (game: any) => isNoRulesFC(game) || LISTED.has(String(game?.id || '').toLowerCase());
 
 export const NO_RULES_FC_GAME = {
@@ -291,7 +298,7 @@ export const NO_RULES_FC_GAME = {
   thumbnail: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/thumb.jpg',
   previewVideoUrl: null,
   categories: ['sports', 'action', 'arcade'],
-  embedUrl: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/b395235fa095/index.html',
+  embedUrl: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/32d5f81dc840/index.html',
   orientation: 'landscape' as 'landscape' | 'portrait',
   platform: 'all',
   creatorDisplayName: 'GameTOK',

@@ -44,11 +44,11 @@ export const UpdateRequired: React.FC<{ storeUrl: string }> = ({ storeUrl }) => 
 );
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#140e1d', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  logo: { color: '#a855f7', fontSize: 30, fontWeight: '900', marginBottom: 36 },
+  root: { flex: 1, backgroundColor: '#08090a', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  logo: { color: '#47ab9a', fontSize: 30, fontWeight: '900', marginBottom: 36 },
   title: { color: '#fff', fontSize: 26, fontWeight: '800', marginBottom: 12, textAlign: 'center' },
   body: { color: 'rgba(255,255,255,0.7)', fontSize: 16, lineHeight: 23, textAlign: 'center', marginBottom: 32 },
-  btn: { backgroundColor: '#a855f7', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 32 },
+  btn: { backgroundColor: '#47ab9a', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 32 },
   btnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
   version: { color: 'rgba(255,255,255,0.35)', fontSize: 12, marginTop: 28 },
 });

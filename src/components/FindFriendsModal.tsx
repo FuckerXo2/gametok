@@ -16,6 +16,7 @@ import { users } from '../services/api';
 import { Avatar } from './Avatar';
 import { AnimatedButton } from './AnimatedButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../context/ThemeContext';
 
 interface UserItem {
     id: string;
@@ -37,7 +38,7 @@ const themes = {
         textSecondary: '#666666',
         cardLight: '#f2f2f2',
         border: '#eeeeee',
-        primary: '#a855f7',
+        primary: '#47ab9a',
     },
     dark: {
         bg: '#000000',
@@ -45,7 +46,7 @@ const themes = {
         textSecondary: '#a1a1aa',
         cardLight: '#1f2937',
         border: '#333333',
-        primary: '#a855f7',
+        primary: '#47ab9a',
     },
 };
 
@@ -55,8 +56,8 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
     onOpenProfile,
 }) => {
     const insets = useSafeAreaInsets();
-    const colorScheme = useColorScheme();
-    const theme = themes[colorScheme === 'dark' ? 'dark' : 'light'];
+    const { isDark } = useTheme();
+    const theme = themes[isDark ? 'dark' : 'light'];
 
     const [recommended, setRecommended] = useState<UserItem[]>([]);
     const [loading, setLoading] = useState(true);

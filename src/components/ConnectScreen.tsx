@@ -24,7 +24,7 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { useAuthScreen, useNavigation, useDeepLink } from '../../App';
+import { useAuthScreen, useNavigation, useDeepLink } from '../context/NavigationContext';
 import { LoopsColors, SemanticColors } from '../constants/LoopsColors';
 import { FontStyles } from '../constants/LoopsFonts';
 import { users, messages as messagesApi, feed, stories as storiesApi, games as gamesApi } from '../services/api';
@@ -34,7 +34,7 @@ import { SlideRightModal } from './SlideRightModal';
 import { StoryViewer } from './StoryViewer';
 import * as ImagePicker from 'expo-image-picker';
 import { resolveGameThumbnail } from '../utils/thumbnails';
-const BRAND_PURPLE = '#A855F7';
+const BRAND_TEAL = '#47ab9a';
 
 const resolveSharedGameThumbnail = (thumbnail?: string | null, gameId?: string) => {
   return resolveGameThumbnail(thumbnail, gameId);
@@ -582,7 +582,7 @@ const MessagesTab: React.FC<{
                       {lane.label}
                     </Text>
                     {lane.count > 0 && (
-                      <View style={[styles.inboxLaneBadge, { backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'rgba(168,85,247,0.18)' }]}>
+                      <View style={[styles.inboxLaneBadge, { backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'rgba(71,171,154,0.18)' }]}>
                         <Text style={[styles.inboxLaneBadgeText, { color: active ? '#fff' : LoopsColors.color1 }]}>
                           {lane.count}
                         </Text>
@@ -1042,7 +1042,7 @@ interface FollowingUser {
 
 type ConnectFilter = 'foryou';
 
-const CONNECT_PURPLE = '#a855f7';
+const CONNECT_PURPLE = '#47ab9a';
 const CONNECT_BG = '#000000';
 const CONNECT_TEXT_MUTED = '#9a9aa8';
 
@@ -1219,7 +1219,7 @@ export const ConnectScreen: React.FC = () => {
             <Text style={styles.authTitle}>Join the community</Text>
             <Text style={styles.authSubtitle}>Play together and chat with friends</Text>
             <TouchableOpacity style={styles.authBtn} onPress={showAuthScreen}>
-              <LinearGradient colors={[CONNECT_PURPLE, '#7c3aed']} style={styles.authBtnGradient}>
+              <LinearGradient colors={[CONNECT_PURPLE, '#2f8a7a']} style={styles.authBtnGradient}>
                 <Text style={styles.authBtnText}>Sign Up</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -1824,10 +1824,10 @@ const connectV3Styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(168,85,247,0.10)',
+    backgroundColor: 'rgba(71,171,154,0.10)',
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: 'rgba(168,85,247,0.5)',
+    borderColor: 'rgba(71,171,154,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
@@ -1853,7 +1853,7 @@ const connectV3Styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   storyAvatarFallback: {
-    backgroundColor: 'rgba(168,85,247,0.18)',
+    backgroundColor: 'rgba(71,171,154,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2889,7 +2889,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderColor: 'rgba(71,171,154, 0.3)',
     borderStyle: 'dashed',
   },
   storyRing: {
@@ -3039,7 +3039,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 24,
     borderWidth: 1,
-    borderColor: 'rgba(168,85,247,0.2)',
+    borderColor: 'rgba(71,171,154,0.2)',
   },
   playLockBadge: {
     alignSelf: 'flex-start',
@@ -3099,7 +3099,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#A855F7',
+    backgroundColor: '#47ab9a',
   },
   playLockFooterText: {
     color: 'rgba(255,255,255,0.6)',

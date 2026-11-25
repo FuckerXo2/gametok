@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { CustomImage as Image } from './CustomImage';
 import { resolveGameThumbnail } from '../utils/thumbnails';
 import { openAccountMenu } from './AccountMenu';
-import { AvatarStage } from './AvatarStage';
+import { StageSlot } from './SharedStage';
 import { TokBuxIcon } from './TokBuxIcon';
 import { Avatar } from './Avatar';
 import { useAvatarAccount } from '../avatar/store';
@@ -20,14 +20,18 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { users as usersApi } from '../services/api';
 import { SHOWCASE, SHOWCASE_FRIENDS, SHOWCASE_RECENT } from '../dev/showcase';
+import { useNavigation } from '../context/NavigationContext';
+import { useTheme } from '../context/ThemeContext';
 
-const BG = '#0a0811';   // same as the tab bar, so the lobby runs into it
-const CARD = '#1b1626';
+const BG = '#08090a';   // same as the tab bar, so the lobby runs into it
+const CARD = '#181a1c';
 const TEXT = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
-const PURPLE = '#a855f7';
+const TEAL = '#47ab9a';
 const GREEN = '#22c55e';
 const PAD = 16;
+// the game Home pushes this week: the big card at the top of For you
+const FEATURED_GAME = 'knockout';
 
 export interface HomeGame {
   id: string;
@@ -85,6 +89,14 @@ const thumb = (g: HomeGame) => resolveGameThumbnail(g.thumbnail, g.id, g as any)
 const plays = (n?: number) => (!n ? '' : n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K plays` : `${n} plays`);
 
 export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, onFriends, onChat, onOpenShop, refreshing, onRefresh }: Props) => {
+  const { isDark } = useTheme();
+  const bg = isDark ? '#08090a' : '#f8f9fa';
+  const cardBg = isDark ? '#181a1c' : '#ffffff';
+  const textColor = isDark ? '#ffffff' : '#111827';
+  const mutedColor = isDark ? 'rgba(255,255,255,0.55)' : '#6b7280';
+  const btnBg = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+
+  const { setActiveTab } = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const account = useAvatarAccount();
@@ -100,11 +112,21 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
     return out;
   }, [games]);
   const byId = (id?: string) => catalog.find((g) => g.id === id);
+  // what you've played; For you: everything else, most played first, never a game twice on the
+  // screen
   const recent = useMemo(() => {
     const r = (SHOWCASE ? SHOWCASE_RECENT : recentIds).map((id) => byId(id)).filter(Boolean) as HomeGame[];
-    return r.length ? r : [...catalog].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 6);
+    // nothing played yet (or not loaded): the most played games, leaving the Featured one for its big card
+    return r.length ? r : [...catalog].filter((g) => g.id !== FEATURED_GAME).sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 6);
   }, [recentIds, catalog]);
-  const forYou = useMemo(() => [...catalog].sort((a, b) => (b.plays || 0) - (a.plays || 0)), [catalog]);
+  const forYou = useMemo(() => {
+    const rest = catalog.filter((g) => !recent.some((r) => r.id === g.id)).sort((a, b) => (b.plays || 0) - (a.plays || 0));
+    return rest;
+  }, [catalog, recent]);
+  // one big Featured game at the top of For you (FEATURED_GAME, if it's not in Jump back in; else the first), the rest
+  // in the grid under it
+  const featured = forYou.find((g) => g.id === FEATURED_GAME) || forYou[0] || null;
+  const grid = forYou.filter((g) => g !== featured);
 
   // who you follow, and who of them is on (seeded once, then live from the presence socket)
   const loadFriends = async () => {
@@ -149,8 +171,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
   const greeting = !friends.length ? (
     // nobody yet
     <>
-      <Text style={styles.greetSub}>Games are better with friends</Text>
-      <Pressable style={[styles.pill, styles.pillDim]} onPress={onFriends}><Ionicons name="person-add-outline" size={14} color={TEXT} /><Text style={styles.pillText}>Invite friends</Text></Pressable>
+      <Pressable style={styles.pill} onPress={onFriends}><Ionicons name="person-add-outline" size={14} color="#fff" /><Text style={styles.pillText}>Invite friends</Text></Pressable>
     </>
   ) : !online.length ? (
     // all offline: what they were last into
@@ -158,22 +179,22 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
       <>
         <View style={[styles.row, { marginTop: 10, gap: 8 }]}>
           <Avatar uri={lastSeen.avatar} size={34} style={styles.offFace} />
-          <Text style={styles.greetSub2} numberOfLines={2}><Text style={{ fontWeight: '800', color: TEXT }}>{lastSeen.name}</Text> was in{'\n'}{byId(lastSeen.lastGame)!.name} · {ago(lastSeen.lastAt)}</Text>
+          <Text style={[styles.greetSub2, { color: isDark ? 'rgba(255,255,255,0.65)' : '#6b7280' }]} numberOfLines={2}><Text style={{ fontWeight: '800', color: textColor }}>{lastSeen.name}</Text> was in{'\n'}{byId(lastSeen.lastGame)!.name} · {ago(lastSeen.lastAt)}</Text>
         </View>
-        <Pressable style={styles.pill} onPress={() => tap(byId(lastSeen.lastGame)!)}><Ionicons name="play" size={13} color={TEXT} /><Text style={styles.pillText}>Play {byId(lastSeen.lastGame)!.name}</Text></Pressable>
+        <Pressable style={styles.pill} onPress={() => tap(byId(lastSeen.lastGame)!)}><Ionicons name="play" size={13} color="#fff" /><Text style={styles.pillText}>Play {byId(lastSeen.lastGame)!.name}</Text></Pressable>
       </>
-    ) : <Text style={styles.greetSub}>None of your friends are on right now</Text>
+    ) : <Text style={[styles.greetSub, { color: isDark ? 'rgba(255,255,255,0.65)' : '#6b7280' }]}>None of your friends are on right now</Text>
   ) : one ? (
     <>
       <View style={[styles.row, { marginTop: 10, gap: 8 }]}>
         <Avatar uri={one.avatar} size={34} style={styles.onRing} />
-        <Text style={styles.greetSub2} numberOfLines={2}><Text style={{ fontWeight: '800', color: TEXT }}>{one.name}</Text>{one.gameId ? ` is in ${byId(one.gameId)?.name ?? 'a game'}` : ' is online'}</Text>
+        <Text style={[styles.greetSub2, { color: isDark ? 'rgba(255,255,255,0.65)' : '#6b7280' }]} numberOfLines={2}><Text style={{ fontWeight: '800', color: textColor }}>{one.name}</Text>{one.gameId ? ` is in ${byId(one.gameId)?.name ?? 'a game'}` : ' is online'}</Text>
       </View>
       {byId(one.gameId) ? <Pressable style={styles.pill} onPress={() => join(one)}><Text style={styles.pillText}>Join {one.name}</Text></Pressable> : null}
     </>
   ) : (
     <>
-      <Text style={styles.greetSub}>{online.length} friends online</Text>
+      <Text style={[styles.greetSub, { color: isDark ? 'rgba(255,255,255,0.65)' : '#6b7280' }]}>{online.length} friends online</Text>
       <View style={[styles.row, { marginTop: 10 }]}>
         {online.slice(0, 3).map((f, i) => <Avatar key={f.id} uri={f.avatar} size={30} style={[styles.stack, i > 0 && { marginLeft: -8 }]} />)}
         <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSheet(true); }}><Text style={styles.pillText}>{online.some((f) => byId(f.gameId)) ? 'Join friends' : 'See friends'}</Text></Pressable>
@@ -182,51 +203,57 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: BG }}>
+    <View style={{ flex: 1, backgroundColor: bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 130 }} showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { onRefresh(); loadFriends(); }} tintColor="#fff" />}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { onRefresh(); loadFriends(); }} tintColor={isDark ? '#fff' : '#47ab9a'} />}>
         {/* you */}
         <View style={{ height: insets.top + 236, zIndex: 0 }}>
-          {/* the 3D stage fills the top, the avatar framed on its right (taller than the block: it runs under the
-              first row, so the rows start right under his platform, like the mock) */}
+          {/* the 3D stage fills the top */}
           <View style={[styles.stageBox, { height: insets.top + 286 }]} pointerEvents="none">
-            <AvatarStage style={StyleSheet.absoluteFill} avatar={account?.avatar ?? DEFAULT_AVATAR} look="dark" focus="lobby" passive />
-            <LinearGradient colors={['rgba(10,8,17,0)', BG]} style={styles.fade} />
+            <StageSlot name="games" avatar={account?.avatar ?? DEFAULT_AVATAR} look={isDark ? 'dark' : 'light'} focus="lobby" passive />
+            {isDark ? <LinearGradient colors={['rgba(11,12,13,0)', bg]} style={styles.fade} /> : null}
           </View>
+          {/* tapping your avatar opens Me (like Roblox's home) */}
+          <Pressable style={[styles.meTap, { top: insets.top + 56 }]} onPress={() => setActiveTab('profile')} accessibilityLabel="Your avatar" />
           <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
-            <Pressable style={styles.round} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}><Ionicons name="menu" size={22} color={TEXT} /></Pressable>
+            <Pressable style={[styles.round, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }]} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}><Ionicons name="menu" size={22} color={textColor} /></Pressable>
             <View style={[styles.row, { gap: 10 }]}>
-              <Pressable style={styles.round} onPress={onSearch} accessibilityLabel="Search games" hitSlop={6}><Ionicons name="search" size={20} color={TEXT} /></Pressable>
-              <Pressable style={styles.tb} onPress={onOpenShop} hitSlop={6}><TokBuxIcon size={24} /><Text style={styles.tbText}>{(account?.tokbux ?? 0).toLocaleString()}</Text></Pressable>
+              <Pressable style={[styles.round, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }]} onPress={onSearch} accessibilityLabel="Search games" hitSlop={6}><Ionicons name="search" size={20} color={textColor} /></Pressable>
+              <Pressable style={[styles.tb, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }]} onPress={onOpenShop} hitSlop={6}><TokBuxIcon size={24} /><Text style={[styles.tbText, { color: textColor }]}>{(account?.tokbux ?? 0).toLocaleString()}</Text></Pressable>
             </View>
           </View>
           <View style={[styles.greet, { top: insets.top + 86 }]}>
-            <Text style={styles.hey}>Hey {firstName},{'\n'}ready?</Text>
+            <Text style={[styles.hey, { color: textColor }]}>Hey {firstName},{'\n'}ready?</Text>
             {greeting}
           </View>
         </View>
 
-        <Text style={styles.heading}>Jump back in</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 10 }}>
+        {recent.length ? <Text style={[styles.heading, { color: textColor }]}>Jump back in</Text> : null}
+        {recent.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: PAD, gap: 10 }}>
           {recent.map((g) => (
             <Pressable key={g.id} style={{ width: 150 }} onPress={() => tap(g)}>
-              <Image source={{ uri: thumb(g) }} style={styles.wide} resizeMode="cover" />
-              <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
-              {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
+              <Image source={{ uri: thumb(g) }} style={[styles.wide, { backgroundColor: cardBg }]} resizeMode="cover" />
+              <Text style={[styles.name, { color: textColor }]} numberOfLines={1}>{g.name}</Text>
+              {g.plays ? <Text style={[styles.meta, { color: mutedColor }]}>{plays(g.plays)}</Text> : null}
             </Pressable>
           ))}
-        </ScrollView>
+        </ScrollView> : null}
 
-        <View style={styles.headRow}>
-          <Text style={[styles.heading, { marginHorizontal: 0 }]}>For you</Text>
-          <Pressable onPress={onSearch} hitSlop={8}><Text style={styles.seeAll}>See all</Text></Pressable>
-        </View>
+        {forYou.length ? <View style={styles.headRow}>
+          <Text style={[styles.heading, { marginHorizontal: 0, color: textColor }]}>For you</Text>
+          <Pressable onPress={onSearch} hitSlop={8}><Text style={[styles.seeAll, { color: mutedColor }]}>See all</Text></Pressable>
+        </View> : null}
+        {featured ? <Pressable style={{ marginHorizontal: PAD, marginBottom: 14 }} onPress={() => tap(featured)}>
+          <Image source={{ uri: thumb(featured) }} style={[styles.tall, { height: 120, backgroundColor: cardBg }]} resizeMode="cover" />
+          <Text style={[styles.name, { color: textColor }]} numberOfLines={1}>{featured.name}</Text>
+          {featured.plays ? <Text style={[styles.meta, { color: mutedColor }]}>{plays(featured.plays)}</Text> : null}
+        </Pressable> : null}
         <View style={styles.grid}>
-          {forYou.map((g) => (
+          {grid.map((g) => (
             <Pressable key={g.id} style={{ width: cell }} onPress={() => tap(g)}>
-              <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: 120 }]} resizeMode="cover" />
-              <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
-              {g.plays ? <Text style={styles.meta}>{plays(g.plays)}</Text> : null}
+              <Image source={{ uri: thumb(g) }} style={[styles.tall, { height: 120, backgroundColor: cardBg }]} resizeMode="cover" />
+              <Text style={[styles.name, { color: textColor }]} numberOfLines={1}>{g.name}</Text>
+              {g.plays ? <Text style={[styles.meta, { color: mutedColor }]}>{plays(g.plays)}</Text> : null}
             </Pressable>
           ))}
         </View>
@@ -235,34 +262,34 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
       {/* Join friends: who's on, and the game each is in */}
       <Modal visible={sheet} transparent animationType="slide" onRequestClose={() => setSheet(false)}>
         <Pressable style={styles.dim} onPress={() => setSheet(false)} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={styles.grabber} />
+        <View style={[styles.sheet, { backgroundColor: cardBg, paddingBottom: insets.bottom + 16 }]}>
+          <View style={[styles.grabber, { backgroundColor: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)' }]} />
           <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false}>
-          <Text style={styles.label}>ONLINE · {online.length}</Text>
+          <Text style={[styles.label, { color: mutedColor }]}>ONLINE · {online.length}</Text>
           {online.map((f) => {
             const g = byId(f.gameId);
             return (
               <View key={f.id} style={[styles.row, styles.friendRow]}>
                 <Avatar uri={f.avatar} size={44} style={styles.onRing} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.friendName}>{f.name}</Text>
-                  <Text style={styles.meta}>{f.gameId ? `In ${g?.name ?? 'a game'}` : 'In the app'}</Text>
+                  <Text style={[styles.friendName, { color: textColor }]}>{f.name}</Text>
+                  <Text style={[styles.meta, { color: mutedColor }]}>{f.gameId ? `In ${g?.name ?? 'a game'}` : 'In the app'}</Text>
                 </View>
-                {g ? <Image source={{ uri: thumb(g) }} style={styles.friendGame} resizeMode="cover" /> : null}
+                {g ? <Image source={{ uri: thumb(g) }} style={[styles.friendGame, { backgroundColor: bg }]} resizeMode="cover" /> : null}
                 {g ? <Pressable style={[styles.pill, { marginTop: 0, marginLeft: 10 }]} onPress={() => join(f)}><Text style={styles.pillText}>Join</Text></Pressable>
-                  : <Pressable onPress={() => { setSheet(false); onChat?.(f.id); }} hitSlop={10}><Ionicons name="chatbubble-outline" size={22} color={MUTED} /></Pressable>}
+                  : <Pressable onPress={() => { setSheet(false); onChat?.(f.id); }} hitSlop={10}><Ionicons name="chatbubble-outline" size={22} color={mutedColor} /></Pressable>}
               </View>
             );
           })}
-          {offline.length ? <Text style={styles.label}>OFFLINE · {offline.length}</Text> : null}
+          {offline.length ? <Text style={[styles.label, { color: mutedColor }]}>OFFLINE · {offline.length}</Text> : null}
           {offline.map((f) => (
             <View key={f.id} style={[styles.row, styles.friendRow]}>
               <Avatar uri={f.avatar} size={44} style={styles.offFace} />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[styles.friendName, { color: 'rgba(255,255,255,0.7)' }]}>{f.name}</Text>
-                {f.lastAt ? <Text style={styles.meta}>Last on {ago(f.lastAt)}{byId(f.lastGame) ? ` · ${byId(f.lastGame)!.name}` : ''}</Text> : <Text style={styles.meta}>Offline</Text>}
+                <Text style={[styles.friendName, { color: isDark ? 'rgba(255,255,255,0.7)' : '#374151' }]}>{f.name}</Text>
+                {f.lastAt ? <Text style={[styles.meta, { color: mutedColor }]}>Last on {ago(f.lastAt)}{byId(f.lastGame) ? ` · ${byId(f.lastGame)!.name}` : ''}</Text> : <Text style={[styles.meta, { color: mutedColor }]}>Offline</Text>}
               </View>
-              <Pressable onPress={() => { setSheet(false); onChat?.(f.id); }} hitSlop={10}><Ionicons name="chatbubble-outline" size={22} color={MUTED} /></Pressable>
+              <Pressable onPress={() => { setSheet(false); onChat?.(f.id); }} hitSlop={10}><Ionicons name="chatbubble-outline" size={22} color={mutedColor} /></Pressable>
             </View>
           ))}
           </ScrollView>
@@ -279,6 +306,7 @@ const styles = StyleSheet.create({
   tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 12 },
   tbText: { color: TEXT, fontWeight: '800', fontSize: 15 },
   stageBox: { position: 'absolute', left: 0, right: 0, top: 0 },
+  meTap: { position: 'absolute', right: 0, width: '45%', height: 236 },
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 60 },
   greet: { position: 'absolute', left: 18, right: '42%' },
   hey: { color: TEXT, fontSize: 26, fontWeight: '900', letterSpacing: -0.6, lineHeight: 29 },
@@ -288,7 +316,7 @@ const styles = StyleSheet.create({
   offFace: { opacity: 0.45 },
   label: { color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginTop: 12, marginBottom: 2 },
   stack: { borderWidth: 2, borderColor: BG },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: PURPLE, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, marginTop: 12 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: TEAL, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, marginTop: 12 },
   pillDim: { backgroundColor: 'rgba(255,255,255,0.12)' },
   pillText: { color: TEXT, fontWeight: '800', fontSize: 14 },
   heading: { color: TEXT, fontSize: 19, fontWeight: '800', letterSpacing: -0.2, marginHorizontal: PAD, marginTop: 20, marginBottom: 10 },

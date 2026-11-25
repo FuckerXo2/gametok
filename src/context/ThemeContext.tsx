@@ -1,39 +1,53 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import { useColorScheme, Appearance, ColorSchemeName } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-interface ThemeColors {
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+export interface ThemeColors {
   background: string;
   surface: string;
+  card: string;
+  cardLight: string;
   text: string;
   textSecondary: string;
+  textDim: string;
   border: string;
   primary: string;
   accent: string;
 }
 
-const lightColors: ThemeColors = {
-  background: '#fff',
+export const lightColors: ThemeColors = {
+  background: '#ffffff',
   surface: '#f5f5f5',
-  text: '#000',
-  textSecondary: '#666',
-  border: '#e0e0e0',
-  primary: '#a855f7',
+  card: '#ffffff',
+  cardLight: '#f1f3f5',
+  text: '#111827',
+  textSecondary: '#6b7280',
+  textDim: 'rgba(0,0,0,0.45)',
+  border: '#e5e7eb',
+  primary: '#47ab9a',
   accent: '#25F4EE',
 };
 
-const darkColors: ThemeColors = {
-  background: '#000',
-  surface: '#1a1a1a',
-  text: '#fff',
-  textSecondary: '#888',
-  border: '#333',
-  primary: '#a855f7',
+export const darkColors: ThemeColors = {
+  background: '#08090a',
+  surface: '#141617',
+  card: '#181a1c',
+  cardLight: '#1f2224',
+  text: '#ffffff',
+  textSecondary: 'rgba(255,255,255,0.6)',
+  textDim: 'rgba(255,255,255,0.45)',
+  border: 'rgba(255,255,255,0.1)',
+  primary: '#47ab9a',
   accent: '#25F4EE',
 };
 
-interface ThemeContextType {
+export interface ThemeContextType {
   isDark: boolean;
+  themeMode: ThemeMode;
   colors: ThemeColors;
+  setThemeMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
 }
 
@@ -41,15 +55,36 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = 'gametok_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState(true);
+  const systemColorScheme = useColorScheme();
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [effectiveSystemScheme, setEffectiveSystemScheme] = useState<ColorSchemeName>(() => {
+    return systemColorScheme || Appearance.getColorScheme() || 'dark';
+  });
 
+  // Keep effectiveSystemScheme synchronized whenever phone appearance changes
+  useEffect(() => {
+    if (systemColorScheme) {
+      setEffectiveSystemScheme(systemColorScheme);
+    }
+  }, [systemColorScheme]);
+
+  useEffect(() => {
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      if (colorScheme) {
+        setEffectiveSystemScheme(colorScheme);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Load saved preference from storage (defaults to 'system' to follow phone settings like WhatsApp)
   useEffect(() => {
     let mounted = true;
     AsyncStorage.getItem(THEME_STORAGE_KEY)
-      .then((storedTheme) => {
+      .then((stored) => {
         if (!mounted) return;
-        if (storedTheme === 'dark' || storedTheme === 'light') {
-          setIsDark(storedTheme === 'dark');
+        if (stored === 'system' || stored === 'dark' || stored === 'light') {
+          setThemeModeState(stored);
         }
       })
       .catch(() => {});
@@ -59,18 +94,26 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  const toggleTheme = () => {
-    setIsDark(prev => {
-      const next = !prev;
-      AsyncStorage.setItem(THEME_STORAGE_KEY, next ? 'dark' : 'light').catch(() => {});
-      return next;
-    });
-  };
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode);
+    AsyncStorage.setItem(THEME_STORAGE_KEY, mode).catch(() => {});
+  }, []);
+
+  const isDark = useMemo(() => {
+    if (themeMode === 'system') {
+      return effectiveSystemScheme === 'dark';
+    }
+    return themeMode === 'dark';
+  }, [themeMode, effectiveSystemScheme]);
+
+  const toggleTheme = useCallback(() => {
+    setThemeMode(isDark ? 'light' : 'dark');
+  }, [isDark, setThemeMode]);
 
   const colors = isDark ? darkColors : lightColors;
 
   return (
-    <ThemeContext.Provider value={{ isDark, colors, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark, themeMode, colors, setThemeMode, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

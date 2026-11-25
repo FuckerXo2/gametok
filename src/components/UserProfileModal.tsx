@@ -73,7 +73,7 @@ const PROFILE_GRID_PADDING = 8;
 const PROFILE_GRID_GAP = 4;
 const PROFILE_GRID_SIZE = Math.floor((SCREEN_WIDTH - PROFILE_GRID_PADDING * 2 - PROFILE_GRID_GAP * 2) / 3);
 const PROFILE_TILE_HEIGHT = Math.round(PROFILE_GRID_SIZE * 1.34);
-const PURPLE = '#a855f7';
+const TEAL = '#47ab9a';
 
 const formatCompactNumber = (value?: number | null) => {
   if (typeof value !== 'number') return '—';
@@ -479,7 +479,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
                 <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
                   {activeUser.displayName || activeUser.username}
                 </Text>
-                {activeUser.verified ? <MaterialIcons name="verified" size={18} color={PURPLE} /> : null}
+                {activeUser.verified ? <MaterialIcons name="verified" size={18} color={TEAL} /> : null}
               </View>
               <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{activeUser.username}</Text>
               <Text style={[styles.bioText, { color: activeUser.bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>

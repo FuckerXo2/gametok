@@ -8,7 +8,8 @@
 // A landscape game locks the phone to landscape (natively, either way round) and the game only mounts once the screen
 // has turned, so it boots at its real size; leaving locks back to portrait.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type WebView from 'react-native-webview';
 import { useSocket } from '../context/SocketContext';
 import { View, Modal, StatusBar, StyleSheet, DeviceEventEmitter, Image, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,6 +87,12 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
   // flashing the previous game's finished state.
   const key = game?.id || 'none';
 
+  // the game menu open / shut: tell the game (as the bridge's app messages arrive), so a game can pause while it's up
+  const surfaceRef = useRef<WebView | null>(null);
+  const tellMenu = (open: boolean) => {
+    const msg = JSON.stringify(JSON.stringify({ type: 'GAMETOK_MENU', open }));
+    surfaceRef.current?.injectJavaScript(`window.dispatchEvent(new MessageEvent('message', { data: ${msg} })); true;`);
+  };
   const close = () => {
     setLoaded(false);
     onClose();
@@ -109,6 +116,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
         <StatusBar hidden />
         {game && turned ? (
           <GameSurface
+            ref={surfaceRef}
             key={key}
             gameId={game.id}
             joinFriend={game.joinFriend}
@@ -143,7 +151,7 @@ export const GamePlayerModal = ({ game, onClose, recordPlay = true, onRemix }: P
           />
         ) : null}
 
-        {game ? <GameMenu key={`menu-${key}`} gameId={game.id} gameName={game.name} landscape={wantsLandscape} onLeave={close} /> : null}
+        {game ? <GameMenu key={`menu-${key}`} gameId={game.id} gameName={game.name} landscape={wantsLandscape} onLeave={close} onOpenChange={tellMenu} /> : null}
         <TokBuxSheet visible={tokbuxOpen} onClose={() => setTokbuxOpen(false)} />
       </View>
       </SafeAreaProvider>

@@ -44,7 +44,7 @@ export const HeroCard: React.FC<HeroCardProps> = ({
           colors={
             variant === 'image'
               ? ['rgba(5,5,8,0.0)', 'rgba(5,5,8,0.2)', 'rgba(5,5,8,0.85)']
-              : ['rgba(168,85,247,0.18)', 'rgba(15,8,30,0.65)', 'rgba(0,0,0,0.95)']
+              : ['rgba(71,171,154,0.18)', 'rgba(15,8,30,0.65)', 'rgba(0,0,0,0.95)']
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 4,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(168,85,247,0.55)',
+    backgroundColor: 'rgba(71,171,154,0.55)',
     marginBottom: spacing.md,
   },
   eyebrowText: {

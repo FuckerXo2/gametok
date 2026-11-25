@@ -44,7 +44,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
         name: 'GameTok',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#A855F7',
+        lightColor: '#47ab9a',
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
     }

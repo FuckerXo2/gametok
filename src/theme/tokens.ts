@@ -13,11 +13,11 @@ export const palette = {
   line: 'rgba(255,255,255,0.08)',
   lineStrong: 'rgba(255,255,255,0.16)',
 
-  // brand
-  purple: '#a855f7',
-  purpleSoft: '#c084fc',
-  purpleDeep: '#7c3aed',
-  purpleGlow: 'rgba(168,85,247,0.28)',
+  // brand: the teal from the GameTok logo
+  teal: '#47ab9a',
+  tealSoft: '#7fd1c2',
+  tealDeep: '#2f8a7a',
+  tealGlow: 'rgba(71,171,154,0.28)',
 
   // text
   text: '#ffffff',
@@ -28,11 +28,11 @@ export const palette = {
   // semantic
   live: '#ef4444',
   online: '#22c55e',
-  inGame: '#a855f7',
+  inGame: '#47ab9a',
   warning: '#f59e0b',
   success: '#22c55e',
   danger: '#ef4444',
-  verified: '#a855f7',
+  verified: '#47ab9a',
 
   // overlays
   scrim: 'rgba(0,0,0,0.55)',
@@ -46,7 +46,7 @@ export const colors = {
   bgElevated: palette.ink800,
   bgCard: palette.ink700,
   bgChip: palette.glassWhite,
-  bgChipActive: palette.purple,
+  bgChipActive: palette.teal,
 
   text: palette.text,
   textMuted: palette.textMuted,
@@ -56,9 +56,9 @@ export const colors = {
   border: palette.line,
   borderStrong: palette.lineStrong,
 
-  primary: palette.purple,
-  primaryDeep: palette.purpleDeep,
-  primaryGlow: palette.purpleGlow,
+  primary: palette.teal,
+  primaryDeep: palette.tealDeep,
+  primaryGlow: palette.tealGlow,
 
   live: palette.live,
   online: palette.online,
@@ -132,7 +132,7 @@ export const type = {
 export const shadows = {
   none: { shadowColor: 'transparent', shadowOpacity: 0 },
   glow: {
-    shadowColor: palette.purple,
+    shadowColor: palette.teal,
     shadowOpacity: 0.45,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },

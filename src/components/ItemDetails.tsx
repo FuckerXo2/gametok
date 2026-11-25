@@ -11,7 +11,7 @@ import { TokBuxIcon } from './TokBuxIcon';
 import { AvatarItem, AvatarRecord } from '../avatar/catalog';
 import { AVATAR_HOST } from '../avatar/host';
 
-const BG = '#0d0a16', CARD = '#201a2b', DIM = 'rgba(255,255,255,0.55)', BUY = '#000000', GREEN = '#22c55e';
+const BG = '#0b0c0d', CARD = '#1c1f21', DIM = 'rgba(255,255,255,0.55)', BUY = '#000000', GREEN = '#22c55e';
 // bump with every change to item-view.html (phones cache it)
 const VIEW_V = 9;
 const NAKED = { head: null, top: null, arms: null, legs: null, feet: null, acc: null };

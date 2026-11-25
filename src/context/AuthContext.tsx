@@ -41,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (cachedUser) {
       try {
         setUser(JSON.parse(cachedUser));
+        setIsLoading(false);
       } catch (e) {
         console.error('[Auth] Failed to parse cached user:', e);
       }
@@ -50,6 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('[Auth] No token stored');
       setUser(null);
       await AsyncStorage.removeItem('authUser');
+      setIsLoading(false);
       return;
     }
 
