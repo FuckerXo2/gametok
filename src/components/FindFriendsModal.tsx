@@ -87,7 +87,7 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
         if (isAvailable) {
             try {
                 await Sharing.shareAsync('https://gametok.com/invite', {
-                    dialogTitle: 'Invite friends to GameTok!',
+                    dialogTitle: 'Invite friends to Pixil!',
                 });
             } catch (e) {
                 console.log('Error sharing:', e);
@@ -135,7 +135,7 @@ export const FindFriendsModal: React.FC<FindFriendsModalProps> = ({
                         <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
                     </TouchableOpacity>
                     <Text style={[styles.shareSub, { color: theme.textSecondary }]}>
-                        Share GameTok to WhatsApp, Instagram, Snapchat, etc.
+                        Share Pixil to WhatsApp, Instagram, Snapchat, etc.
                     </Text>
                 </View>
 

@@ -1,11 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Animated, Image, Easing, Dimensions } from 'react-native';
+// Launch screen C: the star where the native splash left it (same size, same place: app.json imageWidth 140), the
+// word PIXIL fading in small at the bottom, then everything fades to the app.
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Animated, Easing } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const splashImage = require('../../assets/splash.png');
-const iconImage = require('../../assets/icon.png');
+import { PixilStar } from './PixilStar';
 
 interface AnimatedSplashProps {
   isReady?: boolean;
@@ -13,132 +11,38 @@ interface AnimatedSplashProps {
 }
 
 export const AnimatedSplash: React.FC<AnimatedSplashProps> = ({ onAnimationComplete }) => {
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const bgScale = useRef(new Animated.Value(1)).current;
-  const bgOpacity = useRef(new Animated.Value(1)).current;
-  const logoScale = useRef(new Animated.Value(0)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const animationStarted = useRef(false);
+  const word = useRef(new Animated.Value(0)).current;
+  const all = useRef(new Animated.Value(1)).current;
+  const star = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (imageLoaded && !animationStarted.current) {
-      animationStarted.current = true;
-      setTimeout(() => {
-        SplashScreen.hideAsync().catch(() => {});
-        runAnimation();
-      }, 50);
-    }
-  }, [imageLoaded]);
-
-  // Fallback timeout in case image load event is delayed
-  useEffect(() => {
-    const fallback = setTimeout(() => {
-      if (!animationStarted.current) {
-        animationStarted.current = true;
-        SplashScreen.hideAsync().catch(() => {});
-        runAnimation();
-      }
-    }, 1500);
-    return () => clearTimeout(fallback);
+    // this view is drawn exactly like the native splash, so hiding that one is seamless
+    const t = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+      Animated.sequence([
+        Animated.timing(word, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.delay(550),
+        Animated.parallel([
+          Animated.timing(star, { toValue: 1.12, duration: 320, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(all, { toValue: 0, duration: 320, useNativeDriver: true }),
+        ]),
+      ]).start(() => onAnimationComplete());
+    }, 60);
+    return () => clearTimeout(t);
   }, []);
 
-  const runAnimation = () => {
-    // Phase 1: Background collage zooms in and fades out
-    Animated.parallel([
-      Animated.timing(bgScale, {
-        toValue: 1.2,
-        duration: 500,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(bgOpacity, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      // Phase 2: GameTOK logo bounces in
-      Animated.parallel([
-        Animated.spring(logoScale, {
-          toValue: 1,
-          friction: 4,
-          tension: 60,
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoOpacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Phase 3: Hold briefly then fade out to reveal the home feed
-        Animated.sequence([
-          Animated.delay(400),
-          Animated.timing(logoOpacity, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          onAnimationComplete();
-        });
-      });
-    });
-  };
-
   return (
-    <View style={styles.container}>
-      <Animated.Image
-        source={splashImage}
-        style={[
-          styles.background,
-          {
-            opacity: bgOpacity,
-            transform: [{ scale: bgScale }],
-          },
-        ]}
-        resizeMode="cover"
-        onLoad={() => setImageLoaded(true)}
-      />
-
-      <Animated.View
-        style={[
-          styles.logoContainer,
-          {
-            opacity: logoOpacity,
-            transform: [{ scale: logoScale }],
-          },
-        ]}
-      >
-        <Image
-          source={iconImage}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+    <Animated.View style={[styles.container, { opacity: all }]} pointerEvents="none">
+      <Animated.View style={[styles.center, { transform: [{ scale: star }] }]}>
+        <PixilStar size={140} />
       </Animated.View>
-    </View>
+      <Animated.Text style={[styles.word, { opacity: word }]   /* (drawn above the safe-area provider: a fixed margin) */}>PIXIL</Animated.Text>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: '#000',
-  },
-  background: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-  },
-  logoContainer: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logo: {
-    width: 120,
-    height: 120,
-  },
+  container: { ...StyleSheet.absoluteFill, backgroundColor: '#000' },
+  center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  word: { position: 'absolute', left: 0, right: 0, bottom: 72, textAlign: 'center', color: '#8a8f99', fontSize: 15, fontWeight: '800', letterSpacing: 6 },
 });

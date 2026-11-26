@@ -50,9 +50,9 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
     setBusy(true);
     if (short > 0) {
       const pack = packs?.find((p) => p.id === options[pick]);
-      if (!pack) { setBusy(false); Alert.alert('Coming soon', 'TokBux will be on sale very soon.'); return; }
+      if (!pack) { setBusy(false); Alert.alert('Coming soon', 'Pixils will be on sale very soon.'); return; }
       const err = await buyPack(pack);
-      if (err) { setBusy(false); if (err !== 'cancelled') Alert.alert('TokBux', err); return; }
+      if (err) { setBusy(false); if (err !== 'cancelled') Alert.alert('Pixils', err); return; }
     }
     const err = await request.buy();
     setBusy(false);
@@ -66,7 +66,7 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
       <Pressable style={styles.backdrop} onPress={close}>
         <Pressable style={[styles.card, win.width > win.height && { width: 420, alignSelf: 'center' }]} onPress={() => {}}>
           <View style={styles.head}>
-            <Text style={styles.title}>{short > 0 ? 'Buy TokBux and item' : 'Buy item'}</Text>
+            <Text style={styles.title}>{short > 0 ? 'Buy Pixils and item' : 'Buy item'}</Text>
             <Pressable onPress={close} hitSlop={12}><Ionicons name="close" size={24} color="#fff" /></Pressable>
           </View>
           <View style={styles.item}>
@@ -101,8 +101,8 @@ export const BuyItemSheet: React.FC<{ request: BuyRequest | null; onDone: (bough
               : <View style={styles.cost}><TokBuxIcon size={18} /><Text style={styles.buyText}>{request.price.toLocaleString()}</Text></View>}
           </Pressable>
           <Text style={styles.fine}>
-            {short > 0 ? 'Your payment method will be charged. GameTok Terms of Use apply.'
-              : `You have ${balance.toLocaleString()} TokBux. After: ${(balance - request.price).toLocaleString()}.`}
+            {short > 0 ? 'Your payment method will be charged. Pixil Terms of Use apply.'
+              : `You have ${balance.toLocaleString()} Pixils. After: ${(balance - request.price).toLocaleString()}.`}
           </Text>
         </Pressable>
       </Pressable>

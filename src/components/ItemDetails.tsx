@@ -27,7 +27,7 @@ function viewUrl(item: AvatarItem, look: AvatarRecord) {
 
 // (to gametok.co for now: the website has no item pages yet)
 export function shareItem(item: AvatarItem) {
-  Share.share({ message: `Check out ${item.name} on GameTok! https://gametok.co` }).catch(() => {});
+  Share.share({ message: `Check out ${item.name} on Pixil! https://gametok.co` }).catch(() => {});
 }
 
 export const ItemDetails: React.FC<{
@@ -59,7 +59,7 @@ export const ItemDetails: React.FC<{
           </View>
           <View style={styles.info}>
             <Text style={styles.name}>{item.name}</Text>
-            <Text style={styles.maker}>By GameTok</Text>
+            <Text style={styles.maker}>By Pixil</Text>
             <View style={styles.tags}><Text style={styles.tag}>{item.tab === 'avatars' ? 'Avatar' : item.pieces ? 'Outfit' : item.sub}</Text></View>
             {owned ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
               : price === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>

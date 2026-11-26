@@ -558,7 +558,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
           ) : null}
         </View>
         <Text style={styles.itemName} numberOfLines={1}>{i.name}</Text>
-        {i.category === 'body' || mode === 'shop' ? null : <Text style={styles.maker} numberOfLines={1}>GameTok</Text>}
+        {i.category === 'body' || mode === 'shop' ? null : <Text style={styles.maker} numberOfLines={1}>Pixil</Text>}
         {i.category === 'body' ? null   /* your body: not an item, no price */
           : owned && (i.pieces ? piecesOf(i).some((p) => (account?.prices[p.id] ?? p.price) > 0) : priceOf(i) > 0) ? <Text style={[styles.price, { color: GREEN }]}>✓ Owned</Text>
           : priceOf(i) === 0 ? <Text style={[styles.price, { color: DIM }]}>Free</Text>

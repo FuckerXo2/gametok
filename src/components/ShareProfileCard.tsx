@@ -35,7 +35,7 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
   const handleShare = async (platform?: string) => {
     try {
       await Share.share({
-        message: `Add me on GameTOK! ${profileUrl}`,
+        message: `Add me on Pixil! ${profileUrl}`,
         url: profileUrl,
       });
     } catch (error) {
@@ -100,7 +100,7 @@ export const ShareProfileCard: React.FC<ShareProfileCardProps> = ({ visible, onC
 
             {/* User Info */}
             <Text style={styles.displayName}>
-              {user?.displayName || user?.username || 'GameTOK User'}
+              {user?.displayName || user?.username || 'Pixil User'}
             </Text>
             <Text style={styles.username}>@{user?.username || 'username'}</Text>
           </LinearGradient>

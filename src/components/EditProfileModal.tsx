@@ -83,7 +83,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ visible, onC
               <Avatar uri={user?.avatar} userId={user?.id} size={126} />
             </View>
             <Text style={[styles.profileEditName, { color: colors.text }]} numberOfLines={2}>
-              {displayName.trim() || user?.displayName || 'GameTOK player'}
+              {displayName.trim() || user?.displayName || 'Pixil player'}
             </Text>
             <Text style={[styles.profileEditHandle, { color: colors.textSecondary }]}>
               @{user?.username || 'gametok'}

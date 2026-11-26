@@ -209,7 +209,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
     if (!activeUser) return;
     try {
       await Share.share({
-        message: `Check out @${activeUser.username} on GameTok: https://games.gametok.co/u/${activeUser.username}`,
+        message: `Check out @${activeUser.username} on Pixil: https://games.gametok.co/u/${activeUser.username}`,
       });
     } catch (error) {
       console.log('Failed to share profile:', error);
@@ -483,7 +483,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ visible, onC
               </View>
               <Text style={[styles.handleText, { color: colors.textSecondary }]}>@{activeUser.username}</Text>
               <Text style={[styles.bioText, { color: activeUser.bio ? colors.text : colors.textSecondary }]} numberOfLines={3}>
-                {activeUser.bio || 'GameTok player.'}
+                {activeUser.bio || 'Pixil player.'}
               </Text>
 
               <View style={styles.statsRow}>

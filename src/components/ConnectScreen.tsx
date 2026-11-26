@@ -1209,7 +1209,7 @@ export const ConnectScreen: React.FC = () => {
       <View style={[connectV3Styles.root, { paddingTop: insets.top }]}>
         <View style={[connectV3Styles.topBar, { paddingTop: 0 }]}>
           <View style={connectV3Styles.topIconBtn} />
-          <Text style={connectV3Styles.topTitle}>gametok</Text>
+          <Text style={connectV3Styles.topTitle}>Pixil</Text>
           <View style={connectV3Styles.topIconBtn} />
         </View>
         <View style={StyleSheet.absoluteFill}>
@@ -1259,7 +1259,7 @@ export const ConnectScreen: React.FC = () => {
           >
             <Avatar uri={user?.avatar} userId={user?.id} size={32} />
           </Pressable>
-          <Text style={connectV3Styles.topTitle}>gametok</Text>
+          <Text style={connectV3Styles.topTitle}>Pixil</Text>
           <Pressable
             style={connectV3Styles.topIconBtn}
             onPress={() => {

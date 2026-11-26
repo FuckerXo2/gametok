@@ -41,7 +41,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
     // makes real-device Android less flaky than configuring it after token fetch.
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'GameTok',
+        name: 'Pixil',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#47ab9a',

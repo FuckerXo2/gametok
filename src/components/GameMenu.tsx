@@ -68,7 +68,7 @@ export const GameMenu: React.FC<{ gameId: string; gameName: string; landscape: b
   const resume = () => { onOpenChange?.(false); Animated.timing(slide, { toValue: 0, duration: 140, useNativeDriver: true }).start(() => setOpen(false)); };
   const invite = () => {
     const url = `https://gametok.co/game/${encodeURIComponent(gameId)}`;
-    Share.share({ message: `Play ${gameName} with me on GameTok! ${url}` }).catch(() => {});
+    Share.share({ message: `Play ${gameName} with me on Pixil! ${url}` }).catch(() => {});
   };
 
   return (

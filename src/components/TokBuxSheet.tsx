@@ -38,14 +38,14 @@ export const TokBuxSheet: React.FC<{ visible: boolean; onClose: () => void }> = 
 
   const buy = useCallback(async (id: string) => {
     const pack = packs?.find((p) => p.id === id);
-    if (!pack) { Alert.alert('Coming soon', 'TokBux will be on sale here very soon.'); return; }
+    if (!pack) { Alert.alert('Coming soon', 'Pixils will be on sale here very soon.'); return; }
     if (busy) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setBusy(id);
     const err = await buyPack(pack);
     setBusy(null);
     if (err === 'cancelled') return;
-    if (err) { Alert.alert('TokBux', err); return; }
+    if (err) { Alert.alert('Pixils', err); return; }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [packs, busy]);
 

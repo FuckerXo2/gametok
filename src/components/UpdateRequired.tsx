@@ -33,9 +33,9 @@ export function useUpdateRequired(): string | null {
 
 export const UpdateRequired: React.FC<{ storeUrl: string }> = ({ storeUrl }) => (
   <View style={styles.root}>
-    <Text style={styles.logo}>GameTOK</Text>
-    <Text style={styles.title}>Update GameTok</Text>
-    <Text style={styles.body}>This version is too old. Get the new one to keep playing: your avatar, TokBux and friends are all waiting.</Text>
+    <Text style={styles.logo}>Pixil</Text>
+    <Text style={styles.title}>Update Pixil</Text>
+    <Text style={styles.body}>This version is too old. Get the new one to keep playing: your avatar, Pixils and friends are all waiting.</Text>
     <Pressable style={styles.btn} onPress={() => Linking.openURL(storeUrl).catch(() => {})}>
       <Text style={styles.btnText}>{Platform.OS === 'ios' ? 'Open the App Store' : 'Open Google Play'}</Text>
     </Pressable>

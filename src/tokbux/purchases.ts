@@ -56,8 +56,8 @@ export async function startPurchases(id: string | null | undefined) {
       if (waiting?.sku === purchase.productId) {
         const w = waiting; waiting = null;
         w.done(ok ? null : purchase.purchaseState === 'pending'
-          ? 'Your payment is pending: the TokBux will show up once it goes through.'
-          : 'Your TokBux are on the way: they will show up in a moment.');
+          ? 'Your payment is pending: the Pixils will show up once it goes through.'
+          : 'Your Pixils are on the way: they will show up in a moment.');
       }
     });
     IAP.purchaseErrorListener((e) => {
@@ -91,7 +91,7 @@ export async function loadPacks(): Promise<TokbuxPack[]> {
 
 // Buy a pack. Resolves to null when the TokBux are on the account, 'cancelled', or a message to show.
 export async function buyPack(pack: TokbuxPack): Promise<string | null> {
-  if (!IAP || !userId) return 'Sign in to buy TokBux.';
+  if (!IAP || !userId) return 'Sign in to buy Pixils.';
   const before = getAvatarAccount()?.tokbux ?? 0;
   const result = new Promise<string | null>((done) => { waiting = { sku: pack.id, done }; });
   try {
@@ -106,5 +106,5 @@ export async function buyPack(pack: TokbuxPack): Promise<string | null> {
   const err = await result;
   if (err) return err;
   await syncAvatar();
-  return (getAvatarAccount()?.tokbux ?? 0) >= before + pack.tokbux ? null : 'Your TokBux are on the way: they will show up in a moment.';
+  return (getAvatarAccount()?.tokbux ?? 0) >= before + pack.tokbux ? null : 'Your Pixils are on the way: they will show up in a moment.';
 }

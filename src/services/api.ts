@@ -301,7 +301,7 @@ export const NO_RULES_FC_GAME = {
   embedUrl: 'https://pub-b7694276c8f54290854b276638a93b62.r2.dev/web-games/no-rules-fc/32d5f81dc840/index.html',
   orientation: 'landscape' as 'landscape' | 'portrait',
   platform: 'all',
-  creatorDisplayName: 'GameTOK',
+  creatorDisplayName: 'Pixil',
   creatorUsername: 'gametok',
   plays: 100,
   likes: 12,

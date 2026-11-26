@@ -7,7 +7,7 @@ const ONBOARDING_KEY = '@gametok_onboarding_complete';
 const ONBOARDING_STEPS: TooltipStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to GameTOK!',
+    title: 'Welcome to Pixil!',
     description: 'Discover endless games, earn coins while you play, and redeem real rewards.',
     position: 'center',
     icon: 'game-controller',

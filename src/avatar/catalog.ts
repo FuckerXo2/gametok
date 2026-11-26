@@ -3,7 +3,7 @@
 // Item ids match the files there: hair/<Hair_*>.glb, parts/<Set>_<suffix>.glb.
 import type { Ionicons } from '@expo/vector-icons';
 import { AVATAR_HOST } from './host';
-import { AVATAR_V2, v2Items, v2Faces, v2Beards, v2Thumb, type SkLook } from './v2';
+import { AVATAR_V2, SK_DEFAULT, v2Items, v2Faces, v2Beards, v2Thumb, type SkLook } from './v2';
 
 export type Slot = 'head' | 'top' | 'arms' | 'legs' | 'feet' | 'acc';
 
@@ -33,7 +33,7 @@ export const DEFAULT_AVATAR: AvatarRecord = {
   colors: { head: '#ffffff', top: '#ffffff', arms: '#ffffff', legs: '#ffffff', feet: '#ffffff', acc: '#ffffff' },
 };
 
-// the starter look for each body: boy or girl
+// the starter look for each body: male or female
 export const STARTER_AVATARS: Record<AvatarRecord['body'], AvatarRecord> = {
   Male: DEFAULT_AVATAR,
   Female: { ...DEFAULT_AVATAR, body: 'Female', hair: 'Hair_SimpleParted', parts: { ...DEFAULT_AVATAR.parts }, colors: { ...DEFAULT_AVATAR.colors } },
@@ -43,9 +43,16 @@ export const STARTER_AVATARS: Record<AvatarRecord['body'], AvatarRecord> = {
 // shorts, white sneakers
 const STARTER_PICKS = { top: ['Street_TeeWhite', 'Street_TeeBlack'], legs: ['Street_ShortsKhaki', 'Street_ShortsBlack'], feet: ['Street_SneakersWhite'] };
 const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+// the starter outfits on the Synty avatar (the backend gifts both to every new account: avatar-router.js STARTER_GIFT):
+// guys in the bomber set, girls in the puffer set
+const STARTER_WEAR: Record<AvatarRecord['body'], SkLook['wear']> = {
+  Male: { top: 'bomber', bottom: 'cargos', shoes: 'boots', hands: null, full: null },
+  Female: { top: 'puffer', bottom: 'joggers', shoes: 'boots', hands: null, full: null },
+};
 export function randomStarter(body: AvatarRecord['body']): AvatarRecord {
   const s = STARTER_AVATARS[body];
-  return { ...s, parts: { ...s.parts, top: pick(STARTER_PICKS.top), legs: pick(STARTER_PICKS.legs), feet: pick(STARTER_PICKS.feet) }, colors: { ...s.colors } };
+  const r: AvatarRecord = { ...s, parts: { ...s.parts, top: pick(STARTER_PICKS.top), legs: pick(STARTER_PICKS.legs), feet: pick(STARTER_PICKS.feet) }, colors: { ...s.colors } };
+  return AVATAR_V2 ? ({ ...r, sk: { ...SK_DEFAULT, wear: { ...STARTER_WEAR[body] }, colors: {} } } as AvatarRecord) : r;
 }
 // still in a starter look: nothing on but the starter pieces, and the starter hair
 export const isStarterLook = (r: AvatarRecord) => r.hair === STARTER_AVATARS[r.body].hair && !r.parts.head && !r.parts.arms && !r.parts.acc

@@ -121,7 +121,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
 
   const getThumbnailUrl = () => `https://games.gametok.co/thumbnails/${gameId}.png`;
   const getShareUrl = () => `https://gametok.co/game/${encodeURIComponent(gameId)}`;
-  const getShareMessage = () => `Play ${gameName} with me on GameTOK! 🎮\n${getShareUrl()}`;
+  const getShareMessage = () => `Play ${gameName} with me on Pixil! 🎮\n${getShareUrl()}`;
 
   const handleExternalShare = async (optionId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

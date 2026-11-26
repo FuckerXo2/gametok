@@ -62,7 +62,7 @@ export const AccountMenu: React.FC<{ onMyItems: () => void }> = ({ onMyItems }) 
                     <TokBuxIcon size={26} />
                     <Text style={[styles.balance, { color: textColor }]}>{tokbux.toLocaleString()}</Text>
                     <Pressable style={[styles.buy, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]} onPress={() => to('tokbux')}>
-                      <Text style={[styles.buyText, { color: textColor }]}>Buy TokBux</Text>
+                      <Text style={[styles.buyText, { color: textColor }]}>Buy Pixils</Text>
                     </Pressable>
                   </View>
                 </View>
