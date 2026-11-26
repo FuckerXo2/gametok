@@ -56,7 +56,7 @@ const THEME_STORAGE_KEY = 'gametok_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const systemColorScheme = useColorScheme();
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
   const [effectiveSystemScheme, setEffectiveSystemScheme] = useState<ColorSchemeName>(() => {
     return systemColorScheme || Appearance.getColorScheme() || 'dark';
   });
@@ -77,15 +77,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => subscription.remove();
   }, []);
 
-  // Load saved preference from storage (defaults to 'system' to follow phone settings like WhatsApp)
+  // Load saved preference from storage (dark unless the player picked another in the menu)
   useEffect(() => {
     let mounted = true;
     AsyncStorage.getItem(THEME_STORAGE_KEY)
       .then((stored) => {
         if (!mounted) return;
-        if (stored === 'system' || stored === 'dark' || stored === 'light') {
-          setThemeModeState(stored);
-        }
+        // ("System default" is gone: anyone who had it gets dark)
+        if (stored === 'light') setThemeModeState('light');
       })
       .catch(() => {});
 

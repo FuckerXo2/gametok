@@ -2,7 +2,7 @@
 // top, your TokBux, then Friends, Customize, Settings, Help & Safety. Mounted once (App's MainApp); opened with
 // DeviceEventEmitter.emit('gametok:open-menu').
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, DeviceEventEmitter, ScrollView, TextInput, Alert, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, DeviceEventEmitter, ScrollView, TextInput, Alert, Linking, ActivityIndicator, Switch } from 'react-native';
 import Animated, { SlideInLeft, SlideOutLeft, FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -197,9 +197,9 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
           </Section>
           <Section title="APP">
             <Item
-              label="Theme"
-              value={themeDisplayLabel}
-              onPress={() => setShowThemePicker(true)}
+              label="Dark mode"
+              onPress={() => setThemeMode(isDark ? 'light' : 'dark')}
+              right={<Switch value={isDark} onValueChange={(on) => setThemeMode(on ? 'dark' : 'light')} trackColor={{ true: '#47ab9a', false: undefined }} />}
             />
           </Section>
           <Section title="">
@@ -221,7 +221,6 @@ const SettingsScreen: React.FC<{ visible: boolean; onClose: () => void }> = ({ v
             <Text style={[styles.themeDialogTitle, { color: isDark ? '#ffffff' : '#111827' }]}>Choose theme</Text>
 
             {([
-              { mode: 'system' as ThemeMode, title: 'System default', desc: "Matches your phone's appearance" },
               { mode: 'light' as ThemeMode, title: 'Light', desc: 'Always use light theme' },
               { mode: 'dark' as ThemeMode, title: 'Dark', desc: 'Always use dark theme' },
             ] as const).map((opt) => {
