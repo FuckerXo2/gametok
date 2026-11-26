@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Avatar } from './Avatar';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -67,7 +68,7 @@ const NavTab = ({
 
   const { isDark } = useTheme();
   const inactiveColor = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
-  const color = isActive ? BRAND_TEAL : inactiveColor;
+  const color = isActive ? (isDark ? '#fff' : '#111') : inactiveColor;
 
   return (
     <Pressable
@@ -93,6 +94,7 @@ const NavTab = ({
         >
           {tab.label}
         </Animated.Text>
+        {isActive ? <LinearGradient colors={['#ff4d5e', '#ff9a1f', '#ffd23f', '#2fd27a', '#3a8dff']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.spec} /> : null}
       </Animated.View>
     </Pressable>
   );
@@ -175,6 +177,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarRingActive: {
-    borderColor: BRAND_TEAL,
+    borderColor: '#ff9a1f',
   },
+  spec: { position: 'absolute', bottom: -7, width: 30, height: 3, borderRadius: 2 },
 });

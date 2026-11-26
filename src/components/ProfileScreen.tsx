@@ -28,6 +28,7 @@ import { buyItem, needsHeadshot, saveAvatar, syncAvatar, syncShop, uploadHeadsho
 
 const { width: W, height: H } = Dimensions.get('window');
 const CELL = Math.floor((W - 16 * 2 - 10 * 2) / 3) - 1;   // three across (floored: a fraction over and the third wraps)
+const CARD2 = Math.floor((W - 16 * 2 - 12) / 2) - 1;       // the Shop's front: two big cards a row
 // the shop (where you buy) is black and gold like the TokBux coin: warm black sheet, gold selection, metallic gold buy
 const GOLD = '#dcb664', GOLD_LINE = 'rgba(220,182,100,0.25)', GOLD_METAL = ['#f5dc9a', '#dcb35f', '#b88a3c'] as const;
 const BG = '#0b0c0d', PANEL = '#0c0b09', CARD = '#161519', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#47ab9a', GREEN = '#22c55e';
@@ -652,6 +653,20 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
       </Pressable>
     );
   };
+  const bigTile = (i: AvatarItem, onPress: () => void) => {
+    const t = thumbOf(i, look?.body);
+    const kind = i.tab === 'avatars' ? 'Hero' : i.pieces ? 'Full outfit' : /glove/i.test(i.name) ? 'Gloves' : i.sub;
+    return (
+      <Pressable key={i.id} onPress={onPress} style={({ pressed }) => [styles.bCard, lt && L.bCard, pressed && { opacity: 0.8 }]}>
+        <LinearGradient colors={lt ? ['#eef1f0', '#e3e7e6'] : ['#1f2a28', '#151819']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.bPic}>
+          {t ? <Image source={{ uri: t }} style={styles.bImg} resizeMode="contain" /> : null}
+          {owns(i) ? <View style={styles.sTick}><Ionicons name="checkmark" size={13} color="#fff" /></View> : null}
+        </LinearGradient>
+        <Text style={[styles.bName, lt && L.itemName]} numberOfLines={2}>{i.name}</Text>
+        <View style={styles.bFoot}>{priceTag(i)}{kind ? <Text style={styles.bKind} numberOfLines={1}>{kind}</Text> : null}</View>
+      </Pressable>
+    );
+  };
   const shopHead = (onBack: () => void) => (
     <View style={[styles.sHead, { top: insets.top + 6 }]}>
       <Pressable style={[styles.round, lt && L.round]} onPress={onBack} hitSlop={6} accessibilityLabel="Back"><Ionicons name="arrow-back" size={22} color={ink} /></Pressable>
@@ -944,18 +959,22 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
                 <View style={styles.sFeatBody}>
                   <Text style={styles.sFeatName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{featured.name}</Text>
                   <Text style={styles.sFeatSub} numberOfLines={2}>{powersOf(featured).slice(0, 2).join(' + ') || 'A hero for every game'}</Text>
-                  <View style={styles.sFeatBtn}>
-                    <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
-                    <TokBuxIcon size={16} /><Text style={styles.buyMainText}>{priceOf(featured).toLocaleString()}</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={styles.sFeatBtn}>
+                      <LinearGradient colors={['#f3e2b3', '#dcbc78', '#c39d58']} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+                      <TokBuxIcon size={16} /><Text style={styles.buyMainText}>{priceOf(featured).toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.sFeatTry}><Text style={styles.sFeatTryText}>Try on</Text></View>
                   </View>
                 </View>
               </Pressable>
             ) : null}
             {/* everything, mixed (the server's order for you once it has answered), no headings */}
-            <View style={styles.sSeeRow}>
+            <View style={[styles.sSeeRow, { justifyContent: 'space-between', alignItems: 'center' }]}>
+              <Text style={[styles.bHead, lt && L.itemName]}>New this week</Text>
               {frontItems.length > 12 ? <Pressable onPress={() => openShow('all')} hitSlop={8}><Text style={[styles.sSeeAll, lt && L.sSeeAll]}>See all</Text></Pressable> : null}
             </View>
-            <View style={styles.grid}>{frontItems.slice(0, 12).map((i) => storeTile(i, () => openShow('all', i)))}</View>
+            <View style={[styles.grid, { columnGap: 12, rowGap: 12, paddingTop: 4 }]}>{frontItems.slice(0, 12).map((i) => bigTile(i, () => openShow('all', i)))}</View>
           </ScrollView>
           <View style={[[styles.sHeroBg, lt && L.sHeroBg], { top: 0, bottom: undefined, height: insets.top + 104 }]} />
           {/* every category one tap away (Heroes: up close; the rest: tried on, on its tab) */}
@@ -1092,6 +1111,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
 // light mode (design/me-mocks/light.html): Me on the Games screen's light, the Shop on warm ivory; the deeper gold reads on white
 const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } };
 const L = StyleSheet.create({
+  bCard: { backgroundColor: '#ffffff' },
   root: { backgroundColor: '#f8f9fa' },
   stage: { backgroundColor: '#f8f9fa' },
   lName: { color: '#111827' },
@@ -1137,6 +1157,15 @@ const styles = StyleSheet.create({
   sFeatBody: { position: 'absolute', left: 16, bottom: 16, width: 200 },
   sFeatName: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
   sFeatSub: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginBottom: 10 },
+  sFeatTry: { height: 38, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5, borderColor: 'rgba(220,182,100,0.8)', alignItems: 'center', justifyContent: 'center' },
+  sFeatTryText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  bHead: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: -0.3 },
+  bCard: { width: CARD2, backgroundColor: '#16191a', borderRadius: 18, padding: 8, paddingBottom: 10 },
+  bPic: { height: CARD2 * 0.92, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  bImg: { width: '92%', height: '92%' },
+  bName: { color: '#fff', fontSize: 14, fontWeight: '800', marginTop: 8, minHeight: 18 },
+  bFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 },
+  bKind: { color: DIM, fontSize: 12, fontWeight: '700', flexShrink: 1, marginLeft: 6 },
   sFeatBtn: { height: 38, width: 130, borderRadius: 12, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   sSeeAll: { color: DIM, fontSize: 13, fontWeight: '700' },
   sPrice: { color: GOLD, fontSize: 13, fontWeight: '800' },

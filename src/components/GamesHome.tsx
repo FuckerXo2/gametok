@@ -219,7 +219,7 @@ export const GamesHome = ({ games, recentIds, onOpen, onJoinFriend, onSearch, on
             <Pressable style={[styles.round, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }]} onPress={openAccountMenu} accessibilityLabel="Menu" hitSlop={6}><Ionicons name="menu" size={22} color={textColor} /></Pressable>
             <View style={[styles.row, { gap: 10 }]}>
               <Pressable style={[styles.round, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }]} onPress={onSearch} accessibilityLabel="Search games" hitSlop={6}><Ionicons name="search" size={20} color={textColor} /></Pressable>
-              <Pressable style={[styles.tb, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)' }]} onPress={onOpenShop} hitSlop={6}><TokBuxIcon size={24} /><Text style={[styles.tbText, { color: textColor }]}>{(account?.tokbux ?? 0).toLocaleString()}</Text></Pressable>
+              <Pressable style={[styles.tb, { backgroundColor: isDark ? '#000' : 'rgba(0,0,0,0.06)' }]} onPress={onOpenShop} hitSlop={6}><TokBuxIcon size={24} /><Text style={[styles.tbText, { color: textColor }]}>{(account?.tokbux ?? 0).toLocaleString()}</Text><View style={styles.tbPlus}><Text style={styles.tbPlusText}>+</Text></View></Pressable>
             </View>
           </View>
           <View style={[styles.greet, { top: insets.top + 86 }]}>
@@ -303,7 +303,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   topBar: { position: 'absolute', left: PAD, right: PAD, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   round: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 12 },
+  tb: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 999, paddingVertical: 5, paddingLeft: 5, paddingRight: 5 },
+  // the + to buy Pixils: a soft teal chip, part of the pill rather than a loud button on it
+  tbPlus: { width: 26, height: 26, borderRadius: 9, backgroundColor: 'rgba(71,171,154,0.24)', alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  tbPlusText: { color: '#5fc7b4', fontSize: 20, fontWeight: '900', lineHeight: 22, marginTop: -1 },
   tbText: { color: TEXT, fontWeight: '800', fontSize: 15 },
   stageBox: { position: 'absolute', left: 0, right: 0, top: 0 },
   meTap: { position: 'absolute', right: 0, width: '45%', height: 236 },

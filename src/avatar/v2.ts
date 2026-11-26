@@ -116,4 +116,5 @@ export function v2Beards(): AvatarItem[] {
   }));
 }
 // item pictures: rendered per v2 item (games/avatar-editor/tools/sk_thumbs.py)
-export const v2Thumb = (id: string) => `${V2_HOST}/assets/sidekick/thumbs/${id}.webp`;
+// ?p=: bump when the pictures are redrawn (phones keep them a day); 2 = slim bodies (2026-11-26)
+export const v2Thumb = (id: string) => `${V2_HOST}/assets/sidekick/thumbs/${id}.webp?p=2`;
