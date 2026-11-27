@@ -14,6 +14,10 @@ interface User {
   totalScore: number;
   gamesPlayed: number;
   verified?: boolean;
+  // renaming (like Roblox): the display name is free once a week (nextAt: when it's allowed again); the @username costs
+  // usernamePrice Pixils
+  nameChange?: { price: number; nextAt: string | null };
+  usernamePrice?: number;
 }
 
 interface AuthContextType {

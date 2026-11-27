@@ -13,7 +13,7 @@ import { auth as authApi } from '../services/api';
 import { Avatar } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
 import { TokBuxSheet } from './TokBuxSheet';
-import { EditProfileModal } from './EditProfileModal';
+import { EditProfile } from './EditProfile';
 import { AddFriendsScreen } from './AddFriendsScreen';
 
 const BG = '#0b0c0d', PANEL = '#141617', CARD = '#1c1f21', LINE = 'rgba(255,255,255,0.1)', DIM = 'rgba(255,255,255,0.55)', ACCENT = '#47ab9a';
@@ -79,7 +79,7 @@ export const AccountMenu: React.FC<{ onMyItems: () => void }> = ({ onMyItems }) 
         ) : null}
       </Modal>
       <TokBuxSheet visible={page === 'tokbux'} onClose={() => setPage(null)} />
-      <EditProfileModal visible={page === 'profile'} onClose={() => setPage(null)} />
+      <EditProfile visible={page === 'profile'} onClose={() => setPage(null)} onGetPixils={() => setPage('tokbux')} />
       <AddFriendsScreen visible={page === 'friends'} onClose={() => setPage(null)} />
       <SettingsScreen visible={page === 'settings'} onClose={() => setPage(null)} />
       <HelpScreen visible={page === 'help'} onClose={() => setPage(null)} />

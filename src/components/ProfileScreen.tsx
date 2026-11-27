@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { StageSlot } from './SharedStage';
 import { bodyPicture, bodyPictureOf, stagePicture } from './AvatarStage';
-import { EditProfileModal } from './EditProfileModal';
+import { EditProfile } from './EditProfile';
 import { openAccountMenu } from './AccountMenu';
 import { Avatar, hasHeadshot } from './Avatar';
 import { TokBuxIcon } from './TokBuxIcon';
@@ -822,7 +822,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
             ))}
             <Pressable style={styles.menuRow} onPress={() => { setCustomize(false); setEditProfile(true); }}>
               <Ionicons name="create-outline" size={22} color="#fff" />
-              <Text style={styles.menuText}>Edit Profile</Text>
+              <Text style={styles.menuText}>Edit profile</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -1086,7 +1086,7 @@ export const ProfileScreen: React.FC<{ isActive?: boolean }> = ({ isActive }) =>
         worn={!!details && !!look && !!details.isWorn?.(look)} onClose={() => setDetails(null)}
         onBuy={() => details && buyNow(details)} onWear={() => { if (details) { tap(details); setDetails(null); } }} />
       <BuyItemSheet request={buyReq} onDone={onBought} />
-      <EditProfileModal visible={editProfile} onClose={() => setEditProfile(false)} />
+      <EditProfile visible={editProfile} onClose={() => setEditProfile(false)} onGetPixils={() => setTokbux(true)} />
       {/* name a look being saved (or renamed) */}
       <Modal visible={!!naming} transparent animationType="fade" onRequestClose={() => setNaming(null)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetWrap}>

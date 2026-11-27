@@ -219,7 +219,7 @@ export const users = {
     return request(`/users/${userId}/created?limit=${limit}`);
   },
 
-  update: async (userId: string, data: { username?: string; displayName?: string; bio?: string; avatar?: string }) => {
+  update: async (userId: string, data: { username?: string; displayName?: string; bio?: string; avatar?: string; price?: number }) => {
     return request(`/users/${userId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
