@@ -46,7 +46,8 @@ const LOOKS: Record<LookId, { name: string; wear: { top: string; bottom: string;
   puffer: { name: 'Puffer', wear: { top: 'puffer', bottom: 'joggers', shoes: 'boots' } },
   summer: { name: 'Summer', wear: { top: 'summer-tank', bottom: 'summer-shorts', shoes: 'summer-slides' } },
 };
-const STARTER: Record<Body, LookId> = { Male: 'bomber', Female: 'puffer' };
+// the look each new player lands on is random (2026-11-27): not everyone starts in the same outfit
+const randomLook = (): LookId => { const ids = Object.keys(LOOKS) as LookId[]; return ids[Math.floor(Math.random() * ids.length)]; };
 // the avatar in each look, pre-rendered from the real Synty avatar (logo/render_looks.mjs)
 const AV: Record<Body, Record<LookId, any>> = {
   Male: { bomber: require('../../assets/onboarding/av_m_bomber.png'), puffer: require('../../assets/onboarding/av_m_puffer.png'), summer: require('../../assets/onboarding/av_m_summer.png') },
@@ -80,7 +81,8 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
   const { signup, login } = useAuth();
   const [step, setStep] = useState<Step>(startWithLogin ? 'signin' : 'welcome');
   const [body, setBody] = useState<Body | null>(null);
-  const [look, setLook] = useState<LookId>('bomber');
+  const [first] = useState<LookId>(randomLook);
+  const [look, setLook] = useState<LookId>(first);
   const now = new Date().getFullYear();
   const years = Array.from({ length: 100 }, (_, i) => now - i).reverse();
   const [bm, setBm] = useState(0), [bd, setBd] = useState(0), [by, setBy] = useState(years.indexOf(now - 13));
@@ -100,7 +102,7 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
   }, [username]);
 
   const go = (s: Step) => { setError(''); setStep(s); };
-  const pickBody = (b: Body) => { setBody(b); setLook(STARTER[b]); Haptics.selectionAsync(); };
+  const pickBody = (b: Body) => { setBody(b); setLook(first); Haptics.selectionAsync(); };
   const days = new Date(years[by], bm + 1, 0).getDate();
   const nameOk = USERNAME_RULE.test(username) && free === true;
   const pwOk = password.length >= 8 && !password.toLowerCase().includes(username.toLowerCase());
@@ -190,7 +192,7 @@ export const OnboardingFlow: React.FC<{ onComplete: () => void; isAuthLoading?: 
             {body === b ? <LinearGradient colors={RAINBOW} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
             <View style={styles.cardIn}>
               {body === b ? <View style={[styles.tick, { backgroundColor: hue.c }]}><Ionicons name="checkmark" size={14} color={hue.ink} /></View> : null}
-              <Image source={AV[b][STARTER[b]]} style={{ height: 250, width: 250 * AV_RATIO, marginTop: 8 }} resizeMode="contain" />
+              <Image source={AV[b][first]} style={{ height: 250, width: 250 * AV_RATIO, marginTop: 8 }} resizeMode="contain" />
               <Text style={styles.cardText}>{b}</Text>
             </View>
           </Pressable>
